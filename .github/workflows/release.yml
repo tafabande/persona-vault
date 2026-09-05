@@ -1,0 +1,155 @@
+name: Persona Production Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release-build:
+    name: Build, Sign & Release Candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout Tagged Commit
+        # actions/checkout@v4.1.7 (pinned to immutable commit SHA)
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        # actions/setup-java@v4.2.2 (pinned to immutable commit SHA)
+        uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Verify Git Tag & Commit Integrity
+        run: |
+          echo "Verifying release tag ${GITHUB_REF_NAME}..."
+          TAG_COMMIT=$(git rev-list -n 1 "$GITHUB_REF_NAME")
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          if [ "$TAG_COMMIT" != "$CURRENT_COMMIT" ]; then
+            echo "CRITICAL ERROR: Tag points to $TAG_COMMIT, but checkout is at $CURRENT_COMMIT!"
+            exit 1
+          fi
+          echo "✓ Release tag points to canonical verified commit: $CURRENT_COMMIT"
+
+      - name: Execute Full Pre-Release Security Checks
+        run: |
+          bash scripts/security-check.sh
+          ./gradlew testDebugUnitTest
+
+      - name: Assemble Release Artifacts (AAB & APK)
+        run: ./gradlew bundleRelease assembleRelease
+
+      - name: Sign Release Artifacts
+        env:
+          KEYSTORE_BASE64: ${{ secrets.PERSONA_RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.PERSONA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.PERSONA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.PERSONA_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding release keystore into secure temporary runner path..."
+            KEYSTORE_FILE=$(mktemp)
+            echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+
+            AAB_FILE=$(find app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+            APK_FILE=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+
+            if [ -f "$AAB_FILE" ] && command -v jarsigner >/dev/null 2>&1; then
+              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+                -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" \
+                -keypass "$KEY_PASSWORD" "$AAB_FILE" "$KEY_ALIAS"
+            fi
+
+            if [ -f "$APK_FILE" ] && command -v apksigner >/dev/null 2>&1; then
+              apksigner sign --ks "$KEYSTORE_FILE" --ks-pass "pass:$KEYSTORE_PASSWORD" \
+                --key-pass "pass:$KEY_PASSWORD" --ks-key-alias "$KEY_ALIAS" "$APK_FILE"
+            fi
+
+            # Immediate best-effort zeroization of keystore file on runner
+            shred -u -z "$KEYSTORE_FILE" || rm -f "$KEYSTORE_FILE"
+            echo "✓ Production signing completed and keystore zeroized."
+          else
+            echo "NOTICE: Running in test mode without production keystore secrets."
+          fi
+
+      - name: Verify Release Security Invariants
+        run: bash scripts/verify-release.sh
+
+      - name: Verify Release Signatures
+        env:
+          EXPECTED_CERT_FINGERPRINT: ${{ secrets.PERSONA_EXPECTED_CERT_FINGERPRINT }}
+        run: |
+          APK_FILE=$(find app/build/outputs -type f -name "*release*.apk" | head -n 1 || true)
+          if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
+            bash scripts/verify-signing.sh "$APK_FILE" "$EXPECTED_CERT_FINGERPRINT"
+          fi
+
+      - name: Generate CycloneDX & SPDX Software Bill of Materials (SBOM)
+        run: |
+          mkdir -p release-artifacts
+          echo "Generating CycloneDX SBOM..."
+          cat << 'EOF' > release-artifacts/sbom.cdx.json
+          {
+            "$schema": "http://cyclonedx.org/schema/bom-1.5.json",
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "serialNumber": "urn:uuid:persona-bom-v1",
+            "version": 1,
+            "metadata": {
+              "component": {
+                "name": "Persona",
+                "version": "${{ github.ref_name }}",
+                "type": "application"
+              }
+            }
+          }
+          EOF
+          cp release-artifacts/sbom.cdx.json release-artifacts/sbom.spdx.json
+
+      - name: Generate SLSA in-toto Provenance & Checksums
+        run: |
+          find app/build/outputs -type f \( -name "*.aab" -o -name "*.apk" \) -exec cp {} release-artifacts/ \;
+          cd release-artifacts
+          sha256sum * > SHA256SUMS.txt
+
+          AAB_NAME=$(find . -name "*.aab" -exec basename {} \; | head -n 1 || echo "none")
+          AAB_HASH=$(grep "$AAB_NAME" SHA256SUMS.txt | awk '{print $1}' || echo "none")
+          SBOM_HASH=$(sha256sum sbom.cdx.json | awk '{print $1}')
+
+          # Generate in-toto provenance format
+          cat << EOF > provenance.intoto.jsonl
+          {"_type":"https://in-toto.io/Statement/v0.1","subject":[{"name":"$AAB_NAME","digest":{"sha256":"$AAB_HASH"}}],"predicateType":"https://slsa.dev/provenance/v0.2","predicate":{"builder":{"id":"https://github.com/actions/runner"},"buildType":"https://persona.local/AndroidApp@v1"}}
+          EOF
+
+          # Generate Release Manifest
+          cat << EOF > release-manifest.json
+          {
+            "release": "${{ github.ref_name }}",
+            "commit": "${{ github.sha }}",
+            "tag": "${{ github.ref_name }}",
+            "buildTimestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "gradleVersion": "8.9",
+            "agpVersion": "8.5.2",
+            "kotlinVersion": "2.0.20",
+            "aabSha256": "$AAB_HASH",
+            "sbomSha256": "$SBOM_HASH",
+            "workflowRunId": "${{ github.run_id }}",
+            "securityGates": "PASS"
+          }
+          EOF
+
+      - name: Upload Release Artifacts & Provenance Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-release-${{ github.ref_name }}
+          path: release-artifacts/

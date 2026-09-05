@@ -1,0 +1,53 @@
+name: Persona CI (Fast Quality Gate)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-quality-gate:
+    name: Fast PR Validation (< 10 min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Source Code
+        # actions/checkout@v4.1.7 (pinned to immutable commit SHA)
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+
+      - name: Set up JDK 17
+        # actions/setup-java@v4.2.2 (pinned to immutable commit SHA)
+        uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Validate Gradle Wrapper
+        # gradle/actions/wrapper-validation@v3.5.0
+        uses: gradle/actions/wrapper-validation@ccb7bf18e61596e75c41059523e9a349145380a7
+
+      - name: Run Machine Security Static Analysis
+        run: bash scripts/security-check.sh
+
+      - name: Assemble Debug Variant
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Run All Module Unit Tests (M1 - M6)
+        run: ./gradlew testDebugUnitTest
+
+      - name: Run Android Lint
+        run: ./gradlew lintDebug
+
+      - name: Upload Lint Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-results
+          path: app/build/reports/lint-results-debug.html

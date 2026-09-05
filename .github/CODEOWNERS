@@ -1,0 +1,18 @@
+# Persona Security Code Owners
+# Changes to these paths require mandatory approval from security maintainers
+
+* @pims-vault/security-maintainers
+
+# Cryptographic Core & Key Management
+app/src/main/java/com/pims/vault/core/crypto/ @pims-vault/crypto-maintainers
+
+# Database, DAOs & Entities
+app/src/main/java/com/pims/vault/data/local/ @pims-vault/storage-maintainers
+
+# Android Security Manifest & ProGuard Rules
+app/src/main/AndroidManifest.xml @pims-vault/security-maintainers
+app/proguard-rules.pro @pims-vault/security-maintainers
+
+# CI/CD Workflows & Verification Scripts
+.github/workflows/ @pims-vault/security-maintainers
+scripts/ @pims-vault/security-maintainers
