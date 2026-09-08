@@ -9,7 +9,7 @@ if [ ! -f "$PROPS_FILE" ]; then
     exit 1
 fi
 
-DIST_URL="$(sed -n 's/^distributionUrl=//p' "$PROPS_FILE" | head -n 1)"
+DIST_URL="$(sed -n 's/^distributionUrl=//p' "$PROPS_FILE" | head -n 1 | tr -d '\r' | sed 's/\\:/:/g')"
 if [ -z "$DIST_URL" ]; then
     echo "Unable to read distributionUrl from $PROPS_FILE" >&2
     exit 1
