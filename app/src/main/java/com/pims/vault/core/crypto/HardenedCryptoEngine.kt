@@ -87,7 +87,7 @@ class HardenedCryptoEngine : CryptoEngine {
         return try {
             cipher.doFinal(payload.combinedCiphertextWithTag)
         } catch (e: Exception) {
-            throw CryptoIntegrityException("AEAD decryption failed: ciphertext corrupted, tag mismatch, or invalid AAD", e)
+            throw CryptoIntegrityException("AEAD decryption failed: ciphertext corrupted, Tag mismatch, or invalid AAD", e)
         }
     }
 

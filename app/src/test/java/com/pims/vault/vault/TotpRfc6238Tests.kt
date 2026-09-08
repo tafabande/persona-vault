@@ -35,7 +35,7 @@ class TotpRfc6238Tests {
     @Test
     fun testRfc6238Sha256Vectors8Digits() {
         // Time = 59s
-        assertEquals("46114540", TotpGenerator.generateTotp(seedSha256, timestampMs = 59_000L, algorithm = "SHA256", digits = 8, periodSeconds = 30))
+        assertEquals("46119246", TotpGenerator.generateTotp(seedSha256, timestampMs = 59_000L, algorithm = "SHA256", digits = 8, periodSeconds = 30))
         // Time = 1111111109s
         assertEquals("68084774", TotpGenerator.generateTotp(seedSha256, timestampMs = 1111111109_000L, algorithm = "SHA256", digits = 8, periodSeconds = 30))
         // Time = 1111111111s
@@ -67,15 +67,17 @@ class TotpRfc6238Tests {
         val code = TotpGenerator.generateTotp(base32Secret, timestampMs = 1600000000_000L, digits = 6, periodSeconds = 30)
         assertEquals(6, code.length)
 
-        val liveToken = TotpGenerator.getLiveToken(base32Secret, timestampMs = 1600000010_000L, periodSeconds = 30)
+        // 1600000030 % 30 == 10s elapsed; 30 - 10 = 20s remaining
+        val liveToken = TotpGenerator.getLiveToken(base32Secret, timestampMs = 1600000030_000L, periodSeconds = 30)
         assertEquals(6, liveToken.token.length)
-        assertEquals(20, liveToken.remainingSeconds) // 30 - (10 % 30) = 20
+        assertEquals(20, liveToken.remainingSeconds)
     }
 
     @Test
     fun testNonStandardPeriods() {
         val base32Secret = "JBSWY3DPEHPK3PXP"
-        val liveToken60 = TotpGenerator.getLiveToken(base32Secret, timestampMs = 1600000045_000L, periodSeconds = 60)
-        assertEquals(15, liveToken60.remainingSeconds) // 60 - 45 = 15
+        // 1600000065 % 60 == 45s elapsed; 60 - 45 = 15s remaining
+        val liveToken60 = TotpGenerator.getLiveToken(base32Secret, timestampMs = 1600000065_000L, periodSeconds = 60)
+        assertEquals(15, liveToken60.remainingSeconds)
     }
 }

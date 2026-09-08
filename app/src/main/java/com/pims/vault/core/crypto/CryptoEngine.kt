@@ -82,7 +82,7 @@ interface CryptoEngine {
     fun generateRandomBytes(length: Int): ByteArray
 }
 
-class CryptoIntegrityException(message: String, cause: Throwable? = null) : SecurityException(message, cause)
+class CryptoIntegrityException(message: String, cause: Throwable? = null) : java.security.GeneralSecurityException(message, cause)
 class PathTraversalException(message: String) : SecurityException(message)
 
 /**

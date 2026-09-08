@@ -158,7 +158,7 @@ class MedicalVaultTests {
     }
 
     @Test
-    fun testMedicalAuditDoesNotLeakClinicalDataInDescription() = runBlocking {
+    fun testMedicalAuditDoesNotLeakClinicalDataInDescription(): Unit = runBlocking {
         addAllergyUseCase(
             personId = "p_1",
             allergen = "Penicillin",

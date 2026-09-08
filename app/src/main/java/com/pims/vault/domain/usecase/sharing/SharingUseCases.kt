@@ -50,7 +50,7 @@ class CreateSharePackageUseCase @Inject constructor(
             SharingCryptoEngine.computeSharedSecret(ephemeralKp.privateKeyBytes, recipientPublicKey)
         } else {
             // Self-contained symmetric secret derived from ephemeral key
-            ephemeralKp.privateKeyBytes
+            ephemeralKp.publicKeyBytes
         }
 
         // 4. Construct canonical AAD

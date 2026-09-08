@@ -76,7 +76,7 @@ class SharingProtocolTests {
     // TEST 1: Ephemeral Key Agreement & AEAD Round-Trip
     // ---------------------------------------------------------
     @Test
-    fun testEphemeralKeyAgreementAndDecryptionRoundtrip() = runBlocking {
+    fun testEphemeralKeyAgreementAndDecryptionRoundtrip(): Unit = runBlocking {
         val selection = SelectiveFieldSelection(
             includeFullName = true,
             includeBloodGroup = true,
@@ -106,7 +106,7 @@ class SharingProtocolTests {
     // TEST 2: Strict Granular Field Masking (Unselected fields omitted)
     // ---------------------------------------------------------
     @Test
-    fun testSelectiveDisclosureOmitsUnselectedFields() = runBlocking {
+    fun testSelectiveDisclosureOmitsUnselectedFields(): Unit = runBlocking {
         // Disclose ONLY Full Name & Blood Group (mask residential address, phone, email, dob)
         val selection = SelectiveFieldSelection(
             includeFullName = true,
@@ -145,7 +145,7 @@ class SharingProtocolTests {
     // TEST 3: Expired QR Package Rejection
     // ---------------------------------------------------------
     @Test
-    fun testExpiredQrScanIsRejected() = runBlocking {
+    fun testExpiredQrScanIsRejected(): Unit = runBlocking {
         val selection = SelectiveFieldSelection(includeFullName = true)
         val envelope = createShareUseCase(
             senderIdentityKey = senderIdentityKey,
@@ -170,7 +170,7 @@ class SharingProtocolTests {
     // TEST 4: Replayed Nonce Rejection
     // ---------------------------------------------------------
     @Test
-    fun testReplayedNonceIsRejected() = runBlocking {
+    fun testReplayedNonceIsRejected(): Unit = runBlocking {
         val selection = SelectiveFieldSelection(includeFullName = true)
         val envelope = createShareUseCase(
             senderIdentityKey = senderIdentityKey,
@@ -219,7 +219,7 @@ class SharingProtocolTests {
     // TEST 6: Non-Repudiation Audit Logging Hygiene
     // ---------------------------------------------------------
     @Test
-    fun testSharingAuditLogsDoNotLeakPlaintext() = runBlocking {
+    fun testSharingAuditLogsDoNotLeakPlaintext(): Unit = runBlocking {
         val secretAddress = "TopSecretUndergroundBunker"
         val profileWithSecret = mockProfile.toMutableMap().apply { put("residentialAddress", secretAddress) }
 

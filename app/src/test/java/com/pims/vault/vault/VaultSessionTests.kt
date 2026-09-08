@@ -100,6 +100,7 @@ class VaultSessionTests {
 
     @After
     fun tearDown() {
+        viewModel.lockVault()
         Dispatchers.resetMain()
     }
 
@@ -120,6 +121,7 @@ class VaultSessionTests {
         // Advance 10 seconds
         testDispatcher.scheduler.advanceTimeBy(10_000L)
         assertEquals(290, viewModel.uiState.value.timeoutRemainingSeconds)
+        viewModel.lockVault()
     }
 
     @Test

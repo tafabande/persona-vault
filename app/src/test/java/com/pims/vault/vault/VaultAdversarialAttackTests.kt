@@ -98,7 +98,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 01: Swap ciphertext between two password records -> FAIL
     // ---------------------------------------------------------
     @Test
-    fun attackTest01_SwapCiphertextBetweenRecordsFails() = runBlocking {
+    fun attackTest01_SwapCiphertextBetweenRecordsFails(): Unit = runBlocking {
         val idA = savePasswordUseCase("u1", "Card A", "alice", "SecretA", null, null, vaultRootKey)
         val idB = savePasswordUseCase("u1", "Card B", "bob", "SecretB", null, null, vaultRootKey)
 
@@ -117,7 +117,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 02: Change itemId -> FAIL
     // ---------------------------------------------------------
     @Test
-    fun attackTest02_ChangeItemIdFails() = runBlocking {
+    fun attackTest02_ChangeItemIdFails(): Unit = runBlocking {
         val id = savePasswordUseCase("u1", "Title", "user", "SecretPass", null, null, vaultRootKey)
         val entity = fakeVaultDao.getVaultItemById(id)!!
 
@@ -134,7 +134,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 03: Change category -> FAIL
     // ---------------------------------------------------------
     @Test
-    fun attackTest03_ChangeCategoryFails() = runBlocking {
+    fun attackTest03_ChangeCategoryFails(): Unit = runBlocking {
         val id = savePasswordUseCase("u1", "Title", "user", "SecretPass", null, null, vaultRootKey)
         val entity = fakeVaultDao.getVaultItemById(id)!!
 
@@ -148,7 +148,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 04: Change version -> FAIL
     // ---------------------------------------------------------
     @Test
-    fun attackTest04_ChangeVersionFails() = runBlocking {
+    fun attackTest04_ChangeVersionFails(): Unit = runBlocking {
         val id = savePasswordUseCase("u1", "Title", "user", "SecretPass", null, null, vaultRootKey, incomingVersion = 1L)
 
         // Attempt reading with mismatched version in AAD
@@ -161,7 +161,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 05: Replay old ciphertext/version -> FAIL
     // ---------------------------------------------------------
     @Test
-    fun attackTest05_ReplayOldCiphertextVersionFails() = runBlocking {
+    fun attackTest05_ReplayOldCiphertextVersionFails(): Unit = runBlocking {
         val id = savePasswordUseCase("u1", "Title", "user", "SecretPassV1", null, null, vaultRootKey, incomingVersion = 1L)
 
         // Attempt updating with same or lower version (v1 -> v1 replay attempt)
@@ -176,7 +176,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 06: Use password-domain ciphertext as TOTP ciphertext -> FAIL
     // ---------------------------------------------------------
     @Test
-    fun attackTest06_CrossDomainCiphertextUseFails() = runBlocking {
+    fun attackTest06_CrossDomainCiphertextUseFails(): Unit = runBlocking {
         val id = savePasswordUseCase("u1", "Title", "user", "SecretPass", null, null, vaultRootKey)
 
         // Deriving subkey with TOTP domain on Password ciphertext must fail GCM tag check
@@ -200,7 +200,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 08: Background application -> vault locks & keys zeroized
     // ---------------------------------------------------------
     @Test
-    fun attackTest08_BackgroundingLocksVault() = runBlocking {
+    fun attackTest08_BackgroundingLocksVault(): Unit = runBlocking {
         sessionManager.onAuthenticationSuccess()
         sessionManager.unlockZone4Vault()
         assertTrue(sessionManager.isZone4Unlocked())
@@ -229,7 +229,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 10: Crash during secret reveal -> no secret written to persistent storage
     // ---------------------------------------------------------
     @Test
-    fun attackTest10_CrashDuringRevealPersistsNoPlaintext() = runBlocking {
+    fun attackTest10_CrashDuringRevealPersistsNoPlaintext(): Unit = runBlocking {
         val rawPassword = "TransientPasswordToReveal!#"
         val id = savePasswordUseCase("u1", "Title", "user", rawPassword, null, null, vaultRootKey)
 
@@ -248,7 +248,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 11: Crash during recovery-code consumption -> transactionally consistent state
     // ---------------------------------------------------------
     @Test
-    fun attackTest11_RecoveryCodeConsumptionConsistency() = runBlocking {
+    fun attackTest11_RecoveryCodeConsumptionConsistency(): Unit = runBlocking {
         val codes = listOf("CODE-1111", "CODE-2222", "CODE-3333")
         val id = saveRecoveryUseCase("u1", "Backup", "user@test.com", codes, vaultRootKey)
 
@@ -291,7 +291,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 13: Export database -> no plaintext secrets
     // ---------------------------------------------------------
     @Test
-    fun attackTest13_DatabaseExportContainsNoPlaintextSecrets() = runBlocking {
+    fun attackTest13_DatabaseExportContainsNoPlaintextSecrets(): Unit = runBlocking {
         val testPassword = "UnExportablePassword_987654"
         savePasswordUseCase("u1", "Test Export", "admin", testPassword, null, null, vaultRootKey)
 
@@ -305,7 +305,7 @@ class VaultAdversarialAttackTests {
     // ATTACK TEST 14: Inspect Room entities/logcat -> no plaintext secrets logged
     // ---------------------------------------------------------
     @Test
-    fun attackTest14_RoomAndAuditLogsContainZeroSecrets() = runBlocking {
+    fun attackTest14_RoomAndAuditLogsContainZeroSecrets(): Unit = runBlocking {
         val testSeed = "JBSWY3DPEHPK3PXP"
         saveTotpUseCase("u1", "Google", "alice@gmail.com", testSeed, vaultRootKey = vaultRootKey)
 

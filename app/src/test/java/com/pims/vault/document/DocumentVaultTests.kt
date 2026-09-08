@@ -78,7 +78,7 @@ class DocumentVaultTests {
     }
 
     @Test
-    fun testIngestDocumentSuccess() = runBlocking {
+    fun testIngestDocumentSuccess(): Unit = runBlocking {
         val testBytes = "EncryptedPassportBinary".toByteArray(Charsets.UTF_8)
         Mockito.`when`(fileStorage.storeEncryptedFile(any(), eq(1), any(), any()))
             .thenReturn(
@@ -113,7 +113,7 @@ class DocumentVaultTests {
     }
 
     @Test
-    fun testIngestionFailureDeletesTemporaryStorage() = runBlocking {
+    fun testIngestionFailureDeletesTemporaryStorage(): Unit = runBlocking {
         Mockito.`when`(fileStorage.storeEncryptedFile(any(), eq(1), any(), any()))
             .thenReturn(
                 StoredFileMetadata(
@@ -152,7 +152,7 @@ class DocumentVaultTests {
     }
 
     @Test
-    fun testVerifyDocumentIntegrityOk() = runBlocking {
+    fun testVerifyDocumentIntegrityOk(): Unit = runBlocking {
         Mockito.`when`(fileStorage.verifyIntegrity(any(), any(), any())).thenReturn(true)
 
         val version = DocumentVersionItem(
@@ -172,7 +172,7 @@ class DocumentVaultTests {
     }
 
     @Test
-    fun testVerifyDocumentIntegrityTampered() = runBlocking {
+    fun testVerifyDocumentIntegrityTampered(): Unit = runBlocking {
         Mockito.`when`(fileStorage.verifyIntegrity(any(), any(), any())).thenReturn(false)
 
         val version = DocumentVersionItem(

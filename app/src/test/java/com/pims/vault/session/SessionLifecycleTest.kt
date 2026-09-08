@@ -17,6 +17,7 @@ import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito
+import org.mockito.kotlin.any
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionLifecycleTest {
@@ -32,7 +33,7 @@ class SessionLifecycleTest {
         Mockito.`when`(keySecurityManager.initializeAndGetSecurityLevel())
             .thenReturn(KeySecurityLevel.STRONGBOX)
 
-        Mockito.`when`(keySecurityManager.deriveDomainSubkey(Mockito.anyString()))
+        Mockito.`when`(keySecurityManager.deriveDomainSubkey(any()))
             .thenAnswer { SecretBytes(ByteArray(32) { 0x77 }) }
 
         sessionManager = BiometricSessionManager(

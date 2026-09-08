@@ -97,7 +97,7 @@ class VaultSecurityTests {
     }
 
     @Test
-    fun testCrossItemCiphertextSubstitutionRejection() = runBlocking {
+    fun testCrossItemCiphertextSubstitutionRejection(): Unit = runBlocking {
         // Save Password item A
         val idA = savePasswordUseCase(
             personId = "user_1",
@@ -139,7 +139,7 @@ class VaultSecurityTests {
     }
 
     @Test
-    fun testWrongVaultKeyDecryptionFailure() = runBlocking {
+    fun testWrongVaultKeyDecryptionFailure(): Unit = runBlocking {
         val id = savePasswordUseCase(
             personId = "user_1",
             title = "Personal GitHub",
@@ -204,7 +204,7 @@ class VaultSecurityTests {
     }
 
     @Test
-    fun testPaymentReferenceEndToEnd() = runBlocking {
+    fun testPaymentReferenceEndToEnd(): Unit = runBlocking {
         val id = savePaymentUseCase(
             personId = "user_1",
             nickname = "Primary Visa",
@@ -228,7 +228,7 @@ class VaultSecurityTests {
     }
 
     @Test
-    fun testRecoveryCodeConsumptionTracking() = runBlocking {
+    fun testRecoveryCodeConsumptionTracking(): Unit = runBlocking {
         val originalCodes = listOf("ABCD-1234", "EFGH-5678", "IJKL-9012")
         val id = saveRecoveryUseCase(
             personId = "user_1",
@@ -262,7 +262,7 @@ class VaultSecurityTests {
     }
 
     @Test
-    fun testZeroPlaintextSecretsInAuditLogs() = runBlocking {
+    fun testZeroPlaintextSecretsInAuditLogs(): Unit = runBlocking {
         val testPassword = "MyUltraSecretPassword!999"
         val id = savePasswordUseCase(
             personId = "user_1",

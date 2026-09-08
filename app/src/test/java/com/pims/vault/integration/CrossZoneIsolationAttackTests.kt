@@ -86,7 +86,7 @@ class CrossZoneIsolationAttackTests {
     }
 
     @Test
-    fun testZone1ToZone4ElevationBoundary() = runBlocking {
+    fun testZone1ToZone4ElevationBoundary(): Unit = runBlocking {
         // App is unlocked in Zone 1 (General Session)
         sessionManager.onAuthenticationSuccess()
         assertFalse(sessionManager.isZone4Unlocked())
@@ -104,7 +104,7 @@ class CrossZoneIsolationAttackTests {
     }
 
     @Test
-    fun testSharingEngineCannotAccessOrDiscloseZone4VaultSecrets() = runBlocking {
+    fun testSharingEngineCannotAccessOrDiscloseZone4VaultSecrets(): Unit = runBlocking {
         // Store Zone 4 Password and Recovery Code
         val secretPassword = "MasterPasswordNotForSharing999"
         val passwordId = savePasswordUseCase("u1", "Bank Login", "admin", secretPassword, null, null, vaultRootKey)
@@ -131,7 +131,7 @@ class CrossZoneIsolationAttackTests {
     }
 
     @Test
-    fun testCrossDomainKeySubstitutionFailure() = runBlocking {
+    fun testCrossDomainKeySubstitutionFailure(): Unit = runBlocking {
         // Save Password under Zone 4
         val id = savePasswordUseCase("u1", "Personal Credential", "alice", "Secret123", null, null, vaultRootKey)
 

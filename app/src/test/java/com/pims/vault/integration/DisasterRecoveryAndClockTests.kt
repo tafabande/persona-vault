@@ -87,7 +87,7 @@ class DisasterRecoveryAndClockTests {
     // TEST 1: Clock Forward Expiration
     // ---------------------------------------------------------
     @Test
-    fun testClockForwardExpiryRejection() = runBlocking {
+    fun testClockForwardExpiryRejection(): Unit = runBlocking {
         val rawProfile = mapOf("fullName" to "Alice Doe")
         val selection = SelectiveFieldSelection(includeFullName = true)
         val envelope = createShareUseCase(
@@ -113,7 +113,7 @@ class DisasterRecoveryAndClockTests {
     // TEST 2: Clock Rollback / Skew Policy
     // ---------------------------------------------------------
     @Test
-    fun testValidWithinExpirationWindow() = runBlocking {
+    fun testValidWithinExpirationWindow(): Unit = runBlocking {
         val rawProfile = mapOf("fullName" to "Alice Doe")
         val selection = SelectiveFieldSelection(includeFullName = true)
         val envelope = createShareUseCase(
@@ -136,7 +136,7 @@ class DisasterRecoveryAndClockTests {
     // TEST 3: Corrupted Ciphertext & Truncation Handling
     // ---------------------------------------------------------
     @Test
-    fun testCorruptedCiphertextFailsGracefullyWithoutCrashing() = runBlocking {
+    fun testCorruptedCiphertextFailsGracefullyWithoutCrashing(): Unit = runBlocking {
         val id = savePasswordUseCase("u1", "Login", "alice", "SecretPass", null, null, vaultRootKey)
         val entity = fakeVaultDao.getVaultItemById(id)!!
 
