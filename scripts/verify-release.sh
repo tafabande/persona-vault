@@ -60,9 +60,9 @@ if ! awk '
         next
     }
     in_release {
-        open = gsub(/\{/, "{")
-        close = gsub(/\}/, "}")
-        depth += open - close
+        open_braces = gsub(/\{/, "{")
+        close_braces = gsub(/\}/, "}")
+        depth += open_braces - close_braces
         if ($0 ~ /buildConfigField\("Boolean", "IS_DEBUG_CRYPTO_ALLOWED", "true"\)/) {
             insecure = 1
         }
