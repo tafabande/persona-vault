@@ -232,8 +232,8 @@ fun PimsSkeletonAccordion(
 fun PimsOutlinedInput(
     value: String,
     onValueChange: (String) -> Unit,
-    label: String,
-    placeholder: String,
+    label: String = "",
+    placeholder: String = "",
     modifier: Modifier = Modifier,
     leadingIcon: ImageVector? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
@@ -245,13 +245,15 @@ fun PimsOutlinedInput(
     singleLine: Boolean = true
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
+        if (label.isNotEmpty()) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
 
         OutlinedTextField(
             value = value,
@@ -346,7 +348,7 @@ fun PimsButton(
 fun PimsOutlinedTextField(
     value: String,
     onValueChange: (String) -> Unit,
-    label: String,
+    label: String = "",
     modifier: Modifier = Modifier,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
