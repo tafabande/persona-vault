@@ -17,7 +17,7 @@ securityCrypto = "1.1.0-alpha06"
 # Jetpack Compose BOM
 composeBom = "2024.09.00"
 material3 = "1.3.0"
-navigationCompose = "2.8.0"
+navigationCompose = "2.10.0"
 fragment = "1.9.0"
 
 # Room & Database
