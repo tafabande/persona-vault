@@ -7,6 +7,7 @@ import com.pims.vault.data.local.dao.PersonDao
 import com.pims.vault.data.local.dao.RelationshipDao
 import com.pims.vault.data.local.entity.PersonEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
+import com.pims.vault.data.local.relation.PersonWithFullProfile
 import com.pims.vault.domain.model.GraphRelationType
 import com.pims.vault.domain.model.IdentityGraph
 import com.pims.vault.domain.model.PersonProfile
