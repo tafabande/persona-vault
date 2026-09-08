@@ -37,7 +37,7 @@ junit = "4.13.2"
 junitExt = "1.2.1"
 espresso = "3.6.1"
 mockito = "5.12.0"
-mockitoKotlin = "5.4.0"
+mockitoKotlin = "6.3.0"
 coroutinesTest = "1.8.1"
 turbine = "1.1.0"
 
