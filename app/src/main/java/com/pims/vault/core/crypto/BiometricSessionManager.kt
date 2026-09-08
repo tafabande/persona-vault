@@ -191,6 +191,8 @@ class BiometricSessionManager(
         return key.copyBytes()
     }
 
+    fun getVaultKey(): ByteArray = getZone4VaultKey()
+
     fun isZone4Unlocked(): Boolean {
         val state = _sessionState.value
         return state is SessionState.Unlocked && state.isZone4Elevated && zone4VaultMasterKey != null

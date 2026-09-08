@@ -83,7 +83,7 @@ class RoomConverters {
     fun fromVaultCategory(value: VaultCategory?): String? = value?.name
 
     @TypeConverter
-    fun toVaultCategory(value: VaultCategory?): VaultCategory? =
+    fun toVaultCategory(value: String?): VaultCategory? =
         safeValueOf(value, fallback = VaultCategory.SECURE_NOTE)
 
     @TypeConverter

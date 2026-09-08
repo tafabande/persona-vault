@@ -317,6 +317,9 @@ private fun ProgressStateDisplay(state: BackupProgressState) {
         is BackupProgressState.CommittingRestore -> {
             Text("Integrity verified! Executing atomic live vault commit...", color = SuccessGreen, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
+        is BackupProgressState.RecordingJournal -> {
+            Text("Recording crash recovery journal checkpoint...", color = WarningAmber, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        }
         is BackupProgressState.RestoreSuccess -> {
             Text("✓ Restoration complete. All ${state.report.verifiedTableCount} tables & ${state.report.verifiedBlobCount} blobs intact.", color = SuccessGreen, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }

@@ -52,7 +52,7 @@ class GetMedicalDossierUseCase @Inject constructor(
                     personId = it.personId,
                     allergen = it.title,
                     reaction = it.substanceOrDiagnosis,
-                    severity = if (it.severity == AllergySeverity.CRITICAL || it.severity == AllergySeverity.LIFE_THREATENING) MedicalSeverity.CRITICAL else MedicalSeverity.SEVERE,
+                    severity = if (it.severity == AllergySeverity.LIFE_THREATENING) MedicalSeverity.CRITICAL else MedicalSeverity.SEVERE,
                     isVerified = true,
                     notes = it.notes,
                     createdAt = it.createdAt
