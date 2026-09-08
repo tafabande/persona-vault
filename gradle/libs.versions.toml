@@ -26,7 +26,7 @@ sqlcipher = "4.5.4"
 sqlite = "2.4.0"
 
 # Coroutines
-coroutines = "1.8.1"
+coroutines = "1.11.0"
 
 # Dependency Injection (Hilt)
 hilt = "2.51.1"
