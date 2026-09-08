@@ -30,7 +30,7 @@ coroutines = "1.8.1"
 
 # Dependency Injection (Hilt)
 hilt = "2.51.1"
-hiltNavigationCompose = "1.2.0"
+hiltNavigationCompose = "1.4.0"
 
 # Testing
 junit = "4.13.2"
