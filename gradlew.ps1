@@ -1,5 +1,13 @@
 $ErrorActionPreference = 'Stop'
 
+if (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME")) {
+    $userJava = [Environment]::GetEnvironmentVariable("JAVA_HOME", "User")
+    if ($userJava -and (Test-Path $userJava)) {
+        $env:JAVA_HOME = $userJava
+        $env:Path = "$userJava\bin;$env:Path"
+    }
+}
+
 $appHome = Split-Path -Parent $MyInvocation.MyCommand.Path
 $propsFile = Join-Path $appHome 'gradle\wrapper\gradle-wrapper.properties'
 
