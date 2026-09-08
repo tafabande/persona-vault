@@ -111,7 +111,7 @@ class VaultSessionTests {
     }
 
     @Test
-    fun testUnlockSetsStateAndStartsCountdown() = runTest {
+    fun testUnlockSetsStateAndStartsCountdown() = runTest(testDispatcher) {
         val vaultKey = ByteArray(32) { 0x55 }
         viewModel.unlockVault(vaultKey)
 
@@ -120,33 +120,38 @@ class VaultSessionTests {
 
         // Advance 10 seconds
         testDispatcher.scheduler.advanceTimeBy(10_000L)
+        testDispatcher.scheduler.runCurrent()
         assertEquals(290, viewModel.uiState.value.timeoutRemainingSeconds)
         viewModel.lockVault()
+        testDispatcher.scheduler.runCurrent()
     }
 
     @Test
-    fun testTimeoutAutoLocksVaultAtZero() = runTest {
+    fun testTimeoutAutoLocksVaultAtZero() = runTest(testDispatcher) {
         val vaultKey = ByteArray(32) { 0x55 }
         viewModel.unlockVault(vaultKey)
 
         // Advance past 300 seconds
         testDispatcher.scheduler.advanceTimeBy(301_000L)
+        testDispatcher.scheduler.runCurrent()
         assertFalse(viewModel.uiState.value.isVaultUnlocked)
         assertEquals(0, viewModel.uiState.value.timeoutRemainingSeconds)
     }
 
     @Test
-    fun testSecretRevealAutoConcealsAfter15Seconds() = runTest {
+    fun testSecretRevealAutoConcealsAfter15Seconds() = runTest(testDispatcher) {
         val itemId = "item_123"
         viewModel.toggleRevealSecret(itemId)
         assertTrue(viewModel.uiState.value.revealedSecretIds.contains(itemId))
 
         // Advance 14 seconds -> still revealed
         testDispatcher.scheduler.advanceTimeBy(14_000L)
+        testDispatcher.scheduler.runCurrent()
         assertTrue(viewModel.uiState.value.revealedSecretIds.contains(itemId))
 
         // Advance past 15 seconds -> auto-concealed
         testDispatcher.scheduler.advanceTimeBy(2_000L)
+        testDispatcher.scheduler.runCurrent()
         assertFalse(viewModel.uiState.value.revealedSecretIds.contains(itemId))
     }
 }

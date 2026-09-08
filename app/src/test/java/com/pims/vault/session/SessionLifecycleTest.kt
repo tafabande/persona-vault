@@ -33,7 +33,7 @@ class SessionLifecycleTest {
         Mockito.`when`(keySecurityManager.initializeAndGetSecurityLevel())
             .thenReturn(KeySecurityLevel.STRONGBOX)
 
-        Mockito.`when`(keySecurityManager.deriveDomainSubkey(any()))
+        Mockito.`when`(keySecurityManager.deriveDomainSubkey(any(), any()))
             .thenAnswer { SecretBytes(ByteArray(32) { 0x77 }) }
 
         sessionManager = BiometricSessionManager(

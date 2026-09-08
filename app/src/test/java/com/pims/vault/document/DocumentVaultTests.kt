@@ -126,6 +126,8 @@ class DocumentVaultTests {
                 )
             )
 
+        Mockito.`when`(fileStorage.deleteFile(any())).thenReturn(true)
+
         // Simulate database crash during metadata insert
         Mockito.`when`(documentDao.insertDocument(any()))
             .thenThrow(RuntimeException("Database disk full or constraint violation"))
