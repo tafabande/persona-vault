@@ -1,5 +1,6 @@
 package com.pims.vault.core.crypto
 
+import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.InputStream
@@ -133,7 +134,7 @@ class HardenedCryptoEngine : CryptoEngine {
 
             // Build Chunk AAD
             val aadStream = ByteArrayOutputStream()
-            associatedDataPrefix?.let { aadStream.write(it) }
+            associatedDataPrefix?.let { prefix: ByteArray -> aadStream.write(prefix) }
             aadStream.write(indexBytes)
             aadStream.write(if (isLastChunk) 1 else 0)
             cipher.updateAAD(aadStream.toByteArray())
@@ -202,7 +203,7 @@ class HardenedCryptoEngine : CryptoEngine {
                     cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(gcmTagLengthBits, chunkIv))
 
                     val aadStream = ByteArrayOutputStream()
-                    associatedDataPrefix?.let { aadStream.write(it) }
+                    associatedDataPrefix?.let { prefix: ByteArray -> aadStream.write(prefix) }
                     aadStream.write(indexBytes)
                     aadStream.write(if (candidateIsLast) 1 else 0)
                     cipher.updateAAD(aadStream.toByteArray())
