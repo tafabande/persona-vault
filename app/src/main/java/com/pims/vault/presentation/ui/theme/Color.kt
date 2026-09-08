@@ -34,5 +34,14 @@ val WarmLightTextTertiary = Color(0xFF9E978F)
 // --- Functional State Colors (Strictly for meaning, never decoration) ---
 val StateSuccess = Color(0xFF43A047) // Muted Forest Green
 val StateWarning = Color(0xFFE65100) // Amber / Muted Orange
-val StateError = Color(0xFFD32F2F)   // Muted Red
 val StateDisabled = Color(0xFF4A4642)
+
+// --- Compatibility Design System Aliases ---
+val PimsBackground = AmoledBackground
+val PimsSurface = AmoledSurface
+val PimsBorder = AmoledOutline
+val PimsError = StateError
+val PimsWarning = StateWarning
+val PimsTextPrimary = AmoledTextPrimary
+val PimsTextSecondary = AmoledTextSecondary
+

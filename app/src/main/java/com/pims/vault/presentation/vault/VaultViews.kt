@@ -1121,7 +1121,7 @@ private fun VaultEditorDialog(
                         Spacer(modifier = Modifier.height(8.dp))
                         PimsOutlinedTextField(
                             value = lastFour,
-                            onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) lastFour = it },
+                            onValueChange = { input: String -> if (input.length <= 4 && input.all { c: Char -> c.isDigit() }) lastFour = input },
                             label = "Last 4 Digits Only (NO CVV / Full PAN)",
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth()
@@ -1130,14 +1130,14 @@ private fun VaultEditorDialog(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             PimsOutlinedTextField(
                                 value = expiryMonth,
-                                onValueChange = { if (it.length <= 2) expiryMonth = it },
+                                onValueChange = { input: String -> if (input.length <= 2) expiryMonth = input },
                                 label = "MM",
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1f)
                             )
                             PimsOutlinedTextField(
                                 value = expiryYear,
-                                onValueChange = { if (it.length <= 4) expiryYear = it },
+                                onValueChange = { input: String -> if (input.length <= 4) expiryYear = input },
                                 label = "YY",
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1f)
