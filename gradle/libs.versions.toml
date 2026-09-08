@@ -11,7 +11,7 @@ coreKtx = "1.13.1"
 lifecycleRuntimeKtx = "2.8.5"
 activityCompose = "1.9.2"
 activityKtx = "1.9.2"
-biometric = "1.2.0-alpha05"
+biometric = "1.4.0-alpha07"
 securityCrypto = "1.1.0-alpha06"
 
 # Jetpack Compose BOM
