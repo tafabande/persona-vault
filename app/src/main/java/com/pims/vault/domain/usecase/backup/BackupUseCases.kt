@@ -19,7 +19,7 @@ import javax.inject.Inject
  */
 
 class CreateBackupUseCase @Inject constructor(
-    private val cryptoEngine: BackupCryptoEngine = BackupCryptoEngine()
+    private val cryptoEngine: BackupCryptoEngine
 ) {
     fun execute(
         passphrase: CharArray,
@@ -157,7 +157,7 @@ class CreateBackupUseCase @Inject constructor(
 }
 
 class RestoreBackupUseCase @Inject constructor(
-    private val cryptoEngine: BackupCryptoEngine = BackupCryptoEngine()
+    private val cryptoEngine: BackupCryptoEngine
 ) {
     /**
      * Executes transactional staging restore with journal logging for crash/power-loss recovery.
