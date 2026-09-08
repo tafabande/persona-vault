@@ -19,20 +19,20 @@ jobs:
     steps:
       - name: Checkout Tagged Commit
         # actions/checkout@v4 (pinned to immutable commit SHA)
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
 
       - name: Set up JDK 17
         # actions/setup-java@v4 (pinned to immutable commit SHA)
-        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c
         with:
           java-version: '17'
           distribution: 'temurin'
 
       - name: Setup Gradle
         # gradle/actions/setup-gradle@v4 (pinned to immutable commit SHA)
-        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
 
       - name: Add Android Build Tools to PATH
         run: |
@@ -162,7 +162,7 @@ jobs:
 
       - name: Upload Release Artifacts & Provenance Package
         # actions/upload-artifact@v4 (pinned to immutable commit SHA)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: persona-release-${{ github.ref_name }}
           path: release-artifacts/
