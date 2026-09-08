@@ -52,7 +52,7 @@ class GetMedicalDossierUseCase @Inject constructor(
                     personId = it.personId,
                     allergen = it.title,
                     reaction = it.substanceOrDiagnosis,
-                    severity = if (it.severity == AllergySeverity.LIFE_THREATENING) MedicalSeverity.CRITICAL else MedicalSeverity.SEVERE,
+                    severity = if (it.severity == AllergySeverity.LIFE_THREATENING || it.severity == AllergySeverity.CRITICAL) MedicalSeverity.CRITICAL else MedicalSeverity.SEVERE,
                     isVerified = true,
                     notes = it.notes,
                     createdAt = it.createdAt
@@ -250,7 +250,8 @@ class SaveMedicalRecordUseCase @Inject constructor(
         severity: String? = null,
         bloodGroup: String? = null,
         isEmergencyCardEligible: Boolean = false,
-        isCritical: Boolean = false
+        isCritical: Boolean = false,
+        emergencyDirective: String? = null
     ): String {
         val id = UUID.randomUUID().toString()
         val allergySeverity = try {
@@ -258,6 +259,10 @@ class SaveMedicalRecordUseCase @Inject constructor(
         } catch (_: Exception) {
             AllergySeverity.MODERATE
         }
+        val noteParts = listOfNotNull(
+            bloodGroup?.let { "Blood Group: $it" },
+            emergencyDirective?.let { "Directive: $it" }
+        )
         val entity = MedicalRecordEntity(
             id = id,
             personId = personId,
@@ -266,7 +271,7 @@ class SaveMedicalRecordUseCase @Inject constructor(
             substanceOrDiagnosis = details,
             severity = allergySeverity,
             isEmergencyCardVisible = isEmergencyCardEligible,
-            notes = bloodGroup?.let { "Blood Group: $it" }
+            notes = if (noteParts.isNotEmpty()) noteParts.joinToString("; ") else null
         )
         medicalDao.insertOrUpdate(entity)
         auditLogger.recordEvent(

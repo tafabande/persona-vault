@@ -8,6 +8,7 @@ import com.pims.vault.data.local.dao.AuditLogDao
 import com.pims.vault.data.local.dao.VaultDao
 import com.pims.vault.data.local.entity.AuditLogEntity
 import com.pims.vault.data.local.entity.VaultItemEntity
+import com.pims.vault.core.model.VaultCategory
 import com.pims.vault.domain.model.SelectiveFieldSelection
 import com.pims.vault.domain.model.ShareDuration
 import com.pims.vault.domain.model.SharePolicy
@@ -141,7 +142,7 @@ class DisasterRecoveryAndClockTests {
 
         // Corrupt ciphertext byte
         val corruptedPayload = entity.encryptedPayload.clone()
-        corruptedPayload[corruptedPayload.size - 1] = (corruptedPayload.last() xor 0xFF.toByte())
+        corruptedPayload[corruptedPayload.size - 1] = (corruptedPayload.last().toInt() xor 0xFF).toByte()
         fakeVaultDao.insertOrUpdate(entity.copy(encryptedPayload = corruptedPayload))
 
         assertThrows(GeneralSecurityException::class.java) {

@@ -82,7 +82,8 @@ enum class AllergySeverity {
     MILD,
     MODERATE,
     SEVERE,
-    LIFE_THREATENING
+    LIFE_THREATENING,
+    CRITICAL
 }
 
 enum class VaultCategory {

@@ -32,7 +32,6 @@ import com.pims.vault.domain.model.SelectiveFieldSelection
 import com.pims.vault.domain.model.ShareDuration
 import com.pims.vault.domain.model.SharePolicy
 import com.pims.vault.domain.rules.RelationshipGraphRules
-import com.pims.vault.domain.usecase.document.CreateDocumentUseCase
 import com.pims.vault.domain.usecase.medical.SaveMedicalRecordUseCase
 import com.pims.vault.domain.usecase.profile.SavePersonProfileUseCase
 import com.pims.vault.domain.usecase.relationship.CreateRelationshipUseCase
@@ -50,6 +49,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -94,6 +94,12 @@ class FullLifecycleE2ETests {
             inMemoryPersons[person.id] = person
             return 1L
         }
+        override suspend fun insertAll(persons: List<PersonEntity>) {
+            persons.forEach { inMemoryPersons[it.id] = it }
+        }
+        override suspend fun update(person: PersonEntity) {
+            inMemoryPersons[person.id] = person
+        }
         override suspend fun deleteById(id: String) { inMemoryPersons.remove(id) }
     }
 
@@ -127,11 +133,11 @@ class FullLifecycleE2ETests {
     }
 
     private val fakeRelationshipDao = object : RelationshipDao {
-        override fun getRelationshipsForPersonFlow(personId: String): Flow<List<RelationshipEntity>> =
+        override fun getOutgoingRelationshipsFlow(personId: String): Flow<List<RelationshipEntity>> =
             flowOf(inMemoryRelations.values.filter { it.sourcePersonId == personId })
         override fun getRelationshipsWithPersonsFlow(personId: String) = flowOf(emptyList<com.pims.vault.data.local.relation.RelationshipWithTargetPerson>())
         override fun getPersonRelationshipGraphFlow(personId: String) = flowOf(null)
-        override suspend fun getAllRelationshipsForPerson(personId: String): List<RelationshipEntity> =
+        suspend fun getAllRelationshipsForPerson(personId: String): List<RelationshipEntity> =
             inMemoryRelations.values.filter { it.sourcePersonId == personId }
         override suspend fun insertOrUpdate(relationship: RelationshipEntity): Long {
             inMemoryRelations[relationship.id] = relationship
