@@ -86,7 +86,7 @@ class VaultAdversarialAttackTests {
         auditLogger = HardenedAuditLogger(fakeAuditDao, masterKey)
         savePasswordUseCase = SavePasswordUseCase(fakeVaultDao, cryptoEngine, auditLogger)
         readPasswordUseCase = ReadPasswordSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger)
-        saveTotpUseCase = SaveTotpUseCase(fakeVaultDao, cryptoEngine, auditLogger)
+        saveTotpUseCase = SaveTotpSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger)
         readTotpUseCase = ReadTotpSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger)
         saveRecoveryUseCase = SaveRecoveryCodesUseCase(fakeVaultDao, cryptoEngine, auditLogger)
         consumeRecoveryUseCase = ConsumeRecoveryCodeUseCase(fakeVaultDao, cryptoEngine, auditLogger)

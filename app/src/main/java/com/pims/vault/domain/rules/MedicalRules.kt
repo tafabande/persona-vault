@@ -117,4 +117,31 @@ object MedicalRules {
     fun validateAllergy(allergen: String) {
         if (allergen.isBlank()) throw MedicalValidationException("Allergen name cannot be blank")
     }
+
+    fun isEmergencyProjectionStale(lastVerifiedMs: Long, maxAgeDays: Int = 180): Boolean {
+        val maxAgeMs = maxAgeDays.toLong() * 24 * 60 * 60 * 1000L
+        return (System.currentTimeMillis() - lastVerifiedMs) > maxAgeMs
+    }
+
+    fun projectEmergencyCard(record: MedicalRecord): EmergencyCard = EmergencyCard(
+        bloodType = record.bloodType,
+        allergies = record.allergies,
+        notesSummary = record.emergencyNotes
+    )
 }
+
+data class MedicalRecord(
+    val id: String,
+    val profileId: String,
+    val bloodType: BloodType,
+    val allergies: List<String>,
+    val emergencyNotes: String,
+    val confidentialPsychiatricNotes: String,
+    val isEmergencyVisible: Boolean
+)
+
+data class EmergencyCard(
+    val bloodType: BloodType,
+    val allergies: List<String>,
+    val notesSummary: String
+)

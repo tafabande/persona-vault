@@ -237,3 +237,44 @@ class DiscontinueMedicationUseCase @Inject constructor(
         )
     }
 }
+
+class SaveMedicalRecordUseCase @Inject constructor(
+    private val medicalDao: MedicalDao,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(
+        personId: String,
+        recordType: MedicalRecordType,
+        title: String,
+        details: String? = null,
+        severity: String? = null,
+        bloodGroup: String? = null,
+        isEmergencyCardEligible: Boolean = false,
+        isCritical: Boolean = false
+    ): String {
+        val id = UUID.randomUUID().toString()
+        val allergySeverity = try {
+            severity?.let { AllergySeverity.valueOf(it.uppercase()) }
+        } catch (_: Exception) {
+            AllergySeverity.MODERATE
+        }
+        val entity = MedicalRecordEntity(
+            id = id,
+            personId = personId,
+            recordType = recordType,
+            title = title,
+            substanceOrDiagnosis = details,
+            severity = allergySeverity,
+            isEmergencyCardVisible = isEmergencyCardEligible,
+            notes = bloodGroup?.let { "Blood Group: $it" }
+        )
+        medicalDao.insertOrUpdate(entity)
+        auditLogger.recordEvent(
+            eventType = AuditEventType.CREATE,
+            entityType = "MedicalRecord",
+            entityId = id,
+            description = "Created medical record: $title"
+        )
+        return id
+    }
+}

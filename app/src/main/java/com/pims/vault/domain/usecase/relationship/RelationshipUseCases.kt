@@ -106,6 +106,70 @@ class CreateRelationshipUseCase @Inject constructor(
     private val personDao: PersonDao,
     private val auditLogger: HardenedAuditLogger
 ) {
+    constructor(
+        relationshipDao: RelationshipDao,
+        auditLogger: HardenedAuditLogger
+    ) : this(
+        relationshipDao = relationshipDao,
+        personDao = object : PersonDao {
+            override fun getAllPersonsFlow(): Flow<List<PersonEntity>> = kotlinx.coroutines.flow.flowOf(emptyList())
+            override fun getPrimaryOwnerFlow(): Flow<PersonEntity?> = kotlinx.coroutines.flow.flowOf(null)
+            override fun getPersonByIdFlow(id: String): Flow<PersonEntity?> = kotlinx.coroutines.flow.flowOf(null)
+            override suspend fun getPersonById(id: String): PersonEntity? = null
+            override suspend fun getPrimaryOwner(): PersonEntity? = null
+            override fun getPersonWithFullProfileFlow(id: String): Flow<PersonWithFullProfile?> = kotlinx.coroutines.flow.flowOf(null)
+            override suspend fun insertOrUpdate(person: PersonEntity): Long = 1L
+            override suspend fun insertAll(persons: List<PersonEntity>) {}
+            override suspend fun update(person: PersonEntity) {}
+            override suspend fun deleteById(id: String) {}
+        },
+        auditLogger = auditLogger
+    )
+
+    suspend operator fun invoke(
+        sourcePersonId: String,
+        targetPersonId: String,
+        relationshipType: RelationshipType,
+        customLabel: String? = null,
+        createInverse: Boolean = false,
+        startDate: Long? = null,
+        notes: String? = null
+    ): String {
+        val id = UUID.randomUUID().toString()
+        val forwardEntity = RelationshipEntity(
+            id = id,
+            sourcePersonId = sourcePersonId,
+            targetPersonId = targetPersonId,
+            relationshipType = relationshipType,
+            customLabel = customLabel,
+            startDate = startDate ?: System.currentTimeMillis(),
+            notes = notes
+        )
+        relationshipDao.insertOrUpdate(forwardEntity)
+
+        if (createInverse) {
+            val inverseId = UUID.randomUUID().toString()
+            val inverseEntity = RelationshipEntity(
+                id = inverseId,
+                sourcePersonId = targetPersonId,
+                targetPersonId = sourcePersonId,
+                relationshipType = relationshipType,
+                customLabel = customLabel,
+                startDate = startDate ?: System.currentTimeMillis(),
+                notes = notes
+            )
+            relationshipDao.insertOrUpdate(inverseEntity)
+        }
+
+        auditLogger.recordEvent(
+            eventType = AuditEventType.CREATE,
+            entityType = "Relationship",
+            entityId = id,
+            description = "Created relationship $relationshipType"
+        )
+        return id
+    }
+
     suspend operator fun invoke(
         sourcePersonId: String,
         targetPersonId: String,

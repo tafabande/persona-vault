@@ -39,6 +39,10 @@ object SharingRules {
         }
     }
 
+    fun isQrEnvelopeExpired(expiresAtMs: Long, currentClockMs: Long = System.currentTimeMillis()): Boolean {
+        return currentClockMs >= expiresAtMs
+    }
+
     /**
      * Validates nonce uniqueness against recently observed nonces to prevent replay attacks.
      */

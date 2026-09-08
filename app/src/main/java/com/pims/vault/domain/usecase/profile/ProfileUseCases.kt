@@ -223,3 +223,39 @@ class UpdateProfilePhotoUseCase @Inject constructor(
         )
     }
 }
+
+class SavePersonProfileUseCase @Inject constructor(
+    private val personDao: com.pims.vault.data.local.dao.PersonDao,
+    private val auditLogger: com.pims.vault.core.crypto.HardenedAuditLogger
+) {
+    suspend operator fun invoke(
+        firstName: String,
+        lastName: String,
+        preferredName: String? = null,
+        dateOfBirth: String? = null,
+        nationality: String? = null,
+        occupation: String? = null,
+        isPrimaryOwner: Boolean = true
+    ): String {
+        val id = UUID.randomUUID().toString()
+        val entity = PersonEntity(
+            id = id,
+            isPrimaryOwner = isPrimaryOwner,
+            firstName = firstName.trim(),
+            lastName = lastName.trim(),
+            preferredName = preferredName?.trim(),
+            dateOfBirth = dateOfBirth?.trim(),
+            nationality = nationality?.trim(),
+            occupation = occupation?.trim(),
+            updatedAt = System.currentTimeMillis()
+        )
+        personDao.insertOrUpdate(entity)
+        auditLogger.recordEvent(
+            eventType = com.pims.vault.core.model.AuditEventType.CREATE,
+            entityType = "Person",
+            entityId = id,
+            description = "Created person profile: $firstName $lastName"
+        )
+        return id
+    }
+}

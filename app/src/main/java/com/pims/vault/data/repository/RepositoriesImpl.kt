@@ -75,9 +75,13 @@ class PersonRepositoryImpl(
         )
     }
 
-    override suspend fun addContactMethod(contact: ContactMethodEntity) = contactDao.insertOrUpdate(contact)
+    override suspend fun addContactMethod(contact: ContactMethodEntity) {
+        contactDao.insertOrUpdate(contact)
+    }
     override suspend fun deleteContactMethod(contactId: String) = contactDao.deleteById(contactId)
-    override suspend fun addAddress(address: AddressEntity) = addressDao.insertOrUpdate(address)
+    override suspend fun addAddress(address: AddressEntity) {
+        addressDao.insertOrUpdate(address)
+    }
     override suspend fun deleteAddress(addressId: String) = addressDao.deleteById(addressId)
 }
 

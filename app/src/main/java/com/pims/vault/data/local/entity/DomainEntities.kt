@@ -182,7 +182,10 @@ data class MedicalRecordEntity(
 
     @ColumnInfo(name = "created_at")
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    val isEmergencyCardEligible: Boolean
+        get() = isEmergencyCardVisible
+}
 
 @Entity(
     tableName = "education_records",

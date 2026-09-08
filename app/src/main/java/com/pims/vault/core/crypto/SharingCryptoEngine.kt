@@ -75,12 +75,39 @@ data class EncryptedShareEnvelope(
  * Mode A: One-Way Authenticated Key Encapsulation (Visual QR)
  * Mode B: Two-Way Authenticated Ephemeral Key Agreement (Pairing Handshake)
  */
+data class X25519KeyPair(val publicKey: ByteArray, val privateKey: ByteArray) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as X25519KeyPair
+        if (!publicKey.contentEquals(other.publicKey)) return false
+        if (!privateKey.contentEquals(other.privateKey)) return false
+        return true
+    }
+    override fun hashCode(): Int {
+        var result = publicKey.contentHashCode()
+        result = 31 * result + privateKey.contentHashCode()
+        return result
+    }
+}
+
+fun SharingCryptoEngine(): SharingCryptoEngine = SharingCryptoEngine
+
 object SharingCryptoEngine {
 
     const val DOMAIN_SHARING_V1 = "PIMS/sharing/v1"
     const val DOMAIN_PAIRING_V1 = "PIMS/pairing/v1"
 
     private val secureRandom = SecureRandom()
+
+    fun generateX25519KeyPair(): X25519KeyPair {
+        val kp = generateEphemeralKeypair()
+        return X25519KeyPair(publicKey = kp.publicKeyBytes, privateKey = kp.privateKeyBytes)
+    }
+
+    fun computeX25519SharedSecret(privateKey: ByteArray, publicKey: ByteArray): ByteArray {
+        return computeSharedSecret(privateKey, publicKey)
+    }
 
     fun generateEphemeralKeypair(): EphemeralKeypair {
         return try {

@@ -84,3 +84,55 @@ interface CryptoEngine {
 
 class CryptoIntegrityException(message: String, cause: Throwable? = null) : SecurityException(message, cause)
 class PathTraversalException(message: String) : SecurityException(message)
+
+/**
+ * Legacy container for AES-GCM ciphertext, IV, tag, and keyVersion.
+ */
+data class CryptoBox(
+    var ciphertext: ByteArray,
+    val iv: ByteArray,
+    val authTag: ByteArray = ByteArray(0),
+    val keyVersion: Long = 1L
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as CryptoBox
+        if (!ciphertext.contentEquals(other.ciphertext)) return false
+        if (!iv.contentEquals(other.iv)) return false
+        if (!authTag.contentEquals(other.authTag)) return false
+        if (keyVersion != other.keyVersion) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = ciphertext.contentHashCode()
+        result = 31 * result + iv.contentHashCode()
+        result = 31 * result + authTag.contentHashCode()
+        result = 31 * result + keyVersion.hashCode()
+        return result
+    }
+}
+
+fun CryptoEngine(): CryptoEngine = HardenedCryptoEngine()
+
+fun CryptoEngine.encryptAesGcm(
+    plaintext: ByteArray,
+    keyBytes: ByteArray,
+    associatedData: ByteArray? = null
+): CryptoBox {
+    val payload = encrypt(plaintext, keyBytes, associatedData)
+    return CryptoBox(
+        ciphertext = payload.combinedCiphertextWithTag,
+        iv = payload.iv
+    )
+}
+
+fun CryptoEngine.decryptAesGcm(
+    box: CryptoBox,
+    keyBytes: ByteArray,
+    associatedData: ByteArray? = null
+): ByteArray {
+    val payload = EncryptedPayload(box.ciphertext, box.iv)
+    return decrypt(payload, keyBytes, associatedData)
+}

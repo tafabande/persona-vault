@@ -67,6 +67,18 @@ object VaultRules {
         return formatted.toByteArray(Charsets.UTF_8)
     }
 
+    fun computeCanonicalAad(profileId: String, itemId: String, version: Long = 1L): ByteArray =
+        constructItemAad(itemId, VaultCategory.PASSWORD, version)
+
+    fun validateVersionSequence(currentVersion: Long, incomingVersion: Long): Boolean =
+        incomingVersion > currentVersion
+
+    fun shouldWipeClipboard(currentClipboardContentHash: String, expectedPersonaHash: String): Boolean =
+        currentClipboardContentHash == expectedPersonaHash
+
+    fun sanitizePaymentCardNumber(rawInput: String): String =
+        rawInput.replace(" ", "").takeLast(4)
+
     /**
      * Enforces explicit anti-replay semantics and version monotonicity:
      * incomingVersion MUST be strictly greater than currentVersion.

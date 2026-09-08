@@ -3,7 +3,11 @@ package com.pims.vault.integration
 import com.pims.vault.core.crypto.CryptoBox
 import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.crypto.SharingCryptoEngine
+import com.pims.vault.core.crypto.encryptAesGcm
+import com.pims.vault.core.crypto.decryptAesGcm
 import com.pims.vault.domain.model.*
+import com.pims.vault.domain.rules.EmergencyCard
+import com.pims.vault.domain.rules.MedicalRecord
 import com.pims.vault.domain.rules.MedicalRules
 import com.pims.vault.domain.rules.SharingRules
 import com.pims.vault.domain.rules.VaultRules
