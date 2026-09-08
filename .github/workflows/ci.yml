@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Checkout Source Code
         # actions/checkout@v4.1.7 (pinned to immutable commit SHA)
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Set up JDK 17
         # actions/setup-java@v4.2.2 (pinned to immutable commit SHA)
