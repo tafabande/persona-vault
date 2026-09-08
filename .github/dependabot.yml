@@ -4,16 +4,35 @@ updates:
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
+      interval: "weekly"
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "security-review"
+    groups:
+      android-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # Major toolchain upgrades that require coordinated SDK / AGP migrations
+      - dependency-name: "com.android.application"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "androidx.navigation:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "org.jetbrains.kotlin*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "com.google.devtools.ksp"
+        update-types: ["version-update:semver-major"]
 
   # Maintain GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 5
     labels:
       - "ci-cd"
+    groups:
+      actions-dependencies:
+        patterns:
+          - "*"

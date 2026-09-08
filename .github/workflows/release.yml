@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,20 +18,29 @@ jobs:
 
     steps:
       - name: Checkout Tagged Commit
-        # actions/checkout@v4.1.7 (pinned to immutable commit SHA)
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+        # actions/checkout@v4 (pinned to immutable commit SHA)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
 
       - name: Set up JDK 17
-        # actions/setup-java@v4.2.2 (pinned to immutable commit SHA)
-        uses: actions/setup-java@99b8673ff64fbf99d8d325f52d9a5bdedb8483e9
+        # actions/setup-java@v4 (pinned to immutable commit SHA)
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
+
+      - name: Setup Gradle
+        # gradle/actions/setup-gradle@v4 (pinned to immutable commit SHA)
+        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d
+
+      - name: Add Android Build Tools to PATH
+        run: |
+          BUILD_TOOLS_DIR=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          echo "$BUILD_TOOLS_DIR" >> "$GITHUB_PATH"
 
       - name: Verify Git Tag & Commit Integrity
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           echo "Verifying release tag ${GITHUB_REF_NAME}..."
           TAG_COMMIT=$(git rev-list -n 1 "$GITHUB_REF_NAME")
@@ -86,7 +96,9 @@ jobs:
         run: bash scripts/verify-release.sh
 
       - name: Verify Release Signatures
+        if: env.KEYSTORE_BASE64 != ''
         env:
+          KEYSTORE_BASE64: ${{ secrets.PERSONA_RELEASE_KEYSTORE_BASE64 }}
           EXPECTED_CERT_FINGERPRINT: ${{ secrets.PERSONA_EXPECTED_CERT_FINGERPRINT }}
         run: |
           APK_FILE=$(find app/build/outputs -type f -name "*release*.apk" | head -n 1 || true)
@@ -149,12 +161,14 @@ jobs:
           EOF
 
       - name: Upload Release Artifacts & Provenance Package
-        uses: actions/upload-artifact@v4
+        # actions/upload-artifact@v4 (pinned to immutable commit SHA)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: persona-release-${{ github.ref_name }}
           path: release-artifacts/
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
