@@ -12,12 +12,13 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import javax.inject.Inject
 
 /**
  * Milestone 8.1 — Backup & Disaster Recovery Use Cases with Journaling and Crash Recovery.
  */
 
-class CreateBackupUseCase(
+class CreateBackupUseCase @Inject constructor(
     private val cryptoEngine: BackupCryptoEngine = BackupCryptoEngine()
 ) {
     fun execute(
@@ -155,7 +156,7 @@ class CreateBackupUseCase(
     }
 }
 
-class RestoreBackupUseCase(
+class RestoreBackupUseCase @Inject constructor(
     private val cryptoEngine: BackupCryptoEngine = BackupCryptoEngine()
 ) {
     /**

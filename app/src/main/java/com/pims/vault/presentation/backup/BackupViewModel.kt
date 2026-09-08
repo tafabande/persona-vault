@@ -23,8 +23,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class BackupViewModel @Inject constructor(
-    private val createBackupUseCase: CreateBackupUseCase = CreateBackupUseCase(),
-    private val restoreBackupUseCase: RestoreBackupUseCase = RestoreBackupUseCase()
+    private val createBackupUseCase: CreateBackupUseCase,
+    private val restoreBackupUseCase: RestoreBackupUseCase
 ) : ViewModel() {
 
     private val _progressState = MutableStateFlow<BackupProgressState>(BackupProgressState.Idle)

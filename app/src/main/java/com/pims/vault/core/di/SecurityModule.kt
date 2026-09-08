@@ -1,6 +1,7 @@
 package com.pims.vault.core.di
 
 import android.content.Context
+import com.pims.vault.core.crypto.BackupCryptoEngine
 import com.pims.vault.core.crypto.BiometricSessionManager
 import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.crypto.HardenedAuditLogger
@@ -61,5 +62,11 @@ object SecurityModule {
             cryptoEngine = cryptoEngine,
             keyProvider = { sessionManager.getFileStorageKey() }
         )
+    }
+
+    @Provides
+    @Singleton
+    fun provideBackupCryptoEngine(): BackupCryptoEngine {
+        return BackupCryptoEngine()
     }
 }
