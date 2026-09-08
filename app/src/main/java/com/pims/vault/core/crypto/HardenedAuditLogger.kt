@@ -24,9 +24,22 @@ data class AuditVerificationResult(
 class HardenedAuditLogger(
     private val auditDao: AuditDao,
     private val cryptoEngine: CryptoEngine,
-    private val sessionManager: BiometricSessionManager,
-    private val genesisHash: String = "PIMS_GENESIS_ROOT_HASH_V1"
+    private val sessionManager: BiometricSessionManager? = null,
+    private val genesisHash: String = "PIMS_GENESIS_ROOT_HASH_V1",
+    private val explicitAuditKey: ByteArray? = null
 ) {
+    constructor(
+        auditDao: AuditDao,
+        auditKey: ByteArray,
+        cryptoEngine: CryptoEngine = HardenedCryptoEngine()
+    ) : this(
+        auditDao = auditDao,
+        cryptoEngine = cryptoEngine,
+        sessionManager = null,
+        genesisHash = "PIMS_GENESIS_ROOT_HASH_V1",
+        explicitAuditKey = auditKey
+    )
+
     private val writeMutex = Mutex()
 
     fun getRecentEventsFlow(limit: Int = 100): Flow<List<AuditEventEntity>> =
@@ -46,12 +59,11 @@ class HardenedAuditLogger(
             val timestamp = System.currentTimeMillis()
             val id = UUID.randomUUID().toString()
 
-            val auditKey = try {
-                sessionManager.getAuditKey()
+            val auditKey = explicitAuditKey ?: try {
+                sessionManager?.getAuditKey()
             } catch (e: Exception) {
-                // If recording a pre-auth event, use fallback root derivation
-                cryptoEngine.generateRandomBytes(32)
-            }
+                null
+            } ?: cryptoEngine.generateRandomBytes(32)
 
             val payloadToSign = buildEventPayload(
                 seq = nextSequenceNumber,
@@ -100,15 +112,15 @@ class HardenedAuditLogger(
             return@withContext AuditVerificationResult(isValid = true, totalEventsVerified = 0)
         }
 
-        val auditKey = try {
-            sessionManager.getAuditKey()
+        val auditKey = explicitAuditKey ?: try {
+            sessionManager?.getAuditKey()
         } catch (e: Exception) {
-            return@withContext AuditVerificationResult(
-                isValid = false,
-                totalEventsVerified = 0,
-                failureReason = "Cannot verify audit trail: vault session is locked"
-            )
-        }
+            null
+        } ?: return@withContext AuditVerificationResult(
+            isValid = false,
+            totalEventsVerified = 0,
+            failureReason = "Cannot verify audit trail: vault session is locked"
+        )
 
         var expectedPrevHash = genesisHash
         var expectedSeq = 1L

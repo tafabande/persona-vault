@@ -38,7 +38,7 @@ interface PersonDao {
     fun getPersonWithFullProfileFlow(id: String): Flow<PersonWithFullProfile?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(person: PersonEntity)
+    suspend fun insertOrUpdate(person: PersonEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(persons: List<PersonEntity>)
@@ -46,11 +46,10 @@ interface PersonDao {
     @Update
     suspend fun update(person: PersonEntity)
 
-    @Delete
-    suspend fun delete(person: PersonEntity)
-
     @Query("DELETE FROM persons WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    suspend fun delete(person: PersonEntity) = deleteById(person.id)
 }
 
 @Dao
@@ -59,16 +58,15 @@ interface ContactDao {
     fun getContactsForPersonFlow(personId: String): Flow<List<ContactMethodEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(contact: ContactMethodEntity)
+    suspend fun insertOrUpdate(contact: ContactMethodEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(contacts: List<ContactMethodEntity>)
 
-    @Delete
-    suspend fun delete(contact: ContactMethodEntity)
-
     @Query("DELETE FROM contact_methods WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    suspend fun delete(contact: ContactMethodEntity) = deleteById(contact.id)
 }
 
 @Dao
@@ -77,13 +75,12 @@ interface AddressDao {
     fun getAddressesForPersonFlow(personId: String): Flow<List<AddressEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(address: AddressEntity)
-
-    @Delete
-    suspend fun delete(address: AddressEntity)
+    suspend fun insertOrUpdate(address: AddressEntity): Long
 
     @Query("DELETE FROM addresses WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    suspend fun delete(address: AddressEntity) = deleteById(address.id)
 }
 
 @Dao
@@ -100,13 +97,12 @@ interface RelationshipDao {
     fun getPersonRelationshipGraphFlow(personId: String): Flow<PersonRelationshipGraph?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(relationship: RelationshipEntity)
-
-    @Delete
-    suspend fun delete(relationship: RelationshipEntity)
+    suspend fun insertOrUpdate(relationship: RelationshipEntity): Long
 
     @Query("DELETE FROM relationships WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    suspend fun delete(relationship: RelationshipEntity) = deleteById(relationship.id)
 
     @Query("DELETE FROM relationships WHERE (source_person_id = :p1 AND target_person_id = :p2) OR (source_person_id = :p2 AND target_person_id = :p1)")
     suspend fun deleteBetweenPersons(p1: String, p2: String)

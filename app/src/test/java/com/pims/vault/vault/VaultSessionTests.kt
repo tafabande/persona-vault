@@ -57,6 +57,8 @@ class VaultSessionTests {
         override suspend fun getVaultItemById(id: String): VaultItemEntity? = items[id]
         override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> =
             flowOf(items.values.filter { it.personId == personId })
+        override fun getVaultItemsByCategoryFlow(personId: String, category: VaultCategory): Flow<List<VaultItemEntity>> =
+            flowOf(items.values.filter { it.personId == personId && it.category == category })
         override suspend fun deleteVaultItem(id: String) { items.remove(id) }
     }
 

@@ -52,6 +52,8 @@ class CrossZoneIsolationAttackTests {
         override suspend fun getVaultItemById(id: String): VaultItemEntity? = inMemoryItems[id]
         override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> =
             flowOf(inMemoryItems.values.filter { it.personId == personId })
+        override fun getVaultItemsByCategoryFlow(personId: String, category: VaultCategory): Flow<List<VaultItemEntity>> =
+            flowOf(inMemoryItems.values.filter { it.personId == personId && it.category == category })
         override suspend fun deleteVaultItem(id: String) { inMemoryItems.remove(id) }
     }
 

@@ -105,6 +105,8 @@ class FullLifecycleE2ETests {
         override suspend fun getVaultItemById(id: String): VaultItemEntity? = inMemoryVault[id]
         override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> =
             flowOf(inMemoryVault.values.filter { it.personId == personId })
+        override fun getVaultItemsByCategoryFlow(personId: String, category: VaultCategory): Flow<List<VaultItemEntity>> =
+            flowOf(inMemoryVault.values.filter { it.personId == personId && it.category == category })
         override suspend fun deleteVaultItem(id: String) { inMemoryVault.remove(id) }
     }
 

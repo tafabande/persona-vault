@@ -75,13 +75,12 @@ interface MedicalDao {
     suspend fun getEmergencyCardRecords(personId: String): List<MedicalRecordEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(record: MedicalRecordEntity)
-
-    @Delete
-    suspend fun delete(record: MedicalRecordEntity)
+    suspend fun insertOrUpdate(record: MedicalRecordEntity): Long
 
     @Query("DELETE FROM medical_records WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    suspend fun delete(record: MedicalRecordEntity) = deleteById(record.id)
 }
 
 @Dao
@@ -90,13 +89,12 @@ interface EducationDao {
     fun getEducationRecordsFlow(personId: String): Flow<List<EducationRecordEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(record: EducationRecordEntity)
-
-    @Delete
-    suspend fun delete(record: EducationRecordEntity)
+    suspend fun insertOrUpdate(record: EducationRecordEntity): Long
 
     @Query("DELETE FROM education_records WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    suspend fun delete(record: EducationRecordEntity) = deleteById(record.id)
 }
 
 @Dao
@@ -105,13 +103,12 @@ interface EmploymentDao {
     fun getEmploymentRecordsFlow(personId: String): Flow<List<EmploymentRecordEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(record: EmploymentRecordEntity)
-
-    @Delete
-    suspend fun delete(record: EmploymentRecordEntity)
+    suspend fun insertOrUpdate(record: EmploymentRecordEntity): Long
 
     @Query("DELETE FROM employment_records WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    suspend fun delete(record: EmploymentRecordEntity) = deleteById(record.id)
 }
 
 @Dao
@@ -120,13 +117,12 @@ interface SocialAccountDao {
     fun getSocialAccountsFlow(personId: String): Flow<List<SocialAccountEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(account: SocialAccountEntity)
-
-    @Delete
-    suspend fun delete(account: SocialAccountEntity)
+    suspend fun insertOrUpdate(account: SocialAccountEntity): Long
 
     @Query("DELETE FROM social_accounts WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    suspend fun delete(account: SocialAccountEntity) = deleteById(account.id)
 }
 
 @Dao
@@ -141,15 +137,14 @@ interface VaultDao {
     suspend fun getVaultItemById(id: String): VaultItemEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(item: VaultItemEntity)
-
-    @Delete
-    suspend fun delete(item: VaultItemEntity)
+    suspend fun insertOrUpdate(item: VaultItemEntity): Long
 
     @Query("DELETE FROM vault_items WHERE id = :id")
-    suspend fun deleteById(id: String)
+    suspend fun deleteVaultItem(id: String)
 
-    suspend fun deleteVaultItem(id: String) = deleteById(id)
+    suspend fun deleteById(id: String) = deleteVaultItem(id)
+
+    suspend fun delete(item: VaultItemEntity) = deleteVaultItem(item.id)
 }
 
 @Dao
