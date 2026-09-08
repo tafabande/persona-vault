@@ -244,12 +244,7 @@ fun VaultDashboardView(
                 // Locked Screen State requiring Biometric Elevation
                 VaultLockedStateView(
                     onUnlockClick = {
-                        // If biometric prompt callback exists, invoke it; otherwise unlock with dummy test key
-                        if (onRequireBiometricReauth != null) {
-                            onRequireBiometricReauth()
-                        } else {
-                            viewModel.unlockVault(ByteArray(32) { 0x42 })
-                        }
+                        onRequireBiometricReauth?.invoke()
                     }
                 )
             } else {

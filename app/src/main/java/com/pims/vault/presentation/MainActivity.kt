@@ -5,6 +5,7 @@ import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.biometric.BiometricPrompt
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +30,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +50,7 @@ import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.PimsVaultTheme
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -88,20 +94,36 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             PimsVaultTheme {
-                val sessionState by viewModel.sessionState.collectAsState()
+                var showSplash by remember { mutableStateOf(true) }
 
-                when (val state = sessionState) {
-                    is SessionState.Locked -> {
-                        LockScreen(onUnlockClicked = { showBiometricPrompt() })
-                    }
-                    is SessionState.Authenticating -> {
-                        AuthenticatingScreen()
-                    }
-                    is SessionState.Unlocked -> {
-                        PersonaDashboardScreen(
-                            securityLevel = state.securityLevel,
-                            onLockClicked = { viewModel.lock() }
-                        )
+                LaunchedEffect(Unit) {
+                    delay(1200L)
+                    showSplash = false
+                }
+
+                Crossfade(
+                    targetState = showSplash,
+                    label = "startup"
+                ) { splashVisible ->
+                    if (splashVisible) {
+                        PimsVaultSplashScreen()
+                    } else {
+                        val sessionState by viewModel.sessionState.collectAsState()
+
+                        when (val state = sessionState) {
+                            is SessionState.Locked -> {
+                                LockScreen(onUnlockClicked = { showBiometricPrompt() })
+                            }
+                            is SessionState.Authenticating -> {
+                                AuthenticatingScreen()
+                            }
+                            is SessionState.Unlocked -> {
+                                PersonaDashboardScreen(
+                                    securityLevel = state.securityLevel,
+                                    onLockClicked = { viewModel.lock() }
+                                )
+                            }
+                        }
                     }
                 }
             }

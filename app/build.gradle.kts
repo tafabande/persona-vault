@@ -21,13 +21,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        // Room Schema Location
-        ksp {
-            arg("room.schemaLocation", "$projectDir/schemas")
-            arg("room.incremental", "true")
-            arg("room.expandProjection", "true")
-        }
     }
 
     buildTypes {
@@ -47,7 +40,6 @@ android {
             )
             buildConfigField("Boolean", "IS_DEBUG_CRYPTO_ALLOWED", "false")
             buildConfigField("Boolean", "ENABLE_STRICT_SECURITY_LOGS", "false")
-            signingConfig = signingConfigs.getByName("debug") // Replace with production keystore in CI
         }
     }
 
@@ -76,12 +68,21 @@ android {
     }
 }
 
+ksp {
+    // Room schema export for migration verification and release auditing
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.incremental", "true")
+    arg("room.expandProjection", "true")
+}
+
 dependencies {
     // Core & Lifecycle
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.activity.ktx)
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.security.crypto)
 

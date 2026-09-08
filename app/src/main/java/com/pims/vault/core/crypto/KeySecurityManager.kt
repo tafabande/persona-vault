@@ -107,8 +107,18 @@ class KeySecurityManager(
     }
 
     private fun generateSoftwareFallbackKey(alias: String) {
-        val keyGenerator = KeyGenerator.getInstance("AES")
-        keyGenerator.init(256)
+        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, keyStoreProvider)
+        val specBuilder = KeyGenParameterSpec.Builder(
+            alias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .setRandomizedEncryptionRequired(true)
+
+        keyGenerator.init(specBuilder.build())
+        keyGenerator.generateKey()
     }
 
     private fun detectSecurityLevel(alias: String): KeySecurityLevel {
@@ -155,6 +165,9 @@ class KeySecurityManager(
      */
     fun deriveDomainSubkey(domainContext: String, isZone4: Boolean = false): SecretBytes {
         val targetAlias = if (isZone4) zone4KeyAlias else rootKeyAlias
+        if (!keyStore.containsAlias(targetAlias)) {
+            initializeAndGetSecurityLevel()
+        }
         val masterKey = keyStore.getKey(targetAlias, null) as? SecretKey
             ?: throw IllegalStateException("Master Key '$targetAlias' not found in Android Keystore")
 

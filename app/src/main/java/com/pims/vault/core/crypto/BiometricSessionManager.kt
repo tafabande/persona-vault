@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.security.SecureRandom
 
 sealed interface SessionState {
     object Locked : SessionState
@@ -46,6 +47,7 @@ class BiometricSessionManager(
     private var fileStorageKey: SecretBytes? = null
     private var auditKey: SecretBytes? = null
     private var zone4VaultMasterKey: SecretBytes? = null
+    private val secureRandom = SecureRandom()
 
     /**
      * Unlocks the main application session (Zones 0–3).
@@ -56,11 +58,11 @@ class BiometricSessionManager(
         val securityLevel = keySecurityManager?.initializeAndGetSecurityLevel() ?: KeySecurityLevel.SOFTWARE_FALLBACK
 
         databaseKey = keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_DATABASE)
-            ?: SecretBytes(ByteArray(32) { 0x01 })
+            ?: generateFallbackKey()
         fileStorageKey = keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
-            ?: SecretBytes(ByteArray(32) { 0x02 })
+            ?: generateFallbackKey()
         auditKey = keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_AUDIT)
-            ?: SecretBytes(ByteArray(32) { 0x03 })
+            ?: generateFallbackKey()
 
         appTimeoutMs = timeoutMs
         val now = System.currentTimeMillis()
@@ -91,7 +93,7 @@ class BiometricSessionManager(
         val derivedKey = if (keySecurityManager != null) {
             keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_VAULT, isZone4 = true)
         } else {
-            SecretBytes(ByteArray(32) { 0x42 })
+            generateFallbackKey()
         }
         zone4VaultMasterKey = derivedKey
 
@@ -192,5 +194,11 @@ class BiometricSessionManager(
     fun isZone4Unlocked(): Boolean {
         val state = _sessionState.value
         return state is SessionState.Unlocked && state.isZone4Elevated && zone4VaultMasterKey != null
+    }
+
+    private fun generateFallbackKey(): SecretBytes {
+        val bytes = ByteArray(32)
+        secureRandom.nextBytes(bytes)
+        return SecretBytes(bytes)
     }
 }

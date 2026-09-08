@@ -76,7 +76,7 @@ class BackupCryptoEngine(
      */
     fun deriveMasterKey(passphrase: CharArray, salt: ByteArray): ByteArray {
         require(salt.size >= SALT_LENGTH_BYTES) { "Salt must be at least $SALT_LENGTH_BYTES bytes" }
-        val spec = PBEKeySpec(passphrase, salt, KDF_ITERATIONS, 256)
+        val spec = PBEKeySpec(passphrase, salt, KDF_ITERATIONS_FALLBACK, 256)
         val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
         return factory.generateSecret(spec).encoded
     }

@@ -52,7 +52,26 @@ fi
 
 # 3. Verify BuildConfig release hardening flags
 echo "Verifying build configuration flags..."
-if grep -rn 'buildConfigField("Boolean", "IS_DEBUG_CRYPTO_ALLOWED", "true")' app/build.gradle.kts | grep -A 5 'release {'; then
+if ! awk '
+    BEGIN { in_release = 0; depth = 0; insecure = 0 }
+    /release[[:space:]]*\{/ {
+        in_release = 1
+        depth = 1
+        next
+    }
+    in_release {
+        open = gsub(/\{/, "{")
+        close = gsub(/\}/, "}")
+        depth += open - close
+        if ($0 ~ /buildConfigField\("Boolean", "IS_DEBUG_CRYPTO_ALLOWED", "true"\)/) {
+            insecure = 1
+        }
+        if (depth <= 0) {
+            exit insecure ? 1 : 0
+        }
+    }
+    END { exit insecure ? 1 : 0 }
+' app/build.gradle.kts; then
     echo "CRITICAL ERROR: IS_DEBUG_CRYPTO_ALLOWED is enabled in release build type!"
     exit 1
 fi

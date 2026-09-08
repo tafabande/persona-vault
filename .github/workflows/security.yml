@@ -31,28 +31,28 @@ jobs:
         run: bash scripts/security-check.sh
 
       - name: Execute RFC 6238 TOTP Test Vectors
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.vault.TotpRfc6238Tests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.vault.TotpRfc6238Tests"
 
       - name: Execute Zone 4 15 Adversarial Attack Tests
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.vault.VaultAdversarialAttackTests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.vault.VaultAdversarialAttackTests"
 
       - name: Execute Sharing Protocol & Replay Tests
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.sharing.SharingProtocolTests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.sharing.SharingProtocolTests"
 
       - name: Execute Cross-Zone Isolation Tests
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.integration.CrossZoneIsolationAttackTests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.integration.CrossZoneIsolationAttackTests"
 
       - name: Execute Full Lifecycle Journey Integration Tests
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.integration.FullLifecycleE2ETests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.integration.FullLifecycleE2ETests"
 
       - name: Execute Disaster Recovery & Clock Manipulation Tests
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.integration.DisasterRecoveryAndClockTests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.integration.DisasterRecoveryAndClockTests"
 
       - name: Execute Room Schema Migration Tests
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.data.local.RoomMigrationTests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.data.local.RoomMigrationTests"
 
       - name: Execute Milestone 8 Backup & Disaster Recovery Adversarial Tests
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.backup.BackupAdversarialTests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.backup.BackupAdversarialTests"
 
       - name: Execute Milestone 8-RC Destructive Recovery & Crash Transition Tests
-        run: ./gradlew testDebugUnitTest --tests "com.pims.vault.backup.M8RCDestructiveRecoveryTests"
+        run: bash gradlew testDebugUnitTest --tests "com.pims.vault.backup.M8RCDestructiveRecoveryTests"

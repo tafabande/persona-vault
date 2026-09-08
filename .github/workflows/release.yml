@@ -6,7 +6,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -44,10 +44,10 @@ jobs:
       - name: Execute Full Pre-Release Security Checks
         run: |
           bash scripts/security-check.sh
-          ./gradlew testDebugUnitTest
+          bash gradlew testDebugUnitTest
 
       - name: Assemble Release Artifacts (AAB & APK)
-        run: ./gradlew bundleRelease assembleRelease
+        run: bash gradlew bundleRelease assembleRelease
 
       - name: Sign Release Artifacts
         env:
@@ -153,3 +153,11 @@ jobs:
         with:
           name: persona-release-${{ github.ref_name }}
           path: release-artifacts/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release-artifacts/* \
+            --title "Persona ${GITHUB_REF_NAME}" \
+            --notes "Automated release for ${GITHUB_REF_NAME} (${GITHUB_SHA})."

@@ -4,6 +4,8 @@ import android.content.Context
 import com.pims.vault.core.crypto.BiometricSessionManager
 import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.crypto.HardenedAuditLogger
+import com.pims.vault.core.crypto.HkdfKeyDerivation
+import com.pims.vault.core.crypto.KeySecurityManager
 import com.pims.vault.core.storage.FileStorageService
 import com.pims.vault.data.local.dao.AddressDao
 import com.pims.vault.data.local.dao.AuditDao
@@ -45,10 +47,12 @@ object DatabaseModule {
     @Singleton
     fun providePimsDatabase(
         @ApplicationContext context: Context,
-        sessionManager: BiometricSessionManager
+        keySecurityManager: KeySecurityManager
     ): PimsDatabase {
-        // Open helper factory with SQLCipher encrypted SQLite support
-        val sqlCipherFactory = SupportFactory("PIMS_VAULT_SQLCIPHER_PASSPHRASE".toByteArray(Charsets.UTF_8))
+        // Derive the SQLCipher key from the app keystore instead of baking secrets into source.
+        val dbKey = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_DATABASE)
+        val sqlCipherFactory = SupportFactory(dbKey.copyBytes())
+        dbKey.close()
         return PimsDatabase.buildDatabase(
             context = context,
             openHelperFactory = sqlCipherFactory

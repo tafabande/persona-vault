@@ -80,7 +80,7 @@ abstract class PimsDatabase : RoomDatabase() {
                 context.applicationContext,
                 PimsDatabase::class.java,
                 databaseName
-            ).fallbackToDestructiveMigration()
+            )
 
             if (openHelperFactory != null) {
                 builder.openHelperFactory(openHelperFactory)

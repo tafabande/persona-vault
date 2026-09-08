@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.security.MessageDigest
 import javax.inject.Inject
 
 data class SharingUiState(
@@ -45,8 +46,6 @@ class SharingViewModel @Inject constructor(
     val uiState: StateFlow<SharingUiState> = _uiState.asStateFlow()
 
     private var countdownJob: Job? = null
-    private val senderIdentityKey = ByteArray(32) { 0x77 }
-    private val senderFingerprint = "SHA256:77a1b2c3d4e5f6..."
 
     fun toggleField(fieldName: String) {
         _uiState.update { state ->
@@ -83,6 +82,8 @@ class SharingViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isGeneratingQr = true, errorMessage = null) }
             try {
+                val senderIdentityKey = sessionManager.getZone4VaultKey()
+                val senderFingerprint = fingerprintFor(senderIdentityKey)
                 val envelope = createSharePackageUseCase(
                     senderIdentityKey = senderIdentityKey,
                     senderIdentityFingerprint = senderFingerprint,
@@ -92,6 +93,7 @@ class SharingViewModel @Inject constructor(
                     selection = _uiState.value.fieldSelection,
                     policy = _uiState.value.policy
                 )
+                senderIdentityKey.fill(0)
 
                 val qrString = serializeEnvelopeForQr(envelope)
                 val totalSeconds = (_uiState.value.policy.duration.durationMs / 1000).toInt()
@@ -166,6 +168,12 @@ class SharingViewModel @Inject constructor(
 
     private fun serializeEnvelopeForQr(env: EncryptedShareEnvelope): String {
         return "PIMS1;${env.ephemeralPublicKeyBase64};${env.expiryTimestampMs};${env.nonceHex};${env.ciphertextBase64};${env.senderIdentityFingerprint};${env.senderSignatureBase64}"
+    }
+
+    private fun fingerprintFor(keyBytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(keyBytes)
+        val hex = digest.joinToString("") { "%02x".format(it) }
+        return "SHA256:$hex"
     }
 
     private fun parseQrEnvelope(payload: String): EncryptedShareEnvelope {
