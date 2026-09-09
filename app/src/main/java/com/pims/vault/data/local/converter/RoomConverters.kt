@@ -92,4 +92,18 @@ class RoomConverters {
     @TypeConverter
     fun toAuditEventType(value: String?): AuditEventType? =
         safeValueOf(value, fallback = AuditEventType.UPDATE)
+
+    @TypeConverter
+    fun fromSyncAction(value: com.pims.vault.data.local.entity.SyncAction?): String? = value?.name
+
+    @TypeConverter
+    fun toSyncAction(value: String?): com.pims.vault.data.local.entity.SyncAction? =
+        safeValueOf(value, fallback = com.pims.vault.data.local.entity.SyncAction.UPDATE)
+
+    @TypeConverter
+    fun fromSyncOperationStatus(value: com.pims.vault.data.local.entity.SyncOperationStatus?): String? = value?.name
+
+    @TypeConverter
+    fun toSyncOperationStatus(value: String?): com.pims.vault.data.local.entity.SyncOperationStatus? =
+        safeValueOf(value, fallback = com.pims.vault.data.local.entity.SyncOperationStatus.PENDING)
 }

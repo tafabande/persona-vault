@@ -369,7 +369,7 @@ fun DocumentIngestionDialog(
     var selectedType by remember { mutableStateOf(DocumentType.PASSPORT) }
     var docNumber by remember { mutableStateOf("") }
     var authority by remember { mutableStateOf("") }
-    var country by remember { mutableStateOf("Zimbabwe") }
+    var country by remember { mutableStateOf(java.util.Locale.getDefault().displayCountry.ifBlank { "" }) }
     var issueDate by remember { mutableStateOf("") }
     var expiryDate by remember { mutableStateOf("") }
     var typeDropdownExpanded by remember { mutableStateOf(false) }
@@ -401,7 +401,7 @@ fun DocumentIngestionDialog(
                     value = title,
                     onValueChange = { title = it },
                     label = "Document Title *",
-                    placeholder = "e.g. Zimbabwean Passport 2026"
+                    placeholder = "e.g. National Passport 2026"
                 )
 
                 // Type Dropdown
@@ -465,7 +465,7 @@ fun DocumentIngestionDialog(
                         value = country,
                         onValueChange = { country = it },
                         label = "Country",
-                        placeholder = "e.g. Zimbabwe",
+                        placeholder = "e.g. Issuing country",
                         modifier = Modifier.weight(1f)
                     )
                 }

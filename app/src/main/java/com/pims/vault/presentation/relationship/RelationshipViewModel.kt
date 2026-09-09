@@ -68,11 +68,10 @@ class RelationshipViewModel @Inject constructor(
             sessionManager.sessionState.collectLatest { state ->
                 when (state) {
                     is SessionState.Unlocked -> {
-                        // Load or mock primary identity graph
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
-                                identityGraph = createSampleIdentityGraph(),
+                                identityGraph = null,
                                 errorMessage = null
                             )
                         }
@@ -83,120 +82,6 @@ class RelationshipViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    private fun createSampleIdentityGraph(): IdentityGraph {
-        val root = PersonProfile(
-            id = "root_bleigh",
-            isPrimaryOwner = true,
-            firstName = "Bleigh",
-            middleName = null,
-            lastName = "Tafadzwa",
-            preferredName = "Bleigh",
-            dateOfBirth = "1998-04-12",
-            gender = "Male",
-            nationality = "Zimbabwean",
-            countryOfResidence = "Zimbabwe",
-            religion = "Christian",
-            ethnicity = "Shona",
-            occupation = "Telecommunications Engineer"
-        )
-
-        val mother = PersonProfile(
-            id = "mother_jane",
-            isPrimaryOwner = false,
-            firstName = "Jane",
-            middleName = null,
-            lastName = "Tafadzwa",
-            preferredName = "Mother",
-            dateOfBirth = "1969-08-20",
-            gender = "Female",
-            nationality = "Zimbabwean",
-            countryOfResidence = "Zimbabwe",
-            religion = null,
-            ethnicity = null,
-            occupation = "Nurse Practitioner"
-        )
-
-        val spouse = PersonProfile(
-            id = "spouse_sarah",
-            isPrimaryOwner = false,
-            firstName = "Sarah",
-            middleName = null,
-            lastName = "Tafadzwa",
-            preferredName = "Sarah",
-            dateOfBirth = "1999-11-03",
-            gender = "Female",
-            nationality = "Zimbabwean",
-            countryOfResidence = "Zimbabwe",
-            religion = null,
-            ethnicity = null,
-            occupation = "Architect"
-        )
-
-        val doctor = PersonProfile(
-            id = "doctor_smith",
-            isPrimaryOwner = false,
-            firstName = "Dr. Michael",
-            middleName = null,
-            lastName = "Smith",
-            preferredName = "Dr. Smith",
-            dateOfBirth = null,
-            gender = "Male",
-            nationality = "Zimbabwean",
-            countryOfResidence = "Zimbabwe",
-            religion = null,
-            ethnicity = null,
-            occupation = "Cardiologist"
-        )
-
-        val family = listOf(
-            RelatedPersonDossier(
-                relationship = com.pims.vault.domain.model.Relationship(
-                    id = "rel_1",
-                    personAId = root.id,
-                    personBId = mother.id,
-                    type = GraphRelationType.CHILD,
-                    customLabel = "Mother",
-                    isVerified = true
-                ),
-                targetPerson = mother,
-                isFullProfile = true
-            ),
-            RelatedPersonDossier(
-                relationship = com.pims.vault.domain.model.Relationship(
-                    id = "rel_2",
-                    personAId = root.id,
-                    personBId = spouse.id,
-                    type = GraphRelationType.SPOUSE,
-                    customLabel = "Spouse",
-                    isVerified = true
-                ),
-                targetPerson = spouse,
-                isFullProfile = true
-            )
-        )
-
-        val care = listOf(
-            RelatedPersonDossier(
-                relationship = com.pims.vault.domain.model.Relationship(
-                    id = "rel_3",
-                    personAId = root.id,
-                    personBId = doctor.id,
-                    type = GraphRelationType.DOCTOR,
-                    customLabel = "Primary Care Physician",
-                    isVerified = true
-                ),
-                targetPerson = doctor,
-                isFullProfile = false
-            )
-        )
-
-        return IdentityGraph(
-            rootPerson = root,
-            familyConnections = family,
-            careConnections = care
-        )
     }
 
     fun onEvent(event: RelationshipEvent) {

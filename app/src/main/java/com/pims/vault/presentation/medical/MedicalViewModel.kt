@@ -67,6 +67,7 @@ class MedicalViewModel @Inject constructor(
     private val addAllergyUseCase: AddAllergyUseCase,
     private val addMedicationUseCase: AddMedicationUseCase,
     private val discontinueMedicationUseCase: DiscontinueMedicationUseCase,
+    private val personDao: com.pims.vault.data.local.dao.PersonDao,
     private val sessionManager: BiometricSessionManager
 ) : ViewModel() {
 
@@ -82,28 +83,15 @@ class MedicalViewModel @Inject constructor(
             sessionManager.sessionState.collectLatest { state ->
                 when (state) {
                     is SessionState.Unlocked -> {
-                        val sampleDossier = createSampleMedicalDossier()
-                        val samplePerson = createSamplePerson()
-                        val projection = MedicalRules.buildEmergencyProjection(
-                            person = samplePerson,
-                            dossier = sampleDossier,
-                            selectedFields = setOf(
-                                EmergencyCardField.FULL_NAME,
-                                EmergencyCardField.BLOOD_TYPE,
-                                EmergencyCardField.ALLERGIES,
-                                EmergencyCardField.ACTIVE_MEDICATIONS,
-                                EmergencyCardField.EMERGENCY_CONTACTS
-                            ),
-                            status = EmergencyCardStatus.CURRENT
-                        )
-
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                dossier = sampleDossier,
-                                emergencyProjection = projection,
-                                errorMessage = null
-                            )
+                        val ownerId = personDao.getPrimaryOwner()?.id ?: "primary_owner"
+                        getMedicalDossierUseCase(ownerId).collectLatest { loadedDossier ->
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    dossier = loadedDossier,
+                                    errorMessage = null
+                                )
+                            }
                         }
                     }
                     is SessionState.Locked, SessionState.Authenticating -> {
@@ -120,106 +108,12 @@ class MedicalViewModel @Inject constructor(
         }
     }
 
-    private fun createSamplePerson(): PersonProfile {
-        return PersonProfile(
-            id = "root_bleigh",
-            isPrimaryOwner = true,
-            firstName = "Bleigh",
-            middleName = null,
-            lastName = "Tafadzwa",
-            preferredName = "Bleigh",
-            dateOfBirth = "1998-04-12",
-            gender = "Male",
-            nationality = "Zimbabwean",
-            countryOfResidence = "Zimbabwe",
-            religion = "Christian",
-            ethnicity = "Shona",
-            occupation = "Telecommunications Engineer",
-            contacts = listOf(
-                com.pims.vault.domain.model.ContactMethod(
-                    id = "c_1",
-                    personId = "root_bleigh",
-                    type = com.pims.vault.core.model.ContactType.PHONE,
-                    label = "Mother (ICE)",
-                    value = "+263 77 555 1234",
-                    isPrimary = true
-                )
-            )
-        )
-    }
-
-    private fun createSampleMedicalDossier(): MedicalDossier {
-        val conditions = listOf(
-            MedicalConditionItem(
-                id = "c_1",
-                personId = "root_bleigh",
-                name = "Asthma",
-                description = "Mild intermittent childhood onset",
-                severity = MedicalSeverity.MILD,
-                status = ConditionState.ACTIVE
-            )
-        )
-
-        val allergies = listOf(
-            AllergyItem(
-                id = "a_1",
-                personId = "root_bleigh",
-                allergen = "Penicillin",
-                reaction = "Anaphylaxis / Severe Swelling",
-                severity = MedicalSeverity.CRITICAL,
-                isVerified = true
-            )
-        )
-
-        val medications = listOf(
-            MedicationItem(
-                id = "m_1",
-                personId = "root_bleigh",
-                name = "Salbutamol Inhaler",
-                dosage = "100mcg",
-                frequency = "As needed for wheezing",
-                isActive = true
-            )
-        )
-
-        val doctors = listOf(
-            MedicalDoctorItem(
-                id = "d_1",
-                personId = "root_bleigh",
-                name = "Dr. Michael Smith",
-                specialty = "Pulmonologist",
-                phone = "+263 24 270 1234",
-                facility = "Avenues Clinic, Harare"
-            )
-        )
-
-        val hospitals = listOf(
-            MedicalHospitalItem(
-                id = "h_1",
-                personId = "root_bleigh",
-                name = "Trauma Centre Borrowdale",
-                phone = "+263 24 288 8888",
-                address = "Borrowdale Road, Harare"
-            )
-        )
-
-        return MedicalDossier(
-            personId = "root_bleigh",
-            bloodType = BloodType.O_POSITIVE,
-            conditions = conditions,
-            allergies = allergies,
-            medications = medications,
-            doctors = doctors,
-            hospitals = hospitals
-        )
-    }
-
     fun onEvent(event: MedicalEvent) {
         viewModelScope.launch {
             try {
                 when (event) {
                     is MedicalEvent.AddCondition -> {
-                        addConditionUseCase("root_bleigh", event.name, event.description, event.notes)
+                        addConditionUseCase("primary_owner", event.name, event.description, event.notes)
                         _uiState.update {
                             it.copy(
                                 isAddingCondition = false,
@@ -229,7 +123,7 @@ class MedicalViewModel @Inject constructor(
                     }
 
                     is MedicalEvent.AddAllergy -> {
-                        addAllergyUseCase("root_bleigh", event.allergen, event.reaction, event.severity, true, event.notes)
+                        addAllergyUseCase("primary_owner", event.allergen, event.reaction, event.severity, true, event.notes)
                         _uiState.update {
                             it.copy(
                                 isAddingAllergy = false,
@@ -239,7 +133,7 @@ class MedicalViewModel @Inject constructor(
                     }
 
                     is MedicalEvent.AddMedication -> {
-                        addMedicationUseCase("root_bleigh", event.name, event.dosage, event.frequency, true, event.notes)
+                        addMedicationUseCase("primary_owner", event.name, event.dosage, event.frequency, true, event.notes)
                         _uiState.update {
                             it.copy(
                                 isAddingMedication = false,
@@ -255,7 +149,16 @@ class MedicalViewModel @Inject constructor(
 
                     is MedicalEvent.UpdateEmergencyFields -> {
                         val dossier = _uiState.value.dossier ?: return@launch
-                        val person = createSamplePerson()
+                        val owner = personDao.getPrimaryOwner()
+                        val person = owner?.let {
+                            PersonProfile(
+                                id = it.id,
+                                isPrimaryOwner = true,
+                                firstName = it.firstName,
+                                lastName = it.lastName,
+                                countryOfResidence = it.countryOfResidence
+                            )
+                        } ?: return@launch
                         val updated = MedicalRules.buildEmergencyProjection(
                             person = person,
                             dossier = dossier,
@@ -264,16 +167,25 @@ class MedicalViewModel @Inject constructor(
                         )
                         _uiState.update {
                             it.copy(
-                                emergencyProjection = updated,
                                 isConfiguringEmergencyCard = false,
-                                feedbackMessage = "Emergency Card projection updated"
+                                emergencyProjection = updated,
+                                feedbackMessage = "ICE Emergency card updated"
                             )
                         }
                     }
 
                     MedicalEvent.RefreshEmergencyCard -> {
                         val dossier = _uiState.value.dossier ?: return@launch
-                        val person = createSamplePerson()
+                        val owner = personDao.getPrimaryOwner()
+                        val person = owner?.let {
+                            PersonProfile(
+                                id = it.id,
+                                isPrimaryOwner = true,
+                                firstName = it.firstName,
+                                lastName = it.lastName,
+                                countryOfResidence = it.countryOfResidence
+                            )
+                        } ?: return@launch
                         val currentFields = _uiState.value.emergencyProjection?.selectedFields ?: emptySet()
                         val refreshed = MedicalRules.buildEmergencyProjection(
                             person = person,

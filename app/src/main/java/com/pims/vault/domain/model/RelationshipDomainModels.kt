@@ -54,13 +54,17 @@ data class Relationship(
     val personBId: String,
     val type: GraphRelationType,
     val customLabel: String? = null,
+    val labelForA: String? = null,       // e.g. A says "B is my mentor"
+    val labelForB: String? = null,       // e.g. B says "A is my student"
     val status: RelationshipStatus = RelationshipStatus.ACTIVE,
+    val isPrivate: Boolean = false,      // If true, exists only in initiator's hub
     val startDate: Long? = null,
     val endDate: Long? = null,
     val notes: String? = null,
     val isVerified: Boolean = false,
     val securityClassification: SecurityClassification = SecurityClassification.ZONE_2_PRIVATE,
     val createdAt: Long = System.currentTimeMillis(),
+    val confirmedAt: Long? = null,
     val updatedAt: Long = System.currentTimeMillis(),
     val version: Int = 1
 )

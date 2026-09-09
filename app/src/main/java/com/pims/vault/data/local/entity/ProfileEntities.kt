@@ -67,6 +67,15 @@ data class PersonEntity(
     @ColumnInfo(name = "security_classification")
     val securityClassification: SecurityClassification = SecurityClassification.ZONE_1_PERSONAL,
 
+    @ColumnInfo(name = "account_uid")
+    val accountUid: String? = null,
+
+    @ColumnInfo(name = "national_id_number")
+    val nationalIdNumber: String? = null,
+
+    @ColumnInfo(name = "previous_names")
+    val previousNames: String? = null,
+
     @ColumnInfo(name = "notes")
     val notes: String? = null,
 
@@ -160,6 +169,12 @@ data class AddressEntity(
     @ColumnInfo(name = "is_current")
     val isCurrent: Boolean = true,
 
+    @ColumnInfo(name = "valid_from")
+    val validFrom: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "valid_to")
+    val validTo: Long? = null,
+
     @ColumnInfo(name = "notes")
     val notes: String? = null,
 
@@ -208,6 +223,21 @@ data class RelationshipEntity(
 
     @ColumnInfo(name = "custom_label")
     val customLabel: String? = null,
+
+    @ColumnInfo(name = "label_for_a")
+    val labelForA: String? = null, // e.g. A says "B is my mentor"
+
+    @ColumnInfo(name = "label_for_b")
+    val labelForB: String? = null, // e.g. B says "A is my student"
+
+    @ColumnInfo(name = "asymmetric_label")
+    val asymmetricLabel: String? = null,
+
+    @ColumnInfo(name = "status")
+    val status: String = "ACTIVE",
+
+    @ColumnInfo(name = "is_private")
+    val isPrivate: Boolean = false,
 
     @ColumnInfo(name = "start_date")
     val startDate: Long? = null,

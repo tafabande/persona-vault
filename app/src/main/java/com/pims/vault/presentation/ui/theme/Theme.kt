@@ -1,6 +1,5 @@
 package com.pims.vault.presentation.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -8,6 +7,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -15,31 +15,43 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private val AmoledDarkColorScheme = darkColorScheme(
-    primary = AmoledPrimary,
-    onPrimary = AmoledBackground,
-    primaryContainer = AmoledSurfaceVariant,
-    onPrimaryContainer = AmoledTextPrimary,
-    secondary = AmoledSecondary,
-    onSecondary = AmoledBackground,
-    background = AmoledBackground,
-    onBackground = AmoledTextPrimary,
-    surface = AmoledSurface,
-    onSurface = AmoledTextPrimary,
-    surfaceVariant = AmoledSurfaceVariant,
-    onSurfaceVariant = AmoledTextSecondary,
-    outline = AmoledOutline,
-    outlineVariant = AmoledOutlineFocused,
+    primary = WarmDarkPrimary,
+    onPrimary = WarmDarkBackground,
+    primaryContainer = WarmDarkSurfaceVariant,
+    onPrimaryContainer = WarmDarkTextPrimary,
+    secondary = WarmDarkSecondary,
+    onSecondary = WarmDarkBackground,
+    secondaryContainer = WarmDarkSurfaceVariant,
+    onSecondaryContainer = WarmDarkTextPrimary,
+    tertiary = WarmDarkAccent,
+    onTertiary = WarmDarkBackground,
+    tertiaryContainer = WarmDarkSoftAccent,
+    onTertiaryContainer = WarmDarkPrimary,
+    background = WarmDarkBackground,
+    onBackground = WarmDarkTextPrimary,
+    surface = WarmDarkSurface,
+    onSurface = WarmDarkTextPrimary,
+    surfaceVariant = WarmDarkSurfaceVariant,
+    onSurfaceVariant = WarmDarkTextSecondary,
+    outline = WarmDarkOutline,
+    outlineVariant = WarmDarkOutlineFocused,
     error = StateError,
-    onError = AmoledBackground
+    onError = WarmDarkBackground
 )
 
-private val WarmLightColorScheme = lightColorScheme(
+private val SlateLightColorScheme = lightColorScheme(
     primary = WarmLightPrimary,
-    onPrimary = WarmLightSurface,
+    onPrimary = WarmLightOnPrimary,
     primaryContainer = WarmLightSurfaceVariant,
     onPrimaryContainer = WarmLightTextPrimary,
     secondary = WarmLightSecondary,
-    onSecondary = WarmLightSurface,
+    onSecondary = WarmLightOnSecondary,
+    secondaryContainer = WarmLightSurfaceVariant,
+    onSecondaryContainer = WarmLightTextPrimary,
+    tertiary = WarmLightAccent,
+    onTertiary = WarmLightSurface,
+    tertiaryContainer = WarmLightSoftAccent,
+    onTertiaryContainer = WarmLightPrimary,
     background = WarmLightBackground,
     onBackground = WarmLightTextPrimary,
     surface = WarmLightSurface,
@@ -49,7 +61,7 @@ private val WarmLightColorScheme = lightColorScheme(
     outline = WarmLightOutline,
     outlineVariant = WarmLightOutlineFocused,
     error = StateError,
-    onError = WarmLightSurface
+    onError = Color.White
 )
 
 val PimsTypography = Typography(
@@ -62,16 +74,16 @@ val PimsTypography = Typography(
     ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 20.sp,
         lineHeight = 26.sp,
         letterSpacing = (-0.2).sp
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        lineHeight = 22.sp
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 17.sp,
+        lineHeight = 23.sp
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -102,9 +114,9 @@ val PimsTypography = Typography(
 
 val PimsShapes = Shapes(
     small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(24.dp)
+    medium = RoundedCornerShape(10.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(20.dp)
 )
 
 object PimsDimensions {
@@ -116,15 +128,15 @@ object PimsDimensions {
 
     val skeletonBorderWidth = 1.dp
     val skeletonBorderFocused = 1.5.dp
-    val skeletonCornerRadius = 12.dp
+    val skeletonCornerRadius = 8.dp
 }
 
 @Composable
 fun PimsVaultTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = false, // Defaults strictly to Light Theme
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) AmoledDarkColorScheme else WarmLightColorScheme
+    val colorScheme = if (darkTheme) AmoledDarkColorScheme else SlateLightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,

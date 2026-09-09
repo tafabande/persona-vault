@@ -161,7 +161,9 @@ class KeySecurityManager(
     }
 
     /**
-     * Unwraps / derives the intermediate key material for HKDF derivation using the master key.
+     * Derives / unwrap domain-specific subkeys.
+     * Encrypted by the Android Keystore master key and securely persisted in private preferences
+     * so that the database and domain encryption keys remain deterministic across app launches.
      */
     fun deriveDomainSubkey(domainContext: String, isZone4: Boolean = false): SecretBytes {
         val targetAlias = if (isZone4) zone4KeyAlias else rootKeyAlias
@@ -171,16 +173,42 @@ class KeySecurityManager(
         val masterKey = keyStore.getKey(targetAlias, null) as? SecretKey
             ?: throw IllegalStateException("Master Key '$targetAlias' not found in Android Keystore")
 
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, masterKey)
-        val domainSeed = cipher.doFinal(domainContext.toByteArray(Charsets.UTF_8))
+        val prefs = context?.getSharedPreferences("pims_keystore_wrapped_subkeys", Context.MODE_PRIVATE)
+        val prefKeyIv = "${domainContext}_iv"
+        val prefKeyCipher = "${domainContext}_cipher"
 
-        val derivedKey = HkdfKeyDerivation.deriveKey(
-            ikm = domainSeed,
-            salt = cipher.iv,
-            infoContext = domainContext,
-            outputLengthBytes = 32
-        )
-        return SecretBytes(derivedKey)
+        if (prefs != null && prefs.contains(prefKeyIv) && prefs.contains(prefKeyCipher)) {
+            try {
+                val iv = android.util.Base64.decode(prefs.getString(prefKeyIv, ""), android.util.Base64.NO_WRAP)
+                val cipherBytes = android.util.Base64.decode(prefs.getString(prefKeyCipher, ""), android.util.Base64.NO_WRAP)
+                val decryptCipher = Cipher.getInstance("AES/GCM/NoPadding")
+                decryptCipher.init(Cipher.DECRYPT_MODE, masterKey, javax.crypto.spec.GCMParameterSpec(128, iv))
+                val rawSubkey = decryptCipher.doFinal(cipherBytes)
+                return SecretBytes(rawSubkey)
+            } catch (_: Exception) {
+                // Key corrupted or Keystore regenerated, fall through to regenerate
+            }
+        }
+
+        // Generate high-entropy 32-byte subkey
+        val rawSubkey = ByteArray(32)
+        java.security.SecureRandom().nextBytes(rawSubkey)
+
+        try {
+            // Encrypt with Keystore master key
+            val encryptCipher = Cipher.getInstance("AES/GCM/NoPadding")
+            encryptCipher.init(Cipher.ENCRYPT_MODE, masterKey)
+            val encryptedSubkey = encryptCipher.doFinal(rawSubkey)
+            val iv = encryptCipher.iv
+
+            prefs?.edit()
+                ?.putString(prefKeyIv, android.util.Base64.encodeToString(iv, android.util.Base64.NO_WRAP))
+                ?.putString(prefKeyCipher, android.util.Base64.encodeToString(encryptedSubkey, android.util.Base64.NO_WRAP))
+                ?.commit()
+        } catch (_: Exception) {
+            // Non-Android or test environment fallback
+        }
+
+        return SecretBytes(rawSubkey)
     }
 }

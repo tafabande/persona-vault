@@ -54,6 +54,8 @@ class PersonRepositoryImpl(
     override fun getAllPersonsFlow(): Flow<List<PersonEntity>> = personDao.getAllPersonsFlow()
     override fun getPersonWithFullProfileFlow(id: String): Flow<PersonWithFullProfile?> =
         personDao.getPersonWithFullProfileFlow(id)
+    override fun getPrimaryOwnerWithFullProfileFlow(): Flow<PersonWithFullProfile?> =
+        personDao.getPrimaryOwnerWithFullProfileFlow()
 
     override suspend fun savePerson(person: PersonEntity) {
         personDao.insertOrUpdate(person)

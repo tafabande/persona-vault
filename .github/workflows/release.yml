@@ -57,7 +57,7 @@ jobs:
           bash gradlew testDebugUnitTest
 
       - name: Assemble Release Artifacts (AAB & APK)
-        run: bash gradlew bundleRelease assembleRelease
+        run: bash gradlew clean bundleRelease assembleRelease --no-build-cache
 
       - name: Sign Release Artifacts
         env:
@@ -106,61 +106,14 @@ jobs:
             bash scripts/verify-signing.sh "$APK_FILE" "$EXPECTED_CERT_FINGERPRINT"
           fi
 
-      - name: Generate CycloneDX & SPDX Software Bill of Materials (SBOM)
+      - name: Collect Release Binaries (APK & AAB)
         run: |
           mkdir -p release-artifacts
-          echo "Generating CycloneDX SBOM..."
-          cat << 'EOF' > release-artifacts/sbom.cdx.json
-          {
-            "$schema": "http://cyclonedx.org/schema/bom-1.5.json",
-            "bomFormat": "CycloneDX",
-            "specVersion": "1.5",
-            "serialNumber": "urn:uuid:persona-bom-v1",
-            "version": 1,
-            "metadata": {
-              "component": {
-                "name": "Persona",
-                "version": "${{ github.ref_name }}",
-                "type": "application"
-              }
-            }
-          }
-          EOF
-          cp release-artifacts/sbom.cdx.json release-artifacts/sbom.spdx.json
-
-      - name: Generate SLSA in-toto Provenance & Checksums
-        run: |
           find app/build/outputs -type f \( -name "*.aab" -o -name "*.apk" \) -exec cp {} release-artifacts/ \;
-          cd release-artifacts
-          sha256sum * > SHA256SUMS.txt
+          echo "Release binaries collected:"
+          ls -la release-artifacts/
 
-          AAB_NAME=$(find . -name "*.aab" -exec basename {} \; | head -n 1 || echo "none")
-          AAB_HASH=$(grep "$AAB_NAME" SHA256SUMS.txt | awk '{print $1}' || echo "none")
-          SBOM_HASH=$(sha256sum sbom.cdx.json | awk '{print $1}')
-
-          # Generate in-toto provenance format
-          cat << EOF > provenance.intoto.jsonl
-          {"_type":"https://in-toto.io/Statement/v0.1","subject":[{"name":"$AAB_NAME","digest":{"sha256":"$AAB_HASH"}}],"predicateType":"https://slsa.dev/provenance/v0.2","predicate":{"builder":{"id":"https://github.com/actions/runner"},"buildType":"https://persona.local/AndroidApp@v1"}}
-          EOF
-
-          # Generate Release Manifest
-          cat << EOF > release-manifest.json
-          {
-            "release": "${{ github.ref_name }}",
-            "commit": "${{ github.sha }}",
-            "tag": "${{ github.ref_name }}",
-            "buildTimestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "gradleVersion": "8.9",
-            "agpVersion": "8.5.2",
-            "kotlinVersion": "2.0.20",
-            "aabSha256": "$AAB_HASH",
-            "sbomSha256": "$SBOM_HASH",
-            "workflowRunId": "${{ github.run_id }}",
-            "securityGates": "PASS"
-          }
-          EOF
-
-      - name: Upload Release Artifacts & Provenance Package
+      - name: Upload Release Artifacts
         # actions/upload-artifact@v4 (pinned to immutable commit SHA)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

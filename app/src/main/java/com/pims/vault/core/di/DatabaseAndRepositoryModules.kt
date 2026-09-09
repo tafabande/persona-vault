@@ -70,11 +70,19 @@ object DatabaseModule {
     @Provides fun provideSocialAccountDao(db: PimsDatabase): SocialAccountDao = db.socialAccountDao()
     @Provides fun provideVaultDao(db: PimsDatabase): VaultDao = db.vaultDao()
     @Provides fun provideAuditDao(db: PimsDatabase): AuditDao = db.auditDao()
+    @Provides fun provideSyncQueueDao(db: PimsDatabase): com.pims.vault.data.local.dao.SyncQueueDao = db.syncQueueDao()
+    @Provides fun provideSyncConflictDao(db: PimsDatabase): com.pims.vault.data.local.dao.SyncConflictDao = db.syncConflictDao()
+    @Provides fun provideSharingProfileDao(db: PimsDatabase): com.pims.vault.data.local.entity.SharingProfileDao = db.sharingProfileDao()
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 object RepositoryModule {
+
+    @Provides
+    @Singleton
+    fun providePermissionEngine(): com.pims.vault.core.sharing.PermissionEngine =
+        com.pims.vault.core.sharing.PermissionEngine()
 
     @Provides
     @Singleton
@@ -121,4 +129,10 @@ object RepositoryModule {
     fun provideAuditRepository(
         auditLogger: HardenedAuditLogger
     ): AuditRepository = AuditRepositoryImpl(auditLogger)
+
+    @Provides
+    @Singleton
+    fun provideRemoteSyncGateway(
+        impl: com.pims.vault.core.sync.FirebaseRemoteSyncGateway
+    ): com.pims.vault.core.sync.RemoteSyncGateway = impl
 }

@@ -26,17 +26,18 @@ class GetPersonProfileUseCase @Inject constructor(
     private val documentRepository: DocumentRepository
 ) {
     operator fun invoke(personId: String? = null): Flow<PersonProfile?> {
-        val personFlow = if (personId == null) {
-            personRepository.getPrimaryOwnerFlow()
+        val fullProfileFlow = if (personId == null) {
+            personRepository.getPrimaryOwnerWithFullProfileFlow()
         } else {
-            personRepository.getPersonByIdFlow(personId)
+            personRepository.getPersonWithFullProfileFlow(personId)
         }
 
-        return personFlow.combine(
+        return fullProfileFlow.combine(
             documentRepository.getDocumentsByTypeFlow(personId ?: "primary", DocumentType.PASSPORT_PHOTO)
-        ) { personEntity, photoDocs ->
-            if (personEntity == null) return@combine null
+        ) { fullProfile, photoDocs ->
+            if (fullProfile == null) return@combine null
 
+            val personEntity = fullProfile.person
             val photoDoc = photoDocs.firstOrNull()
             val latestVersion = photoDoc?.latestVersion
 
@@ -52,7 +53,6 @@ class GetPersonProfileUseCase @Inject constructor(
                 )
             } else null
 
-            // Map Entity to Domain Model
             PersonProfile(
                 id = personEntity.id,
                 isPrimaryOwner = personEntity.isPrimaryOwner,
@@ -69,8 +69,35 @@ class GetPersonProfileUseCase @Inject constructor(
                 occupation = personEntity.occupation,
                 securityClassification = personEntity.securityClassification,
                 photo = photoAttachment,
-                contacts = emptyList(), // Hydrated via repository queries
-                addresses = emptyList(),
+                contacts = fullProfile.contactMethods.map { cm ->
+                    ContactMethod(
+                        id = cm.id,
+                        personId = cm.personId,
+                        type = cm.contactType,
+                        label = cm.label,
+                        value = cm.value,
+                        isPrimary = cm.isPrimary,
+                        securityClassification = cm.securityClassification,
+                        createdAt = cm.createdAt
+                    )
+                },
+                addresses = fullProfile.addresses.map { addr ->
+                    Address(
+                        id = addr.id,
+                        personId = addr.personId,
+                        label = addr.label,
+                        streetLine1 = addr.streetLine1,
+                        streetLine2 = addr.streetLine2,
+                        city = addr.city,
+                        stateProvince = addr.stateProvince,
+                        postalCode = addr.postalCode,
+                        country = addr.country,
+                        isCurrent = addr.isCurrent,
+                        notes = addr.notes,
+                        securityClassification = addr.securityClassification,
+                        createdAt = addr.createdAt
+                    )
+                },
                 createdAt = personEntity.createdAt,
                 updatedAt = personEntity.updatedAt
             )

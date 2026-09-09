@@ -1,0 +1,210 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // HELPER FUNCTIONS FOR UNTRUSTED-CLIENT SECURITY MODEL
+    // =========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isAccountOwner(accountId) {
+      return isAuthenticated() && request.auth.uid == accountId;
+    }
+
+    // Authoritative Server Version Progression: client cannot invent versions
+    function isValidVersionIncrement() {
+      return !('version' in resource.data) || 
+             (request.resource.data.version == resource.data.version + 1);
+    }
+
+    // Field-level immutability enforcement
+    function isImmutable(fieldName) {
+      return !(fieldName in request.resource.data) || 
+             request.resource.data[fieldName] == resource.data[fieldName];
+    }
+
+    function isParticipant(participantsList) {
+      return isAuthenticated() && request.auth.uid in participantsList;
+    }
+
+    // =========================================================================
+    // 1. ACCOUNT & MANAGED PERSONS (Account UID != Person ID)
+    // =========================================================================
+    match /accounts/{accountId} {
+      // Base account identity: owner can read; accountUid & createdAt are strictly immutable
+      allow read: if isAccountOwner(accountId);
+      allow create: if isAccountOwner(accountId) && 
+                       request.resource.data.accountUid == accountId;
+      allow update: if isAccountOwner(accountId) && 
+                       isImmutable('accountUid') && 
+                       isImmutable('createdAt');
+      allow delete: if false; // Accounts must be closed via backend deletion pipeline
+
+      // Managed People (Me, Child, Elderly Dependents)
+      match /people/{personId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) && 
+                         request.resource.data.personId == personId &&
+                         request.resource.data.accountUid == accountId &&
+                         (!('version' in request.resource.data) || request.resource.data.version == 1);
+        allow update: if isAccountOwner(accountId) && 
+                         isImmutable('personId') && 
+                         isImmutable('accountUid') && 
+                         isValidVersionIncrement();
+        allow delete: if isAccountOwner(accountId);
+      }
+
+      // Contact Methods (Phones, Emails)
+      match /contacts/{contactId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId);
+        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
+        allow delete: if isAccountOwner(accountId);
+      }
+
+      // Addresses (Temporally versioned)
+      match /addresses/{addressId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId);
+        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
+        allow delete: if isAccountOwner(accountId);
+      }
+
+      // Education & Career Records
+      match /education/{eduId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId);
+        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
+        allow delete: if isAccountOwner(accountId);
+      }
+      match /employment/{workId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId);
+        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
+        allow delete: if isAccountOwner(accountId);
+      }
+
+      // Health Dossier: Stored exclusively as ciphertext blobs (Zone 3 Zero-Knowledge)
+      match /healthRecords/{recordId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) && request.resource.data.isEncrypted == true;
+        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
+        allow delete: if isAccountOwner(accountId);
+      }
+
+      // Document Envelopes (Civic Metadata + Encrypted Restricted Attributes)
+      match /documents/{docId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) && 
+                         request.resource.data.documentId == docId &&
+                         (!('version' in request.resource.data) || request.resource.data.version == 1);
+        allow update: if isAccountOwner(accountId) && 
+                         isImmutable('documentId') && 
+                         isImmutable('personId') && 
+                         isValidVersionIncrement();
+        allow delete: if isAccountOwner(accountId);
+
+        // Document Versions: Strictly IMMUTABLE historical snapshots
+        match /versions/{versionId} {
+          allow read: if isAccountOwner(accountId);
+          allow create: if isAccountOwner(accountId) && 
+                           request.resource.data.documentId == docId &&
+                           request.resource.data.versionNumber > 0;
+          allow update, delete: if false; // Versions can never be edited or pruned individually
+        }
+      }
+
+      // Vault Escrow: Master KEK wrapped with 256-bit Recovery Secret
+      match /vaultEscrow/{escrowId} {
+        allow read: if isAccountOwner(accountId);
+        allow create, update: if isAccountOwner(accountId) && 
+                                 request.resource.data.isCiphertext == true;
+        allow delete: if false; // Escrow is permanent protection against device loss
+      }
+
+      // Active Devices & Sessions
+      match /sessions/{sessionId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
+      // Local Tombstones for Offline Sync Horizon
+      match /tombstones/{tombstoneId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) && 
+                         request.resource.data.timestamp <= request.time;
+        allow update: if false; // Tombstones are immutable deletion markers
+        allow delete: if false; // Purged only by server deletion horizon
+      }
+    }
+
+    // =========================================================================
+    // 2. RELATIONSHIPS & KINSHIP GRAPH (Relationship != Permission)
+    // =========================================================================
+    match /relationships/{relId} {
+      // Readable strictly by the two participants
+      allow read: if isParticipant(resource.data.participants);
+
+      // Create: Creator must be authenticated and listed as participant
+      allow create: if isAuthenticated() && 
+                    request.resource.data.createdBy == request.auth.uid &&
+                    request.auth.uid in request.resource.data.participants;
+
+      // Update: Participants can update state (e.g. ACCEPT/DECLINE), but cannot alter ownership
+      allow update: if isParticipant(resource.data.participants) && 
+                       isImmutable('createdBy') && 
+                       isImmutable('participants');
+
+      // Delete: Either participant can disconnect
+      allow delete: if isParticipant(resource.data.participants);
+    }
+
+    // =========================================================================
+    // 3. SHARING PROFILES & CAPABILITY TOKENS
+    // =========================================================================
+    match /sharingProfiles/{shareId} {
+      // Sovereign owner has full control
+      allow read: if isAuthenticated() && 
+                     (resource == null || resource.data.ownerAccountId == request.auth.uid);
+
+      allow create: if isAuthenticated() && 
+                       request.resource.data.ownerAccountId == request.auth.uid &&
+                       request.resource.data.shareId == shareId;
+
+      allow update: if isAuthenticated() && 
+                       resource.data.ownerAccountId == request.auth.uid && 
+                       isImmutable('shareId') && 
+                       isImmutable('ownerAccountId') && 
+                       isImmutable('tokenHash');
+
+      allow delete: if isAuthenticated() && 
+                       resource.data.ownerAccountId == request.auth.uid;
+
+      // NOTE: External recipients DO NOT directly read or query sharingProfiles in Firestore.
+      // Capability resolution is executed exclusively via trusted serverless Cloud Function 'resolveShareToken'.
+    }
+
+    // =========================================================================
+    // 4. AUDIT TRAIL (Cryptographically Chained & Tamper-Evident)
+    // =========================================================================
+    match /auditEvents/{eventId} {
+      // Authenticated users can read their own audit trail
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      // Append-only: User appends next chained event; past events are strictly immutable
+      allow create: if isAuthenticated() && 
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.eventId == eventId &&
+                    request.resource.data.timestamp <= request.time;
+
+      allow update, delete: if false; // Tamper detection: no event can ever be modified or purged
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

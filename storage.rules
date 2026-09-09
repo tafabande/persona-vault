@@ -1,0 +1,33 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidDocumentUpload() {
+      return request.resource.size < 25 * 1024 * 1024 // 25 MB max per file
+          && (request.resource.contentType.matches('application/pdf')
+           || request.resource.contentType.matches('image/jpeg')
+           || request.resource.contentType.matches('image/png')
+           || request.resource.contentType.matches('application/octet-stream')); // encrypted chunks
+    }
+
+    // Isolated user document binary vault
+    match /users/{userId}/documents/{docId}/{allPaths=**} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidDocumentUpload();
+      allow delete: if isOwner(userId);
+    }
+
+    // Default deny for all other files
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

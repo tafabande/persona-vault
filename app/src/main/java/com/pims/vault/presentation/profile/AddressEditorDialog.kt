@@ -52,7 +52,7 @@ fun AddressEditorDialog(
     var city by remember { mutableStateOf("") }
     var stateProvince by remember { mutableStateOf("") }
     var postalCode by remember { mutableStateOf("") }
-    var country by remember { mutableStateOf("Zimbabwe") }
+    var country by remember { mutableStateOf(java.util.Locale.getDefault().displayCountry.ifBlank { "" }) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -145,7 +145,7 @@ fun AddressEditorDialog(
                         value = country,
                         onValueChange = { country = it },
                         label = "Country *",
-                        placeholder = "e.g. Zimbabwe",
+                        placeholder = "e.g. Country",
                         modifier = Modifier.weight(1.2f)
                     )
                 }

@@ -17,6 +17,8 @@ import com.pims.vault.data.local.dao.PersonDao
 import com.pims.vault.data.local.dao.RelationshipDao
 import com.pims.vault.data.local.dao.SocialAccountDao
 import com.pims.vault.data.local.dao.VaultDao
+import com.pims.vault.data.local.dao.SyncConflictDao
+import com.pims.vault.data.local.dao.SyncQueueDao
 import com.pims.vault.data.local.entity.AddressEntity
 import com.pims.vault.data.local.entity.AuditEventEntity
 import com.pims.vault.data.local.entity.ContactMethodEntity
@@ -28,6 +30,10 @@ import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.data.local.entity.PersonEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
 import com.pims.vault.data.local.entity.SocialAccountEntity
+import com.pims.vault.data.local.entity.SyncConflictEntity
+import com.pims.vault.data.local.entity.SyncQueueEntity
+import com.pims.vault.data.local.entity.SharingProfileEntity
+import com.pims.vault.data.local.entity.SharingProfileDao
 import com.pims.vault.data.local.entity.VaultItemEntity
 
 @Database(
@@ -43,9 +49,12 @@ import com.pims.vault.data.local.entity.VaultItemEntity
         EmploymentRecordEntity::class,
         SocialAccountEntity::class,
         VaultItemEntity::class,
-        AuditEventEntity::class
+        AuditEventEntity::class,
+        SyncQueueEntity::class,
+        SyncConflictEntity::class,
+        SharingProfileEntity::class
     ],
-    version = 1,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(RoomConverters::class)
@@ -62,6 +71,9 @@ abstract class PimsDatabase : RoomDatabase() {
     abstract fun socialAccountDao(): SocialAccountDao
     abstract fun vaultDao(): VaultDao
     abstract fun auditDao(): AuditDao
+    abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun syncConflictDao(): SyncConflictDao
+    abstract fun sharingProfileDao(): SharingProfileDao
 
     companion object {
         const val DATABASE_NAME = "pims_identity_vault.db"
@@ -80,7 +92,7 @@ abstract class PimsDatabase : RoomDatabase() {
                 context.applicationContext,
                 PimsDatabase::class.java,
                 databaseName
-            )
+            ).fallbackToDestructiveMigration()
 
             if (openHelperFactory != null) {
                 builder.openHelperFactory(openHelperFactory)

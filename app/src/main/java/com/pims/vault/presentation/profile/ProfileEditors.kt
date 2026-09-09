@@ -69,8 +69,8 @@ fun PersonalInfoEditorDialog(
     var preferredName by remember { mutableStateOf(profile?.preferredName ?: "") }
     var dob by remember { mutableStateOf(profile?.dateOfBirth ?: "") }
     var gender by remember { mutableStateOf(profile?.gender ?: "Prefer not to specify") }
-    var nationality by remember { mutableStateOf(profile?.nationality ?: "Zimbabwean") }
-    var country by remember { mutableStateOf(profile?.countryOfResidence ?: "Zimbabwe") }
+    var nationality by remember { mutableStateOf(profile?.nationality ?: "") }
+    var country by remember { mutableStateOf(profile?.countryOfResidence ?: java.util.Locale.getDefault().displayCountry.ifBlank { "" }) }
     var religion by remember { mutableStateOf(profile?.religion ?: "Prefer not to specify") }
     var ethnicity by remember { mutableStateOf(profile?.ethnicity ?: "Prefer not to specify") }
     var occupation by remember { mutableStateOf(profile?.occupation ?: "") }
@@ -178,7 +178,7 @@ fun PersonalInfoEditorDialog(
                     value = nationality,
                     onValueChange = { nationality = it },
                     label = "Nationality",
-                    placeholder = "e.g. Zimbabwean"
+                    placeholder = "e.g. Nationality"
                 )
 
                 PimsOutlinedInput(

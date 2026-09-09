@@ -31,6 +31,7 @@ interface PersonRepository {
     fun getPersonByIdFlow(id: String): Flow<PersonEntity?>
     fun getAllPersonsFlow(): Flow<List<PersonEntity>>
     fun getPersonWithFullProfileFlow(id: String): Flow<PersonWithFullProfile?>
+    fun getPrimaryOwnerWithFullProfileFlow(): Flow<PersonWithFullProfile?>
     suspend fun savePerson(person: PersonEntity)
     suspend fun deletePerson(personId: String)
     suspend fun addContactMethod(contact: ContactMethodEntity)

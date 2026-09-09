@@ -1,17 +1,31 @@
+# Built files & outputs
 *.iml
 .gradle
-/local.properties
-/.idea
-.DS_Store
+build/
+*/build/
 /build
 /app/build
-/captures
+captures/
 .externalNativeBuild
 .cxx
+*.apk
+*.aab
+
+# Local configuration & Keystores (Sensitive)
 local.properties
+/local.properties
 *.jks
 *.keystore
 *.pimsbak
-*.apk
-*.aab
-.vscode
+*.penc
+
+# IDE & Editor artifacts
+.idea/
+/.idea
+.vscode/
+.kotlin/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db

@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pims.vault.core.model.SecurityClassification
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.StateError
@@ -367,3 +368,272 @@ fun PimsOutlinedTextField(
     )
 }
 
+// =========================================================================
+// Warm Minimalist Core Components
+// "My life, organised around me"
+// =========================================================================
+
+/**
+ * Persona Avatar: Central visual anchor.
+ * 72–96dp circular avatar with warm tint, initials or icon, generous breathing room.
+ * Never trapped inside a card.
+ */
+@Composable
+fun PersonaAvatar(
+    name: String,
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 84.dp,
+    avatarTextSize: androidx.compose.ui.unit.TextUnit = 28.sp,
+    onClick: (() -> Unit)? = null
+) {
+    val initials = name.trim().split(" ")
+        .filter { it.isNotBlank() }
+        .take(2)
+        .mapNotNull { it.firstOrNull()?.uppercase() }
+        .joinToString("")
+        .ifEmpty { "P" }
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .background(
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = androidx.compose.foundation.shape.CircleShape
+            )
+            .then(
+                if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = initials,
+            color = MaterialTheme.colorScheme.tertiary,
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontSize = avatarTextSize,
+                fontWeight = FontWeight.Bold
+            )
+        )
+    }
+}
+
+/**
+ * Status Pill: Calm, understated profile status indicator.
+ * e.g., "🟢 Everything looks good" or "Profile 82%".
+ */
+@Composable
+fun StatusPill(
+    text: String,
+    isGood: Boolean = true,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    val pillBg = if (isGood) StateSuccess.copy(alpha = 0.12f) else StateWarning.copy(alpha = 0.12f)
+    val textColor = if (isGood) StateSuccess else StateWarning
+
+    Surface(
+        modifier = modifier.then(
+            if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+        ),
+        shape = RoundedCornerShape(16.dp),
+        color = pillBg
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(color = textColor, shape = androidx.compose.foundation.shape.CircleShape)
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.1.sp
+                ),
+                color = textColor
+            )
+        }
+    }
+}
+
+/**
+ * Facet Summary Row: Clean representation of one of the 6 Life Worlds
+ * (Education, Health, Vault, Documents, People, Portfolio).
+ * Avoids the "card prison" look — uses subtle surface shift and warm accent icon pill.
+ */
+@Composable
+fun FacetSummaryRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    trailingBadge: String? = null,
+    isSensitive: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Subtle tinted icon pill
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(
+                            color = if (isSensitive) MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                    else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+                            shape = RoundedCornerShape(10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (isSensitive) MaterialTheme.colorScheme.onSurfaceVariant
+                               else MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (trailingBadge != null) {
+                    Text(
+                        text = trailingBadge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Contact Chip: Tactile, clean quick action chip for phone, email, location.
+ */
+@Composable
+fun ContactChip(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/**
+ * Recent Activity Item: Quiet memory/lifecycle row
+ * e.g., "🎂 Mum's birthday · Tomorrow" or "📄 Degree certificate · Added yesterday"
+ */
+@Composable
+fun RecentActivityItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(8.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(17.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}

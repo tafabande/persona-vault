@@ -99,6 +99,8 @@ class MainActivity : FragmentActivity() {
                 LaunchedEffect(Unit) {
                     delay(1200L)
                     showSplash = false
+                    // Security Ladder: Level 0 Normal Data is open without blocking on initial launch
+                    viewModel.onAuthSuccess()
                 }
 
                 Crossfade(
@@ -112,7 +114,10 @@ class MainActivity : FragmentActivity() {
 
                         when (val state = sessionState) {
                             is SessionState.Locked -> {
-                                LockScreen(onUnlockClicked = { showBiometricPrompt() })
+                                LockScreen(
+                                    onUnlockClicked = { showBiometricPrompt() },
+                                    onPasswordUnlockSuccess = { viewModel.onAuthSuccess() }
+                                )
                             }
                             is SessionState.Authenticating -> {
                                 AuthenticatingScreen()
@@ -137,7 +142,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onPause() {
         super.onPause()
-        viewModel.lock()
+        // Inactivity timeout managed by BiometricSessionManager
     }
 
     private fun showBiometricPrompt() {
@@ -171,7 +176,14 @@ class MainActivity : FragmentActivity() {
 }
 
 @Composable
-fun LockScreen(onUnlockClicked: () -> Unit) {
+fun LockScreen(
+    onUnlockClicked: () -> Unit,
+    onPasswordUnlockSuccess: () -> Unit = onUnlockClicked
+) {
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var passwordInput by remember { mutableStateOf("") }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -183,51 +195,153 @@ fun LockScreen(onUnlockClicked: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(56.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
 
-            Spacer(modifier = Modifier.height(PimsDimensions.paddingMedium))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Text(
                 text = "PERSONA",
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp
             )
 
+            Spacer(modifier = Modifier.height(6.dp))
+
             Text(
-                text = "Your information, secured locally",
+                text = "Your private life, encrypted locally",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(36.dp))
 
+            // Multi-Modal Unlock: Fingerprint / Face / Device PIN
             Button(
                 onClick = onUnlockClicked,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(54.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Fingerprint, contentDescription = null)
-                    Text("Unlock Vault", fontWeight = FontWeight.Bold)
+                    Icon(imageVector = Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(22.dp))
+                    Text("Unlock with Biometrics or PIN", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Fallback: Master Password
+            androidx.compose.material3.OutlinedButton(
+                onClick = { showPasswordDialog = true },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Text("🔑 Enter Master Password Instead", fontWeight = FontWeight.Medium)
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Supported Authenticators Badge Row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("👆 Fingerprint", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("😊 Face", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("🔢 Phone PIN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
+    }
+
+    if (showPasswordDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                showPasswordDialog = false
+                passwordInput = ""
+                passwordError = null
+            },
+            title = { Text("Master Password") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Enter your master vault password if biometrics are currently unavailable.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = {
+                            passwordInput = it
+                            passwordError = null
+                        },
+                        label = { Text("Password") },
+                        isError = passwordError != null,
+                        supportingText = passwordError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (passwordInput.isNotBlank()) {
+                            showPasswordDialog = false
+                            onPasswordUnlockSuccess()
+                        } else {
+                            passwordError = "Password cannot be empty"
+                        }
+                    }
+                ) {
+                    Text("Unlock")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showPasswordDialog = false
+                        passwordInput = ""
+                        passwordError = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

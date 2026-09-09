@@ -37,6 +37,10 @@ interface PersonDao {
     @Query("SELECT * FROM persons WHERE id = :id")
     fun getPersonWithFullProfileFlow(id: String): Flow<PersonWithFullProfile?>
 
+    @Transaction
+    @Query("SELECT * FROM persons WHERE is_primary_owner = 1 LIMIT 1")
+    fun getPrimaryOwnerWithFullProfileFlow(): Flow<PersonWithFullProfile?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(person: PersonEntity): Long
 

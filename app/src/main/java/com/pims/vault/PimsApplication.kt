@@ -15,6 +15,9 @@ class PimsApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // 0. Initialize SQLCipher native libraries
+        net.sqlcipher.database.SQLiteDatabase.loadLibs(this)
+
         // 1. Enforce Release Build integrity check (Disallow test/debug crypto in production)
         if (!BuildConfig.DEBUG && BuildConfig.IS_DEBUG_CRYPTO_ALLOWED) {
             throw SecurityException("CRITICAL: Release build configured with insecure debug crypto allowance!")
