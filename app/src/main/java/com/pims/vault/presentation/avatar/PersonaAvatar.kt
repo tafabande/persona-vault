@@ -132,32 +132,70 @@ fun PersonaAvatar(
     }
 
     // 5. Smooth Spring Scale for Tap / Interaction
+    // 5. Smooth Spring Scale for Tap / Interaction
     val scaleAnim = remember { Animatable(1f) }
 
-    // 6. Procedural Blink Animation State
+    // 6. Procedural Alive Animation States (Blink, Tilt, Yawn, Sparkle, Blush)
     val blinkAnim = remember { Animatable(0f) }
+    val headTiltAnim = remember { Animatable(0f) }
+    val yawnAnim = remember { Animatable(0f) }
+    val sparkleProgressAnim = remember { Animatable(0f) }
+    val blushBoostAnim = remember { Animatable(0f) }
 
-    // 7. Idle Animation Loop (Suspends when custom photo or reduced motion)
+    // 7. Idle Animation Loop: Blinks, Head Tilts, and Occasional Yawns without user interaction
     LaunchedEffect(behaviorMode, isReducedMotion, isCustomPhoto) {
         if (!isCustomPhoto && behaviorMode == AvatarBehaviorMode.ALIVE && !isReducedMotion) {
+            var cycleCount = 0
             while (true) {
                 val interval = if (isNightTime) {
-                    Random.nextLong(6000, 10000)
+                    Random.nextLong(4500, 7500)
                 } else {
-                    Random.nextLong(3800, 6800)
+                    Random.nextLong(3000, 5200)
                 }
                 delay(interval)
+                cycleCount++
 
-                blinkAnim.animateTo(1f, tween(durationMillis = 70))
-                delay(40)
-                blinkAnim.animateTo(0f, tween(durationMillis = 90))
+                // 1. Natural organic blink
+                launch {
+                    blinkAnim.animateTo(1f, tween(durationMillis = 65))
+                    delay(35)
+                    blinkAnim.animateTo(0f, tween(durationMillis = 85))
+                }
+
+                // 2. Subtle organic head tilt every 2-3 cycles
+                if (cycleCount % 2 == 0) {
+                    val angles = listOf(-3.5f, 3.5f, -2.0f, 2.0f, 0f)
+                    val nextAngle = angles.random()
+                    launch {
+                        headTiltAnim.animateTo(
+                            nextAngle,
+                            tween(durationMillis = 1100, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                        )
+                    }
+                }
+
+                // 3. Occasional organic yawn (every 6-8 cycles or more frequent if night)
+                val shouldYawn = (isNightTime && cycleCount % 4 == 0) || (cycleCount % 7 == 0)
+                if (shouldYawn) {
+                    launch {
+                        // Inhale / open mouth yawn stretch
+                        headTiltAnim.animateTo(-3.5f, tween(durationMillis = 700))
+                        yawnAnim.animateTo(1f, tween(durationMillis = 900, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                        delay(650)
+                        // Exhale / relax back to normal
+                        yawnAnim.animateTo(0f, tween(durationMillis = 800, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                        headTiltAnim.animateTo(0f, tween(durationMillis = 700))
+                    }
+                }
             }
         } else {
             blinkAnim.snapTo(0f)
+            headTiltAnim.snapTo(0f)
+            yawnAnim.snapTo(0f)
         }
     }
 
-    // 8. Interaction Handler (Apple-like fluidity, squish-bounce, debounced)
+    // 8. Interaction Handler (Apple-like fluidity, squish-bounce, cute sparkles & hearts)
     val triggerReaction: () -> Unit = {
         if (!isInteracting) {
             isInteracting = true
@@ -173,16 +211,26 @@ fun PersonaAvatar(
                     }
                     delay(300)
                 } else {
-                    // Procedural avatar: smile reaction and spring squish-bounce
+                    // Procedural avatar: smile reaction, cute sparkles, hearts, and spring squish-bounce
                     interactiveExpression = AvatarExpression.HAPPY_SQUISH
 
                     if (!isReducedMotion && behaviorMode != AvatarBehaviorMode.STATIC) {
-                        scaleAnim.snapTo(0.93f)
-                        scaleAnim.animateTo(1.04f, PersonaMotion.bouncySpring(isReducedMotion))
+                        launch {
+                            blushBoostAnim.snapTo(1f)
+                            sparkleProgressAnim.snapTo(0f)
+                            sparkleProgressAnim.animateTo(
+                                1f,
+                                tween(durationMillis = 850, easing = androidx.compose.animation.core.LinearOutSlowInEasing)
+                            )
+                            sparkleProgressAnim.snapTo(0f)
+                            blushBoostAnim.animateTo(0f, tween(durationMillis = 400))
+                        }
+                        scaleAnim.snapTo(0.90f)
+                        scaleAnim.animateTo(1.08f, PersonaMotion.bouncySpring(isReducedMotion))
                         scaleAnim.animateTo(1.00f, PersonaMotion.gentleSpring(isReducedMotion))
                     }
 
-                    delay(650)
+                    delay(850)
                     interactiveExpression = null
                 }
                 isInteracting = false
@@ -234,14 +282,18 @@ fun PersonaAvatar(
             // Elegant Brand Default Avatar Fallback (Section 37)
             DefaultPersonaFallbackAvatar(name = name, size = size, textSize = avatarTextSize)
         } else {
-            // Procedural Vector Avatar
+            // Procedural Vector Avatar with dynamic live tilt, yawn, blush, and cute sparkles
             PersonaAvatarCanvas(
                 config = effectiveConfig.copy(expression = activeExpression),
                 size = size,
                 showBackground = showBackground,
                 customMood = customMood,
                 blinkProgress = blinkAnim.value,
-                isSleepy = isNightTime && activeExpression != AvatarExpression.HAPPY_SQUISH
+                isSleepy = isNightTime && activeExpression != AvatarExpression.HAPPY_SQUISH,
+                headTiltAngle = headTiltAnim.value,
+                yawnProgress = yawnAnim.value,
+                sparkleProgress = sparkleProgressAnim.value,
+                blushBoost = blushBoostAnim.value
             )
         }
     }

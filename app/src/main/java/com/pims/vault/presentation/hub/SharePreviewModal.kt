@@ -65,6 +65,10 @@ import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.StateWarning
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import com.pims.vault.presentation.ui.components.ShareCardPalette
+
 enum class SharePreset {
     GENERAL,
     MEDICAL,
@@ -83,6 +87,7 @@ fun SharePreviewModal(
     onCopyShareLink: (String) -> Unit
 ) {
     var selectedPresetIndex by remember { mutableIntStateOf(0) }
+    var currentPalette by remember { mutableStateOf(ShareCardPalette.OBSIDIAN) }
     val presets = listOf("General", "Medical ICE", "Professional", "Contact Card")
 
     // State for granular disclosure permissions
@@ -215,21 +220,63 @@ fun SharePreviewModal(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Photographic Instant-Film Share Card with quiet-zone QR
+            // Pristine Luxury Matte Share Card
             PersonaShareCard(
                 personName = personName,
-                occupation = when (selectedPresetIndex) {
-                    1 -> "Emergency Responder Info"
-                    3 -> "Direct Contact Card"
-                    else -> occupation.ifBlank { "Personal Profile" }
-                },
-                country = country,
-                presetTitle = presets[selectedPresetIndex],
+                selectedPalette = currentPalette,
                 qrSeed = "$personName;${presets[selectedPresetIndex]};name=$shareName;phone=$sharePhone;email=$shareEmail;addr=$shareAddress;med=$shareEmergencyIce;edu=$shareEducation",
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // PALETTE SWATCH SELECTOR
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "MATTE CARD FINISH",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
+                    ),
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ShareCardPalette.entries.forEach { pal ->
+                        val isSelected = pal == currentPalette
+                        Surface(
+                            onClick = { currentPalette = pal },
+                            shape = CircleShape,
+                            color = pal.baseColor,
+                            border = BorderStroke(
+                                width = if (isSelected) 2.5.dp else 1.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f)
+                            ),
+                            shadowElevation = if (isSelected) 6.dp else 2.dp,
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            if (isSelected) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = if (pal.isLight) Color.Black else Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
 
             // PREVIEW-FIRST PERMISSIONS BREAKDOWN
             Text(

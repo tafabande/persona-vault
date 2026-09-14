@@ -474,6 +474,7 @@ fun AvatarEditorContent(
                         )
                     }
                 }
+                Spacer(modifier = Modifier.width(16.dp))
             }
 
             // Customization Controls for Active Category
@@ -510,7 +511,8 @@ fun AvatarEditorContent(
                                             .fillMaxWidth()
                                             .clickable {
                                                 haptics.light()
-                                                config = config.copy(gender = gender)
+                                                val autoShape = if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR else if (gender == AvatarGender.FEMALE) HeadShape.SOFT_OVAL else config.headShape
+                                                config = config.copy(gender = gender, headShape = autoShape)
                                             }
                                     ) {
                                         Row(
@@ -536,6 +538,23 @@ fun AvatarEditorContent(
                                         }
                                     }
                                 }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Base Jaw Silhouette", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                HeadShape.values().forEach { shape ->
+                                    ChoiceChip(label = shape.label, isSelected = config.headShape == shape) {
+                                        haptics.light()
+                                        config = config.copy(headShape = shape)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
 
@@ -563,11 +582,11 @@ fun AvatarEditorContent(
                                         HairStyle.BRAIDS, HairStyle.BOX_BRAIDS, HairStyle.CORNROWS,
                                         HairStyle.LOCS, HairStyle.PONYTAIL, HairStyle.WAVY_LONG,
                                         HairStyle.LONG_STRAIGHT, HairStyle.BOB, HairStyle.CURLY_AFRO,
-                                        HairStyle.SHORT_CROP, HairStyle.TOP_BUN
+                                        HairStyle.SHORT_CROP, HairStyle.TOP_BUN, HairStyle.TEXTURED_FADE
                                     )
                                 } else {
                                     listOf(
-                                        HairStyle.DEFAULT,
+                                        HairStyle.TEXTURED_FADE, HairStyle.DEFAULT,
                                         HairStyle.SHORT_CROP, HairStyle.LOW_FADE, HairStyle.HIGH_FADE,
                                         HairStyle.SHORT_CURS, HairStyle.CURLY_AFRO, HairStyle.LOCS,
                                         HairStyle.BRAIDS, HairStyle.BUZZ, HairStyle.SIDE_PART
@@ -588,6 +607,7 @@ fun AvatarEditorContent(
                                         config = config.copy(hairStyle = hair)
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
 
                             Text("Hair Color", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
@@ -625,10 +645,27 @@ fun AvatarEditorContent(
                                         }
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
 
                         EditorTab.FACE -> {
+                            Text("Eyebrows", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                EyebrowType.values().forEach { brow ->
+                                    ChoiceChip(label = brow.label, isSelected = config.eyebrowType == brow) {
+                                        haptics.light()
+                                        config = config.copy(eyebrowType = brow)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                            }
+
                             Text("Eyes", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
                             Row(
                                 modifier = Modifier
@@ -642,6 +679,7 @@ fun AvatarEditorContent(
                                         config = config.copy(eyeType = eye)
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
 
                             Text("Mouth", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
@@ -657,6 +695,7 @@ fun AvatarEditorContent(
                                         config = config.copy(mouthType = mouth)
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
 
                             Text("Facial Details", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
@@ -672,6 +711,7 @@ fun AvatarEditorContent(
                                         config = config.copy(facialFeature = feature)
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
 
@@ -711,6 +751,7 @@ fun AvatarEditorContent(
                                         }
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
 
@@ -728,6 +769,7 @@ fun AvatarEditorContent(
                                         config = config.copy(clothingStyle = outfit)
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
 
                             Text("Color", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
@@ -755,6 +797,7 @@ fun AvatarEditorContent(
                                             }
                                     )
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
 
@@ -772,6 +815,7 @@ fun AvatarEditorContent(
                                         config = config.copy(accessory = acc)
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
 
@@ -789,6 +833,7 @@ fun AvatarEditorContent(
                                         config = config.copy(backgroundShape = shape)
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(16.dp))
                             }
                         }
 

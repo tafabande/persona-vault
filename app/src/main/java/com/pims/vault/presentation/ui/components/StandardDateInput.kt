@@ -134,7 +134,7 @@ fun StandardDateInput(
         }
     }
 
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -142,145 +142,166 @@ fun StandardDateInput(
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface
             )
             if (!isRequired) {
                 Text(
                     text = "Optional",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                 )
             }
         }
 
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Day Box [ DD ]
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                OutlinedTextField(
-                    value = day,
-                    onValueChange = { input ->
-                        val filtered = input.filter { it.isDigit() }.take(2)
-                        day = filtered
-                        updateAndValidate(day, month, year)
-                        if (filtered.length == 2) {
-                            focusManager.moveFocus(FocusDirection.Next)
-                        }
-                    },
-                    placeholder = { Text("DD", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+            OutlinedTextField(
+                value = day,
+                onValueChange = { input ->
+                    val filtered = input.filter { it.isDigit() }.take(2)
+                    day = filtered
+                    updateAndValidate(day, month, year)
+                    if (filtered.length == 2) {
+                        focusManager.moveFocus(FocusDirection.Next)
+                    }
+                },
+                placeholder = {
+                    Text(
+                        "DD",
                         textAlign = TextAlign.Center,
-                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
                         fontWeight = FontWeight.Bold
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = errorMessage != null,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
-                    ),
-                    modifier = Modifier.width(72.dp)
-                )
-                Text(
-                    text = "Day",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
+                    )
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    textAlign = TextAlign.Center,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = RoundedCornerShape(12.dp),
+                isError = errorMessage != null,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier.weight(1f)
+            )
 
+            // Centered delimiter with NO weird offsets
             Text(
                 text = "/",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 16.dp)
+                color = MaterialTheme.colorScheme.outlineVariant
             )
 
             // Month Box [ MM ]
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                OutlinedTextField(
-                    value = month,
-                    onValueChange = { input ->
-                        val filtered = input.filter { it.isDigit() }.take(2)
-                        month = filtered
-                        updateAndValidate(day, month, year)
-                        if (filtered.length == 2) {
-                            focusManager.moveFocus(FocusDirection.Next)
-                        }
-                    },
-                    placeholder = { Text("MM", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+            OutlinedTextField(
+                value = month,
+                onValueChange = { input ->
+                    val filtered = input.filter { it.isDigit() }.take(2)
+                    month = filtered
+                    updateAndValidate(day, month, year)
+                    if (filtered.length == 2) {
+                        focusManager.moveFocus(FocusDirection.Next)
+                    }
+                },
+                placeholder = {
+                    Text(
+                        "MM",
                         textAlign = TextAlign.Center,
-                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
                         fontWeight = FontWeight.Bold
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = errorMessage != null,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
-                    ),
-                    modifier = Modifier.width(72.dp)
-                )
-                Text(
-                    text = "Month",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
+                    )
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    textAlign = TextAlign.Center,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = RoundedCornerShape(12.dp),
+                isError = errorMessage != null,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier.weight(1f)
+            )
 
+            // Centered delimiter with NO weird offsets
             Text(
                 text = "/",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 16.dp)
+                color = MaterialTheme.colorScheme.outlineVariant
             )
 
             // Year Box [ YYYY ]
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                OutlinedTextField(
-                    value = year,
-                    onValueChange = { input ->
-                        val filtered = input.filter { it.isDigit() }.take(4)
-                        year = filtered
-                        updateAndValidate(day, month, year)
-                        if (filtered.length == 4) {
-                            focusManager.clearFocus()
-                        }
-                    },
-                    placeholder = { Text("YYYY", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+            OutlinedTextField(
+                value = year,
+                onValueChange = { input ->
+                    val filtered = input.filter { it.isDigit() }.take(4)
+                    year = filtered
+                    updateAndValidate(day, month, year)
+                    if (filtered.length == 4) {
+                        focusManager.clearFocus()
+                    }
+                },
+                placeholder = {
+                    Text(
+                        "YYYY",
                         textAlign = TextAlign.Center,
-                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
                         fontWeight = FontWeight.Bold
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    shape = RoundedCornerShape(12.dp),
-                    isError = errorMessage != null,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
-                    ),
-                    modifier = Modifier.width(100.dp)
-                )
-                Text(
-                    text = "Year",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
+                    )
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    textAlign = TextAlign.Center,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                shape = RoundedCornerShape(12.dp),
+                isError = errorMessage != null,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier.weight(1.35f)
+            )
         }
 
         if (errorMessage != null) {
@@ -288,7 +309,7 @@ fun StandardDateInput(
                 text = errorMessage!!,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 4.dp)
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
             )
         }
     }

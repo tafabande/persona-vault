@@ -12,10 +12,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.pims.vault.presentation.ui.theme.LocalPersonaMood
@@ -50,7 +52,11 @@ fun PersonaAvatarCanvas(
     showBackground: Boolean = true,
     customMood: PersonaMood? = null,
     blinkProgress: Float = 0f,
-    isSleepy: Boolean = false
+    isSleepy: Boolean = false,
+    headTiltAngle: Float = 0f,
+    yawnProgress: Float = 0f,
+    sparkleProgress: Float = 0f,
+    blushBoost: Float = 0f
 ) {
     val activeMood = customMood ?: LocalPersonaMood.current
 
@@ -62,7 +68,7 @@ fun PersonaAvatarCanvas(
             val w = this.size.width
             val h = this.size.height
 
-            // 1. Background Shape
+            // Z-0: Background Canvas (Color circle, squircle, or organic container)
             if (showBackground) {
                 drawAvatarBackdrop(
                     shape = config.backgroundShape,
@@ -73,44 +79,50 @@ fun PersonaAvatarCanvas(
                 )
             }
 
-            // 2. Back Hair (Lush mass behind neck, ears, and shoulders)
+            // Z-1: Back Hair Layer (falls behind neck, ears, and shoulders)
             drawBackHair(config, w, h)
 
-            // 3. Neck
+            // Z-2: Base Body & Neck (standardized collar line)
             drawNeck(config, w, h)
 
-            // 4. Head Base & Cranium
-            drawHead(config, w, h)
-
-            // 5. Ears (anchored, depth-shaded, kept visible)
-            drawEars(config, w, h)
-
-            // 6. Facial Features
-            drawFacialFeatures(config, w, h)
-
-            // 7. Eyes & Eyebrows (smooth procedural blinking & sleepy state)
-            drawEyesAndBrows(config, w, h, blinkProgress, isSleepy)
-
-            // 8. Nose & Mouth
-            drawMouth(config, w, h, isSleepy)
-
-            // 9. Front Hair / Scalp / Bangs (anchored cleanly to cranium with soft hairline)
-            drawFrontHair(config, w, h)
-
-            // 10. Facial Hair Details
-            drawFacialHairDetails(config, w, h)
-
-            // 11. Glasses & Eye Accessories
-            drawAccessory(config, w, h)
-
-            // 12. Clothing & Body (anchors character over neck at base)
+            // Z-3: Clothing / Outfits (collarbone anchor, color blocking primary + accent)
             drawClothing(config, w, h)
 
-            // 13. Over-shoulder cascading braids, locks, and strands (drapes OVER chest/shoulders)
+            // Head & Facial elements with dynamic alive tilt
+            withTransform({
+                rotate(headTiltAngle, pivot = Offset(w * 0.5f, h * 0.58f))
+            }) {
+                // Z-4: Head Base & Ears (includes base jaw shape, ear structures, inner ear shadow, chin shadow on neck)
+                drawHead(config, w, h)
+                drawEars(config, w, h)
+
+                // Z-5: Facial Base Texture (freckles, stubble, goatee, tone-matched blush)
+                drawFacialFeatures(config, w, h, blushBoost)
+
+                // Z-6: Dynamic Expressions Block
+                // Sub-layer A (Eyes) & Sub-layer B (Eyebrows)
+                drawEyesAndBrows(config, w, h, blinkProgress, isSleepy, yawnProgress)
+                // Sub-layer C (Nose) & Sub-layer D (Mouth & Teeth/Tongue)
+                drawMouth(config, w, h, isSleepy, yawnProgress)
+
+                // Z-7: Front Hair Layer (Bangs, buzz line, textured fade with breakout tufts & razor slit)
+                drawFrontHair(config, w, h)
+
+                // Facial Hair Details
+                drawFacialHairDetails(config, w, h)
+
+                // Z-8: Accessories (Glasses, frames, sunnies)
+                drawAccessory(config, w, h)
+            }
+
+            // Over-shoulder cascading braids, locks, and strands (drapes OVER chest/shoulders)
             drawOverShoulderHair(config, w, h)
 
-            // 14. State Decorations
+            // State Decorations
             drawStateDecorations(config, w, h)
+
+            // Cute sparkle & heart effects on click
+            drawCuteEffects(sparkleProgress, w, h)
         }
     }
 }
@@ -323,62 +335,145 @@ private fun DrawScope.drawBackHair(config: PersonaAvatarConfig, w: Float, h: Flo
 }
 
 // =============================================================================
-// LAYER 3: NECK
+// Z-2: BASE BODY & NECK (STANDARDIZED COLLAR LINE & FIXED ANCHORS)
 // =============================================================================
 
 private fun DrawScope.drawNeck(config: PersonaAvatarConfig, w: Float, h: Float) {
+    // Identical neck width across all silhouettes so hair and clothes snap with zero misalignment!
     val neckWidth = w * 0.22f
     val neckHeight = h * 0.24f
     val neckLeft = (w - neckWidth) / 2f
-    val neckTop = h * 0.54f
+    val neckTop = h * 0.52f
 
+    // Neck base structure
     drawRect(
         color = config.skinTone.shadowColor,
         topLeft = Offset(neckLeft, neckTop),
         size = Size(neckWidth, neckHeight)
     )
+
+    // Subtle sternocleidomastoid neck muscle shadow lines
+    val muscleShadow = config.skinTone.shadowColor.copy(alpha = 0.50f)
+    drawLine(muscleShadow, Offset(w * 0.44f, h * 0.58f), Offset(w * 0.47f, h * 0.72f), w * 0.008f, StrokeCap.Round)
+    drawLine(muscleShadow, Offset(w * 0.56f, h * 0.58f), Offset(w * 0.53f, h * 0.72f), w * 0.008f, StrokeCap.Round)
 }
 
 // =============================================================================
-// LAYER 4: HEAD BASE & CRANIUM (CORE FIX FOR SCALP GEOMETRY)
+// Z-4: HEAD BASE & CRANIUM (4 MODULAR BASE SILHOUETTES & CHIN SHADOW)
 // =============================================================================
 
 private fun DrawScope.drawHead(config: PersonaAvatarConfig, w: Float, h: Float) {
-    val headWidth = when (config.style) {
-        AvatarStyle.CUTE -> w * 0.57f
-        else -> w * 0.53f
-    }
-    // Dome apex at 0.165f provides full skull structure under all hairstyles
-    val headTop = h * 0.165f
-    val headHeight = h * 0.525f
-    val headLeft = (w - headWidth) / 2f
+    val skinColor = config.skinTone.color
+    val shadowColor = config.skinTone.shadowColor
 
-    val cornerRadius = when (config.style) {
-        AvatarStyle.CUTE -> CornerRadius(headWidth * 0.48f, headHeight * 0.46f)
-        AvatarStyle.SOFT -> CornerRadius(headWidth * 0.46f, headHeight * 0.44f)
-        AvatarStyle.SKETCH -> CornerRadius(headWidth * 0.44f, headHeight * 0.42f)
+    // Master Coordinate Anchors:
+    // Apex of cranium: (0.50w, 0.165h)
+    // Left / Right ear connection: 0.465h
+    // Chin apex: 0.675h
+    val headPath = Path()
+    when (config.headShape) {
+        HeadShape.CHISELED_ANGULAR -> {
+            // Defined masculine jawline (Masterpiece Reference Alignment)
+            headPath.apply {
+                moveTo(w * 0.235f, h * 0.34f)
+                // Cranium top dome
+                cubicTo(w * 0.21f, h * 0.165f, w * 0.36f, h * 0.14f, w * 0.50f, h * 0.14f)
+                cubicTo(w * 0.64f, h * 0.14f, w * 0.79f, h * 0.165f, w * 0.765f, h * 0.34f)
+                // Down past ear to upper cheek
+                lineTo(w * 0.765f, h * 0.46f)
+                lineTo(w * 0.745f, h * 0.52f)
+                // Chiseled jaw angle
+                lineTo(w * 0.705f, h * 0.585f)
+                // Taper to chin right corner
+                lineTo(w * 0.555f, h * 0.675f)
+                // Defined chin bottom
+                quadraticTo(w * 0.50f, h * 0.680f, w * 0.445f, h * 0.675f)
+                // Taper up to left chiseled jaw angle
+                lineTo(w * 0.295f, h * 0.585f)
+                // Up past left cheek to ear
+                lineTo(w * 0.255f, h * 0.52f)
+                lineTo(w * 0.235f, h * 0.46f)
+                close()
+            }
+        }
+        HeadShape.SOFT_OVAL -> {
+            // Soft feminine/neutral tapered jaw
+            headPath.apply {
+                moveTo(w * 0.245f, h * 0.34f)
+                cubicTo(w * 0.22f, h * 0.165f, w * 0.36f, h * 0.145f, w * 0.50f, h * 0.145f)
+                cubicTo(w * 0.64f, h * 0.145f, w * 0.78f, h * 0.165f, w * 0.755f, h * 0.34f)
+                cubicTo(w * 0.765f, h * 0.46f, w * 0.745f, h * 0.54f, w * 0.685f, h * 0.61f)
+                quadraticTo(w * 0.50f, h * 0.685f, w * 0.315f, h * 0.61f)
+                cubicTo(w * 0.255f, h * 0.54f, w * 0.235f, h * 0.46f, w * 0.245f, h * 0.34f)
+                close()
+            }
+        }
+        HeadShape.ROUND_YOUTHFUL -> {
+            // Youthful rounded cheek fullness
+            headPath.apply {
+                moveTo(w * 0.23f, h * 0.34f)
+                cubicTo(w * 0.21f, h * 0.165f, w * 0.35f, h * 0.145f, w * 0.50f, h * 0.145f)
+                cubicTo(w * 0.65f, h * 0.145f, w * 0.79f, h * 0.165f, w * 0.77f, h * 0.34f)
+                cubicTo(w * 0.79f, h * 0.48f, w * 0.76f, h * 0.56f, w * 0.69f, h * 0.62f)
+                quadraticTo(w * 0.50f, h * 0.680f, w * 0.31f, h * 0.62f)
+                cubicTo(w * 0.24f, h * 0.56f, w * 0.21f, h * 0.48f, w * 0.23f, h * 0.34f)
+                close()
+            }
+        }
+        HeadShape.SQUARE_BROAD -> {
+            // Broad masculine jaw with wide chin base
+            headPath.apply {
+                moveTo(w * 0.23f, h * 0.34f)
+                cubicTo(w * 0.21f, h * 0.165f, w * 0.36f, h * 0.14f, w * 0.50f, h * 0.14f)
+                cubicTo(w * 0.64f, h * 0.14f, w * 0.79f, h * 0.165f, w * 0.77f, h * 0.34f)
+                lineTo(w * 0.77f, h * 0.46f)
+                lineTo(w * 0.755f, h * 0.53f)
+                lineTo(w * 0.735f, h * 0.60f)
+                lineTo(w * 0.575f, h * 0.675f)
+                lineTo(w * 0.425f, h * 0.675f)
+                lineTo(w * 0.265f, h * 0.60f)
+                lineTo(w * 0.245f, h * 0.53f)
+                lineTo(w * 0.23f, h * 0.46f)
+                close()
+            }
+        }
     }
 
-    drawRoundRect(
-        color = config.skinTone.color,
-        topLeft = Offset(headLeft, headTop),
-        size = Size(headWidth, headHeight),
-        cornerRadius = cornerRadius
+    drawPath(headPath, color = skinColor)
+
+    // Under-Chin Shadow (Cast under the jawline onto the neck, 12-15% darker shadow tone)
+    val chinShadow = Path().apply {
+        moveTo(w * 0.39f, h * 0.63f)
+        quadraticTo(w * 0.50f, h * 0.71f, w * 0.61f, h * 0.63f)
+        lineTo(w * 0.61f, h * 0.70f)
+        quadraticTo(w * 0.50f, h * 0.73f, w * 0.39f, h * 0.70f)
+        close()
+    }
+    drawPath(chinShadow, color = shadowColor.copy(alpha = 0.85f))
+
+    // Lower Lip & Chin Indent Shadow Crease (as featured in reference art)
+    val chinIndentColor = shadowColor.copy(alpha = 0.55f)
+    drawArc(
+        color = chinIndentColor,
+        startAngle = 10f,
+        sweepAngle = 160f,
+        useCenter = false,
+        topLeft = Offset(w * 0.47f, h * 0.608f),
+        size = Size(w * 0.06f, h * 0.018f),
+        style = Stroke(width = w * 0.012f, cap = StrokeCap.Round)
     )
 
     if (config.style == AvatarStyle.SKETCH) {
-        drawRoundRect(
+        drawPath(
+            headPath,
             color = Color(0xFF2E2B27).copy(alpha = 0.45f),
-            topLeft = Offset(headLeft, headTop),
-            size = Size(headWidth, headHeight),
-            cornerRadius = cornerRadius,
-            style = Stroke(width = w * 0.02f, cap = StrokeCap.Round)
+            style = Stroke(width = w * 0.018f, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
     }
 }
 
 // =============================================================================
-// LAYER 5: EARS (ALWAYS PRESERVED AND POSITIONED ANATOMICALLY)
+// Z-4: EARS (FIXED ANCHORS, INNER CONCHA & ANATOMIC TRAGUS SHADOW)
 // =============================================================================
 
 private fun DrawScope.drawEars(config: PersonaAvatarConfig, w: Float, h: Float) {
@@ -388,27 +483,45 @@ private fun DrawScope.drawEars(config: PersonaAvatarConfig, w: Float, h: Float) 
     // Left ear
     val leftCenter = Offset(w * 0.225f, earY)
     drawCircle(color = config.skinTone.color, radius = earRadius, center = leftCenter)
-    drawCircle(color = config.skinTone.shadowColor, radius = earRadius * 0.50f, center = leftCenter)
+    drawCircle(color = config.skinTone.shadowColor, radius = earRadius * 0.60f, center = leftCenter)
+    // Antihelix / tragus inner line (illustrated anime ear structure)
+    val leftTragus = Path().apply {
+        moveTo(leftCenter.x - earRadius * 0.15f, leftCenter.y - earRadius * 0.45f)
+        cubicTo(leftCenter.x + earRadius * 0.25f, leftCenter.y - earRadius * 0.2f, leftCenter.x + earRadius * 0.25f, leftCenter.y + earRadius * 0.2f, leftCenter.x - earRadius * 0.15f, leftCenter.y + earRadius * 0.45f)
+    }
+    drawPath(leftTragus, color = config.skinTone.shadowColor, style = Stroke(width = w * 0.010f, cap = StrokeCap.Round))
 
     // Right ear
     val rightCenter = Offset(w * 0.775f, earY)
     drawCircle(color = config.skinTone.color, radius = earRadius, center = rightCenter)
-    drawCircle(color = config.skinTone.shadowColor, radius = earRadius * 0.50f, center = rightCenter)
+    drawCircle(color = config.skinTone.shadowColor, radius = earRadius * 0.60f, center = rightCenter)
+    // Antihelix / tragus inner line
+    val rightTragus = Path().apply {
+        moveTo(rightCenter.x + earRadius * 0.15f, rightCenter.y - earRadius * 0.45f)
+        cubicTo(rightCenter.x - earRadius * 0.25f, rightCenter.y - earRadius * 0.2f, rightCenter.x - earRadius * 0.25f, rightCenter.y + earRadius * 0.2f, rightCenter.x + earRadius * 0.15f, rightCenter.y + earRadius * 0.45f)
+    }
+    drawPath(rightTragus, color = config.skinTone.shadowColor, style = Stroke(width = w * 0.010f, cap = StrokeCap.Round))
 }
 
 // =============================================================================
-// LAYER 6: FACIAL FEATURES
+// Z-5: FACIAL BASE TEXTURE (CALIBRATED WARMTH BLUSH, FRECKLES, STUBBLE)
 // =============================================================================
 
-private fun DrawScope.drawFacialFeatures(config: PersonaAvatarConfig, w: Float, h: Float) {
+private fun DrawScope.drawFacialFeatures(config: PersonaAvatarConfig, w: Float, h: Float, blushBoost: Float = 0f) {
     val eyeLevelY = h * 0.450f
 
-    when (config.facialFeature) {
-        FacialFeature.CUTE_BLUSH -> {
-            val blushColor = Color(0xFFE87A7A).copy(alpha = 0.36f)
-            drawCircle(color = blushColor, radius = w * 0.055f, center = Offset(w * 0.33f, eyeLevelY + h * 0.065f))
-            drawCircle(color = blushColor, radius = w * 0.055f, center = Offset(w * 0.67f, eyeLevelY + h * 0.065f))
+    // Dynamic harmonized blush (uses calibrated warmthColor per swatch — never candy pink on deep skin)
+    if (config.facialFeature == FacialFeature.CUTE_BLUSH || blushBoost > 0.05f) {
+        val baseAlpha = if (config.facialFeature == FacialFeature.CUTE_BLUSH) 0.35f else 0.0f
+        val alpha = (baseAlpha + blushBoost * 0.35f).coerceIn(0f, 0.70f)
+        if (alpha > 0.02f) {
+            val blushColor = config.skinTone.warmthColor.copy(alpha = alpha * 0.45f)
+            drawCircle(color = blushColor, radius = w * (0.048f + blushBoost * 0.008f), center = Offset(w * 0.33f, eyeLevelY + h * 0.065f))
+            drawCircle(color = blushColor, radius = w * (0.048f + blushBoost * 0.008f), center = Offset(w * 0.67f, eyeLevelY + h * 0.065f))
         }
+    }
+
+    when (config.facialFeature) {
         FacialFeature.LIGHT_FRECKLES -> {
             val freckleColor = config.skinTone.shadowColor.copy(alpha = 0.85f)
             val r = w * 0.009f
@@ -430,17 +543,17 @@ private fun DrawScope.drawFacialFeatures(config: PersonaAvatarConfig, w: Float, 
             val goateeColor = config.hairColor.color.copy(alpha = 0.70f)
             val goateePath = Path().apply {
                 moveTo(w * 0.46f, h * 0.62f)
-                quadraticBezierTo(w * 0.50f, h * 0.68f, w * 0.54f, h * 0.62f)
+                quadraticTo(w * 0.50f, h * 0.68f, w * 0.54f, h * 0.62f)
                 close()
             }
             drawPath(goateePath, color = goateeColor)
         }
-        FacialFeature.NONE -> {}
+        else -> {}
     }
 }
 
 // =============================================================================
-// LAYER 7: EYES & EYEBROWS
+// Z-6: DYNAMIC EXPRESSIONS BLOCK (SUB-LAYERS A & B: EYES & EYEBROWS)
 // =============================================================================
 
 private fun DrawScope.drawEyesAndBrows(
@@ -448,18 +561,20 @@ private fun DrawScope.drawEyesAndBrows(
     w: Float,
     h: Float,
     blinkProgress: Float,
-    isSleepy: Boolean
+    isSleepy: Boolean,
+    yawnProgress: Float = 0f
 ) {
     val eyeY = h * 0.450f
     val leftEyeX = w * 0.385f
     val rightEyeX = w * 0.615f
-    val eyeColor = Color(0xFF201E1D)
-    val browColor = config.hairColor.color.copy(alpha = 0.85f)
+    val eyeColor = Color(0xFF1E1B18)
+    val browColor = config.hairColor.color.copy(alpha = 0.90f)
     val expr = config.expression
+    val shadowColor = config.skinTone.shadowColor
 
-    // 1. Eyebrows
-    val browY = eyeY - h * 0.062f
-    val browWidth = w * 0.070f
+    // 1. SUB-LAYER B: EYEBROWS (Emotional Driver)
+    val browY = eyeY - h * (0.065f + yawnProgress * 0.015f)
+    val browWidth = w * 0.075f
 
     when {
         expr == AvatarExpression.ERROR -> {
@@ -470,18 +585,77 @@ private fun DrawScope.drawEyesAndBrows(
             drawLine(browColor, Offset(leftEyeX - browWidth / 2f, browY - h * 0.02f), Offset(leftEyeX + browWidth / 2f, browY - h * 0.02f), w * 0.018f, StrokeCap.Round)
             drawLine(browColor, Offset(rightEyeX - browWidth / 2f, browY), Offset(rightEyeX + browWidth / 2f, browY), w * 0.018f, StrokeCap.Round)
         }
-        isSleepy || expr == AvatarExpression.SLEEPY -> {
-            drawLine(browColor.copy(alpha = 0.70f), Offset(leftEyeX - browWidth / 2f, browY + h * 0.005f), Offset(leftEyeX + browWidth / 2f, browY + h * 0.005f), w * 0.016f, StrokeCap.Round)
-            drawLine(browColor.copy(alpha = 0.70f), Offset(rightEyeX - browWidth / 2f, browY + h * 0.005f), Offset(rightEyeX + browWidth / 2f, browY + h * 0.005f), w * 0.016f, StrokeCap.Round)
+        config.eyebrowType == EyebrowType.CONFIDENT_SASSY -> {
+            // One brow arched high with attitude, one resting (Reference anime style!)
+            val leftArch = Path().apply {
+                moveTo(leftEyeX - browWidth * 0.55f, browY + h * 0.005f)
+                quadraticTo(leftEyeX - browWidth * 0.1f, browY - h * 0.022f, leftEyeX + browWidth * 0.55f, browY - h * 0.010f)
+            }
+            drawPath(leftArch, color = browColor, style = Stroke(width = w * 0.020f, cap = StrokeCap.Round))
+            val rightRest = Path().apply {
+                moveTo(rightEyeX - browWidth * 0.55f, browY + h * 0.002f)
+                quadraticTo(rightEyeX, browY - h * 0.008f, rightEyeX + browWidth * 0.55f, browY + h * 0.002f)
+            }
+            drawPath(rightRest, color = browColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
+        }
+        config.eyebrowType == EyebrowType.PLAYFUL_CURVED -> {
+            // Both raised high with rounded curves
+            val leftCurved = Path().apply {
+                moveTo(leftEyeX - browWidth * 0.5f, browY)
+                quadraticTo(leftEyeX, browY - h * 0.020f, leftEyeX + browWidth * 0.5f, browY)
+            }
+            val rightCurved = Path().apply {
+                moveTo(rightEyeX - browWidth * 0.5f, browY)
+                quadraticTo(rightEyeX, browY - h * 0.020f, rightEyeX + browWidth * 0.5f, browY)
+            }
+            drawPath(leftCurved, color = browColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
+            drawPath(rightCurved, color = browColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
+        }
+        config.eyebrowType == EyebrowType.INTENSE_ANGLED -> {
+            // Inward-slanted, focused flat angles
+            drawLine(browColor, Offset(leftEyeX - browWidth * 0.5f, browY - h * 0.012f), Offset(leftEyeX + browWidth * 0.5f, browY + h * 0.008f), w * 0.020f, StrokeCap.Round)
+            drawLine(browColor, Offset(rightEyeX - browWidth * 0.5f, browY + h * 0.008f), Offset(rightEyeX + browWidth * 0.5f, browY - h * 0.012f), w * 0.020f, StrokeCap.Round)
         }
         else -> {
-            drawLine(browColor, Offset(leftEyeX - browWidth / 2f, browY), Offset(leftEyeX + browWidth / 2f, browY), w * 0.018f, StrokeCap.Round)
-            drawLine(browColor, Offset(rightEyeX - browWidth / 2f, browY), Offset(rightEyeX + browWidth / 2f, browY), w * 0.018f, StrokeCap.Round)
+            // Neutral soft horizontal arch
+            val leftNeutral = Path().apply {
+                moveTo(leftEyeX - browWidth * 0.5f, browY + h * 0.003f)
+                quadraticTo(leftEyeX, browY - h * 0.010f, leftEyeX + browWidth * 0.5f, browY + h * 0.003f)
+            }
+            val rightNeutral = Path().apply {
+                moveTo(rightEyeX - browWidth * 0.5f, browY + h * 0.003f)
+                quadraticTo(rightEyeX, browY - h * 0.010f, rightEyeX + browWidth * 0.5f, browY + h * 0.003f)
+            }
+            drawPath(leftNeutral, color = browColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
+            drawPath(rightNeutral, color = browColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
         }
     }
 
-    // 2. Eyes
-    val isBlinking = blinkProgress > 0.35f
+    // 2. SUB-LAYER A: EYES & EYELASHES (Anime Catchlight System)
+    val isBlinking = blinkProgress > 0.35f || yawnProgress > 0.25f
+
+    // Upper eyelid fold crease
+    if (!isBlinking && expr != AvatarExpression.HAPPY_SQUISH && expr != AvatarExpression.SUCCESS && expr != AvatarExpression.LOCKED) {
+        val creaseColor = shadowColor.copy(alpha = 0.65f)
+        drawArc(
+            color = creaseColor,
+            startAngle = 195f,
+            sweepAngle = 150f,
+            useCenter = false,
+            topLeft = Offset(leftEyeX - w * 0.038f, eyeY - h * 0.034f),
+            size = Size(w * 0.076f, h * 0.028f),
+            style = Stroke(width = w * 0.012f, cap = StrokeCap.Round)
+        )
+        drawArc(
+            color = creaseColor,
+            startAngle = 195f,
+            sweepAngle = 150f,
+            useCenter = false,
+            topLeft = Offset(rightEyeX - w * 0.038f, eyeY - h * 0.034f),
+            size = Size(w * 0.076f, h * 0.028f),
+            style = Stroke(width = w * 0.012f, cap = StrokeCap.Round)
+        )
+    }
 
     when {
         expr == AvatarExpression.LOCKED || isBlinking -> {
@@ -490,8 +664,8 @@ private fun DrawScope.drawEyesAndBrows(
                 startAngle = 0f,
                 sweepAngle = 180f,
                 useCenter = false,
-                topLeft = Offset(leftEyeX - w * 0.035f, eyeY - h * 0.018f),
-                size = Size(w * 0.07f, h * 0.036f),
+                topLeft = Offset(leftEyeX - w * 0.038f, eyeY - h * 0.018f),
+                size = Size(w * 0.076f, h * 0.036f),
                 style = Stroke(width = w * 0.02f, cap = StrokeCap.Round)
             )
             drawArc(
@@ -499,8 +673,8 @@ private fun DrawScope.drawEyesAndBrows(
                 startAngle = 0f,
                 sweepAngle = 180f,
                 useCenter = false,
-                topLeft = Offset(rightEyeX - w * 0.035f, eyeY - h * 0.018f),
-                size = Size(w * 0.07f, h * 0.036f),
+                topLeft = Offset(rightEyeX - w * 0.038f, eyeY - h * 0.018f),
+                size = Size(w * 0.076f, h * 0.036f),
                 style = Stroke(width = w * 0.02f, cap = StrokeCap.Round)
             )
         }
@@ -510,8 +684,8 @@ private fun DrawScope.drawEyesAndBrows(
                 startAngle = 180f,
                 sweepAngle = 180f,
                 useCenter = false,
-                topLeft = Offset(leftEyeX - w * 0.035f, eyeY - h * 0.02f),
-                size = Size(w * 0.07f, h * 0.04f),
+                topLeft = Offset(leftEyeX - w * 0.038f, eyeY - h * 0.02f),
+                size = Size(w * 0.076f, h * 0.04f),
                 style = Stroke(width = w * 0.022f, cap = StrokeCap.Round)
             )
             drawArc(
@@ -519,8 +693,8 @@ private fun DrawScope.drawEyesAndBrows(
                 startAngle = 180f,
                 sweepAngle = 180f,
                 useCenter = false,
-                topLeft = Offset(rightEyeX - w * 0.035f, eyeY - h * 0.02f),
-                size = Size(w * 0.07f, h * 0.04f),
+                topLeft = Offset(rightEyeX - w * 0.038f, eyeY - h * 0.02f),
+                size = Size(w * 0.076f, h * 0.04f),
                 style = Stroke(width = w * 0.022f, cap = StrokeCap.Round)
             )
         }
@@ -530,12 +704,11 @@ private fun DrawScope.drawEyesAndBrows(
                 startAngle = 180f,
                 sweepAngle = 180f,
                 useCenter = false,
-                topLeft = Offset(leftEyeX - w * 0.035f, eyeY - h * 0.02f),
-                size = Size(w * 0.07f, h * 0.04f),
+                topLeft = Offset(leftEyeX - w * 0.038f, eyeY - h * 0.02f),
+                size = Size(w * 0.076f, h * 0.04f),
                 style = Stroke(width = w * 0.022f, cap = StrokeCap.Round)
             )
-            drawCircle(color = eyeColor, radius = w * 0.030f, center = Offset(rightEyeX, eyeY))
-            drawCircle(color = Color.White, radius = w * 0.010f, center = Offset(rightEyeX - w * 0.009f, eyeY - h * 0.009f))
+            drawAnimeEye(rightEyeX, eyeY, w, h, eyeColor)
         }
         isSleepy || expr == AvatarExpression.SLEEPY -> {
             drawArc(
@@ -558,29 +731,20 @@ private fun DrawScope.drawEyesAndBrows(
             )
         }
         config.eyeType == EyeType.GENTLE_DOT -> {
-            val r = w * 0.030f
+            val r = w * 0.032f
             drawCircle(color = eyeColor, radius = r, center = Offset(leftEyeX, eyeY))
             drawCircle(color = eyeColor, radius = r, center = Offset(rightEyeX, eyeY))
-            drawCircle(color = Color.White, radius = r * 0.35f, center = Offset(leftEyeX - r * 0.3f, eyeY - r * 0.3f))
-            drawCircle(color = Color.White, radius = r * 0.35f, center = Offset(rightEyeX - r * 0.3f, eyeY - r * 0.3f))
+            drawCircle(color = Color.White, radius = r * 0.38f, center = Offset(leftEyeX - r * 0.3f, eyeY - r * 0.3f))
+            drawCircle(color = Color.White, radius = r * 0.38f, center = Offset(rightEyeX - r * 0.3f, eyeY - r * 0.3f))
         }
-        config.eyeType == EyeType.ALMOND -> {
-            val pathL = Path().apply {
-                moveTo(leftEyeX - w * 0.038f, eyeY)
-                quadraticBezierTo(leftEyeX, eyeY - h * 0.024f, leftEyeX + w * 0.038f, eyeY)
-                quadraticBezierTo(leftEyeX, eyeY + h * 0.024f, leftEyeX - w * 0.038f, eyeY)
-                close()
-            }
-            val pathR = Path().apply {
-                moveTo(rightEyeX - w * 0.038f, eyeY)
-                quadraticBezierTo(rightEyeX, eyeY - h * 0.024f, rightEyeX + w * 0.038f, eyeY)
-                quadraticBezierTo(rightEyeX, eyeY + h * 0.024f, rightEyeX - w * 0.038f, eyeY)
-                close()
-            }
-            drawPath(pathL, color = eyeColor)
-            drawPath(pathR, color = eyeColor)
-            drawCircle(color = Color.White, radius = w * 0.010f, center = Offset(leftEyeX - w * 0.01f, eyeY - h * 0.007f))
-            drawCircle(color = Color.White, radius = w * 0.010f, center = Offset(rightEyeX - w * 0.01f, eyeY - h * 0.007f))
+        config.eyeType == EyeType.KAWAII_SPARKLE -> {
+            val r = w * 0.038f
+            drawCircle(color = eyeColor, radius = r, center = Offset(leftEyeX, eyeY))
+            drawCircle(color = eyeColor, radius = r, center = Offset(rightEyeX, eyeY))
+            drawCircle(color = Color.White, radius = r * 0.45f, center = Offset(leftEyeX - r * 0.35f, eyeY - r * 0.35f))
+            drawCircle(color = Color.White, radius = r * 0.24f, center = Offset(leftEyeX + r * 0.35f, eyeY + r * 0.25f))
+            drawCircle(color = Color.White, radius = r * 0.45f, center = Offset(rightEyeX - r * 0.35f, eyeY - r * 0.35f))
+            drawCircle(color = Color.White, radius = r * 0.24f, center = Offset(rightEyeX + r * 0.35f, eyeY + r * 0.25f))
         }
         config.eyeType == EyeType.SMILING_CURVE -> {
             drawArc(
@@ -602,59 +766,178 @@ private fun DrawScope.drawEyesAndBrows(
                 style = Stroke(width = w * 0.02f, cap = StrokeCap.Round)
             )
         }
-        config.eyeType == EyeType.KAWAII_SPARKLE -> {
-            val r = w * 0.036f
-            drawCircle(color = eyeColor, radius = r, center = Offset(leftEyeX, eyeY))
-            drawCircle(color = eyeColor, radius = r, center = Offset(rightEyeX, eyeY))
-            drawCircle(color = Color.White, radius = r * 0.45f, center = Offset(leftEyeX - r * 0.35f, eyeY - r * 0.35f))
-            drawCircle(color = Color.White, radius = r * 0.22f, center = Offset(leftEyeX + r * 0.35f, eyeY + r * 0.25f))
-            drawCircle(color = Color.White, radius = r * 0.45f, center = Offset(rightEyeX - r * 0.35f, eyeY - r * 0.35f))
-            drawCircle(color = Color.White, radius = r * 0.22f, center = Offset(rightEyeX + r * 0.35f, eyeY + r * 0.25f))
+        else -> {
+            // ALMOND or CALM_LIDS: Full Anime Illustrated Eye with rich depth & dual specular catchlights
+            drawAnimeEye(leftEyeX, eyeY, w, h, eyeColor)
+            drawAnimeEye(rightEyeX, eyeY, w, h, eyeColor)
         }
-        config.eyeType == EyeType.CALM_LIDS -> {
-            drawArc(
-                color = eyeColor,
-                startAngle = 0f,
-                sweepAngle = 180f,
-                useCenter = false,
-                topLeft = Offset(leftEyeX - w * 0.035f, eyeY - h * 0.015f),
-                size = Size(w * 0.07f, h * 0.030f),
-                style = Stroke(width = w * 0.02f, cap = StrokeCap.Round)
-            )
-            drawArc(
-                color = eyeColor,
-                startAngle = 0f,
-                sweepAngle = 180f,
-                useCenter = false,
-                topLeft = Offset(rightEyeX - w * 0.035f, eyeY - h * 0.015f),
-                size = Size(w * 0.07f, h * 0.030f),
-                style = Stroke(width = w * 0.02f, cap = StrokeCap.Round)
-            )
-        }
+    }
+
+    // Feminine eyelash accents
+    if (config.gender == AvatarGender.FEMALE && !isBlinking) {
+        val lashColor = eyeColor.copy(alpha = 0.90f)
+        drawLine(lashColor, Offset(leftEyeX - w * 0.034f, eyeY - h * 0.010f), Offset(leftEyeX - w * 0.050f, eyeY - h * 0.020f), w * 0.016f, StrokeCap.Round)
+        drawLine(lashColor, Offset(rightEyeX + w * 0.034f, eyeY - h * 0.010f), Offset(rightEyeX + w * 0.050f, eyeY - h * 0.020f), w * 0.016f, StrokeCap.Round)
     }
 }
 
+/**
+ * Renders the rich anime-style eye matching the reference artwork:
+ * - Bold curved upper lash line
+ * - Warm iris core with deep pupil
+ * - Dual catchlights (primary top-left highlight + secondary warm bottom reflection)
+ * - Subtle lower lash line
+ */
+private fun DrawScope.drawAnimeEye(
+    centerX: Float,
+    centerY: Float,
+    w: Float,
+    h: Float,
+    eyeColor: Color
+) {
+    val eyeW = w * 0.076f
+    val eyeH = h * 0.046f
+    val r = eyeW / 2f
+
+    // 1. Sclera
+    val eyePath = Path().apply {
+        moveTo(centerX - eyeW * 0.5f, centerY)
+        quadraticTo(centerX, centerY - eyeH * 0.65f, centerX + eyeW * 0.5f, centerY)
+        quadraticTo(centerX, centerY + eyeH * 0.65f, centerX - eyeW * 0.5f, centerY)
+        close()
+    }
+    drawPath(eyePath, color = Color(0xFFFAF7F2))
+
+    // 2. Warm Iris & Pupil
+    val irisRadius = r * 0.76f
+    drawCircle(
+        color = Color(0xFF422617),
+        radius = irisRadius,
+        center = Offset(centerX, centerY)
+    )
+    drawCircle(
+        color = eyeColor,
+        radius = irisRadius * 0.60f,
+        center = Offset(centerX, centerY)
+    )
+
+    // 3. Lower warm reflection crescent
+    drawArc(
+        color = Color(0xFFDE9E66).copy(alpha = 0.70f),
+        startAngle = 20f,
+        sweepAngle = 140f,
+        useCenter = false,
+        topLeft = Offset(centerX - irisRadius * 0.8f, centerY - irisRadius * 0.4f),
+        size = Size(irisRadius * 1.6f, irisRadius * 1.3f),
+        style = Stroke(width = w * 0.009f, cap = StrokeCap.Round)
+    )
+
+    // 4. Primary Specular Catchlight (Top-Left)
+    drawCircle(
+        color = Color.White,
+        radius = r * 0.30f,
+        center = Offset(centerX - r * 0.28f, centerY - r * 0.28f)
+    )
+
+    // 5. Secondary Catchlight (Lower-Right micro dot)
+    drawCircle(
+        color = Color.White.copy(alpha = 0.75f),
+        radius = r * 0.16f,
+        center = Offset(centerX + r * 0.28f, centerY + r * 0.22f)
+    )
+
+    // 6. Bold Upper Lash Line
+    val upperLash = Path().apply {
+        moveTo(centerX - eyeW * 0.52f, centerY + h * 0.002f)
+        quadraticTo(centerX, centerY - eyeH * 0.72f, centerX + eyeW * 0.52f, centerY + h * 0.002f)
+    }
+    drawPath(upperLash, color = eyeColor, style = Stroke(width = w * 0.022f, cap = StrokeCap.Round))
+
+    // 7. Subtle Lower Lash Line
+    val lowerLash = Path().apply {
+        moveTo(centerX - eyeW * 0.35f, centerY + eyeH * 0.55f)
+        quadraticTo(centerX, centerY + eyeH * 0.65f, centerX + eyeW * 0.35f, centerY + eyeH * 0.55f)
+    }
+    drawPath(lowerLash, color = eyeColor.copy(alpha = 0.60f), style = Stroke(width = w * 0.011f, cap = StrokeCap.Round))
+}
+
 // =============================================================================
-// LAYER 8: NOSE & MOUTH
+// Z-6: SUB-LAYER C (NOSE) & SUB-LAYER D (MOUTH & TEETH/TONGUE)
 // =============================================================================
 
-private fun DrawScope.drawMouth(config: PersonaAvatarConfig, w: Float, h: Float, isSleepy: Boolean) {
+private fun DrawScope.drawMouth(config: PersonaAvatarConfig, w: Float, h: Float, isSleepy: Boolean, yawnProgress: Float = 0f) {
     val mouthY = h * 0.575f
     val mouthColor = Color(0xFF2C2825)
     val expr = config.expression
+    val shadowColor = config.skinTone.shadowColor
 
-    // Minimal nose dot
+    // SUB-LAYER C: NOSE (Triangular bridge shadow + nostril indents)
+    val noseY = h * 0.505f
+    val noseBridge = Path().apply {
+        moveTo(w * 0.50f, noseY - h * 0.018f)
+        lineTo(w * 0.525f, noseY + h * 0.008f)
+        lineTo(w * 0.475f, noseY + h * 0.008f)
+        close()
+    }
+    drawPath(noseBridge, color = shadowColor.copy(alpha = 0.45f))
+
+    // Two subtle dark nostril accent points (matching reference art)
     drawCircle(
-        color = config.skinTone.shadowColor.copy(alpha = 0.65f),
-        radius = w * 0.011f,
-        center = Offset(w * 0.50f, h * 0.505f)
+        color = shadowColor.copy(alpha = 0.90f),
+        radius = w * 0.007f,
+        center = Offset(w * 0.482f, noseY + h * 0.008f)
     )
+    drawCircle(
+        color = shadowColor.copy(alpha = 0.90f),
+        radius = w * 0.007f,
+        center = Offset(w * 0.518f, noseY + h * 0.008f)
+    )
+    // Connecting nose underside crease
+    drawLine(
+        color = shadowColor.copy(alpha = 0.65f),
+        start = Offset(w * 0.478f, noseY + h * 0.007f),
+        end = Offset(w * 0.522f, noseY + h * 0.007f),
+        strokeWidth = w * 0.008f,
+        cap = StrokeCap.Round
+    )
+
+    // SUB-LAYER D: MOUTH & TEETH/TONGUE
+    if (expr == AvatarExpression.YAWN || yawnProgress > 0.08f) {
+        val yProg = if (yawnProgress > 0.08f) yawnProgress else 1f
+        val yawnW = w * (0.07f + yProg * 0.08f)
+        val yawnH = h * (0.04f + yProg * 0.065f)
+        val yawnCenter = Offset(w * 0.50f, mouthY + h * 0.01f * yProg)
+
+        // Deep mouth cavity
+        drawOval(
+            color = Color(0xFF5A2020),
+            topLeft = Offset(yawnCenter.x - yawnW / 2f, yawnCenter.y - yawnH / 2f),
+            size = Size(yawnW, yawnH)
+        )
+        // Cute rosy tongue
+        drawArc(
+            color = Color(0xFFE57373),
+            startAngle = 0f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = Offset(yawnCenter.x - yawnW * 0.35f, yawnCenter.y),
+            size = Size(yawnW * 0.70f, yawnH * 0.45f)
+        )
+        // Outer lip contour
+        drawOval(
+            color = mouthColor,
+            topLeft = Offset(yawnCenter.x - yawnW / 2f, yawnCenter.y - yawnH / 2f),
+            size = Size(yawnW, yawnH),
+            style = Stroke(width = w * 0.016f)
+        )
+        return
+    }
 
     when {
         expr == AvatarExpression.HAPPY_SQUISH || expr == AvatarExpression.SUCCESS -> {
             val happyPath = Path().apply {
                 moveTo(w * 0.44f, mouthY - h * 0.005f)
-                quadraticBezierTo(w * 0.50f, mouthY + h * 0.035f, w * 0.56f, mouthY - h * 0.005f)
+                quadraticTo(w * 0.50f, mouthY + h * 0.035f, w * 0.56f, mouthY - h * 0.005f)
             }
             drawPath(happyPath, color = mouthColor, style = Stroke(width = w * 0.020f, cap = StrokeCap.Round))
         }
@@ -669,42 +952,67 @@ private fun DrawScope.drawMouth(config: PersonaAvatarConfig, w: Float, h: Float,
         }
         config.mouthType == MouthType.WARM_SMILE -> {
             val smilePath = Path().apply {
-                moveTo(w * 0.44f, mouthY)
-                quadraticBezierTo(w * 0.50f, mouthY + h * 0.028f, w * 0.56f, mouthY)
+                moveTo(w * 0.435f, mouthY)
+                quadraticTo(w * 0.50f, mouthY + h * 0.026f, w * 0.565f, mouthY)
             }
-            drawPath(smilePath, color = mouthColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
+            drawPath(smilePath, color = mouthColor, style = Stroke(width = w * 0.020f, cap = StrokeCap.Round))
+            // Corner smile creases
+            drawLine(mouthColor, Offset(w * 0.435f, mouthY), Offset(w * 0.428f, mouthY - h * 0.004f), w * 0.014f, StrokeCap.Round)
+            drawLine(mouthColor, Offset(w * 0.565f, mouthY), Offset(w * 0.572f, mouthY - h * 0.004f), w * 0.014f, StrokeCap.Round)
         }
         config.mouthType == MouthType.PLAYFUL_SMIRK -> {
             val smirkPath = Path().apply {
-                moveTo(w * 0.45f, mouthY + h * 0.005f)
-                quadraticBezierTo(w * 0.52f, mouthY + h * 0.024f, w * 0.57f, mouthY - h * 0.010f)
+                moveTo(w * 0.445f, mouthY + h * 0.006f)
+                quadraticTo(w * 0.51f, mouthY + h * 0.022f, w * 0.575f, mouthY - h * 0.012f)
             }
-            drawPath(smirkPath, color = mouthColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
-        }
-        config.mouthType == MouthType.SOFT_OPEN -> {
-            val openPath = Path().apply {
-                moveTo(w * 0.45f, mouthY)
-                quadraticBezierTo(w * 0.50f, mouthY + h * 0.035f, w * 0.55f, mouthY)
-                close()
-            }
-            drawPath(openPath, color = Color(0xFFC4685A))
-            drawPath(openPath, color = mouthColor, style = Stroke(width = w * 0.016f, cap = StrokeCap.Round))
-        }
-        config.mouthType == MouthType.FOCUSED_LINE -> {
+            drawPath(smirkPath, color = mouthColor, style = Stroke(width = w * 0.020f, cap = StrokeCap.Round))
+            // Subtle teeth line highlight under upper curve
             drawLine(
-                color = mouthColor,
-                start = Offset(w * 0.45f, mouthY),
-                end = Offset(w * 0.55f, mouthY),
-                strokeWidth = w * 0.018f,
+                color = Color.White.copy(alpha = 0.85f),
+                start = Offset(w * 0.495f, mouthY + h * 0.008f),
+                end = Offset(w * 0.545f, mouthY + h * 0.002f),
+                strokeWidth = w * 0.010f,
                 cap = StrokeCap.Round
             )
         }
+        config.mouthType == MouthType.SOFT_OPEN -> {
+            val openPath = Path().apply {
+                moveTo(w * 0.44f, mouthY)
+                quadraticTo(w * 0.50f, mouthY + h * 0.038f, w * 0.56f, mouthY)
+                close()
+            }
+            drawPath(openPath, color = Color(0xFF7A2E2E))
+            drawArc(
+                color = Color.White,
+                startAngle = 180f,
+                sweepAngle = 180f,
+                useCenter = true,
+                topLeft = Offset(w * 0.46f, mouthY),
+                size = Size(w * 0.08f, h * 0.012f)
+            )
+            drawArc(
+                color = Color(0xFFE57373),
+                startAngle = 0f,
+                sweepAngle = 180f,
+                useCenter = true,
+                topLeft = Offset(w * 0.465f, mouthY + h * 0.016f),
+                size = Size(w * 0.07f, h * 0.020f)
+            )
+            drawPath(openPath, color = mouthColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
+        }
+        config.mouthType == MouthType.FOCUSED_LINE -> {
+            val focusedPath = Path().apply {
+                moveTo(w * 0.455f, mouthY)
+                quadraticTo(w * 0.50f, mouthY + h * 0.006f, w * 0.545f, mouthY)
+            }
+            drawPath(focusedPath, color = mouthColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
+        }
         config.mouthType == MouthType.GENTLE_NEUTRAL -> {
             val neutralPath = Path().apply {
-                moveTo(w * 0.46f, mouthY)
-                quadraticBezierTo(w * 0.50f, mouthY + h * 0.012f, w * 0.54f, mouthY)
+                moveTo(w * 0.45f, mouthY)
+                quadraticTo(w * 0.50f, mouthY + h * 0.014f, w * 0.55f, mouthY)
             }
-            drawPath(neutralPath, color = mouthColor, style = Stroke(width = w * 0.016f, cap = StrokeCap.Round))
+            drawPath(neutralPath, color = mouthColor, style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
         }
     }
 }
@@ -717,6 +1025,112 @@ private fun DrawScope.drawFrontHair(config: PersonaAvatarConfig, w: Float, h: Fl
     val hairColor = config.hairColor.color
 
     when (config.hairStyle) {
+        HairStyle.TEXTURED_FADE -> {
+            // Reference Anime Masterpiece: Textured Taper Fade with Breakout Tufts & Razor Slit
+            // 1. Scalp/Temple Fade Base (clean temple taper down to sharp sideburns)
+            val fadeTaperLeft = Path().apply {
+                moveTo(w * 0.245f, h * 0.38f)
+                lineTo(w * 0.235f, h * 0.46f)
+                lineTo(w * 0.265f, h * 0.44f)
+                close()
+            }
+            drawPath(fadeTaperLeft, color = hairColor.copy(alpha = 0.50f))
+
+            val fadeTaperRight = Path().apply {
+                moveTo(w * 0.755f, h * 0.38f)
+                lineTo(w * 0.765f, h * 0.46f)
+                lineTo(w * 0.735f, h * 0.44f)
+                close()
+            }
+            drawPath(fadeTaperRight, color = hairColor.copy(alpha = 0.50f))
+
+            // Micro-stipple transition at temples
+            val stippleColor = hairColor.copy(alpha = 0.35f)
+            for (i in 0..3) {
+                drawCircle(stippleColor, w * 0.006f, Offset(w * 0.245f + i * w * 0.005f, h * 0.39f + i * h * 0.014f))
+                drawCircle(stippleColor, w * 0.006f, Offset(w * 0.755f - i * w * 0.005f, h * 0.39f + i * h * 0.014f))
+            }
+
+            // 2. Main Curly / Wavy Crown Volume with Jagged Scalloped Perimeter
+            val crownPath = Path().apply {
+                moveTo(w * 0.235f, h * 0.35f)
+                cubicTo(w * 0.20f, h * 0.27f, w * 0.22f, h * 0.20f, w * 0.26f, h * 0.16f)
+                cubicTo(w * 0.24f, h * 0.12f, w * 0.33f, h * 0.09f, w * 0.38f, h * 0.095f)
+                cubicTo(w * 0.42f, h * 0.06f, w * 0.48f, h * 0.065f, w * 0.52f, h * 0.075f)
+                cubicTo(w * 0.58f, h * 0.06f, w * 0.65f, h * 0.08f, w * 0.69f, h * 0.11f)
+                cubicTo(w * 0.76f, h * 0.13f, w * 0.81f, h * 0.20f, w * 0.775f, h * 0.28f)
+                cubicTo(w * 0.785f, h * 0.33f, w * 0.765f, h * 0.36f, w * 0.745f, h * 0.36f)
+                // Front scalloped hairline across forehead
+                cubicTo(w * 0.68f, h * 0.32f, w * 0.58f, h * 0.305f, w * 0.50f, h * 0.31f)
+                cubicTo(w * 0.42f, h * 0.305f, w * 0.32f, h * 0.32f, w * 0.265f, h * 0.36f)
+                lineTo(w * 0.235f, h * 0.35f)
+                close()
+            }
+            drawPath(crownPath, color = hairColor)
+
+            // 3. Breakout Tufts & Strands around the perimeter (Eliminates the Helmet Effect!)
+            val breakoutTufts = listOf(
+                Offset(w * 0.21f, h * 0.22f) to w * 0.035f,
+                Offset(w * 0.27f, h * 0.11f) to w * 0.040f,
+                Offset(w * 0.37f, h * 0.065f) to w * 0.042f,
+                Offset(w * 0.49f, h * 0.055f) to w * 0.045f,
+                Offset(w * 0.63f, h * 0.065f) to w * 0.040f,
+                Offset(w * 0.75f, h * 0.10f) to w * 0.038f,
+                Offset(w * 0.80f, h * 0.21f) to w * 0.034f
+            )
+            breakoutTufts.forEach { (center, rad) ->
+                drawCircle(color = hairColor, radius = rad, center = center)
+            }
+
+            // 4. Internal Curl Depth & Highlights
+            val curlDepthColor = Color.Black.copy(alpha = 0.25f)
+            val highlightColor = Color.White.copy(alpha = 0.14f)
+            val internalCurlArcs = listOf(
+                Offset(w * 0.32f, h * 0.18f) to w * 0.065f,
+                Offset(w * 0.46f, h * 0.15f) to w * 0.075f,
+                Offset(w * 0.60f, h * 0.17f) to w * 0.070f,
+                Offset(w * 0.38f, h * 0.25f) to w * 0.060f,
+                Offset(w * 0.54f, h * 0.24f) to w * 0.065f
+            )
+            internalCurlArcs.forEach { (center, r) ->
+                drawArc(
+                    color = curlDepthColor,
+                    startAngle = 160f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = Offset(center.x - r, center.y - r * 0.6f),
+                    size = Size(r * 2f, r * 1.2f),
+                    style = Stroke(width = w * 0.014f, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = highlightColor,
+                    startAngle = 200f,
+                    sweepAngle = 120f,
+                    useCenter = false,
+                    topLeft = Offset(center.x - r * 0.8f, center.y - r * 0.8f),
+                    size = Size(r * 1.6f, r * 1.0f),
+                    style = Stroke(width = w * 0.010f, cap = StrokeCap.Round)
+                )
+            }
+
+            // 5. Crisp Razor Slit on Left Hairline (Directly from reference image!)
+            val slitStart = Offset(w * 0.265f, h * 0.335f)
+            val slitEnd = Offset(w * 0.355f, h * 0.325f)
+            drawLine(
+                color = config.skinTone.color,
+                start = slitStart,
+                end = slitEnd,
+                strokeWidth = w * 0.016f,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = config.skinTone.shadowColor.copy(alpha = 0.50f),
+                start = Offset(slitStart.x, slitStart.y + h * 0.003f),
+                end = Offset(slitEnd.x, slitEnd.y + h * 0.003f),
+                strokeWidth = w * 0.006f,
+                cap = StrokeCap.Round
+            )
+        }
         HairStyle.DEFAULT -> {
             // Balanced, timeless native crop naturally following cranium contour
             val defaultHair = Path().apply {
@@ -760,40 +1174,124 @@ private fun DrawScope.drawFrontHair(config: PersonaAvatarConfig, w: Float, h: Fl
             )
         }
         HairStyle.LOW_FADE -> {
-            // Textured crown crop with smooth fade above ears and temples
+            // Authentic Fresh Low Taper Fade:
+            // 1. Full-coverage cranium volume with soft organic crown
+            val shadowColor = hairColor.copy(alpha = 0.92f)
+            val highlightColor = Color.White.copy(alpha = 0.15f)
+
+            // Main hair bulk covering the crown and hugging skull contours
             val crownPath = Path().apply {
-                moveTo(w * 0.25f, h * 0.34f)
-                cubicTo(w * 0.22f, h * 0.16f, w * 0.38f, h * 0.13f, w * 0.50f, h * 0.13f)
-                cubicTo(w * 0.62f, h * 0.13f, w * 0.78f, h * 0.16f, w * 0.75f, h * 0.34f)
-                cubicTo(w * 0.68f, h * 0.26f, w * 0.32f, h * 0.26f, w * 0.25f, h * 0.34f)
+                moveTo(w * 0.235f, h * 0.36f)
+                cubicTo(w * 0.21f, h * 0.16f, w * 0.36f, h * 0.125f, w * 0.50f, h * 0.125f)
+                cubicTo(w * 0.64f, h * 0.125f, w * 0.79f, h * 0.16f, w * 0.765f, h * 0.36f)
+                // Right sideburn & temple curve
+                cubicTo(w * 0.75f, h * 0.39f, w * 0.74f, h * 0.42f, w * 0.74f, h * 0.43f)
+                lineTo(w * 0.71f, h * 0.41f)
+                // Crisp shaped-up front hairline curving across forehead
+                cubicTo(w * 0.68f, h * 0.27f, w * 0.60f, h * 0.26f, w * 0.50f, h * 0.265f)
+                cubicTo(w * 0.40f, h * 0.26f, w * 0.32f, h * 0.27f, w * 0.29f, h * 0.41f)
+                // Left temple angle & sideburn
+                lineTo(w * 0.26f, h * 0.43f)
+                cubicTo(w * 0.26f, h * 0.42f, w * 0.25f, h * 0.39f, w * 0.235f, h * 0.36f)
                 close()
             }
             drawPath(crownPath, color = hairColor)
-            // Fade gradient stipples above temples
-            val fadeColor = hairColor.copy(alpha = 0.32f)
-            drawRect(
-                color = fadeColor,
-                topLeft = Offset(w * 0.22f, h * 0.32f),
-                size = Size(w * 0.05f, h * 0.10f)
+
+            // Two-tone depth shading underneath the crown
+            val depthPath = Path().apply {
+                moveTo(w * 0.24f, h * 0.34f)
+                cubicTo(w * 0.32f, h * 0.27f, w * 0.68f, h * 0.27f, w * 0.76f, h * 0.34f)
+                cubicTo(w * 0.72f, h * 0.30f, w * 0.28f, h * 0.30f, w * 0.24f, h * 0.34f)
+                close()
+            }
+            drawPath(depthPath, color = shadowColor)
+
+            // Soft specular highlight arc across the top of the crown
+            drawArc(
+                color = highlightColor,
+                startAngle = 200f,
+                sweepAngle = 140f,
+                useCenter = false,
+                topLeft = Offset(w * 0.28f, h * 0.14f),
+                size = Size(w * 0.44f, h * 0.16f),
+                style = Stroke(width = w * 0.016f, cap = StrokeCap.Round)
             )
-            drawRect(
-                color = fadeColor,
-                topLeft = Offset(w * 0.73f, h * 0.32f),
-                size = Size(w * 0.05f, h * 0.10f)
+
+            // Clean, sharp lineup edge at the temples (razor sharp shape-up)
+            drawLine(
+                color = hairColor.copy(alpha = 0.85f),
+                start = Offset(w * 0.29f, h * 0.28f),
+                end = Offset(w * 0.71f, h * 0.28f),
+                strokeWidth = w * 0.014f,
+                cap = StrokeCap.Round
             )
+
+            // Natural skin-fade taper on sideburns (gradient strictly on the sideburn path, no floating tabs!)
+            val leftTaper = Path().apply {
+                moveTo(w * 0.255f, h * 0.41f)
+                lineTo(w * 0.245f, h * 0.45f)
+                lineTo(w * 0.265f, h * 0.44f)
+                close()
+            }
+            drawPath(leftTaper, color = hairColor.copy(alpha = 0.45f))
+
+            val rightTaper = Path().apply {
+                moveTo(w * 0.745f, h * 0.41f)
+                lineTo(w * 0.755f, h * 0.45f)
+                lineTo(w * 0.735f, h * 0.44f)
+                close()
+            }
+            drawPath(rightTaper, color = hairColor.copy(alpha = 0.45f))
+
+            // Micro-textured fade transition stipples cleanly along sideburn / temple line
+            val stippleColor = hairColor.copy(alpha = 0.35f)
+            for (i in 0..3) {
+                drawCircle(stippleColor, w * 0.005f, Offset(w * 0.25f + i * w * 0.004f, h * 0.42f + i * h * 0.009f))
+                drawCircle(stippleColor, w * 0.005f, Offset(w * 0.75f - i * w * 0.004f, h * 0.42f + i * h * 0.009f))
+            }
         }
         HairStyle.HIGH_FADE -> {
-            // High contrast clean top crop with crisp faded sides
+            // Crisp High Taper Fade with Defined Box/Drop Hairline
+            val highlightColor = Color.White.copy(alpha = 0.15f)
+
+            // High Crown Volume
             val crownPath = Path().apply {
-                moveTo(w * 0.28f, h * 0.30f)
-                cubicTo(w * 0.26f, h * 0.14f, w * 0.40f, h * 0.125f, w * 0.50f, h * 0.125f)
-                cubicTo(w * 0.60f, h * 0.125f, w * 0.74f, h * 0.14f, w * 0.72f, h * 0.30f)
-                cubicTo(w * 0.64f, h * 0.25f, w * 0.36f, h * 0.25f, w * 0.28f, h * 0.30f)
+                moveTo(w * 0.25f, h * 0.32f)
+                cubicTo(w * 0.23f, h * 0.15f, w * 0.37f, h * 0.12f, w * 0.50f, h * 0.12f)
+                cubicTo(w * 0.63f, h * 0.12f, w * 0.77f, h * 0.15f, w * 0.75f, h * 0.32f)
+                // Crisp high temple drop
+                cubicTo(w * 0.71f, h * 0.26f, w * 0.60f, h * 0.25f, w * 0.50f, h * 0.25f)
+                cubicTo(w * 0.40f, h * 0.25f, w * 0.29f, h * 0.26f, w * 0.25f, h * 0.32f)
                 close()
             }
             drawPath(crownPath, color = hairColor)
-            // Crisp defined hairline edge
-            drawLine(hairColor, Offset(w * 0.30f, h * 0.27f), Offset(w * 0.70f, h * 0.27f), w * 0.016f, StrokeCap.Round)
+
+            // Top Specular Highlight
+            drawArc(
+                color = highlightColor,
+                startAngle = 210f,
+                sweepAngle = 120f,
+                useCenter = false,
+                topLeft = Offset(w * 0.30f, h * 0.13f),
+                size = Size(w * 0.40f, h * 0.14f),
+                style = Stroke(width = w * 0.015f, cap = StrokeCap.Round)
+            )
+
+            // Crisp defined razor lineup
+            drawLine(
+                color = hairColor,
+                start = Offset(w * 0.28f, h * 0.265f),
+                end = Offset(w * 0.72f, h * 0.265f),
+                strokeWidth = w * 0.016f,
+                cap = StrokeCap.Round
+            )
+
+            // High fade blend softly at temples (contained strictly within skull bounds)
+            val stippleColor = hairColor.copy(alpha = 0.32f)
+            for (i in 0..4) {
+                drawCircle(stippleColor, w * 0.006f, Offset(w * 0.255f + (i % 2) * w * 0.005f, h * 0.33f + i * h * 0.014f))
+                drawCircle(stippleColor, w * 0.006f, Offset(w * 0.745f - (i % 2) * w * 0.005f, h * 0.33f + i * h * 0.014f))
+            }
         }
         HairStyle.SHORT_CURS -> {
             // Textured curly spiral lobes across cranium with forehead visibility
@@ -1095,58 +1593,176 @@ private fun DrawScope.drawAccessory(config: PersonaAvatarConfig, w: Float, h: Fl
 // =============================================================================
 
 private fun DrawScope.drawClothing(config: PersonaAvatarConfig, w: Float, h: Float) {
+    val primaryColor = config.clothingColor.color
+    val accentColor = config.clothingColor.accentColor
+
+    val shoulderLeft = when (config.bodyShape) {
+        BodyShape.BROAD -> if (config.gender == AvatarGender.MALE) 0.01f else 0.035f
+        BodyShape.ATHLETIC -> if (config.gender == AvatarGender.MALE) 0.03f else 0.05f
+        BodyShape.SLENDER -> if (config.gender == AvatarGender.FEMALE) 0.11f else 0.085f
+        BodyShape.CURVY -> 0.055f
+        BodyShape.AVERAGE -> if (config.gender == AvatarGender.FEMALE) 0.08f else 0.05f
+    }
+    val shoulderRight = 1f - shoulderLeft
+
+    val neckOpeningLeft = when (config.bodyShape) {
+        BodyShape.SLENDER -> if (config.gender == AvatarGender.FEMALE) w * 0.40f else w * 0.38f
+        BodyShape.BROAD -> if (config.gender == AvatarGender.MALE) w * 0.34f else w * 0.36f
+        else -> if (config.gender == AvatarGender.FEMALE) w * 0.38f else w * 0.36f
+    }
+    val neckOpeningRight = w - neckOpeningLeft
+
+    // Standardized collar line anchor: starts at h * 0.72f
     val clothingPath = Path().apply {
-        moveTo(w * 0.06f, h)
-        cubicTo(w * 0.10f, h * 0.72f, w * 0.28f, h * 0.69f, w * 0.38f, h * 0.72f)
+        moveTo(w * shoulderLeft, h)
+        cubicTo(w * (shoulderLeft + 0.04f), h * 0.72f, neckOpeningLeft - w * 0.10f, h * 0.69f, neckOpeningLeft, h * 0.72f)
         when (config.clothingStyle) {
             ClothingStyle.MINIMAL_CREW -> {
-                quadraticBezierTo(w * 0.50f, h * 0.80f, w * 0.62f, h * 0.72f)
+                val dip = if (config.gender == AvatarGender.FEMALE) h * 0.81f else h * 0.79f
+                quadraticTo(w * 0.50f, dip, neckOpeningRight, h * 0.72f)
             }
             ClothingStyle.COLLARED_SHIRT -> {
                 lineTo(w * 0.50f, h * 0.84f)
-                lineTo(w * 0.62f, h * 0.72f)
+                lineTo(neckOpeningRight, h * 0.72f)
             }
             ClothingStyle.COZY_KNIT -> {
-                quadraticBezierTo(w * 0.50f, h * 0.77f, w * 0.62f, h * 0.72f)
+                val dip = if (config.gender == AvatarGender.FEMALE) h * 0.78f else h * 0.76f
+                quadraticTo(w * 0.50f, dip, neckOpeningRight, h * 0.72f)
             }
             ClothingStyle.HOODIE -> {
-                quadraticBezierTo(w * 0.50f, h * 0.79f, w * 0.62f, h * 0.72f)
+                quadraticTo(w * 0.50f, h * 0.80f, neckOpeningRight, h * 0.72f)
             }
             ClothingStyle.KIMONO_ROBE -> {
                 lineTo(w * 0.46f, h * 0.86f)
-                lineTo(w * 0.62f, h * 0.72f)
+                lineTo(neckOpeningRight, h * 0.72f)
+            }
+            ClothingStyle.DENIM_JACKET -> {
+                lineTo(w * 0.50f, h * 0.82f)
+                lineTo(neckOpeningRight, h * 0.72f)
+            }
+            ClothingStyle.BLAZER -> {
+                lineTo(w * 0.50f, h * 0.88f)
+                lineTo(neckOpeningRight, h * 0.72f)
+            }
+            ClothingStyle.TURTLENECK -> {
+                lineTo(neckOpeningLeft, h * 0.62f)
+                lineTo(neckOpeningRight, h * 0.62f)
+                lineTo(neckOpeningRight, h * 0.72f)
             }
         }
-        cubicTo(w * 0.72f, h * 0.69f, w * 0.90f, h * 0.72f, w * 0.94f, h)
+        cubicTo(neckOpeningRight + w * 0.10f, h * 0.69f, w * (shoulderRight - 0.04f), h * 0.72f, w * shoulderRight, h)
         close()
     }
 
-    drawPath(clothingPath, color = config.clothingColor.color)
+    drawPath(clothingPath, color = primaryColor)
 
-    if (config.clothingStyle == ClothingStyle.COLLARED_SHIRT) {
-        val collarPath = Path().apply {
-            moveTo(w * 0.38f, h * 0.72f)
-            lineTo(w * 0.44f, h * 0.78f)
-            lineTo(w * 0.50f, h * 0.73f)
-            lineTo(w * 0.56f, h * 0.78f)
-            lineTo(w * 0.62f, h * 0.72f)
+    // Subtle anatomical highlights
+    if (config.gender == AvatarGender.FEMALE) {
+        val clavicleColor = Color.White.copy(alpha = 0.12f)
+        drawLine(clavicleColor, Offset(w * 0.41f, h * 0.735f), Offset(w * 0.46f, h * 0.755f), w * 0.009f, StrokeCap.Round)
+        drawLine(clavicleColor, Offset(w * 0.59f, h * 0.735f), Offset(w * 0.54f, h * 0.755f), w * 0.009f, StrokeCap.Round)
+    } else if (config.gender == AvatarGender.MALE && config.bodyShape == BodyShape.ATHLETIC) {
+        val trapColor = Color.Black.copy(alpha = 0.08f)
+        drawLine(trapColor, Offset(w * 0.28f, h * 0.74f), Offset(w * 0.35f, h * 0.71f), w * 0.012f, StrokeCap.Round)
+        drawLine(trapColor, Offset(w * 0.72f, h * 0.74f), Offset(w * 0.65f, h * 0.71f), w * 0.012f, StrokeCap.Round)
+    }
+
+    // Color Blocking Accents (Trims, Collars, Buttons)
+    when (config.clothingStyle) {
+        ClothingStyle.MINIMAL_CREW -> {
+            val dip = if (config.gender == AvatarGender.FEMALE) h * 0.81f else h * 0.79f
+            val ribbingPath = Path().apply {
+                moveTo(neckOpeningLeft, h * 0.72f)
+                quadraticTo(w * 0.50f, dip, neckOpeningRight, h * 0.72f)
+            }
+            drawPath(ribbingPath, color = accentColor.copy(alpha = 0.85f), style = Stroke(width = w * 0.018f, cap = StrokeCap.Round))
         }
-        drawPath(
-            collarPath,
-            color = Color.White.copy(alpha = 0.85f),
-            style = Stroke(width = w * 0.02f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
-    } else if (config.clothingStyle == ClothingStyle.COZY_KNIT) {
-        drawLine(
-            color = Color.Black.copy(alpha = 0.12f),
-            start = Offset(w * 0.38f, h * 0.74f),
-            end = Offset(w * 0.62f, h * 0.74f),
-            strokeWidth = w * 0.015f,
-            cap = StrokeCap.Round
-        )
-    } else if (config.clothingStyle == ClothingStyle.HOODIE) {
-        drawLine(Color.White.copy(alpha = 0.50f), Offset(w * 0.46f, h * 0.80f), Offset(w * 0.45f, h * 0.88f), w * 0.012f, StrokeCap.Round)
-        drawLine(Color.White.copy(alpha = 0.50f), Offset(w * 0.54f, h * 0.80f), Offset(w * 0.55f, h * 0.88f), w * 0.012f, StrokeCap.Round)
+        ClothingStyle.COLLARED_SHIRT -> {
+            val collarPath = Path().apply {
+                moveTo(neckOpeningLeft, h * 0.72f)
+                lineTo(w * 0.44f, h * 0.78f)
+                lineTo(w * 0.50f, h * 0.73f)
+                lineTo(w * 0.56f, h * 0.78f)
+                lineTo(neckOpeningRight, h * 0.72f)
+            }
+            drawPath(
+                collarPath,
+                color = accentColor,
+                style = Stroke(width = w * 0.020f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+            // Center placket and buttons
+            drawLine(accentColor.copy(alpha = 0.5f), Offset(w * 0.50f, h * 0.74f), Offset(w * 0.50f, h * 0.98f), w * 0.008f)
+            drawCircle(accentColor, w * 0.008f, Offset(w * 0.50f, h * 0.83f))
+            drawCircle(accentColor, w * 0.008f, Offset(w * 0.50f, h * 0.91f))
+        }
+        ClothingStyle.COZY_KNIT -> {
+            drawLine(
+                color = accentColor.copy(alpha = 0.35f),
+                start = Offset(neckOpeningLeft, h * 0.74f),
+                end = Offset(neckOpeningRight, h * 0.74f),
+                strokeWidth = w * 0.015f,
+                cap = StrokeCap.Round
+            )
+        }
+        ClothingStyle.HOODIE -> {
+            drawLine(accentColor.copy(alpha = 0.85f), Offset(w * 0.46f, h * 0.80f), Offset(w * 0.45f, h * 0.90f), w * 0.012f, StrokeCap.Round)
+            drawLine(accentColor.copy(alpha = 0.85f), Offset(w * 0.54f, h * 0.80f), Offset(w * 0.55f, h * 0.90f), w * 0.012f, StrokeCap.Round)
+        }
+        ClothingStyle.KIMONO_ROBE -> {
+            val lapelPath = Path().apply {
+                moveTo(neckOpeningLeft, h * 0.72f)
+                lineTo(w * 0.46f, h * 0.86f)
+                lineTo(w * 0.42f, h)
+            }
+            drawPath(lapelPath, color = accentColor, style = Stroke(width = w * 0.025f, cap = StrokeCap.Round))
+        }
+        ClothingStyle.DENIM_JACKET -> {
+            val jacketCollar = Path().apply {
+                moveTo(neckOpeningLeft, h * 0.72f)
+                lineTo(w * 0.42f, h * 0.78f)
+                lineTo(w * 0.50f, h * 0.73f)
+                lineTo(w * 0.58f, h * 0.78f)
+                lineTo(neckOpeningRight, h * 0.72f)
+            }
+            drawPath(jacketCollar, color = accentColor, style = Stroke(width = w * 0.022f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            val seamColor = accentColor.copy(alpha = 0.6f)
+            drawLine(seamColor, Offset(w * 0.35f, h * 0.80f), Offset(w * 0.35f, h * 0.98f), w * 0.010f, StrokeCap.Round)
+            drawLine(seamColor, Offset(w * 0.65f, h * 0.80f), Offset(w * 0.65f, h * 0.98f), w * 0.010f, StrokeCap.Round)
+        }
+        ClothingStyle.BLAZER -> {
+            val innerShirt = Path().apply {
+                moveTo(neckOpeningLeft, h * 0.72f)
+                lineTo(w * 0.50f, h * 0.88f)
+                lineTo(neckOpeningRight, h * 0.72f)
+                close()
+            }
+            drawPath(innerShirt, color = accentColor)
+            val leftLapel = Path().apply {
+                moveTo(neckOpeningLeft - w * 0.04f, h * 0.70f)
+                lineTo(w * 0.38f, h * 0.79f)
+                lineTo(w * 0.42f, h * 0.81f)
+                lineTo(w * 0.48f, h * 0.96f)
+            }
+            drawPath(leftLapel, color = primaryColor.copy(alpha = 0.95f), style = Stroke(width = w * 0.024f, cap = StrokeCap.Round))
+            val rightLapel = Path().apply {
+                moveTo(neckOpeningRight + w * 0.04f, h * 0.70f)
+                lineTo(w * 0.62f, h * 0.79f)
+                lineTo(w * 0.58f, h * 0.81f)
+                lineTo(w * 0.52f, h * 0.96f)
+            }
+            drawPath(rightLapel, color = primaryColor.copy(alpha = 0.95f), style = Stroke(width = w * 0.024f, cap = StrokeCap.Round))
+        }
+        ClothingStyle.TURTLENECK -> {
+            for (i in 1..3) {
+                val y = h * 0.64f + i * h * 0.022f
+                drawLine(
+                    color = accentColor.copy(alpha = 0.25f),
+                    start = Offset(neckOpeningLeft + w * 0.01f, y),
+                    end = Offset(neckOpeningRight - w * 0.01f, y),
+                    strokeWidth = w * 0.008f
+                )
+            }
+        }
     }
 
     if (config.style == AvatarStyle.SKETCH) {
@@ -1447,3 +2063,105 @@ private fun DrawScope.drawStateDecorations(config: PersonaAvatarConfig, w: Float
         else -> {}
     }
 }
+
+// =============================================================================
+// CUTE EFFECTS & PARTICLES (ON CLICK / INTERACTION)
+// =============================================================================
+
+private fun DrawScope.drawCuteEffects(progress: Float, w: Float, h: Float) {
+    if (progress <= 0f) return
+    val p = progress.coerceIn(0f, 1f)
+    val alpha = (1f - p * 0.85f).coerceIn(0f, 1f)
+
+    // 1. Floating hearts
+    val heartColor1 = Color(0xFFFF4E78).copy(alpha = alpha)
+    drawMiniHeart(
+        center = Offset(w * (0.24f - p * 0.08f), h * (0.35f - p * 0.22f)),
+        size = w * 0.07f * (0.8f + p * 0.4f),
+        color = heartColor1,
+        rotationDeg = -18f * (1f + p)
+    )
+    drawMiniHeart(
+        center = Offset(w * (0.76f + p * 0.08f), h * (0.32f - p * 0.25f)),
+        size = w * 0.065f * (0.8f + p * 0.4f),
+        color = Color(0xFFFF6B9D).copy(alpha = alpha),
+        rotationDeg = 20f * (1f + p)
+    )
+
+    // 2. Sparkling four-point stars
+    val sparkleColor = Color(0xFFFFD166).copy(alpha = alpha)
+    drawSparkleStar(
+        center = Offset(w * (0.16f + p * 0.04f), h * (0.24f - p * 0.15f)),
+        radius = w * 0.045f * (1f - p * 0.2f),
+        color = sparkleColor,
+        rotation = p * 90f
+    )
+    drawSparkleStar(
+        center = Offset(w * (0.84f - p * 0.04f), h * (0.20f - p * 0.18f)),
+        radius = w * 0.05f * (1f - p * 0.2f),
+        color = Color(0xFFFFF176).copy(alpha = alpha),
+        rotation = -p * 100f
+    )
+
+    // 3. Cheerful micro-sparkles
+    drawCircle(
+        color = Color(0xFFFF9EAA).copy(alpha = alpha * 0.9f),
+        radius = w * 0.018f,
+        center = Offset(w * (0.50f + sin(p * 6f) * 0.12f), h * (0.12f - p * 0.10f))
+    )
+    drawCircle(
+        color = Color(0xFFFFE082).copy(alpha = alpha * 0.9f),
+        radius = w * 0.015f,
+        center = Offset(w * (0.35f - p * 0.05f), h * (0.18f - p * 0.12f))
+    )
+}
+
+private fun DrawScope.drawMiniHeart(
+    center: Offset,
+    size: Float,
+    color: Color,
+    rotationDeg: Float = 0f
+) {
+    withTransform({
+        rotate(rotationDeg, pivot = center)
+    }) {
+        val s = size / 2f
+        val path = Path().apply {
+            moveTo(center.x, center.y + s * 0.8f)
+            cubicTo(
+                center.x - s * 1.2f, center.y - s * 0.3f,
+                center.x - s * 1.0f, center.y - s * 1.1f,
+                center.x, center.y - s * 0.4f
+            )
+            cubicTo(
+                center.x + s * 1.0f, center.y - s * 1.1f,
+                center.x + s * 1.2f, center.y - s * 0.3f,
+                center.x, center.y + s * 0.8f
+            )
+            close()
+        }
+        drawPath(path, color = color)
+    }
+}
+
+private fun DrawScope.drawSparkleStar(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    rotation: Float = 0f
+) {
+    withTransform({
+        rotate(rotation, pivot = center)
+    }) {
+        val path = Path().apply {
+            moveTo(center.x, center.y - radius)
+            quadraticBezierTo(center.x, center.y, center.x + radius, center.y)
+            quadraticBezierTo(center.x, center.y, center.x, center.y + radius)
+            quadraticBezierTo(center.x, center.y, center.x - radius, center.y)
+            quadraticBezierTo(center.x, center.y, center.x, center.y - radius)
+            close()
+        }
+        drawPath(path, color = color)
+    }
+}
+

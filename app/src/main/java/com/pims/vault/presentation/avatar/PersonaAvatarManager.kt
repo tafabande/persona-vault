@@ -86,14 +86,24 @@ class PersonaAvatarManager @Inject constructor(
             val source = try { AvatarSource.valueOf(sourceStr) } catch (_: Exception) { AvatarSource.GENERATED }
             val customPath = json.optString("customAvatarPath", "").takeIf { it.isNotBlank() }
 
+            val headShapeStr = json.optString("headShape", if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR.name else HeadShape.SOFT_OVAL.name)
+            val headShape = try { HeadShape.valueOf(headShapeStr) } catch (_: Exception) { if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR else HeadShape.SOFT_OVAL }
+            val eyebrowStr = json.optString("eyebrowType", EyebrowType.NEUTRAL_ARCH.name)
+            val eyebrowType = try { EyebrowType.valueOf(eyebrowStr) } catch (_: Exception) { EyebrowType.NEUTRAL_ARCH }
+
             PersonaAvatarConfig(
                 id = json.optString("id", "user_primary"),
                 style = AvatarStyle.valueOf(json.optString("style", AvatarStyle.SOFT.name)),
                 seed = json.optString("seed", "persona"),
                 gender = gender,
+                headShape = headShape,
                 avatarSource = source,
                 customAvatarPath = customPath,
-                skinTone = SkinTone.valueOf(json.optString("skinTone", SkinTone.WARM_BEIGE.name)),
+                skinTone = try {
+                    SkinTone.valueOf(json.optString("skinTone", SkinTone.WARM_BEIGE.name))
+                } catch (_: Exception) {
+                    SkinTone.WARM_BEIGE
+                },
                 hairStyle = try {
                     HairStyle.valueOf(json.optString("hairStyle", HairStyle.DEFAULT.name))
                 } catch (_: Exception) {
@@ -105,11 +115,20 @@ class PersonaAvatarManager @Inject constructor(
                     HairColor.ESPRESSO_BLACK
                 },
                 eyeType = EyeType.valueOf(json.optString("eyeType", EyeType.GENTLE_DOT.name)),
+                eyebrowType = eyebrowType,
                 mouthType = MouthType.valueOf(json.optString("mouthType", MouthType.WARM_SMILE.name)),
                 facialFeature = FacialFeature.valueOf(json.optString("facialFeature", FacialFeature.CUTE_BLUSH.name)),
                 accessory = Accessory.valueOf(json.optString("accessory", Accessory.NONE.name)),
-                clothingStyle = ClothingStyle.valueOf(json.optString("clothingStyle", ClothingStyle.MINIMAL_CREW.name)),
-                clothingColor = ClothingColor.valueOf(json.optString("clothingColor", ClothingColor.TERRACOTTA.name)),
+                clothingStyle = try {
+                    ClothingStyle.valueOf(json.optString("clothingStyle", ClothingStyle.MINIMAL_CREW.name))
+                } catch (_: Exception) {
+                    ClothingStyle.MINIMAL_CREW
+                },
+                clothingColor = try {
+                    ClothingColor.valueOf(json.optString("clothingColor", ClothingColor.TERRACOTTA.name))
+                } catch (_: Exception) {
+                    ClothingColor.TERRACOTTA
+                },
                 backgroundShape = BackgroundShape.valueOf(json.optString("backgroundShape", BackgroundShape.ORGANIC_BLOB.name)),
                 expression = AvatarExpression.NORMAL
             )
@@ -124,12 +143,14 @@ class PersonaAvatarManager @Inject constructor(
             put("style", config.style.name)
             put("seed", config.seed)
             put("gender", config.gender.name)
+            put("headShape", config.headShape.name)
             put("avatarSource", config.avatarSource.name)
             config.customAvatarPath?.let { put("customAvatarPath", it) }
             put("skinTone", config.skinTone.name)
             put("hairStyle", config.hairStyle.name)
             put("hairColor", config.hairColor.name)
             put("eyeType", config.eyeType.name)
+            put("eyebrowType", config.eyebrowType.name)
             put("mouthType", config.mouthType.name)
             put("facialFeature", config.facialFeature.name)
             put("accessory", config.accessory.name)

@@ -339,7 +339,12 @@ private fun PersonListItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            PersonaAvatar(name = person.fullName, size = 42.dp, avatarTextSize = 16.sp)
+            PersonaAvatar(
+                name = person.fullName,
+                config = com.pims.vault.presentation.avatar.PersonaAvatarConfig.fromRelationship(person.fullName, person.relationRole),
+                size = 42.dp,
+                avatarTextSize = 16.sp
+            )
 
             Column(modifier = Modifier.weight(1f)) {
                 // Name first, visually dominant
@@ -435,7 +440,12 @@ fun PersonDetailSheet(
             }
 
             // Person visual anchor
-            PersonaAvatar(name = person.fullName, size = 76.dp, avatarTextSize = 28.sp)
+            PersonaAvatar(
+                name = person.fullName,
+                config = com.pims.vault.presentation.avatar.PersonaAvatarConfig.fromRelationship(person.fullName, person.relationRole),
+                size = 76.dp,
+                avatarTextSize = 28.sp
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 

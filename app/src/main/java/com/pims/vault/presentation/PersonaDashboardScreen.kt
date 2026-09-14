@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,12 +41,17 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Shield
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -80,9 +87,22 @@ import com.pims.vault.presentation.ui.components.ContextualExplanation
 import com.pims.vault.presentation.ui.components.ContextualExplanationSheet
 import com.pims.vault.presentation.ui.components.PersonaDialog
 import com.pims.vault.presentation.ui.components.PersonaDropdownSelector
+import com.pims.vault.presentation.ui.components.PersonaSearchableCombobox
+import com.pims.vault.presentation.ui.components.PersonaFormSection
 import com.pims.vault.presentation.ui.components.PersonaTextInput
 import com.pims.vault.presentation.ui.components.PersonaToggleRow
+import com.pims.vault.presentation.ui.components.ux.PersonaToastController
+import com.pims.vault.presentation.ui.components.ux.PersonaToastHost
+import com.pims.vault.presentation.ui.components.ux.PersonaToastMessage
+import com.pims.vault.presentation.ui.components.ux.ToastType
+import com.pims.vault.presentation.ui.components.ux.rememberPersonaToastController
+import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
+import com.pims.vault.domain.model.PublicResumeData
+import com.pims.vault.domain.rules.DocumentRules
+import com.pims.vault.core.util.ResumePdfGenerator
+import com.pims.vault.presentation.ui.components.InternationalPhoneInput
+import com.pims.vault.presentation.hub.PublicResumeModal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -276,6 +296,30 @@ fun PersonaDashboardScreen(
     val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val toastController = rememberPersonaToastController()
+    val feedback = rememberPimsFeedback()
+
+    // Automatically route all notifications/snackbars into Apple-grade floating dynamic status HUD
+    LaunchedEffect(snackbarHostState.currentSnackbarData) {
+        snackbarHostState.currentSnackbarData?.let { data ->
+            val msg = data.visuals.message
+            val type = when {
+                msg.startsWith("✓") || msg.contains("success", ignoreCase = true) || msg.contains("copied", ignoreCase = true) -> ToastType.SUCCESS
+                msg.contains("fail", ignoreCase = true) || msg.contains("error", ignoreCase = true) || msg.contains("locked", ignoreCase = true) -> ToastType.ERROR
+                msg.contains("warning", ignoreCase = true) || msg.contains("declined", ignoreCase = true) || msg.contains("wiped", ignoreCase = true) -> ToastType.WARNING
+                else -> ToastType.INFO
+            }
+            toastController.show(
+                PersonaToastMessage(
+                    message = msg,
+                    type = type,
+                    actionLabel = data.visuals.actionLabel,
+                    onAction = { data.performAction() }
+                )
+            )
+            data.dismiss()
+        }
+    }
 
     val profileState by profileViewModel.uiState.collectAsState()
     val documentState by documentViewModel.uiState.collectAsState()
@@ -374,6 +418,12 @@ fun PersonaDashboardScreen(
             documentViewModel.onEvent(DocumentEvent.ClearFeedback)
         }
     }
+    LaunchedEffect(documentState.errorMessage) {
+        documentState.errorMessage?.let { msg ->
+            snackbarHostState.showSnackbar("⚠️ $msg")
+            documentViewModel.onEvent(DocumentEvent.ClearFeedback)
+        }
+    }
 
     val fullName = listOf(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ").ifBlank { "My Profile" }
 
@@ -444,6 +494,7 @@ fun PersonaDashboardScreen(
     
     var selectedPersonForDetail by remember { mutableStateOf<KinRelationshipItem?>(null) }
     var personToEditForDialog by remember { mutableStateOf<KinRelationshipItem?>(null) }
+    var showPublicResumeModal by remember { mutableStateOf(false) }
 
     // Tiered Biometric Verification state for sensitive records (Level 2) and Vault (Level 3)
     var pendingSensitiveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -543,7 +594,101 @@ fun PersonaDashboardScreen(
     var pendingUploadUri by remember { mutableStateOf<Uri?>(null) }
     var uploadDocTitle by remember { mutableStateOf("") }
     var uploadDocType by remember { mutableStateOf(DocumentType.NATIONAL_ID) }
+    var uploadDocNumber by remember { mutableStateOf("") }
+    var uploadDocAuthority by remember { mutableStateOf("") }
+    var uploadDocExpiryDate by remember { mutableStateOf("") }
+    var uploadDocClassification by remember { mutableStateOf(SecurityClassification.ZONE_2_PRIVATE) }
+    var uploadDocFileName by remember { mutableStateOf("") }
+    var uploadDocSizeBytes by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    var uploadDocMimeType by remember { mutableStateOf("application/pdf") }
+    var isEncryptingAndSavingDoc by remember { mutableStateOf(false) }
+    var pendingUploadBytes by remember { mutableStateOf<ByteArray?>(null) }
     var documentToDelete by remember { mutableStateOf<DocumentWithHistory?>(null) }
+
+    fun queryUploadMetadata(ctx: android.content.Context, uri: Uri): Pair<String, Long> {
+        var name = uri.lastPathSegment?.substringAfterLast("/") ?: "Document"
+        var size = 0L
+        try {
+            ctx.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                if (cursor.moveToFirst()) {
+                    if (nameIndex != -1) {
+                        name = cursor.getString(nameIndex) ?: name
+                    }
+                    if (sizeIndex != -1) {
+                        size = cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return Pair(name, size)
+    }
+
+    fun guessUploadDocumentTypeAndTitle(fileName: String): Pair<DocumentType, String> {
+        val nameWithoutExt = if (fileName.contains(".")) fileName.substringBeforeLast(".") else fileName
+        val cleanTitle = nameWithoutExt
+            .replace(Regex("[_\\-\\.]+"), " ")
+            .split(" ")
+            .filter { it.isNotBlank() }
+            .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+            .ifBlank { "Document" }
+
+        val lower = fileName.lowercase()
+        val type = when {
+            lower.contains("passport") -> DocumentType.PASSPORT
+            lower.contains("national") || lower.contains("id_") || lower.contains("id card") || lower.contains("national_id") || lower.contains("citizen") -> DocumentType.NATIONAL_ID
+            lower.contains("license") || lower.contains("licence") || lower.contains("driving") || lower.contains("driver") -> DocumentType.DRIVING_LICENCE
+            lower.contains("birth") -> DocumentType.BIRTH_CERTIFICATE
+            lower.contains("degree") || lower.contains("cert") || lower.contains("diploma") -> DocumentType.ACADEMIC_CERTIFICATE
+            lower.contains("transcript") || lower.contains("grades") -> DocumentType.TRANSCRIPT
+            lower.contains("resume") || lower.contains("cv") -> DocumentType.CURRICULUM_VITAE
+            lower.contains("contract") || lower.contains("offer") || lower.contains("employment") || lower.contains("appointment") -> DocumentType.EMPLOYMENT_CONTRACT
+            lower.contains("medical") || lower.contains("health") || lower.contains("doctor") || lower.contains("prescription") || lower.contains("hospital") || lower.contains("vaccine") -> DocumentType.MEDICAL_RECORD
+            lower.contains("insurance") || lower.contains("policy") -> DocumentType.INSURANCE_POLICY
+            lower.contains("legal") || lower.contains("deed") || lower.contains("agreement") -> DocumentType.LEGAL_CONTRACT
+            else -> DocumentType.OTHER
+        }
+        return Pair(type, cleanTitle)
+    }
+
+    fun resolveUploadMimeType(ctx: android.content.Context, uri: Uri, fileName: String): String {
+        val resolverType = ctx.contentResolver.getType(uri)
+        if (!resolverType.isNullOrBlank() && resolverType != "application/octet-stream") {
+            return resolverType
+        }
+        val ext = fileName.substringAfterLast(".", "").lowercase()
+        if (ext.isNotBlank()) {
+            val fromMap = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+            if (!fromMap.isNullOrBlank()) return fromMap
+            return when (ext) {
+                "pdf" -> "application/pdf"
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "webp" -> "image/webp"
+                "gif" -> "image/gif"
+                "doc" -> "application/msword"
+                "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                "xls" -> "application/vnd.ms-excel"
+                "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                "txt" -> "text/plain"
+                "csv" -> "text/csv"
+                else -> "application/octet-stream"
+            }
+        }
+        return "application/octet-stream"
+    }
+
+    fun formatUploadFileSize(bytes: Long): String {
+        if (bytes <= 0) return "Ready for encryption"
+        val kb = bytes / 1024.0
+        val mb = kb / 1024.0
+        return when {
+            mb >= 1.0 -> "%.1f MB".format(mb)
+            kb >= 1.0 -> "%.1f KB".format(kb)
+            else -> "$bytes B"
+        }
+    }
 
     // Dialog States for Dynamic Multi-Item Entries - Consolidated
     val dialogStates = remember {
@@ -582,9 +727,57 @@ fun PersonaDashboardScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            pendingUploadUri = uri
-            uploadDocTitle = uri.lastPathSegment?.substringAfterLast("/") ?: "Document"
-            showDialog("upload")
+            try {
+                val meta = queryUploadMetadata(context, uri)
+                val fileName = meta.first
+                var size = meta.second
+
+                // Safeguard against unusually large files (> 50 MB threshold)
+                if (size > DocumentRules.MAX_DOCUMENT_SIZE_BYTES) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("File exceeds the 50 MB maximum allowed threshold.")
+                    }
+                    return@rememberLauncherForActivityResult
+                }
+
+                // Immediately read file into byte buffer and close stream safely
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null || bytes.isEmpty()) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Selected file is empty or inaccessible.")
+                    }
+                    return@rememberLauncherForActivityResult
+                }
+
+                size = bytes.size.toLong()
+                if (size > DocumentRules.MAX_DOCUMENT_SIZE_BYTES) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("File exceeds the 50 MB maximum allowed threshold.")
+                    }
+                    return@rememberLauncherForActivityResult
+                }
+
+                val guessed = guessUploadDocumentTypeAndTitle(fileName)
+                val mime = resolveUploadMimeType(context, uri, fileName)
+
+                pendingUploadUri = uri
+                pendingUploadBytes = bytes
+                uploadDocFileName = fileName
+                uploadDocSizeBytes = size
+                uploadDocMimeType = mime
+                uploadDocType = guessed.first
+                uploadDocTitle = guessed.second
+                uploadDocNumber = ""
+                uploadDocAuthority = ""
+                uploadDocExpiryDate = ""
+                uploadDocClassification = DocumentRules.resolveDefaultClassification(guessed.first)
+
+                showDialog("upload")
+            } catch (e: Exception) {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Could not read selected file: ${e.localizedMessage}")
+                }
+            }
         }
     }
 
@@ -615,7 +808,7 @@ fun PersonaDashboardScreen(
         pendingExportDoc = null
     }
 
-    val onOpenDocumentForViewing: (com.pims.vault.domain.model.DocumentWithHistory) -> Unit = { doc ->
+    val performDocumentDecryptionAndView: (com.pims.vault.domain.model.DocumentWithHistory) -> Unit = { doc ->
         val version = doc.currentVersion
         if (version == null) {
             scope.launch { snackbarHostState.showSnackbar("No version available for this document") }
@@ -647,18 +840,48 @@ fun PersonaDashboardScreen(
         }
     }
 
-    val onInitiateDocumentExport: (com.pims.vault.domain.model.DocumentWithHistory) -> Unit = { doc ->
-        pendingExportDoc = doc
-        val version = doc.currentVersion
-        val extension = when {
-            version?.mimeType?.contains("pdf", ignoreCase = true) == true -> ".pdf"
-            version?.mimeType?.contains("png", ignoreCase = true) == true -> ".png"
-            version?.mimeType?.contains("jpeg", ignoreCase = true) == true || version?.mimeType?.contains("jpg", ignoreCase = true) == true -> ".jpg"
-            version?.mimeType?.contains("text", ignoreCase = true) == true -> ".txt"
-            else -> ""
+    val onOpenDocumentForViewing: (com.pims.vault.domain.model.DocumentWithHistory) -> Unit = { doc ->
+        val isSensitive = (doc.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE ||
+                doc.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL) &&
+                pinSecurityManager.requireAuthForSensitive.value &&
+                !isLevel2Unlocked
+
+        if (isSensitive && pinSecurityManager.hasPin()) {
+            pendingSensitiveAction = { performDocumentDecryptionAndView(doc) }
+            pendingSecurityTier = SecurityTier.LEVEL_2_SENSITIVE
+            isPinChallengeVisible = true
+        } else {
+            performDocumentDecryptionAndView(doc)
         }
-        val defaultName = "${doc.document.title.replace(Regex("[^a-zA-Z0-9._-]"), "_")}$extension"
-        exportDocLauncher.launch(defaultName)
+    }
+
+    val onInitiateDocumentExport: (com.pims.vault.domain.model.DocumentWithHistory) -> Unit = { doc ->
+        val isSensitive = (doc.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE ||
+                doc.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL) &&
+                pinSecurityManager.requireAuthForSensitive.value &&
+                !isLevel2Unlocked
+
+        val launchExport = {
+            pendingExportDoc = doc
+            val version = doc.currentVersion
+            val extension = when {
+                version?.mimeType?.contains("pdf", ignoreCase = true) == true -> ".pdf"
+                version?.mimeType?.contains("png", ignoreCase = true) == true -> ".png"
+                version?.mimeType?.contains("jpeg", ignoreCase = true) == true || version?.mimeType?.contains("jpg", ignoreCase = true) == true -> ".jpg"
+                version?.mimeType?.contains("text", ignoreCase = true) == true -> ".txt"
+                else -> ""
+            }
+            val defaultName = "${doc.document.title.replace(Regex("[^a-zA-Z0-9._-]"), "_")}$extension"
+            exportDocLauncher.launch(defaultName)
+        }
+
+        if (isSensitive && pinSecurityManager.hasPin()) {
+            pendingSensitiveAction = launchExport
+            pendingSecurityTier = SecurityTier.LEVEL_2_SENSITIVE
+            isPinChallengeVisible = true
+        } else {
+            launchExport()
+        }
     }
     
     var relationshipToDelete by remember { mutableStateOf<KinRelationshipItem?>(null) }
@@ -667,6 +890,37 @@ fun PersonaDashboardScreen(
     val primaryPhone = profileState.contacts.firstOrNull { it.contactType == ContactType.PHONE }?.value
     val primaryEmail = profileState.contacts.firstOrNull { it.contactType == ContactType.EMAIL }?.value
     val primaryAddress = profileState.addresses.firstOrNull()?.let { "${it.streetLine1}, ${it.city}" }
+
+    fun handleExportPdf() {
+        val resumeData = PublicResumeData.fromProfile(
+            person = profileState.person,
+            primaryPhone = primaryPhone,
+            primaryEmail = primaryEmail,
+            primaryAddress = primaryAddress,
+            employments = profileState.employmentRecords,
+            educations = profileState.educationRecords,
+            certificates = profileState.certificates,
+            socialAccounts = profileState.socialAccounts.map { entity ->
+                com.pims.vault.presentation.ui.components.SocialProfileItem(
+                    id = entity.id,
+                    platform = com.pims.vault.presentation.ui.components.SocialPlatform.fromName(entity.platform),
+                    handleOrUrl = entity.username ?: entity.url,
+                    customPlatformName = if (com.pims.vault.presentation.ui.components.SocialPlatform.fromName(entity.platform) == com.pims.vault.presentation.ui.components.SocialPlatform.OTHER) entity.platform else null
+                )
+            },
+            customFields = profileState.customFields
+        )
+        val pdfFile = ResumePdfGenerator.generateResumePdf(context, resumeData)
+        if (pdfFile != null) {
+            ResumePdfGenerator.shareResumePdf(context, pdfFile)
+            haptics.success()
+            soundManager.success()
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar("Failed to generate PDF resume")
+            }
+        }
+    }
 
     // Activity & Notification Center Data (Strictly relationship, sharing, and urgent profile alerts)
     val notifications = remember(profileState.relationships, documentState.documents, conflicts, dismissedNotificationIds) {
@@ -1142,11 +1396,15 @@ fun PersonaDashboardScreen(
     // MAIN HUB INTERFACE WITH 4-ITEM BOTTOM NAVIGATION
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { PersonaToastHost(toastController) },
         floatingActionButton = {
             com.pims.vault.presentation.ui.components.AnimatedFAB(
                 onClick = {
-                    showSheet("addAction")
+                    if (selectedTab == 2) {
+                        showDialog("addRelationship")
+                    } else {
+                        showSheet("addAction")
+                    }
                 }
             )
         },
@@ -1237,6 +1495,34 @@ fun PersonaDashboardScreen(
                         primaryPhone = primaryPhone,
                         primaryEmail = primaryEmail,
                         primaryAddress = primaryAddress,
+                        nationalIdNumber = profileState.person?.nationalIdNumber,
+                        idPhotoPath = profileState.idPhotoPath,
+                        onSaveIdentityDetails = { name, email, phone, idNum, idPhotoUri ->
+                            val localPhotoPath = idPhotoUri?.let { uri ->
+                                try {
+                                    val destFile = java.io.File(context.filesDir, "identity_id_photo_${System.currentTimeMillis()}.jpg")
+                                    context.contentResolver.openInputStream(uri)?.use { input ->
+                                        destFile.outputStream().use { output ->
+                                            input.copyTo(output)
+                                        }
+                                    }
+                                    destFile.absolutePath
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            }
+                            profileViewModel.onEvent(
+                                ProfileEvent.SaveIdentityDetails(
+                                    fullName = name,
+                                    email = email,
+                                    phone = phone,
+                                    nationalId = idNum,
+                                    idPhotoPath = localPhotoPath
+                                )
+                            )
+                            haptics.success()
+                            soundManager.success()
+                        },
                         documents = documentState.documents,
                         syncStatusText = syncStatusText,
                         isLocalOnly = isLocalOnly,
@@ -1261,13 +1547,7 @@ fun PersonaDashboardScreen(
                         },
                         onOpenDocuments = {
                             soundManager.navigation()
-                            requestGatedAccess(
-                                SecurityTier.LEVEL_2_SENSITIVE,
-                                "Documents Vault",
-                                "Confirm identity to access documents"
-                            ) {
-                                showSheet("documents")
-                            }
+                            showSheet("documents")
                         },
                         onOpenShare = {
                             soundManager.navigation()
@@ -1325,6 +1605,8 @@ fun PersonaDashboardScreen(
                         onSyncClick = { showSheet("conflict") },
                         onShareProfileClick = { showSheet("share") },
                         onEditProfileClick = { showDialog("editProfile") },
+                        onViewPublicDossier = { showPublicResumeModal = true },
+                        onExportPdf = { handleExportPdf() },
                         onDeleteCustomField = { label -> profileViewModel.onEvent(ProfileEvent.DeleteCustomField(label)) },
                         onEducationClick = { showSheet("education") },
                         onHealthClick = {
@@ -1341,13 +1623,8 @@ fun PersonaDashboardScreen(
                             openVaultFortress()
                         },
                         onDocumentsClick = {
-                            requestGatedAccess(
-                                SecurityTier.LEVEL_2_SENSITIVE,
-                                "Documents Vault",
-                                "Confirm identity to access documents"
-                            ) {
-                                showSheet("documents")
-                            }
+                            soundManager.navigation()
+                            showSheet("documents")
                         },
                         onPeopleClick = { selectedTab = 2 },
                         onPhoneClick = { showDialog("addPhone") },
@@ -2090,12 +2367,10 @@ fun PersonaDashboardScreen(
                 }
 
                 // Phone Number
-                PersonaTextInput(
+                InternationalPhoneInput(
                     value = editPhone,
                     onValueChange = { editPhone = it },
-                    label = "Phone number",
-                    placeholder = "e.g. +263 77 123 4567",
-                    keyboardType = KeyboardType.Phone
+                    label = "Phone number"
                 )
 
                 // Email Address
@@ -2281,18 +2556,20 @@ fun PersonaDashboardScreen(
                     )
                 }
 
-                PersonaTextInput(
+                PersonaSearchableCombobox(
                     value = editRole,
                     onValueChange = { editRole = it },
+                    options = listOf("Mother", "Father", "Sister", "Brother", "Spouse", "Wife", "Husband", "Partner", "Daughter", "Son", "Child", "Uncle", "Aunt", "Cousin", "Grandmother", "Grandfather", "Grandchild", "In-law", "Friend", "Next of Kin", "Mentor", "Colleague"),
                     label = "Relationship (e.g. Sibling, Mother, Friend)",
+                    placeholder = "Type or select relationship...",
+                    allowCustom = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                PersonaTextInput(
+                InternationalPhoneInput(
                     value = editPhone,
                     onValueChange = { editPhone = it },
                     label = "Phone number",
-                    keyboardType = KeyboardType.Phone,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -2400,12 +2677,10 @@ fun PersonaDashboardScreen(
                 hideDialog("addPhone")
             }
         ) {
-            PersonaTextInput(
+            InternationalPhoneInput(
                 value = newPhone,
                 onValueChange = { newPhone = it },
-                label = "Phone number",
-                placeholder = "e.g. +263 77 123 4567",
-                keyboardType = KeyboardType.Phone
+                label = "Phone number"
             )
 
             PersonaDropdownSelector(
@@ -2614,7 +2889,15 @@ fun PersonaDashboardScreen(
 
     // 8. Add Relationship / Relative Dialog
     if (dialogStates.value["addRelationship"] == true) {
+        val userGenderStr = profileState.person?.gender?.uppercase() ?: avatarConfig?.gender?.name ?: "MALE"
+        val oppositeGender = if (userGenderStr.startsWith("F") || userGenderStr.contains("FEMALE")) {
+            com.pims.vault.presentation.avatar.AvatarGender.MALE
+        } else {
+            com.pims.vault.presentation.avatar.AvatarGender.FEMALE
+        }
+
         var relRole by remember { mutableStateOf("Mother") }
+        var personGender by remember { mutableStateOf(com.pims.vault.presentation.avatar.AvatarGender.FEMALE) }
         var relName by remember { mutableStateOf("") }
         var relPhone by remember { mutableStateOf("") }
         var relEmail by remember { mutableStateOf("") }
@@ -2624,18 +2907,42 @@ fun PersonaDashboardScreen(
         var relNotes by remember { mutableStateOf("") }
         var isNok by remember { mutableStateOf(false) }
 
-        val relRoles = listOf("Mother", "Father", "Sister", "Brother", "Uncle", "Aunt", "Wife", "Husband", "Spouse", "Child", "Partner", "Friend", "Next of Kin", "Other")
+        val relRoles = listOf(
+            "Mother", "Father", "Sister", "Brother", "Spouse", "Wife", "Husband", "Partner",
+            "Daughter", "Son", "Child", "Uncle", "Aunt", "Cousin", "Grandmother", "Grandfather",
+            "Grandchild", "In-law", "Friend", "Next of Kin", "Mentor", "Colleague", "Neighbor",
+            "Guardian", "Doctor", "Lawyer"
+        )
+
+        // Function to update role and pre-set inferenced gender
+        fun onRoleSelected(role: String) {
+            relRole = role
+            when (role.trim().lowercase()) {
+                "mother", "sister", "aunt", "wife", "daughter", "grandmother", "niece" -> {
+                    personGender = com.pims.vault.presentation.avatar.AvatarGender.FEMALE
+                }
+                "father", "brother", "uncle", "husband", "son", "grandfather", "nephew" -> {
+                    personGender = com.pims.vault.presentation.avatar.AvatarGender.MALE
+                }
+                "spouse", "partner" -> {
+                    personGender = oppositeGender
+                }
+                else -> {}
+            }
+        }
+
+        val effectiveRole = relRole.trim().ifBlank { "Connected Person" }
 
         PersonaDialog(
             onDismissRequest = { hideDialog("addRelationship") },
             title = "Connect Person",
             confirmText = "Save Person",
-            confirmEnabled = relName.isNotBlank(),
+            confirmEnabled = relName.isNotBlank() && relRole.isNotBlank(),
             onConfirm = {
                 if (relName.isNotBlank()) {
                     profileViewModel.onEvent(
                         ProfileEvent.AddRelationship(
-                            role = relRole,
+                            role = effectiveRole,
                             fullName = relName.trim(),
                             phone = relPhone.trim(),
                             email = relEmail.trim(),
@@ -2646,39 +2953,101 @@ fun PersonaDashboardScreen(
                             isNextOfKin = isNok
                         )
                     )
-                    recentActivityManager.recordActivity("Added ${relName.trim()} to People", "Connected as $relRole")
+                    recentActivityManager.recordActivity("Added ${relName.trim()} to People", "Connected as $effectiveRole")
                 }
                 hideDialog("addRelationship")
             }
         ) {
-            PersonaDropdownSelector(
-                label = "How are you connected?",
-                selectedOption = relRole,
-                options = relRoles,
-                onOptionSelected = { relRole = it }
-            )
-            PersonaTextInput(value = relName, onValueChange = { relName = it }, label = "Full name *", placeholder = "Full name")
-            PersonaTextInput(value = relPhone, onValueChange = { relPhone = it }, label = "Phone number", placeholder = "e.g. +263 77 123 4567", keyboardType = KeyboardType.Phone)
-            PersonaTextInput(value = relEmail, onValueChange = { relEmail = it }, label = "Email address", placeholder = "name@example.com", keyboardType = KeyboardType.Email)
-            PersonaTextInput(value = relAddress, onValueChange = { relAddress = it }, label = "Address", placeholder = "Physical address")
-            com.pims.vault.presentation.ui.components.StandardDateInput(
-                isoDate = relDob,
-                onDateChange = { relDob = it },
-                label = "Birthday"
-            )
-            AnimatedVisibility(visible = isRomanticOrMaritalRelationship(relRole)) {
-                com.pims.vault.presentation.ui.components.StandardDateInput(
-                    isoDate = relAnniversary,
-                    onDateChange = { relAnniversary = it },
-                    label = "Anniversary"
+            // Section 1: Relationship & Identity
+            PersonaFormSection(
+                title = "Relationship & Identity",
+                icon = Icons.Default.Person
+            ) {
+                PersonaSearchableCombobox(
+                    label = "How are you connected?",
+                    value = relRole,
+                    options = relRoles,
+                    onValueChange = { onRoleSelected(it) },
+                    placeholder = "Search or type relation (e.g. Mother, Godmother)...",
+                    allowCustom = true
+                )
+
+                PersonaDropdownSelector(
+                    label = "Person's Gender",
+                    selectedOption = personGender.label,
+                    options = listOf("Female", "Male", "Non-binary / Other"),
+                    onOptionSelected = { label ->
+                        personGender = when (label) {
+                            "Female" -> com.pims.vault.presentation.avatar.AvatarGender.FEMALE
+                            "Male" -> com.pims.vault.presentation.avatar.AvatarGender.MALE
+                            else -> com.pims.vault.presentation.avatar.AvatarGender.NON_BINARY
+                        }
+                    }
+                )
+
+                PersonaTextInput(
+                    value = relName,
+                    onValueChange = { relName = it },
+                    label = "Full name *",
+                    placeholder = "Full name"
                 )
             }
-            PersonaTextInput(value = relNotes, onValueChange = { relNotes = it }, label = "Private notes", placeholder = "e.g. Likes gardening", singleLine = false)
-            PersonaToggleRow(
-                title = "Mark as Next of Kin / ICE",
-                checked = isNok,
-                onCheckedChange = { isNok = it }
-            )
+
+            // Section 2: Contact Details
+            PersonaFormSection(
+                title = "Contact Information",
+                icon = Icons.Default.Phone
+            ) {
+                InternationalPhoneInput(
+                    value = relPhone,
+                    onValueChange = { relPhone = it },
+                    label = "Phone number"
+                )
+                PersonaTextInput(
+                    value = relEmail,
+                    onValueChange = { relEmail = it },
+                    label = "Email address",
+                    placeholder = "name@example.com",
+                    keyboardType = KeyboardType.Email
+                )
+                PersonaTextInput(
+                    value = relAddress,
+                    onValueChange = { relAddress = it },
+                    label = "Address",
+                    placeholder = "Physical address"
+                )
+            }
+
+            // Section 3: Important Dates & Notes
+            PersonaFormSection(
+                title = "Dates & Notes",
+                icon = Icons.Default.CalendarToday
+            ) {
+                com.pims.vault.presentation.ui.components.StandardDateInput(
+                    isoDate = relDob,
+                    onDateChange = { relDob = it },
+                    label = "Birthday"
+                )
+                AnimatedVisibility(visible = isRomanticOrMaritalRelationship(relRole) || isRomanticOrMaritalRelationship(effectiveRole)) {
+                    com.pims.vault.presentation.ui.components.StandardDateInput(
+                        isoDate = relAnniversary,
+                        onDateChange = { relAnniversary = it },
+                        label = "Anniversary"
+                    )
+                }
+                PersonaTextInput(
+                    value = relNotes,
+                    onValueChange = { relNotes = it },
+                    label = "Private notes",
+                    placeholder = "e.g. Likes gardening, allergies, memories",
+                    singleLine = false
+                )
+                PersonaToggleRow(
+                    title = "Mark as Next of Kin / ICE",
+                    checked = isNok,
+                    onCheckedChange = { isNok = it }
+                )
+            }
         }
     }
 
@@ -2719,49 +3088,305 @@ fun PersonaDashboardScreen(
 
     // 11. Document Upload Dialog
     if (dialogStates.value["upload"] == true && pendingUploadUri != null) {
+        val documentTypeOptions = remember {
+            listOf(
+                DocumentType.NATIONAL_ID to "National Identity Card",
+                DocumentType.PASSPORT to "Passport",
+                DocumentType.DRIVING_LICENCE to "Driver's License",
+                DocumentType.BIRTH_CERTIFICATE to "Birth Certificate",
+                DocumentType.ACADEMIC_CERTIFICATE to "Academic Certificate / Degree",
+                DocumentType.TRANSCRIPT to "Academic Transcript",
+                DocumentType.CURRICULUM_VITAE to "Curriculum Vitae / Resume",
+                DocumentType.EMPLOYMENT_CONTRACT to "Employment Contract",
+                DocumentType.MEDICAL_RECORD to "Medical / Health Record",
+                DocumentType.INSURANCE_POLICY to "Insurance Policy",
+                DocumentType.LEGAL_CONTRACT to "Legal Agreement / Contract",
+                DocumentType.PASSPORT_PHOTO to "ID / Passport Photo",
+                DocumentType.OTHER to "General Document / Other"
+            )
+        }
+        val currentTypeLabel = documentTypeOptions.firstOrNull { it.first == uploadDocType }?.second ?: "General Document / Other"
+
         PersonaDialog(
-            onDismissRequest = { hideDialog("upload"); pendingUploadUri = null },
-            title = "Save Document to Wallet",
-            confirmText = "Encrypt & Save",
-            confirmEnabled = uploadDocTitle.isNotBlank(),
-            onConfirm = {
-                val uri = pendingUploadUri
-                if (uri != null && uploadDocTitle.isNotBlank()) {
-                    try {
-                        val stream = context.contentResolver.openInputStream(uri)
-                        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-                        if (stream != null) {
-                            documentViewModel.onEvent(
-                                DocumentEvent.IngestDocument(
-                                    type = uploadDocType,
-                                    title = uploadDocTitle,
-                                    docNumber = null,
-                                    authority = null,
-                                    country = country,
-                                    issueDate = null,
-                                    expiryDate = null,
-                                    classification = SecurityClassification.ZONE_2_PRIVATE,
-                                    fileStream = stream,
-                                    mimeType = mime,
-                                    filename = uri.lastPathSegment
-                                )
-                            )
-                            recentActivityManager.recordActivity("Added document to wallet", uploadDocTitle.trim())
-                        }
-                    } catch (e: Exception) {
-                        scope.launch { snackbarHostState.showSnackbar("Upload failed: ${e.message}") }
-                    }
+            onDismissRequest = {
+                if (!isEncryptingAndSavingDoc) {
+                    hideDialog("upload")
+                    pendingUploadBytes = null
+                    pendingUploadUri = null
                 }
-                hideDialog("upload")
-                pendingUploadUri = null
+            },
+            title = "Save Document to Wallet",
+            confirmText = if (isEncryptingAndSavingDoc) "Encrypting & Saving..." else "Encrypt & Save",
+            confirmEnabled = uploadDocTitle.isNotBlank() && !isEncryptingAndSavingDoc,
+            onConfirm = {
+                val bytes = pendingUploadBytes
+                if (bytes != null && uploadDocTitle.isNotBlank()) {
+                    isEncryptingAndSavingDoc = true
+                    documentViewModel.onEvent(
+                        DocumentEvent.IngestDocument(
+                            type = uploadDocType,
+                            title = uploadDocTitle.trim(),
+                            docNumber = uploadDocNumber.trim().takeIf { it.isNotBlank() },
+                            authority = uploadDocAuthority.trim().takeIf { it.isNotBlank() },
+                            country = country.ifBlank { "ZW" },
+                            issueDate = null,
+                            expiryDate = uploadDocExpiryDate.trim().takeIf { it.isNotBlank() },
+                            classification = uploadDocClassification,
+                            fileBytes = bytes,
+                            mimeType = uploadDocMimeType,
+                            filename = uploadDocFileName,
+                            onSuccess = {
+                                recentActivityManager.recordActivity("Added document to wallet", uploadDocTitle.trim())
+                                soundManager.success()
+                                haptics.success()
+                                isEncryptingAndSavingDoc = false
+                                pendingUploadBytes = null
+                                pendingUploadUri = null
+                                hideDialog("upload")
+                            },
+                            onError = { _ ->
+                                isEncryptingAndSavingDoc = false
+                            }
+                        )
+                    )
+                }
             }
         ) {
-            PersonaTextInput(
-                value = uploadDocTitle,
-                onValueChange = { uploadDocTitle = it },
-                label = "Document title",
-                placeholder = "e.g. Degree Certificate, Passport"
-            )
+            // A. File Source Preview Card
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    val isPdf = uploadDocFileName.endsWith(".pdf", ignoreCase = true) || uploadDocMimeType.contains("pdf", ignoreCase = true)
+                    val isImg = uploadDocFileName.endsWith(".png", ignoreCase = true) || uploadDocFileName.endsWith(".jpg", ignoreCase = true) || uploadDocFileName.endsWith(".jpeg", ignoreCase = true) || uploadDocMimeType.contains("image", ignoreCase = true)
+
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .background(
+                                color = when {
+                                    isPdf -> Color(0xFFEF4444).copy(alpha = 0.15f)
+                                    isImg -> Color(0xFF10B981).copy(alpha = 0.15f)
+                                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = null,
+                            tint = when {
+                                isPdf -> Color(0xFFDC2626)
+                                isImg -> Color(0xFF059669)
+                                else -> MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = uploadDocFileName.ifBlank { "Selected File" },
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = formatUploadFileSize(uploadDocSizeBytes),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "•",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = Color(0xFF10B981),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "AES-256-GCM encrypted locally",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = Color(0xFF059669),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // B. Document Classification
+            PersonaFormSection(title = "Classification") {
+                PersonaDropdownSelector(
+                    label = "Document Type",
+                    selectedOption = currentTypeLabel,
+                    options = documentTypeOptions.map { it.second },
+                    onOptionSelected = { selectedLabel ->
+                        val matched = documentTypeOptions.firstOrNull { it.second == selectedLabel }
+                        if (matched != null) {
+                            uploadDocType = matched.first
+                            uploadDocClassification = DocumentRules.resolveDefaultClassification(matched.first)
+                        }
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // C. Document Details
+            PersonaFormSection(title = "Document Details") {
+                PersonaTextInput(
+                    value = uploadDocTitle,
+                    onValueChange = { uploadDocTitle = it },
+                    label = "Document Title *",
+                    placeholder = "e.g. National ID, Passport, Degree"
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                PersonaTextInput(
+                    value = uploadDocNumber,
+                    onValueChange = { uploadDocNumber = it },
+                    label = "Document / Reference Number",
+                    placeholder = "e.g. 63-1234567-A-89"
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                PersonaTextInput(
+                    value = uploadDocAuthority,
+                    onValueChange = { uploadDocAuthority = it },
+                    label = "Issuing Authority / Institution",
+                    placeholder = "e.g. Registrar General, Harvard"
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                PersonaTextInput(
+                    value = uploadDocExpiryDate,
+                    onValueChange = { uploadDocExpiryDate = it },
+                    label = "Expiration Date (Optional)",
+                    placeholder = "e.g. YYYY-MM-DD"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // D. Security Tier Selection
+            PersonaFormSection(title = "Vault Security Level") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val isStandard = uploadDocClassification == SecurityClassification.ZONE_1_PERSONAL ||
+                            uploadDocClassification == SecurityClassification.ZONE_2_PRIVATE
+
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { uploadDocClassification = SecurityClassification.ZONE_2_PRIVATE },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isStandard) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            if (isStandard) 1.5.dp else 1.dp,
+                            if (isStandard) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = if (isStandard) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Standard Vault",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Encrypted on-device, instant access in app",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    val isHighSecurity = uploadDocClassification == SecurityClassification.ZONE_3_SENSITIVE ||
+                            uploadDocClassification == SecurityClassification.ZONE_4_CRITICAL
+
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { uploadDocClassification = SecurityClassification.ZONE_3_SENSITIVE },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isHighSecurity) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            if (isHighSecurity) 1.5.dp else 1.dp,
+                            if (isHighSecurity) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = if (isHighSecurity) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "High Security",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "PIN / biometric gated access",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2827,7 +3452,10 @@ fun PersonaDashboardScreen(
                         )
                         ExposedDropdownMenu(
                             expanded = categoryDropdownExpanded,
-                            onDismissRequest = { categoryDropdownExpanded = false }
+                            onDismissRequest = { categoryDropdownExpanded = false },
+                            modifier = Modifier
+                                .exposedDropdownSize(matchTextFieldWidth = true)
+                                .heightIn(max = 240.dp)
                         ) {
                             InformationCategory.values().forEach { cat ->
                                 DropdownMenuItem(
@@ -2835,7 +3463,9 @@ fun PersonaDashboardScreen(
                                     onClick = {
                                         selectedCategory = cat
                                         categoryDropdownExpanded = false
-                                    }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                 )
                             }
                         }
@@ -3009,6 +3639,35 @@ fun PersonaDashboardScreen(
             )
         }
     }
+
+    // 14. Unified Public Dossier & Executive Resume Modal
+    if (showPublicResumeModal) {
+        val resumeData = remember(profileState, primaryPhone, primaryEmail, primaryAddress) {
+            PublicResumeData.fromProfile(
+                person = profileState.person,
+                primaryPhone = primaryPhone,
+                primaryEmail = primaryEmail,
+                primaryAddress = primaryAddress,
+                employments = profileState.employmentRecords,
+                educations = profileState.educationRecords,
+                certificates = profileState.certificates,
+                socialAccounts = profileState.socialAccounts.map { entity ->
+                    com.pims.vault.presentation.ui.components.SocialProfileItem(
+                        id = entity.id,
+                        platform = com.pims.vault.presentation.ui.components.SocialPlatform.fromName(entity.platform),
+                        handleOrUrl = entity.username ?: entity.url,
+                        customPlatformName = if (com.pims.vault.presentation.ui.components.SocialPlatform.fromName(entity.platform) == com.pims.vault.presentation.ui.components.SocialPlatform.OTHER) entity.platform else null
+                    )
+                },
+                customFields = profileState.customFields
+            )
+        }
+        PublicResumeModal(
+            data = resumeData,
+            onDismissRequest = { showPublicResumeModal = false },
+            onExportPdf = { handleExportPdf() }
+        )
+    }
 }
 
 /**
@@ -3022,7 +3681,7 @@ private fun FloatingDockItem(
     icon: ImageVector,
     label: String
 ) {
-    val haptics = rememberPimsHaptics()
+    val feedback = rememberPimsFeedback()
     val isReducedMotion = com.pims.vault.presentation.ui.theme.LocalReducedMotion.current
     val activeBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
     val activeColor = MaterialTheme.colorScheme.primary
@@ -3049,7 +3708,7 @@ private fun FloatingDockItem(
         color = animatedBg,
         modifier = Modifier
             .tactilePress(targetScale = 0.94f) {
-                haptics.selection()
+                feedback.tap()
                 onClick()
             }
     ) {

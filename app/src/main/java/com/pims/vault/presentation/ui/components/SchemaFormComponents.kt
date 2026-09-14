@@ -15,16 +15,34 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -32,6 +50,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -110,7 +131,7 @@ fun PersonaTextInput(
                     Text(
                         text = it,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
                     )
                 }
             },
@@ -151,8 +172,13 @@ fun PersonaTextInput(
 
 /**
  * Dropdown selector styled with Persona aesthetics:
- * Label above, warm cream surface (#FFFDF8), subtle border, and clean dropdown menu.
+ * - Capped maximum height (240dp) with smooth internal scroll (shows ~4-5 items cleanly).
+ * - Full parent width matching the input field (no skinny toothpick offset).
+ * - Anchored directly beneath the trigger box via ExposedDropdownMenuBox.
+ * - Spacious touch targets (min 48dp height, 16dp horizontal, 13dp vertical padding).
+ * - Selection checkmarks cleanly right-aligned with breathing room.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PersonaDropdownSelector(
     selectedOption: String,
@@ -173,52 +199,73 @@ fun PersonaDropdownSelector(
                     fontSize = 13.sp
                 ),
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 5.dp, start = 1.dp)
+                modifier = Modifier.padding(bottom = 6.dp, start = 2.dp)
             )
         }
 
-        Box(modifier = Modifier.fillMaxWidth()) {
+        ExposedDropdownMenuBox(
+            expanded = expanded && enabled,
+            onExpandedChange = { if (enabled) expanded = !expanded },
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable(enabled = enabled) { expanded = !expanded },
-                shape = RoundedCornerShape(10.dp),
+                    .height(54.dp)
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled)
+                    .clip(RoundedCornerShape(12.dp)),
+                shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(
                     1.dp,
                     if (expanded) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-                )
+                ),
+                shadowElevation = if (expanded) 2.dp else 0.dp
             ) {
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                        .fillMaxSize()
+                        .padding(start = 16.dp, end = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = selectedOption.ifBlank { "Select" },
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
+                            fontSize = 14.5.sp,
                             fontWeight = FontWeight.Normal
                         ),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = if (selectedOption.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f) else MaterialTheme.colorScheme.onSurface
                     )
-                    Icon(
-                        imageVector = Icons.Default.ExpandMore,
-                        contentDescription = "Dropdown",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .background(
+                                if (expanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ExpandMore,
+                            contentDescription = "Dropdown",
+                            tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .graphicsLayer(rotationZ = if (expanded) 180f else 0f)
+                        )
+                    }
                 }
             }
 
-            DropdownMenu(
-                expanded = expanded,
+            ExposedDropdownMenu(
+                expanded = expanded && enabled,
                 onDismissRequest = { expanded = false },
                 modifier = Modifier
+                    .exposedDropdownSize(matchTextFieldWidth = true)
+                    .heightIn(max = 240.dp)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
                 options.forEach { option ->
@@ -227,21 +274,21 @@ fun PersonaDropdownSelector(
                         text = {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = option,
-                                    fontSize = 14.sp,
+                                    fontSize = 14.5.sp,
                                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
+                                Spacer(modifier = Modifier.weight(1f))
                                 if (isSelected) {
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "Selected",
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
@@ -249,8 +296,250 @@ fun PersonaDropdownSelector(
                         onClick = {
                             onOptionSelected(option)
                             expanded = false
-                        }
+                        },
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Autocomplete / Typeahead & Searchable Combobox:
+ * - Real-time filtering as the user types (Typeahead).
+ * - Capped maximum height (240dp) with smooth internal scroll.
+ * - Anchored directly beneath the input field matching exact parent width.
+ * - Creatable / Freeform support: if typed query isn't in predefined options, displays:
+ *   + Add "Custom Value"
+ * - Instant tap selection or clear button.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PersonaSearchableCombobox(
+    value: String,
+    onValueChange: (String) -> Unit,
+    options: List<String>,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    placeholder: String = "Type to search or add...",
+    allowCustom: Boolean = true,
+    enabled: Boolean = true
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember(value) { mutableStateOf(value) }
+
+    // Filter options based on typed search
+    val filteredOptions = remember(searchQuery, options) {
+        val q = searchQuery.trim().lowercase()
+        if (q.isBlank()) {
+            options
+        } else {
+            options.filter { it.lowercase().contains(q) }
+        }
+    }
+
+    val isExactMatch = remember(searchQuery, options) {
+        val q = searchQuery.trim().lowercase()
+        options.any { it.lowercase() == q }
+    }
+
+    val showCreatableOption = allowCustom && searchQuery.isNotBlank() && !isExactMatch
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (!label.isNullOrBlank()) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 6.dp, start = 2.dp)
+            )
+        }
+
+        ExposedDropdownMenuBox(
+            expanded = expanded && enabled,
+            onExpandedChange = { if (enabled) expanded = !expanded },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { input ->
+                    searchQuery = input
+                    expanded = true
+                    if (allowCustom) {
+                        onValueChange(input.trim())
+                    }
+                },
+                placeholder = {
+                    Text(
+                        text = placeholder,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                },
+                singleLine = true,
+                enabled = enabled,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                ),
+                trailingIcon = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(
+                                onClick = {
+                                    searchQuery = ""
+                                    onValueChange("")
+                                    expanded = true
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(
+                                    if (expanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ExpandMore,
+                                contentDescription = "Dropdown",
+                                tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .graphicsLayer(rotationZ = if (expanded) 180f else 0f)
+                            )
+                        }
+                    }
+                },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.5.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(MenuAnchorType.PrimaryEditable, enabled)
+            )
+
+            ExposedDropdownMenu(
+                expanded = expanded && enabled,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .exposedDropdownSize(matchTextFieldWidth = true)
+                    .heightIn(max = 240.dp)
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                // Creatable option: + Add "Custom Input"
+                if (showCreatableOption) {
+                    val customVal = searchQuery.trim()
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Add \"$customVal\"",
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        },
+                        onClick = {
+                            searchQuery = customVal
+                            onValueChange(customVal)
+                            expanded = false
+                        },
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                }
+
+                if (filteredOptions.isEmpty() && !showCreatableOption) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "No matches found",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        },
+                        onClick = { },
+                        enabled = false,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                } else {
+                    filteredOptions.forEach { option ->
+                        val isSelected = option.equals(searchQuery.trim(), ignoreCase = true)
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = option,
+                                        fontSize = 14.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Selected",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                searchQuery = option
+                                onValueChange(option)
+                                expanded = false
+                            },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                        )
+                    }
                 }
             }
         }
@@ -315,8 +604,12 @@ fun PersonaToggleRow(
 
 /**
  * Centralized Persona Dialog:
- * Enforces warm cream (#FFFDF8) background, 22dp rounded corners, zero elevation tinting,
- * charcoal secondary action ("Cancel"), and terracotta primary action ("Save").
+ * - Deep backdrop scrim (72% black) eliminating background peek-through distractions.
+ * - Max height capped at 660dp with internal smooth scrolling, preventing modal from kissing status bar.
+ * - Sticky header with Title and circular close button.
+ * - Sticky bottom action bar with balanced touch targets:
+ *   - "Cancel": soft tinted pill button with defined touch boundary.
+ *   - "Save Person": rich primary button with icon, tactile spring press, and semi-transparent active/disabled states (no dead concrete slab!).
  */
 @Composable
 fun PersonaDialog(
@@ -330,65 +623,219 @@ fun PersonaDialog(
     isDestructive: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismissRequest,
-        modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 0.dp,
-        shape = RoundedCornerShape(22.dp),
-        title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.3).sp
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.72f))
+                .imePadding()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismissRequest
                 ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = modifier
+                    .fillMaxWidth(0.92f)
+                    .heightIn(max = 660.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {} // Intercept clicks inside modal
+                    ),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                shadowElevation = 16.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
-                content()
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                enabled = confirmEnabled,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isDestructive) StateError else MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White
-                ),
-                modifier = Modifier.tactilePress()
-            ) {
-                Text(
-                    text = confirmText,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismissRequest,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            ) {
-                Text(
-                    text = dismissText,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 13.sp
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // 1. Sticky Header
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 22.dp, end = 16.dp, top = 18.dp, bottom = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-0.3).sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        IconButton(
+                            onClick = onDismissRequest,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 1.dp
+                    )
+
+                    // 2. Scrollable Content Body
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        content()
+                    }
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 1.dp
+                    )
+
+                    // 3. Sticky Bottom Action Bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Cancel Button
+                        OutlinedButton(
+                            onClick = onDismissRequest,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp)
+                                .tactilePress(),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        ) {
+                            Text(
+                                text = dismissText,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                        }
+
+                        // Confirm / Save Button
+                        Button(
+                            onClick = onConfirm,
+                            enabled = confirmEnabled,
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(50.dp)
+                                .tactilePress(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDestructive) StateError else MaterialTheme.colorScheme.primary,
+                                contentColor = Color.White,
+                                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                disabledContentColor = Color.White.copy(alpha = 0.6f)
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(
+                                defaultElevation = if (confirmEnabled) 2.dp else 0.dp,
+                                pressedElevation = 0.dp
+                            )
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (confirmEnabled) {
+                                    Icon(
+                                        imageVector = if (isDestructive) Icons.Default.Delete else Icons.Default.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Text(
+                                    text = confirmText,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.5.sp
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
-    )
+    }
+}
+
+/**
+ * Clean subtle sub-card container for grouping related form inputs (e.g. Identity, Contact, Dates).
+ */
+@Composable
+fun PersonaFormSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+                Text(
+                    text = title.uppercase(),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.1.sp,
+                        fontSize = 11.sp
+                    ),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            content()
+        }
+    }
 }
 
 /**

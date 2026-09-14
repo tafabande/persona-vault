@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -429,7 +431,10 @@ fun DocumentIngestionDialog(
                     ExposedDropdownMenu(
                         expanded = typeDropdownExpanded,
                         onDismissRequest = { typeDropdownExpanded = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        modifier = Modifier
+                            .exposedDropdownSize(matchTextFieldWidth = true)
+                            .heightIn(max = 240.dp)
+                            .background(MaterialTheme.colorScheme.surface)
                     ) {
                         DocumentType.values().forEach { type ->
                             DropdownMenuItem(
@@ -437,7 +442,9 @@ fun DocumentIngestionDialog(
                                 onClick = {
                                     selectedType = type
                                     typeDropdownExpanded = false
-                                }
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             )
                         }
                     }

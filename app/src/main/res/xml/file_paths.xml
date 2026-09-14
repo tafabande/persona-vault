@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Temporary cache path for on-demand decrypted document viewing -->
+    <!-- Temporary cache path for on-demand decrypted document viewing and resume export -->
     <cache-path name="decrypted_docs" path="decrypted_docs/" />
+    <cache-path name="exports" path="exports/" />
 </paths>

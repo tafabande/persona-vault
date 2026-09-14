@@ -248,9 +248,9 @@ fun WallpaperCarousel(
             }
         }
 
-        // Image Metadata (natural, unboxed typography sitting naturally near lower edge)
+        // Image Metadata for ambient artworks (custom photos display clean with no distracting overlays)
         val currentWp = wallpapers.getOrNull(pagerState.currentPage)
-        if (currentWp != null) {
+        if (currentWp != null && currentWp.type != WallpaperType.LOCAL_IMAGE && currentWp.title.isNotBlank()) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)

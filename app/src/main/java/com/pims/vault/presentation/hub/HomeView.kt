@@ -1,8 +1,14 @@
 package com.pims.vault.presentation.hub
 
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,74 +21,68 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Emergency
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.pims.vault.core.activity.RecentActivityManager
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.ui.components.InternationalPhoneInput
 import com.pims.vault.domain.model.DocumentWithHistory
 import com.pims.vault.presentation.ui.components.PersonaAvatar
-import com.pims.vault.presentation.ui.theme.StateSuccess
+import com.pims.vault.presentation.ui.components.PersonaTextInput
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.ui.text.style.TextOverflow
+import com.pims.vault.presentation.ui.theme.pimsApplePress
 import com.pims.vault.presentation.ui.theme.StateWarning
-import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
-import java.util.Calendar
+import java.io.File
 
 /**
- * HomeView - Personal Identity Dashboard
+ * HomeView - Redesigned Clean Identity Dashboard
  *
- * Implements the redesigned Home Screen:
- * 1. Top Identity Bar: [Avatar] [Name / Your Persona] [Bell]
- * 2. Digital Identity Card: Elevated warm surface with user identity, masked reference, and hero quick actions
- * 3. Status & Context Tier: Compact contextual sync/backup status
- * 4. Quick Access Row: Compact icon shortcuts (Documents, Emergency, People)
- * 5. Recent Activity: Real security and document history (safe summaries, not a social feed)
+ * 1. Top Identity Bar: [Avatar] [Candidate Name] [Notification Bell] (no "Your Persona" subtitle)
+ * 2. High-Altitude Hero Photo Canvas: Expands into available vertical real estate, non-scrollable,
+ *    allowing photographs to be fully viewed in high definition.
+ * 3. Unified Identity Details: Displays Name, Email, Phone, ID Number, and ID card photo.
+ *    Provides direct entry to ingest text details plus ID photo.
+ * 4. Free from redundant action bars, status cards, or recent activity clutter.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeView(
     personName: String,
@@ -91,6 +91,8 @@ fun HomeView(
     primaryPhone: String? = null,
     primaryEmail: String? = null,
     primaryAddress: String? = null,
+    nationalIdNumber: String? = null,
+    idPhotoPath: String? = null,
     documents: List<DocumentWithHistory> = emptyList(),
     syncStatusText: String = "✓ Up to date",
     isLocalOnly: Boolean = false,
@@ -109,35 +111,26 @@ fun HomeView(
     onOpenEmergency: () -> Unit = {},
     onOpenCredentials: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onSaveIdentityDetails: ((name: String, email: String, phone: String, idNumber: String, idPhotoUri: Uri?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPimsHaptics()
-    val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
-    val displayName = personName.trim().ifBlank { "Your Persona" }
-    val displayOccupation = occupation.trim().ifBlank { "Personal Profile" }
+    val displayName = personName.trim().ifBlank { "Personal Name" }
+    var showIdentitySheet by remember { mutableStateOf(false) }
 
-    // Resolve primary identity document reference safely
-    val primaryDoc = documents.firstOrNull { docWithHist ->
-        val typeName = docWithHist.document.documentType.name
-        typeName.contains("ID") || typeName.contains("PASSPORT") || typeName.contains("LICENSE")
-    } ?: documents.firstOrNull()
+    // Primary document fallback if nationalIdNumber not explicitly in state
+    val effectiveIdNumber = nationalIdNumber?.takeIf { it.isNotBlank() }
+        ?: documents.firstOrNull { it.document.documentType.name.contains("ID") }?.document?.id
 
-    val safeIdString = primaryDoc?.let {
-        "ID •••• ${it.document.id.takeLast(4).uppercase()}"
-    }
-
+    // Non-scrollable layout filling available screen height and adjusting image length
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // =====================================================================
-        // 1. TOP IDENTITY BAR
-        // =====================================================================
+        // 1. TOP BAR (Name + Avatar + Notification Bell; "Your Persona" removed)
         HomeHeaderRow(
             displayName = displayName,
             avatarConfig = avatarConfig,
@@ -147,87 +140,117 @@ fun HomeView(
             onNotificationClick = onNotificationClick
         )
 
-        // =====================================================================
-        // 1.5. HOME WALLPAPER HERO (Gesture-driven horizontal swipe)
-        // =====================================================================
-        if (wallpapers.isNotEmpty()) {
-            com.pims.vault.presentation.wallpaper.WallpaperCarousel(
-                wallpapers = wallpapers,
-                activeIndex = activeWallpaperIndex,
-                onActiveIndexChanged = onActiveWallpaperChanged,
-                onOpenOptions = onOpenWallpaperOptions,
-                carouselHeight = 280.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-            )
+        // 2. EXPANDED HERO PHOTO AREA (Autoadjusts to available screen height without scrolling)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(24.dp))
+        ) {
+            if (wallpapers.isNotEmpty()) {
+                com.pims.vault.presentation.wallpaper.WallpaperCarousel(
+                    wallpapers = wallpapers,
+                    activeIndex = activeWallpaperIndex,
+                    onActiveIndexChanged = onActiveWallpaperChanged,
+                    onOpenOptions = onOpenWallpaperOptions,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                        .clickable {
+                            haptics.selection()
+                            onOpenWallpaperOptions()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Text(
+                            text = "Tap to view or add photograph",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
         }
 
-        // =====================================================================
-        // 2. DIGITAL IDENTITY CARD
-        // =====================================================================
-        DigitalIdentityCard(
+        // 3. IDENTITY DETAILS CARD (Displays Name, Email, Phone, ID Number, and ID Photo)
+        IdentityDetailsCard(
             displayName = displayName,
-            avatarConfig = avatarConfig,
-            occupation = displayOccupation,
-            country = country,
-            primaryPhone = primaryPhone,
             primaryEmail = primaryEmail,
-            primaryAddress = primaryAddress,
-            primaryDoc = primaryDoc,
-            safeIdString = safeIdString,
-            onOpenProfile = onOpenProfile,
-            onOpenAvatarEditor = onOpenAvatarEditor,
-            onOpenShare = onOpenShare,
-            onOpenBackup = onOpenBackup,
-            onOpenDocuments = onOpenDocuments,
-            onCopyId = {
-                if (safeIdString != null) {
-                    clipboardManager.setText(AnnotatedString(safeIdString))
-                    haptics.success()
-                    Toast.makeText(context, "ID copied to clipboard", Toast.LENGTH_SHORT).show()
-                } else {
-                    haptics.light()
-                    Toast.makeText(context, "Please add an ID document first", Toast.LENGTH_SHORT).show()
-                    onOpenDocuments()
-                }
+            primaryPhone = primaryPhone,
+            idNumber = effectiveIdNumber,
+            idPhotoPath = idPhotoPath,
+            onEdit = {
+                haptics.light()
+                showIdentitySheet = true
             }
         )
 
-        // =====================================================================
-        // 3. STATUS & CONTEXT TIER
-        // =====================================================================
-        StatusContextRow(
-            syncStatusText = syncStatusText,
-            isLocalOnly = isLocalOnly,
-            onOpenDocuments = onOpenDocuments
-        )
+        // 4. THREE VERTICAL SHORTCUT OPTIONS UNDER IDENTITY DETAILS CARD
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            HomeShortcutCard(
+                icon = Icons.Default.Badge,
+                title = "View Info",
+                subtitle = "Profile attributes, identity & personal info",
+                accentColor = MaterialTheme.colorScheme.primary,
+                onClick = onOpenProfile
+            )
+            HomeShortcutCard(
+                icon = Icons.Default.Lock,
+                title = "Vault",
+                subtitle = "Passwords, payment cards & secure notes",
+                accentColor = Color(0xFF10B981),
+                onClick = onOpenCredentials
+            )
+            HomeShortcutCard(
+                icon = Icons.Default.Share,
+                title = "Share",
+                subtitle = "Export identity pass & QR card",
+                accentColor = Color(0xFF8B5CF6),
+                onClick = onOpenShare
+            )
+        }
 
-        // =====================================================================
-        // 4. QUICK ACCESS SHORTCUTS
-        // =====================================================================
-        QuickAccessRow(
-            onOpenDocuments = onOpenDocuments,
-            onOpenEmergency = onOpenEmergency,
-            onOpenCredentials = onOpenCredentials
-        )
+        // Spacer to ensure bottom floating navigation dock clears content
+        Spacer(modifier = Modifier.height(64.dp))
+    }
 
-        // =====================================================================
-        // 5. RECENT ACTIVITY SECTION
-        // =====================================================================
-        RecentActivitySection(
-            documents = documents,
-            onOpenDocuments = onOpenDocuments
+    // Modal Sheet to Ingest Text Details + ID Card Photo
+    if (showIdentitySheet) {
+        IdentityDetailsEditorSheet(
+            currentName = personName,
+            currentEmail = primaryEmail ?: "",
+            currentPhone = primaryPhone ?: "",
+            currentIdNumber = effectiveIdNumber ?: "",
+            currentIdPhotoPath = idPhotoPath,
+            onDismissRequest = { showIdentitySheet = false },
+            onSave = { name, email, phone, idNum, photoUri ->
+                onSaveIdentityDetails?.invoke(name, email, phone, idNum, photoUri)
+                showIdentitySheet = false
+            }
         )
-
-        // Bottom spacing so floating dock doesn't obscure content
-        Spacer(modifier = Modifier.height(72.dp))
     }
 }
 
 /**
- * Clean, aligned top identity bar:
- * [Avatar]   [Name / Your Persona]                  [Bell]
+ * Top bar without the phrase "Your Persona"
  */
 @Composable
 private fun HomeHeaderRow(
@@ -247,43 +270,35 @@ private fun HomeHeaderRow(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .weight(1f)
+                .clickable {
+                    haptics.selection()
+                    onOpenProfile()
+                }
         ) {
             PersonaAvatar(
                 name = displayName,
                 config = avatarConfig,
-                size = 44.dp,
-                avatarTextSize = 16.sp,
+                size = 46.dp,
+                avatarTextSize = 18.sp,
                 onLongClick = onOpenAvatarEditor
             )
 
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
-            Column(
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.clickable {
-                    haptics.selection()
-                    onOpenProfile()
-                }
-            ) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.3).sp
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1
-                )
-                Text(
-                    text = "Your Persona",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.3).sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1
+            )
         }
 
-        // Notification Bell with unread badge
+        // Notification Bell
         Box(
             modifier = Modifier
                 .size(42.dp)
@@ -315,52 +330,47 @@ private fun HomeHeaderRow(
 }
 
 /**
- * Digital Identity Card:
- * Primary visual object on Home. Warm light surface (#FFFDF8), subtle elevation,
- * masked identity reference, and hero quick action pills.
- * Tapping the card opens the full Me profile.
+ * Clean Identity Details Card showing:
+ * - Full Name
+ * - National ID Number
+ * - Email and Phone
+ * - Photo of ID thumbnail
  */
 @Composable
-private fun DigitalIdentityCard(
+private fun IdentityDetailsCard(
     displayName: String,
-    avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig?,
-    occupation: String,
-    country: String = "",
-    primaryPhone: String? = null,
-    primaryEmail: String? = null,
-    primaryAddress: String? = null,
-    primaryDoc: DocumentWithHistory?,
-    safeIdString: String?,
-    onOpenProfile: () -> Unit,
-    onOpenAvatarEditor: () -> Unit,
-    onOpenShare: () -> Unit,
-    onOpenBackup: () -> Unit,
-    onOpenDocuments: () -> Unit,
-    onCopyId: () -> Unit
+    primaryEmail: String?,
+    primaryPhone: String?,
+    idNumber: String?,
+    idPhotoPath: String?,
+    onEdit: () -> Unit
 ) {
-    val haptics = rememberPimsHaptics()
-    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
-    var isCopied by remember { mutableStateOf(false) }
+    val idBitmap = remember(idPhotoPath) {
+        idPhotoPath?.let { path ->
+            try {
+                val f = File(path)
+                if (f.exists()) BitmapFactory.decodeFile(path) else null
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
 
     Surface(
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-        shadowElevation = 3.dp,
+        shadowElevation = 2.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .tactilePress {
-                haptics.selection()
-                onOpenProfile()
-            }
+            .clickable { onEdit() }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Card Top Row: Identity + Security Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -368,693 +378,403 @@ private fun DigitalIdentityCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    PersonaAvatar(
-                        name = displayName,
-                        config = avatarConfig,
-                        size = 36.dp,
-                        avatarTextSize = 14.sp,
-                        onLongClick = onOpenAvatarEditor
+                    Icon(
+                        imageVector = Icons.Default.Badge,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
                     )
-                    Column {
+                    Text(
+                        text = "IDENTITY DETAILS",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        ),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit details",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1
+                    )
+
+                    if (!idNumber.isNullOrBlank()) {
                         Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
+                            text = "ID: $idNumber",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                    }
+
+                    if (!primaryEmail.isNullOrBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Email,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = primaryEmail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    if (!primaryPhone.isNullOrBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Phone,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = primaryPhone,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                // ID Photo Thumbnail Display
+                if (idBitmap != null) {
+                    Image(
+                        bitmap = idBitmap.asImageBitmap(),
+                        contentDescription = "Photo of ID",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(width = 86.dp, height = 58.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
+                    )
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .size(width = 86.dp, height = 58.dp)
+                            .clickable { onEdit() }
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "+ ID Photo",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Editor Sheet for Ingesting Text Details + ID Card Photo
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IdentityDetailsEditorSheet(
+    currentName: String,
+    currentEmail: String,
+    currentPhone: String,
+    currentIdNumber: String,
+    currentIdPhotoPath: String?,
+    onDismissRequest: () -> Unit,
+    onSave: (name: String, email: String, phone: String, idNumber: String, photoUri: Uri?) -> Unit
+) {
+    val haptics = rememberPimsHaptics()
+    val context = LocalContext.current
+    var name by remember { mutableStateOf(currentName) }
+    var email by remember { mutableStateOf(currentEmail) }
+    var phone by remember { mutableStateOf(currentPhone) }
+    var idNumber by remember { mutableStateOf(currentIdNumber) }
+    var selectedPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            selectedPhotoUri = uri
+        }
+    }
+
+    val previewBitmap = remember(selectedPhotoUri, currentIdPhotoPath) {
+        selectedPhotoUri?.let { uri ->
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            } catch (_: Exception) {
+                null
+            }
+        } ?: currentIdPhotoPath?.let { path ->
+            try {
+                val f = File(path)
+                if (f.exists()) BitmapFactory.decodeFile(path) else null
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Identity Details",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                IconButton(onClick = onDismissRequest) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+
+            PersonaTextInput(
+                value = name,
+                onValueChange = { name = it },
+                label = "Full Name *",
+                placeholder = "Full legal name"
+            )
+
+            PersonaTextInput(
+                value = idNumber,
+                onValueChange = { idNumber = it },
+                label = "ID / Passport Number",
+                placeholder = "e.g. 63-1234567-X-00"
+            )
+
+            PersonaTextInput(
+                value = email,
+                onValueChange = { email = it },
+                label = "Primary Email",
+                placeholder = "you@example.com",
+                keyboardType = KeyboardType.Email
+            )
+
+            InternationalPhoneInput(
+                value = phone,
+                onValueChange = { phone = it },
+                label = "Primary Phone"
+            )
+
+            // ID Photo Ingestion Box
+            Text(
+                text = "Photo of Identification Document",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+                    .clickable { photoPickerLauncher.launch("image/*") }
+            ) {
+                if (previewBitmap != null) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Image(
+                            bitmap = previewBitmap.asImageBitmap(),
+                            contentDescription = "Selected ID Photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.Black.copy(alpha = 0.6f),
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = "Tap to replace",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Tap to upload or photograph ID",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = occupation,
+                            text = "Driver license, national card, or passport",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-
-                // Protected / Secure Profile Badge (real state indicator)
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = StateSuccess.copy(alpha = 0.12f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = StateSuccess,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = "Protected",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = StateSuccess
-                        )
-                    }
-                }
             }
 
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                thickness = 1.dp
-            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Center Stage Identity Information
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "PERSONAL IDENTITY",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                if (primaryDoc != null && safeIdString != null) {
-                    Text(
-                        text = primaryDoc.document.title,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.3).sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = safeIdString,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "Identity details",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Add an identification document",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        TextButton(onClick = onOpenDocuments) {
-                            Text("+ Add", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            // Direct Contact & Location Overview
-            if (!primaryPhone.isNullOrBlank() || !primaryEmail.isNullOrBlank() || !primaryAddress.isNullOrBlank() || country.isNotBlank()) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (!primaryPhone.isNullOrBlank()) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(Icons.Default.Phone, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
-                                    Text(primaryPhone, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                                }
-                            }
-                        }
-                        if (!primaryEmail.isNullOrBlank()) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(Icons.Default.Email, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(13.dp))
-                                    Text(primaryEmail, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                                }
-                            }
-                        }
-                    }
-
-                    val locationText = listOfNotNull(primaryAddress?.takeIf { it.isNotBlank() }, country.takeIf { it.isNotBlank() }).joinToString(", ")
-                    if (locationText.isNotBlank()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Default.Home, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(13.dp))
-                            Text(locationText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-
-            // Prominent View Profile Button
             Button(
                 onClick = {
-                    haptics.selection()
-                    onOpenProfile()
+                    haptics.light()
+                    onSave(name, email, phone, idNumber, selectedPhotoUri)
                 },
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                modifier = Modifier.fillMaxWidth()
+                enabled = name.isNotBlank(),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Icon(Icons.Default.Person, null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("View Full Profile")
+                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Save Identity Details", fontWeight = FontWeight.SemiBold)
             }
 
-            // Hero Quick Action Pills (Share Pass, Copy ID)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Share Pass Pill
-                CardPillAction(
-                    icon = Icons.Default.QrCode,
-                    label = "Share Pass",
-                    isPrimary = false,
-                    modifier = Modifier.weight(1.2f),
-                    onClick = onOpenShare
-                )
-
-                // Copy ID Pill (Micro-interaction: Copy ID -> Copied -> returns naturally)
-                CardPillAction(
-                    icon = if (isCopied) Icons.Default.CheckCircle else Icons.Default.ContentCopy,
-                    label = if (isCopied) "Copied" else "Copy ID",
-                    isPrimary = false,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        isCopied = true
-                        onCopyId()
-                        coroutineScope.launch {
-                            kotlinx.coroutines.delay(1500L)
-                            isCopied = false
-                        }
-                    }
-                )
-
-                // Export PDF / Backup Pill
-                CardPillAction(
-                    icon = Icons.Default.FileDownload,
-                    label = "Export PDF",
-                    isPrimary = false,
-                    modifier = Modifier.weight(1.1f),
-                    onClick = onOpenBackup
-                )
-            }
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
-/**
- * Compact pill-shaped quick action button on the Digital Identity Card
- */
 @Composable
-private fun CardPillAction(
-    icon: ImageVector,
-    label: String,
-    isPrimary: Boolean,
-    modifier: Modifier = Modifier,
+private fun HomeShortcutCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    accentColor: Color,
     onClick: () -> Unit
 ) {
-    val haptics = rememberPimsHaptics()
+    val isDark = isSystemInDarkTheme()
+    val cardBg = if (isDark) Color(0xFF1E1E22) else Color(0xFFFFFFFF)
+    val borderColor = if (isDark) Color(0xFF2E2E34) else Color(0xFFE2E8F0)
 
     Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = if (isPrimary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        border = if (isPrimary) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        modifier = modifier.tactilePress {
-            haptics.selection()
-            onClick()
-        }
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isPrimary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(15.dp)
-            )
-            Spacer(modifier = Modifier.width(5.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = if (isPrimary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1
-            )
-        }
-    }
-}
-
-/**
- * Compact Status & Context Tier immediately below the card
- */
-@Composable
-private fun StatusContextRow(
-    syncStatusText: String,
-    isLocalOnly: Boolean,
-    onOpenDocuments: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-        modifier = Modifier.fillMaxWidth()
+        shape = RoundedCornerShape(16.dp),
+        color = cardBg,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pimsApplePress { onClick() }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = StateSuccess,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = if (isLocalOnly) "Stored on this device" else syncStatusText,
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onOpenDocuments)
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = "Documents",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-    }
-}
-
-/**
- * Quick Access Shortcuts (Documents, Emergency ICE, Credentials)
- * Accessible 48dp+ touch targets, clean icon badge + clear label.
- * Does NOT duplicate Profile, People, or Me which belong in persistent bottom navigation.
- */
-@Composable
-private fun QuickAccessRow(
-    onOpenDocuments: () -> Unit,
-    onOpenEmergency: () -> Unit,
-    onOpenCredentials: () -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text(
-            text = "Quick Access",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onBackground
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            QuickAccessShortcut(
-                icon = Icons.Default.Description,
-                label = "Documents",
-                modifier = Modifier.weight(1f),
-                onClick = onOpenDocuments
-            )
-            QuickAccessShortcut(
-                icon = Icons.Default.Emergency,
-                label = "Emergency",
-                modifier = Modifier.weight(1f),
-                onClick = onOpenEmergency
-            )
-            QuickAccessShortcut(
-                icon = Icons.Default.Lock,
-                label = "Credentials",
-                modifier = Modifier.weight(1f),
-                onClick = onOpenCredentials
-            )
-        }
-    }
-}
-
-@Composable
-private fun QuickAccessShortcut(
-    icon: ImageVector,
-    label: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val haptics = rememberPimsHaptics()
-
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        modifier = modifier.tactilePress {
-            haptics.selection()
-            onClick()
-        }
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                        shape = CircleShape
-                    ),
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(accentColor.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    tint = accentColor,
+                    modifier = Modifier.size(18.dp)
                 )
             }
 
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
-
-/**
- * Recent Activity Section:
- * Real security, profile and document history (safe summaries only, not a social feed).
- */
-@Composable
-private fun RecentActivitySection(
-    documents: List<DocumentWithHistory>,
-    onOpenDocuments: () -> Unit
-) {
-    val context = LocalContext.current
-    val activityManager = remember { RecentActivityManager(context) }
-    val activityList by activityManager.activities.collectAsState()
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Recent Activity",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            if (activityList.isNotEmpty() || documents.isNotEmpty()) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "See all",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(onClick = onOpenDocuments)
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-        }
 
-        if (activityList.isEmpty() && documents.isEmpty()) {
-            // Clean empty state
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.History,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = "Nothing happened yet",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Your recent Persona activity will appear here.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        } else if (activityList.isNotEmpty()) {
-            // Display up to 4 real state-changing activities from RecentActivityManager
-            val recentEvents = activityList.take(4)
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    recentEvents.forEachIndexed { index, event ->
-                        val icon = when {
-                            event.title.contains("Person", ignoreCase = true) -> Icons.Default.People
-                            event.title.contains("Photo", ignoreCase = true) || event.title.contains("Wallpaper", ignoreCase = true) -> Icons.Default.Share
-                            event.title.contains("Card", ignoreCase = true) || event.title.contains("Password", ignoreCase = true) || event.title.contains("Security", ignoreCase = true) -> Icons.Default.Lock
-                            event.title.contains("Document", ignoreCase = true) -> Icons.Default.Description
-                            else -> Icons.Default.CheckCircle
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = event.title,
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1
-                                )
-                                if (event.subtitle.isNotBlank()) {
-                                    Text(
-                                        text = event.subtitle,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = event.formattedDate,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = event.formattedTime,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.Normal,
-                                        fontSize = 11.sp
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-
-                        if (index < recentEvents.size - 1) {
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                                thickness = 0.8.dp
-                            )
-                        }
-                    }
-                }
-            }
-        } else {
-            // Display up to 3 real document activities
-            val recentDocs = documents.take(3)
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    recentDocs.forEachIndexed { index, docWithHist ->
-                        val doc = docWithHist.document
-                        val docTypeName = doc.documentType.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
-                        val relativeTimestamp = formatRelativeTimestamp(doc.updatedAt)
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = onOpenDocuments)
-                                .padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Description,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = doc.title,
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1
-                                )
-                                Text(
-                                    text = "Secure document · $docTypeName",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = relativeTimestamp,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "Protected",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 11.sp
-                                    ),
-                                    color = StateSuccess
-                                )
-                            }
-                        }
-
-                        if (index < recentDocs.size - 1) {
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                                thickness = 0.8.dp
-                            )
-                        }
-                    }
-                }
-            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
 
-private fun formatRelativeTimestamp(epochMillis: Long): String {
-    if (epochMillis <= 0L) return "Recently"
-    val diff = System.currentTimeMillis() - epochMillis
-    val seconds = diff / 1000
-    val minutes = seconds / 60
-    val hours = minutes / 60
-    val days = hours / 24
-
-    return when {
-        days == 0L -> if (hours == 0L) "Just now" else "Today"
-        days == 1L -> "Yesterday"
-        days < 30L -> "${days}d ago"
-        else -> {
-            val cal = Calendar.getInstance().apply { timeInMillis = epochMillis }
-            val months = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-            val month = months.getOrElse(cal.get(Calendar.MONTH)) { "" }
-            "$month ${cal.get(Calendar.DAY_OF_MONTH)}"
-        }
-    }
-}

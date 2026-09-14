@@ -78,11 +78,20 @@ data class ProfileUiState(
     val sexuality: String = "",
     val bloodGroup: String = "",
     val customFields: List<CustomField> = emptyList(),
+    val idPhotoPath: String? = null,
     val userFeedbackMessage: String? = null,
     val errorMessage: String? = null
 )
 
 sealed interface ProfileEvent {
+    data class SaveIdentityDetails(
+        val fullName: String,
+        val email: String,
+        val phone: String,
+        val nationalId: String,
+        val idPhotoPath: String? = null
+    ) : ProfileEvent
+
     data class SavePersonalDetails(
         val firstName: String,
         val lastName: String,
@@ -278,6 +287,7 @@ class ProfileViewModel @Inject constructor(
                             sexuality = meta.sexuality,
                             bloodGroup = meta.bloodGroup,
                             customFields = meta.customFields,
+                            idPhotoPath = meta.idPhotoPath,
                             errorMessage = null
                         )
                     }
@@ -378,6 +388,78 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 when (event) {
+                    is ProfileEvent.SaveIdentityDetails -> {
+                        val ownerId = getOrCreatePrimaryOwnerId()
+                        val existing = personDao.getPrimaryOwner()
+                        val nameParts = event.fullName.trim().split(" ", limit = 2)
+                        val first = nameParts.getOrElse(0) { event.fullName }
+                        val last = nameParts.getOrElse(1) { "" }
+
+                        val currentMeta = parseNotesMeta(existing?.notes ?: _uiState.value.person?.notes)
+                        val updatedMeta = currentMeta.copy(
+                            idPhotoPath = event.idPhotoPath ?: currentMeta.idPhotoPath
+                        )
+                        val notesJson = serializeNotesMeta(updatedMeta)
+
+                        val updatedPerson = (existing ?: PersonEntity(
+                            id = ownerId,
+                            isPrimaryOwner = true,
+                            firstName = first,
+                            lastName = last
+                        )).copy(
+                            firstName = first,
+                            lastName = last,
+                            preferredName = event.fullName.trim(),
+                            nationalIdNumber = event.nationalId.trim(),
+                            notes = notesJson,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        personDao.insertOrUpdate(updatedPerson)
+
+                        // Update or insert primary email
+                        if (event.email.isNotBlank()) {
+                            val existingEmails = contactDao.getContactsForPersonFlow(ownerId).firstOrNull()?.filter { it.contactType == ContactType.EMAIL } ?: emptyList()
+                            val primaryEmail = existingEmails.firstOrNull { it.isPrimary } ?: existingEmails.firstOrNull()
+                            if (primaryEmail != null) {
+                                contactDao.insertOrUpdate(primaryEmail.copy(value = event.email.trim(), isPrimary = true))
+                            } else {
+                                contactDao.insertOrUpdate(
+                                    ContactMethodEntity(
+                                        id = UUID.randomUUID().toString(),
+                                        personId = ownerId,
+                                        contactType = ContactType.EMAIL,
+                                        label = "Primary",
+                                        value = event.email.trim(),
+                                        isPrimary = true
+                                    )
+                                )
+                            }
+                        }
+
+                        // Update or insert primary phone
+                        if (event.phone.isNotBlank()) {
+                            val existingPhones = contactDao.getContactsForPersonFlow(ownerId).firstOrNull()?.filter { it.contactType == ContactType.PHONE } ?: emptyList()
+                            val primaryPhone = existingPhones.firstOrNull { it.isPrimary } ?: existingPhones.firstOrNull()
+                            if (primaryPhone != null) {
+                                contactDao.insertOrUpdate(primaryPhone.copy(value = event.phone.trim(), isPrimary = true))
+                            } else {
+                                contactDao.insertOrUpdate(
+                                    ContactMethodEntity(
+                                        id = UUID.randomUUID().toString(),
+                                        personId = ownerId,
+                                        contactType = ContactType.PHONE,
+                                        label = "Primary",
+                                        value = event.phone.trim(),
+                                        isPrimary = true
+                                    )
+                                )
+                            }
+                        }
+
+                        loadFullProfileAndRelationships()
+                        _uiState.update { it.copy(userFeedbackMessage = "Identity details updated successfully") }
+                    }
+
                     is ProfileEvent.SavePersonalDetails -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
                         val currentMeta = parseNotesMeta(_uiState.value.person?.notes)
@@ -791,7 +873,8 @@ class ProfileViewModel @Inject constructor(
     private data class NotesMeta(
         val sexuality: String = "",
         val bloodGroup: String = "",
-        val customFields: List<CustomField> = emptyList()
+        val customFields: List<CustomField> = emptyList(),
+        val idPhotoPath: String? = null
     )
 
     private fun parseNotesMeta(raw: String?): NotesMeta {
@@ -800,6 +883,7 @@ class ProfileViewModel @Inject constructor(
             val obj = JSONObject(raw)
             val sexuality = obj.optString("sexuality", "")
             val bloodGroup = obj.optString("bloodGroup", "")
+            val idPhotoPath = obj.optString("idPhotoPath", "").takeIf { it.isNotBlank() }
             val fields = mutableListOf<CustomField>()
             val arr = obj.optJSONArray("customFields")
             if (arr != null) {
@@ -813,7 +897,7 @@ class ProfileViewModel @Inject constructor(
                     if (l.isNotBlank()) fields.add(CustomField(id, l, v, cat, sens))
                 }
             }
-            NotesMeta(sexuality, bloodGroup, fields)
+            NotesMeta(sexuality, bloodGroup, fields, idPhotoPath)
         } catch (e: Exception) {
             NotesMeta()
         }
@@ -823,6 +907,9 @@ class ProfileViewModel @Inject constructor(
         val obj = JSONObject()
         obj.put("sexuality", meta.sexuality)
         obj.put("bloodGroup", meta.bloodGroup)
+        if (!meta.idPhotoPath.isNullOrBlank()) {
+            obj.put("idPhotoPath", meta.idPhotoPath)
+        }
         val arr = JSONArray()
         for (f in meta.customFields) {
             val item = JSONObject()

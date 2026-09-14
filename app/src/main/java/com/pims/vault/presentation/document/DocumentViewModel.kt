@@ -52,15 +52,18 @@ sealed interface DocumentEvent {
     data class IngestDocument(
         val type: DocumentType,
         val title: String,
-        val docNumber: String?,
-        val authority: String?,
-        val country: String?,
-        val issueDate: String?,
-        val expiryDate: String?,
-        val classification: SecurityClassification?,
-        val fileStream: InputStream,
+        val docNumber: String? = null,
+        val authority: String? = null,
+        val country: String? = null,
+        val issueDate: String? = null,
+        val expiryDate: String? = null,
+        val classification: SecurityClassification? = null,
+        val fileStream: InputStream? = null,
+        val fileBytes: ByteArray? = null,
         val mimeType: String,
-        val filename: String?
+        val filename: String? = null,
+        val onSuccess: (() -> Unit)? = null,
+        val onError: ((String) -> Unit)? = null
     ) : DocumentEvent
 
     data class AddVersion(
@@ -104,11 +107,11 @@ class DocumentViewModel @Inject constructor(
     private fun observeSessionAndDocuments() {
         viewModelScope.launch {
             personDao.getPrimaryOwnerFlow().collectLatest { owner ->
-                val ownerId = owner?.id ?: CANONICAL_PRIMARY_OWNER_ID
-                activeOwnerId = ownerId
-                android.util.Log.d("DocumentViewModel", "Observing documents for personId='$ownerId' (primaryOwner=${owner?.firstName})")
-                getDocumentsUseCase(ownerId).collectLatest { docList ->
-                    android.util.Log.d("DocumentViewModel", "Room emitted ${docList.size} documents for ownerId='$ownerId': ${docList.map { it.document.title }}")
+                val canonicalOwner = owner ?: personDao.getPrimaryOwner()
+                val canonicalOwnerId = canonicalOwner?.id ?: CANONICAL_PRIMARY_OWNER_ID
+                activeOwnerId = canonicalOwnerId
+                android.util.Log.d("DocumentViewModel", "Observing documents for canonical ownerId='$canonicalOwnerId'")
+                getDocumentsUseCase(canonicalOwnerId).collectLatest { docList ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -126,21 +129,26 @@ class DocumentViewModel @Inject constructor(
             try {
                 when (event) {
                     is DocumentEvent.IngestDocument -> {
+                        _uiState.update { it.copy(isIngestingDocument = true, errorMessage = null) }
                         val owner = personDao.getPrimaryOwner()
-                        val ownerId = owner?.id ?: activeOwnerId ?: CANONICAL_PRIMARY_OWNER_ID
+                        val canonicalOwnerId = owner?.id ?: activeOwnerId ?: CANONICAL_PRIMARY_OWNER_ID
                         if (owner == null) {
                             personDao.insertOrUpdate(
                                 PersonEntity(
-                                    id = ownerId,
+                                    id = canonicalOwnerId,
                                     isPrimaryOwner = true,
                                     firstName = "",
                                     lastName = ""
                                 )
                             )
                         }
-                        android.util.Log.d("DocumentViewModel", "Ingesting document '${event.title}' under ownerId='$ownerId'")
+                        android.util.Log.d("DocumentViewModel", "Ingesting document '${event.title}' under canonicalOwnerId='$canonicalOwnerId'")
+                        val stream = event.fileBytes?.let { java.io.ByteArrayInputStream(it) } ?: event.fileStream
+                        if (stream == null) {
+                            throw IllegalArgumentException("No file payload provided for ingestion")
+                        }
                         ingestDocumentUseCase(
-                            personId = ownerId,
+                            personId = canonicalOwnerId,
                             documentType = event.type,
                             title = event.title,
                             documentNumber = event.docNumber,
@@ -149,16 +157,17 @@ class DocumentViewModel @Inject constructor(
                             issueDate = event.issueDate,
                             expirationDate = event.expiryDate,
                             customClassification = event.classification,
-                            initialFileStream = event.fileStream,
+                            initialFileStream = stream,
                             mimeType = event.mimeType,
                             originalFilename = event.filename
                         )
                         _uiState.update {
                             it.copy(
                                 isIngestingDocument = false,
-                                feedbackMessage = "Ingested '${event.title}' with encrypted SHA-256 custody"
+                                feedbackMessage = "Document saved to your wallet"
                             )
                         }
+                        event.onSuccess?.invoke()
                     }
 
                     is DocumentEvent.AddVersion -> {
@@ -182,7 +191,12 @@ class DocumentViewModel @Inject constructor(
 
                     is DocumentEvent.DeleteDocument -> {
                         deleteDocumentUseCase(event.documentId)
-                        _uiState.update { it.copy(feedbackMessage = "Document and all encrypted versions permanently deleted") }
+                        _uiState.update {
+                            it.copy(
+                                selectedDocument = null,
+                                feedbackMessage = "Document deleted from wallet"
+                            )
+                        }
                     }
 
                     is DocumentEvent.SelectDocument -> {
@@ -208,7 +222,22 @@ class DocumentViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message ?: "Document operation failed") }
+                android.util.Log.e("DocumentViewModel", "Document operation failed", e)
+                val userMsg = when {
+                    e is com.pims.vault.domain.rules.DocumentValidationException -> e.message ?: "Invalid document details"
+                    e is SecurityException -> "Security verification failed while encrypting document"
+                    else -> "Couldn't save this document. Please try again."
+                }
+                _uiState.update {
+                    it.copy(
+                        isIngestingDocument = false,
+                        isLoading = false,
+                        errorMessage = userMsg
+                    )
+                }
+                if (event is DocumentEvent.IngestDocument) {
+                    event.onError?.invoke(userMsg)
+                }
             }
         }
     }

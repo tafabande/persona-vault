@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -41,6 +43,7 @@ import androidx.compose.ui.window.Dialog
 import com.pims.vault.core.model.AddressLabel
 import com.pims.vault.core.model.ContactType
 import com.pims.vault.domain.model.PersonProfile
+import com.pims.vault.presentation.ui.components.InternationalPhoneInput
 import com.pims.vault.presentation.ui.components.PimsOutlinedInput
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 
@@ -159,7 +162,10 @@ fun PersonalInfoEditorDialog(
                     ExposedDropdownMenu(
                         expanded = genderExpanded,
                         onDismissRequest = { genderExpanded = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        modifier = Modifier
+                            .exposedDropdownSize(matchTextFieldWidth = true)
+                            .heightIn(max = 240.dp)
+                            .background(MaterialTheme.colorScheme.surface)
                     ) {
                         listOf("Female", "Male", "Non-binary", "Other", "Prefer not to specify").forEach { option ->
                             DropdownMenuItem(
@@ -167,7 +173,9 @@ fun PersonalInfoEditorDialog(
                                 onClick = {
                                     gender = option
                                     genderExpanded = false
-                                }
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             )
                         }
                     }
@@ -283,12 +291,20 @@ fun ContactEditorDialog(
                     placeholder = "e.g. Mobile, Work, WhatsApp, Home"
                 )
 
-                PimsOutlinedInput(
-                    value = value,
-                    onValueChange = { value = it },
-                    label = if (type == ContactType.PHONE) "Phone Number *" else "Email Address *",
-                    placeholder = if (type == ContactType.PHONE) "+263 77 123 4567" else "name@example.com"
-                )
+                if (type == ContactType.PHONE) {
+                    InternationalPhoneInput(
+                        value = value,
+                        onValueChange = { value = it },
+                        label = "Phone Number *"
+                    )
+                } else {
+                    PimsOutlinedInput(
+                        value = value,
+                        onValueChange = { value = it },
+                        label = "Email Address *",
+                        placeholder = "name@example.com"
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

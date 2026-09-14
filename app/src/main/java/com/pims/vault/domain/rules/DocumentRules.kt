@@ -13,9 +13,21 @@ object DocumentRules {
 
     val ALLOWED_MIME_TYPES = setOf(
         "application/pdf",
+        "application/x-pdf",
         "image/jpeg",
+        "image/jpg",
         "image/png",
-        "image/webp"
+        "image/webp",
+        "image/gif",
+        "image/bmp",
+        "image/svg+xml",
+        "text/plain",
+        "text/csv",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/octet-stream"
     )
 
     /**
@@ -67,20 +79,52 @@ object DocumentRules {
     }
 
     /**
+     * Normalizes a MIME type string, using the filename extension as a secondary signal
+     * if the provider returns generic or unmapped MIME types.
+     */
+    fun normalizeMimeType(rawMime: String?, filename: String? = null): String {
+        val trimmed = rawMime?.trim()?.lowercase() ?: ""
+        if (trimmed.isNotBlank() && trimmed != "application/octet-stream" && ALLOWED_MIME_TYPES.contains(trimmed)) {
+            return trimmed
+        }
+        val ext = filename?.substringAfterLast('.', "")?.lowercase() ?: ""
+        val fromExt = when (ext) {
+            "pdf" -> "application/pdf"
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            "bmp" -> "image/bmp"
+            "svg" -> "image/svg+xml"
+            "txt" -> "text/plain"
+            "csv" -> "text/csv"
+            "doc" -> "application/msword"
+            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "xls" -> "application/vnd.ms-excel"
+            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            else -> null
+        }
+        if (fromExt != null) return fromExt
+        return if (trimmed.isNotBlank()) trimmed else "application/octet-stream"
+    }
+
+    /**
      * Validates ingestion prerequisites.
      */
     fun validateIngestionMetadata(
         title: String,
         mimeType: String,
-        sizeBytes: Long? = null
+        sizeBytes: Long? = null,
+        filename: String? = null
     ) {
         if (title.isBlank()) {
             throw DocumentValidationException("Document title cannot be blank")
         }
 
-        if (!ALLOWED_MIME_TYPES.contains(mimeType.lowercase())) {
+        val normalized = normalizeMimeType(mimeType, filename)
+        if (!ALLOWED_MIME_TYPES.contains(normalized)) {
             throw DocumentValidationException(
-                "Unsupported file type: '$mimeType'. Allowed formats are PDF, JPEG, PNG, and WEBP."
+                "This file type could not be added. Please choose a PDF, image, text, or supported document."
             )
         }
 

@@ -1,9 +1,13 @@
 package com.pims.vault.presentation.ui.components
 
-import android.graphics.BitmapFactory
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,357 +21,249 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.core.util.CountryUtils
-import com.pims.vault.presentation.avatar.AvatarSource
-import com.pims.vault.presentation.avatar.PersonaAvatarManager
-import com.pims.vault.presentation.avatar.PersonaAvatarCanvas
-import java.io.File
 
 /**
- * Photographic Share Card
+ * Curated matte card palettes matching luxury executive finishes and user theme moods.
+ */
+enum class ShareCardPalette(
+    val displayName: String,
+    val baseColor: Color,
+    val accentColor: Color,
+    val isLight: Boolean = false
+) {
+    OBSIDIAN("Obsidian", Color(0xFF141416), Color(0xFF26262B), isLight = false),
+    TERRACOTTA("Terracotta", Color(0xFF8B3A2B), Color(0xFFA64A38), isLight = false),
+    EMERALD("Emerald", Color(0xFF123D2A), Color(0xFF1A523A), isLight = false),
+    ROYAL_NAVY("Royal Navy", Color(0xFF122238), Color(0xFF1D3557), isLight = false),
+    TITANIUM("Titanium", Color(0xFF262A32), Color(0xFF373C47), isLight = false),
+    BURGUNDY("Burgundy", Color(0xFF4A1526), Color(0xFF641D34), isLight = false),
+    CHAMPAGNE("Champagne", Color(0xFF2F2820), Color(0xFF42392E), isLight = false),
+    FROST_WHITE("Frost White", Color(0xFFF3F4F6), Color(0xFFFFFFFF), isLight = true);
+
+    companion object {
+        fun fromIndex(index: Int): ShareCardPalette {
+            val values = entries
+            return values.getOrElse(index.coerceIn(0, values.size - 1)) { OBSIDIAN }
+        }
+    }
+}
+
+/**
+ * Pristine Luxury Matte Share Card
  *
- * 4:5 portrait ratio where the photograph/avatar IS 100% of the card background.
- * Instant-film-inspired white rounded frame, legible overlaid text with subtle gradient scrim,
- * and a clean scannable white QR container with quiet zone.
+ * Requirements:
+ * - Ultra-clean: Other than the name and QR code, there is NOTHING on the card.
+ * - Top-left corner: Name with crisp, elegant typography.
+ * - Right-middle: Quiet-zone QR code, vertically centered on the right side.
+ * - Card finish: Matte surface texture.
+ * - Top corner gleam: Specular light reflection radiating and sweeping across the corner.
+ * - Color palettes: Multiple selectable luxury finishes.
  */
 @Composable
 fun PersonaShareCard(
     personName: String,
-    occupation: String,
-    country: String,
-    presetTitle: String,
     modifier: Modifier = Modifier,
-    avatarManager: PersonaAvatarManager? = null,
-    qrSeed: String = "$personName-$presetTitle"
+    qrSeed: String = personName,
+    selectedPalette: ShareCardPalette = ShareCardPalette.OBSIDIAN,
+    occupation: String = "",
+    country: String = "",
+    presetTitle: String = ""
 ) {
-    val context = LocalContext.current
-    val manager = remember(context) { avatarManager ?: PersonaAvatarManager(context) }
-    val avatarConfig by manager.avatarConfig.collectAsState()
+    // Dynamic specular gleam animation across the top-right corner
+    val infiniteTransition = rememberInfiniteTransition(label = "cornerGleamTransition")
+    val gleamPhase by infiniteTransition.animateFloat(
+        initialValue = -0.3f,
+        targetValue = 1.3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 4200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "gleamPhase"
+    )
 
-    // Determine custom photo or procedural rendering
-    val customBitmap = remember(avatarConfig.avatarSource, avatarConfig.customAvatarPath) {
-        if (avatarConfig.avatarSource == AvatarSource.CUSTOM_IMAGE && !avatarConfig.customAvatarPath.isNullOrBlank()) {
-            val file = File(avatarConfig.customAvatarPath!!)
-            if (file.exists()) {
-                try {
-                    BitmapFactory.decodeFile(file.absolutePath)
-                } catch (_: Exception) {
-                    null
-                }
-            } else null
-        } else null
-    }
+    val isLight = selectedPalette.isLight
+    val textColor = if (isLight) Color(0xFF111827) else Color(0xFFF9FAFB)
+    val cardBorderColor = if (isLight) Color(0xFFD1D5DB).copy(alpha = 0.8f) else Color.White.copy(alpha = 0.14f)
 
-    // Instant-film-inspired outer white container with ~4:5 ratio
+    // Outer card with credit/business card aspect ratio (1.586f)
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(4f / 5f)
-            .shadow(16.dp, shape = RoundedCornerShape(20.dp), spotColor = Color.Black.copy(alpha = 0.25f)),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFDFDFD)),
-        border = BorderStroke(1.5.dp, Color(0xFFE5E5E5))
+            .aspectRatio(1.586f)
+            .shadow(
+                elevation = 20.dp,
+                shape = RoundedCornerShape(22.dp),
+                spotColor = if (isLight) Color.Black.copy(alpha = 0.18f) else selectedPalette.baseColor.copy(alpha = 0.7f),
+                ambientColor = Color.Black.copy(alpha = 0.25f)
+            ),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = selectedPalette.baseColor),
+        border = BorderStroke(1.2.dp, cardBorderColor)
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 10.dp, start = 10.dp, end = 10.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                // Matte gradient surface
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            selectedPalette.accentColor.copy(alpha = 0.95f),
+                            selectedPalette.baseColor,
+                            selectedPalette.baseColor.copy(alpha = 0.98f)
+                        ),
+                        start = Offset(0f, 0f),
+                        end = Offset(800f, 600f)
+                    )
+                )
+                // Specular light reflection on corner that gleams and glistens
+                .drawWithContent {
+                    drawContent()
+
+                    // 1. Static ambient corner light gleam (radiating from top-right corner)
+                    val cornerGleam = Brush.radialGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = if (isLight) 0.50f else 0.32f),
+                            Color.White.copy(alpha = if (isLight) 0.22f else 0.14f),
+                            Color.White.copy(alpha = if (isLight) 0.06f else 0.03f),
+                            Color.Transparent
+                        ),
+                        center = Offset(size.width * 0.96f, size.height * 0.04f),
+                        radius = size.width * 0.58f
+                    )
+                    drawRect(cornerGleam)
+
+                    // 2. Animated specular reflection sweep across the gleaming corner
+                    val p = gleamPhase
+                    val sheenBrush = Brush.linearGradient(
+                        0.0f to Color.Transparent,
+                        (p - 0.14f).coerceIn(0f, 1f) to Color.Transparent,
+                        p.coerceIn(0f, 1f) to Color.White.copy(alpha = if (isLight) 0.45f else 0.28f),
+                        (p + 0.14f).coerceIn(0f, 1f) to Color.Transparent,
+                        1.0f to Color.Transparent,
+                        start = Offset(size.width * 0.55f, 0f),
+                        end = Offset(size.width, size.height * 0.65f)
+                    )
+                    drawRect(sheenBrush)
+
+                    // 3. Subtle rim specular highlight on top corner edge
+                    val rimHighlight = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = if (isLight) 0.40f else 0.22f),
+                            Color.White.copy(alpha = if (isLight) 0.70f else 0.45f)
+                        ),
+                        startX = size.width * 0.6f,
+                        endX = size.width
+                    )
+                    drawRect(
+                        brush = rimHighlight,
+                        topLeft = Offset(size.width * 0.6f, 0f),
+                        size = Size(size.width * 0.4f, 2.5.dp.toPx())
+                    )
+                }
+                .padding(24.dp)
         ) {
-            // Main Photographic Viewport (100% of the card area)
+            // TOP-LEFT CORNER: The user's name
+            Text(
+                text = personName.ifBlank { "Personal Persona" },
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.6.sp
+                ),
+                color = textColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth(0.55f)
+            )
+
+            // RIGHT-MIDDLE: Quiet-Zone Scannable QR Code
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
+                    .align(Alignment.CenterEnd)
+                    .size(108.dp)
+                    .shadow(10.dp, shape = RoundedCornerShape(14.dp), spotColor = Color.Black.copy(alpha = 0.3f))
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF1E293B))
+                    .background(Color.White)
+                    .border(1.dp, Color.Black.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                // Layer 1: 100% Background Image / Avatar
-                if (customBitmap != null) {
-                    Image(
-                        bitmap = customBitmap.asImageBitmap(),
-                        contentDescription = personName,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    // Render procedural avatar over deep ambient gradient
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                                        Color(0xFF0F172A)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        PersonaAvatarCanvas(
-                            config = avatarConfig,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-
-                // Layer 2: Subtle Top Vignette for Top Badges
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(80.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = 0.6f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                )
-
-                // Top Bar: Preset Badge + Scannable Quiet-Zone QR Code
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    // Preset Pill
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = Color.Black.copy(alpha = 0.65f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF10B981))
-                            )
-                            Text(
-                                text = presetTitle.uppercase(),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                letterSpacing = 1.sp
-                            )
-                        }
-                    }
-
-                    // Scannable White QR Container with Quiet Zone
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color.White,
-                        shadowElevation = 6.dp,
-                        modifier = Modifier.size(76.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val cols = 15
-                                val cellSize = size.width / cols
-                                val hash = qrSeed.hashCode()
-                                val qrDarkColor = Color(0xFF0F172A)
-
-                                for (r in 0 until cols) {
-                                    for (c in 0 until cols) {
-                                        val isCorner = (r < 3 && c < 3) || (r < 3 && c >= cols - 3) || (r >= cols - 3 && c < 3)
-                                        val isCenter = (r in 6..8 && c in 6..8)
-                                        val filled = if (isCorner) {
-                                            (r == 0 || r == 2 || c == 0 || c == 2) || (r == 1 && c == 1)
-                                        } else if (isCenter) {
-                                            false
-                                        } else {
-                                            ((hash + (r * 29 + c * 13)) % 3 == 0)
-                                        }
-
-                                        if (filled) {
-                                            drawRect(
-                                                color = qrDarkColor,
-                                                topLeft = Offset(c * cellSize, r * cellSize),
-                                                size = Size(cellSize * 0.95f, cellSize * 0.95f)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Center micro badge
-                            Box(
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF6366F1)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "P",
-                                    color = Color.White,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Layer 3: Bottom Gradient Scrim for Supreme Legibility
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(130.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.55f),
-                                    Color.Black.copy(alpha = 0.92f)
-                                )
-                            )
-                        )
-                )
-
-                // Bottom Content: Name, Occupation, Country
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomStart)
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = personName.ifBlank { "Personal Identity" },
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.ExtraBold,
-                                letterSpacing = (-0.3).sp
-                            ),
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Verified",
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    if (occupation.isNotBlank()) {
-                        Text(
-                            text = occupation,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = Color(0xFFE2E8F0),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    if (country.isNotBlank()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(top = 2.dp)
-                        ) {
-                            Text(
-                                text = CountryUtils.formatCountryWithFlag(country),
-                                fontSize = 12.sp,
-                                color = Color(0xFF94A3B8),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Instant Film Bottom Label / Watermark
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Shield,
-                        contentDescription = null,
-                        tint = Color(0xFF64748B),
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "PERSONA VAULT",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF475569),
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                Text(
-                    text = "VERIFIED DIGITAL ID",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF94A3B8),
-                    letterSpacing = 0.5.sp
+                MinimalQrCodeCanvas(
+                    seed = qrSeed.ifBlank { personName },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }
     }
 }
+
+/**
+ * Crisp, high-contrast QR code canvas visualizer with quiet zone and corner markers.
+ */
+@Composable
+private fun MinimalQrCodeCanvas(
+    seed: String,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val cols = 15
+        val cellSize = size.width / cols
+        val hash = seed.hashCode()
+        val qrDark = Color(0xFF0F172A)
+
+        for (r in 0 until cols) {
+            for (c in 0 until cols) {
+                val isCornerFinder = (r < 3 && c < 3) || (r < 3 && c >= cols - 3) || (r >= cols - 3 && c < 3)
+                val isCenterMark = (r in 6..8 && c in 6..8)
+                val filled = if (isCornerFinder) {
+                    (r == 0 || r == 2 || c == 0 || c == 2) || (r == 1 && c == 1)
+                } else if (isCenterMark) {
+                    false
+                } else {
+                    ((hash + (r * 31 + c * 17)) % 3 == 0)
+                }
+
+                if (filled) {
+                    drawRect(
+                        color = qrDark,
+                        topLeft = Offset(c * cellSize, r * cellSize),
+                        size = Size(cellSize * 0.94f, cellSize * 0.94f)
+                    )
+                }
+            }
+        }
+
+        // Center discrete security pip
+        drawCircle(
+            color = Color(0xFF10B981),
+            radius = cellSize * 0.85f,
+            center = Offset(size.width / 2f, size.height / 2f)
+        )
+    }
+}
+

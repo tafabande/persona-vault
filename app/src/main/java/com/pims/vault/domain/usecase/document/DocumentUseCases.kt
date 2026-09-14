@@ -99,7 +99,8 @@ class IngestDocumentUseCase @Inject constructor(
         originalFilename: String? = null,
         notes: String? = null
     ): String {
-        DocumentRules.validateIngestionMetadata(title = title, mimeType = mimeType)
+        val normalizedMime = DocumentRules.normalizeMimeType(mimeType, originalFilename)
+        DocumentRules.validateIngestionMetadata(title = title, mimeType = normalizedMime, filename = originalFilename)
         val classification = customClassification ?: DocumentRules.resolveDefaultClassification(documentType)
         val docId = UUID.randomUUID().toString()
 
@@ -109,7 +110,7 @@ class IngestDocumentUseCase @Inject constructor(
             val meta = fileStorage.storeEncryptedFile(
                 documentId = docId,
                 versionNumber = 1,
-                mimeType = mimeType,
+                mimeType = normalizedMime,
                 inputStream = initialFileStream
             )
             storedPath = meta.relativePath

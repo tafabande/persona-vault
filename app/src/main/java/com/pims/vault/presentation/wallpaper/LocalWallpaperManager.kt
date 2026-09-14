@@ -159,8 +159,8 @@ class LocalWallpaperManager @Inject constructor(
 
             val newItem = WallpaperItem(
                 id = "custom_${UUID.randomUUID().toString().take(8)}",
-                title = "Personal Photograph",
-                subtitle = "Local · Stored On-Device Only",
+                title = "",
+                subtitle = null,
                 type = WallpaperType.LOCAL_IMAGE,
                 localFilePath = targetFile.absolutePath,
                 isBuiltIn = false

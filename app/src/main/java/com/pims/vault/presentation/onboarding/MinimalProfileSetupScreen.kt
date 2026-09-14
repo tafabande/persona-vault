@@ -108,7 +108,7 @@ fun MinimalProfileSetupScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 20.dp)
+                .padding(horizontal = 14.dp, vertical = 16.dp)
         ) {
             // Top Bar
             Row(
