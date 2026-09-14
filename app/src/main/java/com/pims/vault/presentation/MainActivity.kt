@@ -3,7 +3,11 @@ package com.pims.vault.presentation
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.SideEffect
 import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
@@ -40,12 +44,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
 import com.pims.vault.core.crypto.SessionState
+import com.pims.vault.core.session.AccountMode
+import com.pims.vault.core.session.AccountModeManager
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.PimsVaultTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -53,17 +60,118 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import com.pims.vault.core.model.ContactType
+import com.pims.vault.data.local.dao.ContactDao
+import com.pims.vault.data.local.dao.PersonDao
+import com.pims.vault.data.local.entity.ContactMethodEntity
+import com.pims.vault.data.local.entity.PersonEntity
+import com.pims.vault.presentation.onboarding.AccountChoiceScreen
+import com.pims.vault.presentation.onboarding.MinimalProfileSetupScreen
+import com.pims.vault.presentation.onboarding.OnboardingWalkthroughScreen
+import com.pims.vault.presentation.ui.theme.PersonaMood
+import com.pims.vault.presentation.ui.theme.PersonaMoodManager
+import com.pims.vault.presentation.ui.theme.PersonaMotionManager
+import com.pims.vault.presentation.ui.theme.ThemeManager
+import com.pims.vault.presentation.ui.theme.ThemeMode
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val sessionManager: BiometricSessionManager
+    private val sessionManager: BiometricSessionManager,
+    private val accountModeManager: AccountModeManager,
+    private val themeManager: ThemeManager,
+    private val moodManager: PersonaMoodManager,
+    private val motionManager: PersonaMotionManager,
+    private val personDao: PersonDao,
+    private val contactDao: ContactDao
 ) : ViewModel() {
     val sessionState: StateFlow<SessionState> = sessionManager.sessionState
+    val accountMode: StateFlow<AccountMode> = accountModeManager.accountMode
+    val themeMode: StateFlow<ThemeMode> = themeManager.themeMode
+    val currentMood: StateFlow<PersonaMood> = moodManager.currentMood
+    val isReducedMotion: StateFlow<Boolean> = motionManager.isReducedMotionPreferred
+    val hasCompletedWalkthrough: StateFlow<Boolean> = accountModeManager.hasCompletedWalkthrough
+    val hasCompletedInitialProfile: StateFlow<Boolean> = accountModeManager.hasCompletedInitialProfile
+    val isRevisitingWalkthrough: StateFlow<Boolean> = accountModeManager.isRevisitingWalkthrough
 
     fun onAuthSuccess() {
         viewModelScope.launch {
             sessionManager.onAuthenticationSuccess()
+        }
+    }
+
+    fun completeWalkthrough() {
+        accountModeManager.completeWalkthrough()
+    }
+
+    fun revisitWalkthrough() {
+        accountModeManager.revisitWalkthrough()
+    }
+
+    fun closeRevisitWalkthrough() {
+        accountModeManager.closeRevisitWalkthrough()
+    }
+
+    fun startLocalMode() {
+        accountModeManager.setLocalOnlyMode()
+        accountModeManager.completeInitialProfile()
+        onAuthSuccess()
+    }
+
+    fun startCloudMode(email: String = "user@persona.vault") {
+        accountModeManager.upgradeToCloudAccount(email)
+        accountModeManager.completeInitialProfile()
+        onAuthSuccess()
+    }
+
+    fun saveInitialProfile(
+        preferredName: String,
+        country: String? = null,
+        dob: String? = null,
+        email: String? = null,
+        isAccount: Boolean
+    ) {
+        viewModelScope.launch {
+            val existing = personDao.getPrimaryOwner()
+            val ownerId = existing?.id ?: com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
+            val nameParts = preferredName.trim().split(" ", limit = 2)
+            val first = nameParts.getOrElse(0) { preferredName }
+            val last = nameParts.getOrElse(1) { "" }
+
+            val updatedPerson = (existing ?: PersonEntity(
+                id = ownerId,
+                isPrimaryOwner = true,
+                firstName = first,
+                lastName = last
+            )).copy(
+                firstName = first,
+                lastName = last,
+                preferredName = preferredName.trim(),
+                countryOfResidence = country?.takeIf { it.isNotBlank() } ?: existing?.countryOfResidence,
+                dateOfBirth = dob?.takeIf { it.isNotBlank() } ?: existing?.dateOfBirth
+            )
+            personDao.insertOrUpdate(updatedPerson)
+
+            if (!email.isNullOrBlank()) {
+                val contact = ContactMethodEntity(
+                    id = UUID.randomUUID().toString(),
+                    personId = ownerId,
+                    contactType = ContactType.EMAIL,
+                    label = "Primary",
+                    value = email.trim(),
+                    isPrimary = true
+                )
+                contactDao.insertOrUpdate(contact)
+            }
+
+            accountModeManager.completeInitialProfile()
+            if (isAccount) {
+                accountModeManager.upgradeToCloudAccount(email ?: "user@persona.vault")
+            } else {
+                accountModeManager.setLocalOnlyMode()
+            }
+            onAuthSuccess()
         }
     }
 
@@ -84,49 +192,134 @@ class MainActivity : FragmentActivity() {
     private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // Enforce anti-snoop / screenshot prevention in Recents
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
-
         setContent {
-            PimsVaultTheme {
+            val themeMode by viewModel.themeMode.collectAsState()
+            val currentMood by viewModel.currentMood.collectAsState()
+            val isReducedMotion by viewModel.isReducedMotion.collectAsState()
+
+            val view = LocalView.current
+            if (!view.isInEditMode) {
+                SideEffect {
+                    val insetsController = WindowCompat.getInsetsController(window, view)
+                    insetsController.isAppearanceLightStatusBars = true
+                    insetsController.isAppearanceLightNavigationBars = true
+                }
+            }
+
+            PimsVaultTheme(
+                themeMode = themeMode,
+                mood = currentMood,
+                isReducedMotion = isReducedMotion
+            ) {
                 var showSplash by remember { mutableStateOf(true) }
+                val accountMode by viewModel.accountMode.collectAsState()
+                val hasCompletedWalkthrough by viewModel.hasCompletedWalkthrough.collectAsState()
+                val hasCompletedInitialProfile by viewModel.hasCompletedInitialProfile.collectAsState()
+                val isRevisitingWalkthrough by viewModel.isRevisitingWalkthrough.collectAsState()
+
+                var pendingSetupChoice by remember { mutableStateOf<String?>(null) }
 
                 LaunchedEffect(Unit) {
-                    delay(1200L)
+                    delay(800L)
                     showSplash = false
-                    // Security Ladder: Level 0 Normal Data is open without blocking on initial launch
-                    viewModel.onAuthSuccess()
+                    if (accountMode != AccountMode.UNSET && hasCompletedInitialProfile) {
+                        viewModel.onAuthSuccess()
+                    }
                 }
 
                 Crossfade(
-                    targetState = showSplash,
-                    label = "startup"
-                ) { splashVisible ->
-                    if (splashVisible) {
-                        PimsVaultSplashScreen()
-                    } else {
-                        val sessionState by viewModel.sessionState.collectAsState()
+                    targetState = when {
+                        showSplash -> "SPLASH"
+                        !hasCompletedWalkthrough || isRevisitingWalkthrough -> "WALKTHROUGH"
+                        accountMode == AccountMode.UNSET -> "ACCOUNT_CHOICE"
+                        !hasCompletedInitialProfile -> "MINIMAL_SETUP"
+                        else -> "APP"
+                    },
+                    label = "main_navigation_state"
+                ) { state ->
+                    when (state) {
+                        "SPLASH" -> {
+                            PimsVaultSplashScreen()
+                        }
+                        "WALKTHROUGH" -> {
+                            OnboardingWalkthroughScreen(
+                                onFinish = { viewModel.completeWalkthrough() },
+                                onSkip = { viewModel.completeWalkthrough() }
+                            )
+                        }
+                        "ACCOUNT_CHOICE" -> {
+                            if (pendingSetupChoice == null) {
+                                AccountChoiceScreen(
+                                    onCreateAccount = { pendingSetupChoice = "CREATE" },
+                                    onContinueWithoutAccount = { pendingSetupChoice = "LOCAL" },
+                                    onSignIn = { pendingSetupChoice = "SIGNIN" }
+                                )
+                            } else {
+                                MinimalProfileSetupScreen(
+                                    isAccountMode = pendingSetupChoice == "CREATE",
+                                    isSignInMode = pendingSetupChoice == "SIGNIN",
+                                    onComplete = { preferredName, country, dob, email, _ ->
+                                        if (pendingSetupChoice == "SIGNIN") {
+                                            viewModel.startCloudMode(email ?: "user@persona.vault")
+                                        } else {
+                                            viewModel.saveInitialProfile(
+                                                preferredName = preferredName,
+                                                country = country,
+                                                dob = dob,
+                                                email = email,
+                                                isAccount = pendingSetupChoice == "CREATE"
+                                            )
+                                        }
+                                        pendingSetupChoice = null
+                                    },
+                                    onBack = { pendingSetupChoice = null }
+                                )
+                            }
+                        }
+                        "MINIMAL_SETUP" -> {
+                            MinimalProfileSetupScreen(
+                                isAccountMode = accountMode == AccountMode.CLOUD_SYNCED,
+                                isSignInMode = false,
+                                onComplete = { preferredName, country, dob, email, _ ->
+                                    viewModel.saveInitialProfile(
+                                        preferredName = preferredName,
+                                        country = country,
+                                        dob = dob,
+                                        email = email,
+                                        isAccount = accountMode == AccountMode.CLOUD_SYNCED
+                                    )
+                                },
+                                onBack = {}
+                            )
+                        }
+                        "APP" -> {
+                            val sessionState by viewModel.sessionState.collectAsState()
 
-                        when (val state = sessionState) {
-                            is SessionState.Locked -> {
-                                LockScreen(
-                                    onUnlockClicked = { showBiometricPrompt() },
-                                    onPasswordUnlockSuccess = { viewModel.onAuthSuccess() }
-                                )
-                            }
-                            is SessionState.Authenticating -> {
-                                AuthenticatingScreen()
-                            }
-                            is SessionState.Unlocked -> {
-                                PersonaDashboardScreen(
-                                    securityLevel = state.securityLevel,
-                                    onLockClicked = { viewModel.lock() }
-                                )
+                            when (val curState = sessionState) {
+                                is SessionState.Locked -> {
+                                    val curContext = androidx.compose.ui.platform.LocalContext.current
+                                    val pinSecurityManager = remember { com.pims.vault.core.security.PinSecurityManager(curContext) }
+                                    LockScreen(
+                                        onUnlockClicked = { showBiometricPrompt() },
+                                        onPasswordUnlockSuccess = { viewModel.onAuthSuccess() },
+                                        pinSecurityManager = pinSecurityManager
+                                    )
+                                }
+                                is SessionState.Authenticating -> {
+                                    AuthenticatingScreen()
+                                }
+                                is SessionState.Unlocked -> {
+                                    PersonaDashboardScreen(
+                                        securityLevel = curState.securityLevel,
+                                        onLockClicked = { viewModel.lock() },
+                                        onRequestBiometricAuth = { title, subtitle, onSuccess, onError ->
+                                            requestBiometricAuthentication(title, subtitle, onSuccess, onError)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -145,7 +338,21 @@ class MainActivity : FragmentActivity() {
         // Inactivity timeout managed by BiometricSessionManager
     }
 
-    private fun showBiometricPrompt() {
+    fun requestBiometricAuthentication(
+        title: String = "Unlock Persona Vault",
+        subtitle: String = "Authenticate with Biometrics or Device PIN",
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val biometricManager = androidx.biometric.BiometricManager.from(this)
+        val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val canAuth = biometricManager.canAuthenticate(authenticators)
+        if (canAuth != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+            onError("BIOMETRICS_UNAVAILABLE")
+            return
+        }
+
         val executor = ContextCompat.getMainExecutor(this)
         val prompt = BiometricPrompt(
             this,
@@ -153,32 +360,45 @@ class MainActivity : FragmentActivity() {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
-                    viewModel.onAuthSuccess()
+                    onSuccess()
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
+                    onError(errString.toString())
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    onError("Biometric authentication failed")
                 }
             }
         )
 
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock Persona Vault")
-            .setSubtitle("Authenticate with Biometrics or Device PIN")
-            .setAllowedAuthenticators(
-                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
-            )
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setAllowedAuthenticators(authenticators)
             .build()
 
         prompt.authenticate(promptInfo)
+    }
+
+    private fun showBiometricPrompt() {
+        requestBiometricAuthentication(
+            title = "Unlock Persona Vault",
+            subtitle = "Authenticate with Biometrics or Device PIN",
+            onSuccess = { viewModel.onAuthSuccess() },
+            onError = { /* Session remains locked on LockScreen */ }
+        )
     }
 }
 
 @Composable
 fun LockScreen(
     onUnlockClicked: () -> Unit,
-    onPasswordUnlockSuccess: () -> Unit = onUnlockClicked
+    onPasswordUnlockSuccess: () -> Unit = onUnlockClicked,
+    pinSecurityManager: com.pims.vault.core.security.PinSecurityManager? = null
 ) {
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordInput by remember { mutableStateOf("") }
@@ -319,11 +539,23 @@ fun LockScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (passwordInput.isNotBlank()) {
-                            showPasswordDialog = false
-                            onPasswordUnlockSuccess()
+                        val input = passwordInput.trim()
+                        if (input.isBlank()) {
+                            passwordError = "PIN / password cannot be empty"
+                        } else if (pinSecurityManager != null && pinSecurityManager.hasPin()) {
+                            if (pinSecurityManager.verifyPin(input)) {
+                                showPasswordDialog = false
+                                passwordInput = ""
+                                passwordError = null
+                                onPasswordUnlockSuccess()
+                            } else {
+                                passwordError = "Incorrect PIN. Try again."
+                            }
                         } else {
-                            passwordError = "Password cannot be empty"
+                            showPasswordDialog = false
+                            passwordInput = ""
+                            passwordError = null
+                            onPasswordUnlockSuccess()
                         }
                     }
                 ) {

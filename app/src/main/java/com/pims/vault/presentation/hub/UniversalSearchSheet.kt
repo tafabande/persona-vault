@@ -132,7 +132,7 @@ fun UniversalSearchSheet(
                 UnifiedSearchResult(
                     id = "person_${person.id}",
                     title = person.fullName,
-                    subtitle = "${person.relationRole} • ${person.primaryContact.ifBlank { "No contact listed" }}",
+                    subtitle = "${person.relationRole} • ${person.phone.ifBlank { person.email.ifBlank { "No contact listed" } }}",
                     domain = SearchDomain.PEOPLE,
                     icon = Icons.Default.People,
                     badge = person.relationRole,
@@ -166,7 +166,7 @@ fun UniversalSearchSheet(
                 list.add(
                     UnifiedSearchResult(
                         id = "med_cond_${cond.id}",
-                        title = cond.conditionName,
+                        title = cond.name,
                         subtitle = "Medical Condition · ${cond.status.name} · ${cond.notes ?: "Diagnosed record"}",
                         domain = SearchDomain.HEALTH,
                         icon = Icons.Default.Favorite,
@@ -182,7 +182,7 @@ fun UniversalSearchSheet(
                 list.add(
                     UnifiedSearchResult(
                         id = "med_rx_${med.id}",
-                        title = med.medicationName,
+                        title = med.name,
                         subtitle = "Medication · Dosage: ${med.dosage} (${med.frequency})",
                         domain = SearchDomain.HEALTH,
                         icon = Icons.Default.MedicalServices,
@@ -219,7 +219,7 @@ fun UniversalSearchSheet(
             list.add(
                 UnifiedSearchResult(
                     id = "edu_${edu.id}",
-                    title = edu.degree,
+                    title = edu.qualification,
                     subtitle = "${edu.institution} · ${edu.fieldOfStudy ?: "Graduated"}",
                     domain = SearchDomain.PROFILE,
                     icon = Icons.Default.School,
@@ -228,12 +228,27 @@ fun UniversalSearchSheet(
                 )
             )
         }
+
+        // 6. Custom Information Fields
+        profileState.customFields.forEach { cf ->
+            list.add(
+                UnifiedSearchResult(
+                    id = "custom_${cf.id}",
+                    title = cf.label,
+                    subtitle = "${cf.category.displayName} · ${cf.value}",
+                    domain = SearchDomain.PROFILE,
+                    icon = Icons.Default.Badge,
+                    badge = cf.category.displayName,
+                    onClick = onDismissRequest
+                )
+            )
+        }
         profileState.certificates.forEach { cert ->
             list.add(
                 UnifiedSearchResult(
                     id = "cert_${cert.id}",
-                    title = cert.certificateName,
-                    subtitle = "${cert.issuingOrganization} · Credential ID: ${cert.credentialId ?: "Verified"}",
+                    title = cert.qualification,
+                    subtitle = "${cert.institution} · ${cert.fieldOfStudy ?: "Verified"}",
                     domain = SearchDomain.PROFILE,
                     icon = Icons.Default.Badge,
                     badge = "Certificate",
@@ -245,8 +260,8 @@ fun UniversalSearchSheet(
             list.add(
                 UnifiedSearchResult(
                     id = "work_${emp.id}",
-                    title = emp.jobTitle,
-                    subtitle = "${emp.employerName} · ${emp.startDate} - ${emp.endDate ?: "Present"}",
+                    title = emp.position,
+                    subtitle = "${emp.company} · ${emp.startDate} - ${emp.endDate ?: "Present"}",
                     domain = SearchDomain.PROFILE,
                     icon = Icons.Default.Work,
                     badge = "Employment",

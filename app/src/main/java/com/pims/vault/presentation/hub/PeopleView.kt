@@ -17,20 +17,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cake
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Note
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +51,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +78,10 @@ fun PeopleView(
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
+    var showLinkAccountDialog by remember { mutableStateOf(false) }
+    var linkCodeInput by remember { mutableStateOf("") }
+    var linkSuccessMessage by remember { mutableStateOf<String?>(null) }
+
     val filteredList = if (searchQuery.isBlank()) {
         relationships
     } else {
@@ -82,6 +94,8 @@ fun PeopleView(
     val familyRoles = setOf("MOTHER", "FATHER", "PARENT", "SIBLING", "BROTHER", "SISTER", "CHILD", "SON", "DAUGHTER", "PARTNER", "SPOUSE", "WIFE", "HUSBAND", "RELATIVE")
     val familyMembers = filteredList.filter { it.relationRole.uppercase() in familyRoles }
     val otherConnections = filteredList.filter { it.relationRole.uppercase() !in familyRoles }
+
+    val haptics = com.pims.vault.presentation.ui.util.rememberPimsHaptics()
 
     LazyColumn(
         modifier = modifier
@@ -98,7 +112,7 @@ fun PeopleView(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "People",
                         style = MaterialTheme.typography.headlineLarge.copy(
@@ -108,25 +122,48 @@ fun PeopleView(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Your private circle & relationships",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Managing other people • Separate from your own profile",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                IconButton(
-                    onClick = onAddPersonClick,
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(10.dp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = {
+                            haptics.light()
+                            showLinkAccountDialog = true
+                        },
+                        modifier = Modifier
+                            .background(
+                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = "Link Person Account",
+                            tint = MaterialTheme.colorScheme.secondary
                         )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PersonAdd,
-                        contentDescription = "Add Person",
-                        tint = MaterialTheme.colorScheme.tertiary
-                    )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            haptics.light()
+                            onAddPersonClick()
+                        },
+                        modifier = Modifier
+                            .background(
+                                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PersonAdd,
+                            contentDescription = "Add Person",
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
                 }
             }
         }
@@ -136,7 +173,7 @@ fun PeopleView(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search people...") },
+                placeholder = { Text("Search...") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -161,10 +198,13 @@ fun PeopleView(
             item {
                 PersonaEmptyState(
                     icon = Icons.Default.Person,
-                    title = "Keep your important people close.",
-                    description = "Add family, friends, colleagues and other relationships with private memory notes and birthdays.",
+                    title = "No people yet",
+                    description = "People you add will appear here.",
                     actionLabel = "Add person",
-                    onActionClick = onAddPersonClick
+                    onActionClick = {
+                        haptics.light()
+                        onAddPersonClick()
+                    }
                 )
             }
         }
@@ -214,6 +254,69 @@ fun PeopleView(
         }
 
         item { Spacer(modifier = Modifier.height(16.dp)) }
+    }
+
+    if (showLinkAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { showLinkAccountDialog = false },
+            icon = { Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Link Existing Person Account") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Enter the person's secure Link Code. A linking request will be sent and requires their explicit approval before profiles synchronize.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = linkCodeInput,
+                        onValueChange = { linkCodeInput = it.uppercase().take(12) },
+                        placeholder = { Text("e.g. PV-7482-X9") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (linkCodeInput.isNotBlank()) {
+                            haptics.success()
+                            showLinkAccountDialog = false
+                            linkSuccessMessage = "Link request sent to $linkCodeInput. Waiting for approval."
+                            linkCodeInput = ""
+                        }
+                    }
+                ) {
+                    Text("Send Request")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLinkAccountDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    linkSuccessMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { linkSuccessMessage = null },
+            icon = { Icon(Icons.Default.HourglassEmpty, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Link Request Pending") },
+            text = {
+                Text(
+                    text = "$msg\n\nWhen they approve, the connection will update from Manual to Linked without duplicating their record.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(onClick = { linkSuccessMessage = null }) {
+                    Text("Got it")
+                }
+            }
+        )
     }
 }
 
@@ -274,7 +377,8 @@ fun PersonDetailSheet(
     person: KinRelationshipItem,
     sheetState: SheetState,
     onDismissRequest: () -> Unit,
-    onDeletePerson: (KinRelationshipItem) -> Unit
+    onDeletePerson: (KinRelationshipItem) -> Unit,
+    onEditPerson: (KinRelationshipItem) -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -293,11 +397,38 @@ fun PersonDetailSheet(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Close bar
+            // Persistent Breadcrumb / Context Anchor
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.People,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "People → ${person.fullName}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+
                 IconButton(onClick = onDismissRequest) {
                     Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -319,6 +450,44 @@ fun PersonDetailSheet(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Link status indicator
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (person.isVerified) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    border = BorderStroke(
+                        1.dp,
+                        if (person.isVerified) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (person.isVerified) Icons.Default.CheckCircle else Icons.Default.Person,
+                            contentDescription = null,
+                            tint = if (person.isVerified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = if (person.isVerified) "Linked Account" else "Manual Person",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (person.isVerified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -405,7 +574,8 @@ fun PersonDetailSheet(
             Spacer(modifier = Modifier.height(18.dp))
 
             // IMPORTANT DATES
-            if (person.dateOfBirth.isNotBlank() || person.anniversary.isNotBlank()) {
+            val showAnniversary = person.anniversary.isNotBlank() && com.pims.vault.presentation.isRomanticOrMaritalRelationship(person.relationRole)
+            if (person.dateOfBirth.isNotBlank() || showAnniversary) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "IMPORTANT DATES",
@@ -420,7 +590,7 @@ fun PersonDetailSheet(
                         DetailActionRow(icon = Icons.Default.Cake, title = bdayInfo, subtitle = "Birthday", onClick = {})
                     }
 
-                    if (person.anniversary.isNotBlank()) {
+                    if (showAnniversary) {
                         val annivInfo = DateHelper.formatAnniversaryInfo(person.anniversary)
                         DetailActionRow(icon = Icons.Default.Cake, title = annivInfo, subtitle = "Anniversary", onClick = {})
                     }
@@ -467,6 +637,30 @@ fun PersonDetailSheet(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            // Edit Person button
+            Button(
+                onClick = {
+                    onDismissRequest()
+                    onEditPerson(person)
+                },
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                modifier = Modifier.fillMaxWidth().height(46.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Text("Edit ${person.fullName}'s Profile", fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Delete connection button
             Button(

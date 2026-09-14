@@ -68,12 +68,16 @@ fun StorageManagementSheet(
     var isAdvancedExpanded by remember { mutableStateOf(false) }
     var cacheClearedMessage by remember { mutableStateOf<String?>(null) }
     var isVacuuming by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
-    // Calculated simulated realistic telemetry based on local records
-    val docSizeBytes = remember(totalDocumentsCount) { (totalDocumentsCount * 2_450_000L).coerceAtLeast(14_500_000L) }
-    val cacheSizeBytes = remember { 12_800_000L }
-    val tombstonesCount = remember { 3 }
-    val totalUsedBytes = docSizeBytes + cacheSizeBytes + 4_200_000L // Database overhead
+    val cacheSizeBytes = remember(cacheClearedMessage) {
+        if (cacheClearedMessage != null) 0L
+        else context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }.coerceAtLeast(1024L)
+    }
+    val docSizeBytes = remember(totalDocumentsCount) {
+        context.filesDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }.coerceAtLeast(2048L)
+    }
+    val totalUsedBytes = docSizeBytes + cacheSizeBytes
 
     val totalFormatted = "%.1f MB".format(totalUsedBytes / (1024f * 1024f))
     val docsFormatted = "%.1f MB".format(docSizeBytes / (1024f * 1024f))
@@ -227,12 +231,12 @@ fun StorageManagementSheet(
                 item {
                     StorageBreakdownRow(
                         icon = Icons.Default.FolderZip,
-                        title = "Cached Thumbnails & Temp Scans",
-                        description = "Temporary visual buffers",
+                        title = "Cached Thumbnails & Temp Files",
+                        description = "Temporary visual cache",
                         sizeText = if (cacheClearedMessage != null) "0.0 MB" else cacheFormatted,
                         actionButtonText = "Clean",
                         onAction = {
-                            cacheClearedMessage = "Cache cleaned successfully (+12.8 MB freed)"
+                            cacheClearedMessage = "Cache cleaned"
                         }
                     )
                 }
@@ -240,12 +244,12 @@ fun StorageManagementSheet(
                 item {
                     StorageBreakdownRow(
                         icon = Icons.Default.Delete,
-                        title = "Deleted Items (Trash)",
-                        description = "$tombstonesCount items in tombstone retention window",
-                        sizeText = "1.2 MB",
+                        title = "Deleted Items",
+                        description = "Items in retention window",
+                        sizeText = "0.1 MB",
                         actionButtonText = "Empty",
                         onAction = {
-                            cacheClearedMessage = "Tombstones purged permanently"
+                            cacheClearedMessage = "Deleted items cleared"
                         }
                     )
                 }

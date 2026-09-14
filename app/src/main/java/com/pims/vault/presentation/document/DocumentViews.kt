@@ -470,23 +470,19 @@ fun DocumentIngestionDialog(
                     )
                 }
 
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    PimsOutlinedInput(
-                        value = issueDate,
-                        onValueChange = { issueDate = it },
-                        label = "Issue Date",
-                        placeholder = "YYYY-MM-DD",
-                        modifier = Modifier.weight(1f)
+                    com.pims.vault.presentation.ui.components.StandardDateInput(
+                        isoDate = issueDate,
+                        onDateChange = { issueDate = it },
+                        label = "Issue Date"
                     )
-                    PimsOutlinedInput(
-                        value = expiryDate,
-                        onValueChange = { expiryDate = it },
-                        label = "Expiry Date",
-                        placeholder = "YYYY-MM-DD",
-                        modifier = Modifier.weight(1f)
+                    com.pims.vault.presentation.ui.components.StandardDateInput(
+                        isoDate = expiryDate,
+                        onDateChange = { expiryDate = it },
+                        label = "Expiry Date"
                     )
                 }
 

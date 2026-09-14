@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="persona_background">#F7F5F0</color>
+    <color name="persona_surface">#FFFDF8</color>
+    <color name="persona_primary_text">#20201E</color>
+    <color name="persona_accent">#B65F3A</color>
+</resources>

@@ -103,10 +103,11 @@ interface RelationshipDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(relationship: RelationshipEntity): Long
 
+    @Query("SELECT * FROM relationships WHERE (source_person_id = :p1 AND target_person_id = :p2) OR (source_person_id = :p2 AND target_person_id = :p1) LIMIT 1")
+    suspend fun getRelationshipBetween(p1: String, p2: String): RelationshipEntity?
+
     @Query("DELETE FROM relationships WHERE id = :id")
     suspend fun deleteById(id: String)
-
-    suspend fun delete(relationship: RelationshipEntity) = deleteById(relationship.id)
 
     @Query("DELETE FROM relationships WHERE (source_person_id = :p1 AND target_person_id = :p2) OR (source_person_id = :p2 AND target_person_id = :p1)")
     suspend fun deleteBetweenPersons(p1: String, p2: String)

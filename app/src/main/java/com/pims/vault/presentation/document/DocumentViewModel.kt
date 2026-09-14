@@ -4,14 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
 import com.pims.vault.core.crypto.SessionState
+import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.core.model.DocumentType
 import com.pims.vault.core.model.SecurityClassification
+import com.pims.vault.data.local.entity.PersonEntity
 import com.pims.vault.domain.model.DocumentCategory
 import com.pims.vault.domain.model.DocumentItem
 import com.pims.vault.domain.model.DocumentVersionItem
 import com.pims.vault.domain.model.DocumentWithHistory
 import com.pims.vault.domain.model.IntegrityCheckStatus
+import android.content.ContentResolver
+import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
 import com.pims.vault.domain.usecase.document.AddDocumentVersionUseCase
+import com.pims.vault.domain.usecase.document.DecryptDocumentUseCase
 import com.pims.vault.domain.usecase.document.DeleteDocumentUseCase
 import com.pims.vault.domain.usecase.document.GetDocumentsUseCase
 import com.pims.vault.domain.usecase.document.IngestDocumentUseCase
@@ -24,6 +31,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.UUID
 import javax.inject.Inject
@@ -79,11 +88,14 @@ class DocumentViewModel @Inject constructor(
     private val restoreVersionUseCase: RestoreVersionUseCase,
     private val verifyDocumentIntegrityUseCase: VerifyDocumentIntegrityUseCase,
     private val deleteDocumentUseCase: DeleteDocumentUseCase,
-    private val sessionManager: BiometricSessionManager
+    private val decryptDocumentUseCase: DecryptDocumentUseCase,
+    private val sessionManager: BiometricSessionManager,
+    private val personDao: com.pims.vault.data.local.dao.PersonDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DocumentUiState())
     val uiState: StateFlow<DocumentUiState> = _uiState.asStateFlow()
+    private var activeOwnerId: String? = null
 
     init {
         observeSessionAndDocuments()
@@ -91,21 +103,18 @@ class DocumentViewModel @Inject constructor(
 
     private fun observeSessionAndDocuments() {
         viewModelScope.launch {
-            sessionManager.sessionState.collectLatest { state ->
-                when (state) {
-                    is SessionState.Unlocked -> {
-                        getDocumentsUseCase("primary_owner").collectLatest { docList ->
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    documents = docList,
-                                    errorMessage = null
-                                )
-                            }
-                        }
-                    }
-                    is SessionState.Locked, SessionState.Authenticating -> {
-                        _uiState.update { DocumentUiState(isLoading = true, documents = emptyList()) }
+            personDao.getPrimaryOwnerFlow().collectLatest { owner ->
+                val ownerId = owner?.id ?: CANONICAL_PRIMARY_OWNER_ID
+                activeOwnerId = ownerId
+                android.util.Log.d("DocumentViewModel", "Observing documents for personId='$ownerId' (primaryOwner=${owner?.firstName})")
+                getDocumentsUseCase(ownerId).collectLatest { docList ->
+                    android.util.Log.d("DocumentViewModel", "Room emitted ${docList.size} documents for ownerId='$ownerId': ${docList.map { it.document.title }}")
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            documents = docList,
+                            errorMessage = null
+                        )
                     }
                 }
             }
@@ -117,8 +126,21 @@ class DocumentViewModel @Inject constructor(
             try {
                 when (event) {
                     is DocumentEvent.IngestDocument -> {
+                        val owner = personDao.getPrimaryOwner()
+                        val ownerId = owner?.id ?: activeOwnerId ?: CANONICAL_PRIMARY_OWNER_ID
+                        if (owner == null) {
+                            personDao.insertOrUpdate(
+                                PersonEntity(
+                                    id = ownerId,
+                                    isPrimaryOwner = true,
+                                    firstName = "",
+                                    lastName = ""
+                                )
+                            )
+                        }
+                        android.util.Log.d("DocumentViewModel", "Ingesting document '${event.title}' under ownerId='$ownerId'")
                         ingestDocumentUseCase(
-                            personId = "primary_owner",
+                            personId = ownerId,
                             documentType = event.type,
                             title = event.title,
                             documentNumber = event.docNumber,
@@ -190,4 +212,60 @@ class DocumentViewModel @Inject constructor(
             }
         }
     }
+
+    fun decryptForViewing(
+        context: Context,
+        version: DocumentVersionItem,
+        title: String,
+        onReady: (Uri, String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val cacheDir = File(context.cacheDir, "decrypted_docs").apply { if (!exists()) mkdirs() }
+                val extension = when {
+                    version.mimeType.contains("pdf", ignoreCase = true) -> ".pdf"
+                    version.mimeType.contains("png", ignoreCase = true) -> ".png"
+                    version.mimeType.contains("jpeg", ignoreCase = true) || version.mimeType.contains("jpg", ignoreCase = true) -> ".jpg"
+                    version.mimeType.contains("text", ignoreCase = true) -> ".txt"
+                    else -> ""
+                }
+                val sanitizedTitle = title.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(40)
+                val targetFile = File(cacheDir, "${sanitizedTitle}_v${version.versionNumber}$extension")
+
+                FileOutputStream(targetFile).use { fos ->
+                    decryptDocumentUseCase(version, fos)
+                }
+
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    targetFile
+                )
+                onReady(uri, version.mimeType)
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to decrypt document for viewing")
+            }
+        }
+    }
+
+    fun exportDocument(
+        contentResolver: ContentResolver,
+        destinationUri: Uri,
+        version: DocumentVersionItem,
+        onComplete: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                contentResolver.openOutputStream(destinationUri)?.use { os ->
+                    decryptDocumentUseCase(version, os)
+                } ?: throw java.io.IOException("Unable to open output stream for export destination")
+                onComplete()
+            } catch (e: Exception) {
+                onError(e.message ?: "Failed to export document")
+            }
+        }
+    }
 }
+

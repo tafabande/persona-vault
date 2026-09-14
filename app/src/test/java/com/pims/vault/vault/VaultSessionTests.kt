@@ -70,6 +70,20 @@ class VaultSessionTests {
         override suspend fun verifyIntegrity(): Boolean = true
     }
 
+    private val fakePersonDao = object : com.pims.vault.data.local.dao.PersonDao {
+        override fun getPrimaryOwnerFlow(): Flow<com.pims.vault.data.local.entity.PersonEntity?> = flowOf(null)
+        override suspend fun getPrimaryOwner(): com.pims.vault.data.local.entity.PersonEntity? = null
+        override fun getPersonByIdFlow(id: String): Flow<com.pims.vault.data.local.entity.PersonEntity?> = flowOf(null)
+        override suspend fun getPersonById(id: String): com.pims.vault.data.local.entity.PersonEntity? = null
+        override fun getAllPersonsFlow(): Flow<List<com.pims.vault.data.local.entity.PersonEntity>> = flowOf(emptyList())
+        override fun getPersonWithFullProfileFlow(id: String): Flow<com.pims.vault.data.local.relation.PersonWithFullProfile?> = flowOf(null)
+        override fun getPrimaryOwnerWithFullProfileFlow(): Flow<com.pims.vault.data.local.relation.PersonWithFullProfile?> = flowOf(null)
+        override suspend fun insertOrUpdate(person: com.pims.vault.data.local.entity.PersonEntity): Long = 1L
+        override suspend fun insertAll(persons: List<com.pims.vault.data.local.entity.PersonEntity>) {}
+        override suspend fun update(person: com.pims.vault.data.local.entity.PersonEntity) {}
+        override suspend fun deleteById(id: String) {}
+    }
+
     private lateinit var auditLogger: HardenedAuditLogger
     private lateinit var viewModel: VaultViewModel
 
@@ -94,7 +108,8 @@ class VaultSessionTests {
             savePaymentReferenceUseCase = SavePaymentReferenceUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             readPaymentReferenceUseCase = ReadPaymentReferenceUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             deleteVaultItemUseCase = DeleteVaultItemUseCase(fakeVaultDao, auditLogger),
-            sessionManager = sessionManager
+            sessionManager = sessionManager,
+            personDao = fakePersonDao
         )
     }
 

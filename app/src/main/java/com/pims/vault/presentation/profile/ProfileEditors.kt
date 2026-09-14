@@ -129,11 +129,10 @@ fun PersonalInfoEditorDialog(
                     placeholder = "e.g. Johnny"
                 )
 
-                PimsOutlinedInput(
-                    value = dob,
-                    onValueChange = { dob = it },
-                    label = "Date of Birth (YYYY-MM-DD)",
-                    placeholder = "1998-04-12"
+                com.pims.vault.presentation.ui.components.StandardDateInput(
+                    isoDate = dob,
+                    onDateChange = { dob = it },
+                    label = "Date of Birth"
                 )
 
                 // Gender Dropdown

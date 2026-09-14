@@ -77,7 +77,8 @@ class VaultViewModel @Inject constructor(
     private val savePaymentReferenceUseCase: SavePaymentReferenceUseCase,
     private val readPaymentReferenceUseCase: ReadPaymentReferenceUseCase,
     private val deleteVaultItemUseCase: DeleteVaultItemUseCase,
-    private val sessionManager: BiometricSessionManager
+    private val sessionManager: BiometricSessionManager,
+    private val personDao: com.pims.vault.data.local.dao.PersonDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(VaultUiState())
@@ -90,7 +91,13 @@ class VaultViewModel @Inject constructor(
     private var activePersonId: String = "primary_user"
 
     init {
-        loadItems()
+        viewModelScope.launch {
+            val owner = personDao.getPrimaryOwner()
+            if (owner != null) {
+                activePersonId = owner.id
+            }
+            loadItems()
+        }
     }
 
     fun setPersonId(personId: String) {
@@ -100,7 +107,10 @@ class VaultViewModel @Inject constructor(
 
     private fun loadItems() {
         viewModelScope.launch {
-            getVaultItemsUseCase(activePersonId).collect { items ->
+            val owner = personDao.getPrimaryOwner()
+            val targetId = owner?.id ?: activePersonId
+            activePersonId = targetId
+            getVaultItemsUseCase(targetId).collect { items ->
                 _uiState.update { it.copy(vaultItems = items) }
                 if (_uiState.value.isVaultUnlocked) {
                     refreshTotpTokens(items)
@@ -112,6 +122,20 @@ class VaultViewModel @Inject constructor(
     // ---------------------------------------------------------
     // Session & Elevation Lifecycle
     // ---------------------------------------------------------
+
+    fun elevateAndUnlockVault(onSuccess: (() -> Unit)? = null, onError: ((String) -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                val secretKey = sessionManager.unlockZone4Vault()
+                unlockVault(secretKey.copyBytes())
+                onSuccess?.invoke()
+            } catch (e: Exception) {
+                val msg = e.message ?: "Failed to elevate to Zone 4 Vault"
+                _uiState.update { it.copy(errorMessage = msg) }
+                onError?.invoke(msg)
+            }
+        }
+    }
 
     fun unlockVault(vaultKey: ByteArray) {
         sessionKey = vaultKey

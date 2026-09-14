@@ -155,8 +155,16 @@ class MedicalViewModel @Inject constructor(
                                 id = it.id,
                                 isPrimaryOwner = true,
                                 firstName = it.firstName,
+                                middleName = it.middleName,
                                 lastName = it.lastName,
-                                countryOfResidence = it.countryOfResidence
+                                preferredName = it.preferredName,
+                                dateOfBirth = it.dateOfBirth,
+                                gender = it.gender,
+                                nationality = it.nationality,
+                                countryOfResidence = it.countryOfResidence,
+                                religion = it.religion,
+                                ethnicity = it.ethnicity,
+                                occupation = it.occupation
                             )
                         } ?: return@launch
                         val updated = MedicalRules.buildEmergencyProjection(
@@ -182,8 +190,16 @@ class MedicalViewModel @Inject constructor(
                                 id = it.id,
                                 isPrimaryOwner = true,
                                 firstName = it.firstName,
+                                middleName = it.middleName,
                                 lastName = it.lastName,
-                                countryOfResidence = it.countryOfResidence
+                                preferredName = it.preferredName,
+                                dateOfBirth = it.dateOfBirth,
+                                gender = it.gender,
+                                nationality = it.nationality,
+                                countryOfResidence = it.countryOfResidence,
+                                religion = it.religion,
+                                ethnicity = it.ethnicity,
+                                occupation = it.occupation
                             )
                         } ?: return@launch
                         val currentFields = _uiState.value.emergencyProjection?.selectedFields ?: emptySet()

@@ -167,7 +167,7 @@ fun DataBackupHubSheet(
                 // 2. BACKUP & ARCHIVE OPERATIONS
                 item {
                     Text(
-                        text = "ARCHIVE & LOCAL BACKUP",
+                        text = "BACKUP & RECOVERY",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
                         color = MaterialTheme.colorScheme.tertiary
                     )
@@ -177,7 +177,7 @@ fun DataBackupHubSheet(
                     DataActionRow(
                         icon = Icons.Default.FileUpload,
                         title = "Export Encrypted Backup",
-                        subtitle = "Generate an AES-256 encrypted database archive for cold storage",
+                        subtitle = "Create a secure encrypted backup file",
                         onClick = onExportBackup
                     )
                 }
@@ -185,8 +185,8 @@ fun DataBackupHubSheet(
                 item {
                     DataActionRow(
                         icon = Icons.Default.FileDownload,
-                        title = "Import Archive",
-                        subtitle = "Restore database & documents from a previously exported backup",
+                        title = "Import Backup",
+                        subtitle = "Restore your vault from a backup file",
                         onClick = onRestoreBackup
                     )
                 }
@@ -194,26 +194,8 @@ fun DataBackupHubSheet(
                 item {
                     DataActionRow(
                         icon = Icons.Default.Delete,
-                        title = "Deleted Items (Trash Bin)",
-                        subtitle = "Recover accidentally deleted records or purge permanent tombstones",
-                        onClick = onOpenSyncConflicts
-                    )
-                }
-
-                // 3. ENGINE ROOM LINK
-                item {
-                    Text(
-                        text = "ENGINE ROOM & CONFLICTS",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                }
-
-                item {
-                    DataActionRow(
-                        icon = Icons.Default.Sync,
-                        title = "Conflict Resolution & Queue",
-                        subtitle = "Review raw operation IDs, version vectors & network queue",
+                        title = "Deleted Items",
+                        subtitle = "View and restore recently deleted items",
                         onClick = onOpenSyncConflicts
                     )
                 }

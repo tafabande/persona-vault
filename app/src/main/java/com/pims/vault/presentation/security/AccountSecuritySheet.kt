@@ -133,13 +133,13 @@ fun AccountSecuritySheet(
     var resetEmail by remember { mutableStateOf("") }
     var resetMessage by remember { mutableStateOf<String?>(null) }
 
-    // OTP Demo State
+    // OTP Verification State
     var otpCodeInput by remember { mutableStateOf("") }
     var otpMessage by remember { mutableStateOf<String?>(null) }
     var isOtpSuccess by remember { mutableStateOf(false) }
-    var activeOtpTarget by remember { mutableStateOf("user@example.com") }
-    var activeOtpChallenge by remember { mutableStateOf(securityManager.issueOtp(OtpPurpose.ACCOUNT_RECOVERY, "user@example.com")) }
-    var cooldownSecondsRemaining by remember { mutableIntStateOf(42) }
+    var activeOtpTarget by remember { mutableStateOf("") }
+    var activeOtpChallenge by remember { mutableStateOf(securityManager.issueOtp(OtpPurpose.ACCOUNT_RECOVERY, "local_user")) }
+    var cooldownSecondsRemaining by remember { mutableIntStateOf(0) }
 
     // Vault Recovery Key State
     var recoveryKeyText by remember { mutableStateOf<String?>(null) }
@@ -577,12 +577,7 @@ fun AccountSecuritySheet(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Demo hint showing the current active mock code
-                            Text(
-                                text = "Test Code: ${activeOtpChallenge.code} (Expires in ~5 min)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = SlateGray
-                            )
+                            // Verification status feedback
 
                             if (otpMessage != null) {
                                 Spacer(modifier = Modifier.height(8.dp))

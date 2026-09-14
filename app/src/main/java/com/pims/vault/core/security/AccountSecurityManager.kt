@@ -26,17 +26,7 @@ class AccountSecurityManager @Inject constructor(
     private val secureRandom = SecureRandom()
 
     // Active security notifications stream
-    private val _securityNotifications = MutableStateFlow<List<SecurityNotification>>(
-        listOf(
-            SecurityNotification(
-                id = "sec_01",
-                title = "🔐 Session verified",
-                description = "${android.os.Build.MANUFACTURER.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }} ${android.os.Build.MODEL} · ${com.pims.vault.core.util.CountryUtils.getDefaultDeviceCountry()} · Active now",
-                timestamp = System.currentTimeMillis(),
-                requiresAction = false
-            )
-        )
-    )
+    private val _securityNotifications = MutableStateFlow<List<SecurityNotification>>(emptyList())
     val securityNotifications: StateFlow<List<SecurityNotification>> = _securityNotifications.asStateFlow()
 
     // Active OTP challenges mapped by "${purpose}:${target}"

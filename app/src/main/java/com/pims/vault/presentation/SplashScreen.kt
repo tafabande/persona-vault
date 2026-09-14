@@ -1,9 +1,7 @@
 package com.pims.vault.presentation
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -13,185 +11,132 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.ui.theme.AmoledBackground
-import com.pims.vault.presentation.ui.theme.AmoledPrimary
-import com.pims.vault.presentation.ui.theme.AmoledSurface
-import com.pims.vault.presentation.ui.theme.AmoledTextPrimary
-import com.pims.vault.presentation.ui.theme.AmoledTextSecondary
-import com.pims.vault.presentation.ui.theme.PimsDimensions
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun PimsVaultSplashScreen() {
-    val transition = rememberInfiniteTransition(label = "splash")
-    val pulse by transition.animateFloat(
-        initialValue = 0.98f,
-        targetValue = 1.04f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
-    val glow by transition.animateFloat(
-        initialValue = 0.20f,
-        targetValue = 0.55f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glow"
-    )
-    val drift by transition.animateFloat(
-        initialValue = -0.02f,
-        targetValue = 0.02f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2400),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "drift"
-    )
+    val scaleAnim = remember { Animatable(0.90f) }
+    val alphaAnim = remember { Animatable(0f) }
+    val drawProgress = remember { Animatable(0f) }
+    val textAlphaAnim = remember { Animatable(0f) }
+
+    val bgColor = MaterialTheme.colorScheme.background
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val textColor = MaterialTheme.colorScheme.onBackground
+    val accentColor = MaterialTheme.colorScheme.tertiary
+
+    LaunchedEffect(Unit) {
+        launch {
+            scaleAnim.animateTo(
+                targetValue = 1.0f,
+                animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)
+            )
+        }
+        launch {
+            alphaAnim.animateTo(
+                targetValue = 1.0f,
+                animationSpec = tween(durationMillis = 350)
+            )
+        }
+        launch {
+            delay(80)
+            drawProgress.animateTo(
+                targetValue = 1.0f,
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+            )
+        }
+        launch {
+            delay(200)
+            textAlphaAnim.animateTo(
+                targetValue = 0.95f,
+                animationSpec = tween(durationMillis = 300)
+            )
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = AmoledBackground
+        color = bgColor
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(AmoledBackground)
+                .background(bgColor),
+            contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val center = Offset(size.width / 2f, size.height / 2f)
-                val baseRadius = size.minDimension * 0.21f
-
-                drawCircle(
-                    color = AmoledTextPrimary.copy(alpha = 0.08f),
-                    radius = baseRadius * 1.62f,
-                    center = center,
-                    style = Stroke(width = 2f)
-                )
-                drawCircle(
-                    color = AmoledPrimary.copy(alpha = 0.25f * glow),
-                    radius = baseRadius * pulse,
-                    center = center,
-                    style = Stroke(width = 2.25f)
-                )
-                drawCircle(
-                    color = AmoledTextPrimary.copy(alpha = 0.04f),
-                    radius = baseRadius * 0.74f,
-                    center = center,
-                    style = Stroke(width = 1.5f)
-                )
-                drawArc(
-                    color = AmoledPrimary.copy(alpha = 0.18f),
-                    startAngle = -18f + drift * 40f,
-                    sweepAngle = 36f,
-                    useCenter = false,
-                    topLeft = Offset(center.x - baseRadius * 1.56f, center.y - baseRadius * 1.56f),
-                    size = androidx.compose.ui.geometry.Size(baseRadius * 3.12f, baseRadius * 3.12f),
-                    style = Stroke(width = 2f)
-                )
-                drawArc(
-                    color = AmoledTextPrimary.copy(alpha = 0.03f),
-                    startAngle = 148f - drift * 30f,
-                    sweepAngle = 28f,
-                    useCenter = false,
-                    topLeft = Offset(center.x - baseRadius * 1.56f, center.y - baseRadius * 1.56f),
-                    size = androidx.compose.ui.geometry.Size(baseRadius * 3.12f, baseRadius * 3.12f),
-                    style = Stroke(width = 1.5f)
-                )
-
-                val insetX = size.width * 0.08f
-                val insetY = size.height * 0.14f
-                drawLine(
-                    color = AmoledTextPrimary.copy(alpha = 0.06f),
-                    start = Offset(insetX, insetY),
-                    end = Offset(size.width - insetX, insetY),
-                    strokeWidth = 1f
-                )
-                drawLine(
-                    color = AmoledTextPrimary.copy(alpha = 0.06f),
-                    start = Offset(insetX, size.height - insetY),
-                    end = Offset(size.width - insetX, size.height - insetY),
-                    strokeWidth = 1f
-                )
-            }
-
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(PimsDimensions.paddingLarge),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .scale(scaleAnim.value)
+                    .alpha(alphaAnim.value)
             ) {
-                Surface(
-                    modifier = Modifier
-                        .scale(pulse)
-                        .alpha(0.98f),
-                    color = AmoledSurface,
-                    shape = CircleShape,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp
-                ) {
-                    Box(
-                        modifier = Modifier.padding(18.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "P",
-                            color = AmoledPrimary.copy(alpha = 0.96f),
-                            fontSize = 54.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-3).sp,
-                            textAlign = TextAlign.Center
-                        )
+                // Minimalist Persona Emblem: Apex Dot + Crest Lines
+                Canvas(modifier = Modifier.size(60.dp)) {
+                    val w = size.width
+                    val h = size.height
+
+                    // Apex dot (Accent Terracotta)
+                    drawCircle(
+                        color = accentColor,
+                        radius = 4.dp.toPx(),
+                        center = Offset(w / 2f, h * 0.22f)
+                    )
+
+                    // Drawn apex lines (/ \)
+                    val apexPath = Path().apply {
+                        moveTo(w * 0.22f, h * 0.78f)
+                        lineTo(w / 2f, h * 0.38f)
+                        lineTo(w * 0.78f, h * 0.78f)
                     }
+
+                    val pathMeasure = PathMeasure()
+                    pathMeasure.setPath(apexPath, false)
+                    val length = pathMeasure.length
+                    val partialPath = Path()
+                    pathMeasure.getSegment(0f, length * drawProgress.value, partialPath, true)
+
+                    drawPath(
+                        path = partialPath,
+                        color = primaryColor,
+                        style = Stroke(
+                            width = 2.5.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(22.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "PIMS VAULT",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = AmoledTextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 3.sp,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Encrypted. Local. Private.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = AmoledTextSecondary,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Text(
-                    text = "NO CLOUD SYNC - NO PREVIEWS - NO TRACES",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AmoledTextSecondary.copy(alpha = 0.72f),
-                    textAlign = TextAlign.Center
+                    text = "Persona",
+                    color = textColor,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.8.sp,
+                    modifier = Modifier.alpha(textAlphaAnim.value)
                 )
             }
         }

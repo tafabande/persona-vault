@@ -104,34 +104,25 @@ fun VaultDashboardView(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Header with Security Badge and Session Timeout Status
+            // Header with Session Timeout Status
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Shield,
-                            contentDescription = null,
-                            tint = if (uiState.isVaultUnlocked) PimsTextPrimary else PimsWarning,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "SECURITY VAULT",
-                            color = PimsTextPrimary,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.2.sp
-                        )
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (uiState.isVaultUnlocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = if (uiState.isVaultUnlocked) PimsTextPrimary else PimsWarning,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "ZONE 4 — HARDENED CREDENTIALS & TOTP",
-                        color = PimsTextSecondary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
+                        text = "Vault",
+                        color = PimsTextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
@@ -248,7 +239,17 @@ fun VaultDashboardView(
                     }
                 )
             } else {
-                // Unlocked State — Category Filters & Search
+                // Search field prioritized at the top
+                PimsOutlinedTextField(
+                    value = uiState.searchQuery,
+                    onValueChange = { viewModel.setSearchQuery(it) },
+                    placeholder = "Search passwords, accounts, cards...",
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Compact optional filter pills
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -256,46 +257,36 @@ fun VaultDashboardView(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     CategoryChip(
-                        label = "ALL",
+                        label = "All",
                         isSelected = uiState.activeCategoryFilter == null,
                         onClick = { viewModel.setCategoryFilter(null) }
                     )
                     CategoryChip(
-                        label = "PASSWORDS",
+                        label = "Passwords",
                         isSelected = uiState.activeCategoryFilter == VaultCategory.PASSWORD,
                         onClick = { viewModel.setCategoryFilter(VaultCategory.PASSWORD) }
                     )
                     CategoryChip(
-                        label = "TOTP 2FA",
+                        label = "Payments & Banks",
+                        isSelected = uiState.activeCategoryFilter == VaultCategory.PAYMENT_REFERENCE,
+                        onClick = { viewModel.setCategoryFilter(VaultCategory.PAYMENT_REFERENCE) }
+                    )
+                    CategoryChip(
+                        label = "2FA TOTP",
                         isSelected = uiState.activeCategoryFilter == VaultCategory.TOTP_2FA,
                         onClick = { viewModel.setCategoryFilter(VaultCategory.TOTP_2FA) }
                     )
                     CategoryChip(
-                        label = "RECOVERY",
-                        isSelected = uiState.activeCategoryFilter == VaultCategory.RECOVERY_CODE,
-                        onClick = { viewModel.setCategoryFilter(VaultCategory.RECOVERY_CODE) }
-                    )
-                    CategoryChip(
-                        label = "NOTES",
+                        label = "Secure Notes",
                         isSelected = uiState.activeCategoryFilter == VaultCategory.SECURE_NOTE,
                         onClick = { viewModel.setCategoryFilter(VaultCategory.SECURE_NOTE) }
                     )
                     CategoryChip(
-                        label = "PAYMENTS",
-                        isSelected = uiState.activeCategoryFilter == VaultCategory.PAYMENT_REFERENCE,
-                        onClick = { viewModel.setCategoryFilter(VaultCategory.PAYMENT_REFERENCE) }
+                        label = "Recovery Codes",
+                        isSelected = uiState.activeCategoryFilter == VaultCategory.RECOVERY_CODE,
+                        onClick = { viewModel.setCategoryFilter(VaultCategory.RECOVERY_CODE) }
                     )
                 }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Search field
-                PimsOutlinedTextField(
-                    value = uiState.searchQuery,
-                    onValueChange = { viewModel.setSearchQuery(it) },
-                    placeholder = "Search vault items...",
-                    modifier = Modifier.fillMaxWidth()
-                )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -320,11 +311,11 @@ fun VaultDashboardView(
                                 imageVector = Icons.Default.Key,
                                 contentDescription = null,
                                 tint = PimsBorder,
-                                modifier = Modifier.size(48.dp)
+                                modifier = Modifier.size(40.dp)
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "No vault items stored yet",
+                                text = "No items yet",
                                 color = PimsTextSecondary,
                                 fontSize = 14.sp
                             )
@@ -386,7 +377,7 @@ fun VaultDashboardView(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "NEW VAULT ITEM",
+                        text = "Add to Vault",
                         color = PimsTextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -396,7 +387,7 @@ fun VaultDashboardView(
                     CreateCategoryItem(
                         icon = Icons.Default.Key,
                         title = "Password",
-                        subtitle = "Account credentials and website logins",
+                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.PASSWORD)
@@ -404,8 +395,8 @@ fun VaultDashboardView(
                     )
                     CreateCategoryItem(
                         icon = Icons.Default.Timer,
-                        title = "TOTP Authenticator",
-                        subtitle = "RFC 6238 two-factor authentication seed",
+                        title = "2FA Authenticator",
+                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.TOTP_2FA)
@@ -413,8 +404,8 @@ fun VaultDashboardView(
                     )
                     CreateCategoryItem(
                         icon = Icons.Default.Shield,
-                        title = "Recovery Code Set",
-                        subtitle = "Single-use emergency backup tokens",
+                        title = "Recovery Codes",
+                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.RECOVERY_CODE)
@@ -423,7 +414,7 @@ fun VaultDashboardView(
                     CreateCategoryItem(
                         icon = Icons.Default.Note,
                         title = "Secure Note",
-                        subtitle = "Confidential notes with Zone 4 isolation",
+                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.SECURE_NOTE)
@@ -431,8 +422,8 @@ fun VaultDashboardView(
                     )
                     CreateCategoryItem(
                         icon = Icons.Default.CreditCard,
-                        title = "Payment Card Reference",
-                        subtitle = "Tokenized reference (Last-4 only, no CVV)",
+                        title = "Payment Card",
+                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE)
@@ -632,22 +623,21 @@ private fun VaultLockedStateView(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "VAULT LOCKED",
+                text = "Vault locked",
                 color = PimsTextPrimary,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
+                fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Zone 4 items are cryptographically sealed. Fresh biometric re-authentication is required to access passwords, 2FA seeds, and recovery codes.",
+                text = "Authenticate to access your passwords, cards and credentials.",
                 color = PimsTextSecondary,
                 fontSize = 12.sp,
                 lineHeight = 18.sp
             )
             Spacer(modifier = Modifier.height(20.dp))
             PimsButton(
-                text = "UNLOCK WITH BIOMETRICS",
+                text = "Unlock",
                 onClick = onUnlockClick,
                 modifier = Modifier.fillMaxWidth()
             )

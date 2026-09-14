@@ -140,6 +140,8 @@ class FullLifecycleE2ETests {
         override fun getPersonRelationshipGraphFlow(personId: String) = flowOf(null)
         suspend fun getAllRelationshipsForPerson(personId: String): List<RelationshipEntity> =
             inMemoryRelations.values.filter { it.sourcePersonId == personId }
+        override suspend fun getRelationshipBetween(p1: String, p2: String): RelationshipEntity? =
+            inMemoryRelations.values.find { (it.sourcePersonId == p1 && it.targetPersonId == p2) || (it.sourcePersonId == p2 && it.targetPersonId == p1) }
         override suspend fun insertOrUpdate(relationship: RelationshipEntity): Long {
             inMemoryRelations[relationship.id] = relationship
             return 1L

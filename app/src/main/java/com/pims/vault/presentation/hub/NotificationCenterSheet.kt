@@ -1,6 +1,7 @@
 package com.pims.vault.presentation.hub
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,26 +11,30 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cake
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,18 +43,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.state.AlertLevel
-import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.util.rememberPimsHaptics
+import com.pims.vault.presentation.ui.util.rememberPimsSoundManager
+
+enum class NotificationCategory {
+    CONNECTION_REQUEST,
+    PROFILE_UPDATE,
+    SHARING_ACTIVITY
+}
 
 data class PersonaNotificationItem(
     val id: String,
     val title: String,
     val description: String,
     val timestampText: String,
-    val level: AlertLevel,
-    val icon: ImageVector,
-    val isNeedsAttention: Boolean = false
+    val category: NotificationCategory = NotificationCategory.PROFILE_UPDATE,
+    val senderName: String? = null,
+    val targetPersonId: String? = null,
+    val isNeedsAttention: Boolean = false,
+    val isToday: Boolean = true,
+    val isRead: Boolean = false,
+    val level: AlertLevel = AlertLevel.INFO,
+    val icon: ImageVector = Icons.Default.Notifications
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,10 +76,16 @@ fun NotificationCenterSheet(
     sheetState: SheetState,
     onDismissRequest: () -> Unit,
     onNotificationClick: (PersonaNotificationItem) -> Unit = {},
+    onAcceptRequest: (PersonaNotificationItem) -> Unit = {},
+    onDeclineRequest: (PersonaNotificationItem) -> Unit = {},
+    onMarkAllRead: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val needsAttentionList = notifications.filter { it.isNeedsAttention }
-    val normalList = notifications.filter { !it.isNeedsAttention }
+    val haptics = rememberPimsHaptics()
+    val sound = rememberPimsSoundManager()
+
+    val todayItems = notifications.filter { it.isToday }
+    val earlierItems = notifications.filter { !it.isToday }
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -90,66 +113,79 @@ fun NotificationCenterSheet(
                         modifier = Modifier
                             .size(36.dp)
                             .background(
-                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                                shape = RoundedCornerShape(8.dp)
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(10.dp)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Notifications,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
 
                     Column {
                         Text(
-                            text = "Notifications & Activity",
+                            text = "Activity",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Security, sync & important life reminders",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Connections & Sharing",
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                IconButton(onClick = onDismissRequest) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                if (notifications.any { !it.isRead }) {
+                    TextButton(
+                        onClick = {
+                            haptics.selection()
+                            sound.success()
+                            onMarkAllRead()
+                        }
+                    ) {
+                        Text(
+                            text = "Mark read",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(12.dp))
 
             if (notifications.isEmpty()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                // Calm, quiet empty state (zero spam, zero fake filler)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CheckCircle,
+                            imageVector = Icons.Default.People,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(32.dp)
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(38.dp)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "All clear",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            text = "All caught up",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "No pending alerts or unread notifications.",
+                            text = "No connection requests or sharing activity.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -157,48 +193,47 @@ fun NotificationCenterSheet(
                 }
             } else {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // NEEDS ATTENTION (if any exist)
-                    if (needsAttentionList.isNotEmpty()) {
+                    if (todayItems.isNotEmpty()) {
                         item {
                             Text(
-                                text = "NEEDS ATTENTION",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.8.sp
-                                ),
-                                color = StateWarning
-                            )
-                        }
-
-                        items(needsAttentionList, key = { it.id }) { item ->
-                            NotificationRow(item = item, onClick = { onNotificationClick(item) })
-                        }
-
-                        item {
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                text = "Today",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 4.dp)
                             )
                         }
+
+                        items(todayItems) { item ->
+                            NotificationCardItem(
+                                item = item,
+                                onClick = { onNotificationClick(item) },
+                                onAccept = { onAcceptRequest(item) },
+                                onDecline = { onDeclineRequest(item) }
+                            )
+                        }
                     }
 
-                    // NORMAL RECENT ACTIVITY
-                    item {
-                        Text(
-                            text = "RECENT ACTIVITY",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp
-                            ),
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
+                    if (earlierItems.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Earlier",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                            )
+                        }
 
-                    items(normalList, key = { it.id }) { item ->
-                        NotificationRow(item = item, onClick = { onNotificationClick(item) })
+                        items(earlierItems) { item ->
+                            NotificationCardItem(
+                                item = item,
+                                onClick = { onNotificationClick(item) },
+                                onAccept = { onAcceptRequest(item) },
+                                onDecline = { onDeclineRequest(item) }
+                            )
+                        }
                     }
                 }
             }
@@ -207,62 +242,128 @@ fun NotificationCenterSheet(
 }
 
 @Composable
-private fun NotificationRow(
+private fun NotificationCardItem(
     item: PersonaNotificationItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
 ) {
+    val haptics = rememberPimsHaptics()
+    val sound = rememberPimsSoundManager()
+
     Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        modifier = Modifier.fillMaxWidth()
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(
+            alpha = if (item.isRead) 0.35f else 0.65f
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(
-                        color = item.level.color.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(8.dp)
-                    ),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                Icon(
-                    imageVector = item.icon,
-                    contentDescription = null,
-                    tint = item.level.color,
-                    modifier = Modifier.size(18.dp)
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(
+                                color = when (item.category) {
+                                    NotificationCategory.CONNECTION_REQUEST -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    NotificationCategory.SHARING_ACTIVITY -> StateSuccess.copy(alpha = 0.15f)
+                                    NotificationCategory.PROFILE_UPDATE -> MaterialTheme.colorScheme.surface
+                                },
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = when (item.category) {
+                                NotificationCategory.CONNECTION_REQUEST -> Icons.Default.People
+                                NotificationCategory.SHARING_ACTIVITY -> Icons.Default.Share
+                                NotificationCategory.PROFILE_UPDATE -> Icons.Default.Person
+                            },
+                            contentDescription = null,
+                            tint = when (item.category) {
+                                NotificationCategory.CONNECTION_REQUEST -> MaterialTheme.colorScheme.primary
+                                NotificationCategory.SHARING_ACTIVITY -> StateSuccess
+                                NotificationCategory.PROFILE_UPDATE -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = if (item.isRead) FontWeight.Medium else FontWeight.SemiBold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = item.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                Text(
+                    text = item.timestampText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(start = 6.dp)
                 )
             }
 
-            Column(modifier = Modifier.weight(1f)) {
+            // Connection Request Direct Action Buttons (Accept / Decline)
+            if (item.category == NotificationCategory.CONNECTION_REQUEST) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = item.timestampText,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    OutlinedButton(
+                        onClick = {
+                            haptics.selection()
+                            sound.delete()
+                            onDecline()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("Decline", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = {
+                            haptics.success()
+                            sound.success()
+                            onAccept()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("Accept", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
-                Text(
-                    text = item.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
             }
         }
     }

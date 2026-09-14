@@ -96,7 +96,7 @@ enum class AlertUrgency {
 fun PersonaEmptyState(
     icon: ImageVector,
     title: String,
-    description: String,
+    description: String? = null,
     actionLabel: String? = null,
     onActionClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -109,13 +109,13 @@ fun PersonaEmptyState(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 28.dp),
+                .padding(horizontal = 24.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(44.dp)
                     .background(
                         color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f),
                         shape = RoundedCornerShape(12.dp)
@@ -126,7 +126,7 @@ fun PersonaEmptyState(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
@@ -137,13 +137,15 @@ fun PersonaEmptyState(
                 textAlign = TextAlign.Center
             )
 
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
+            if (!description.isNullOrBlank()) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
 
             if (actionLabel != null && onActionClick != null) {
                 Spacer(modifier = Modifier.height(4.dp))

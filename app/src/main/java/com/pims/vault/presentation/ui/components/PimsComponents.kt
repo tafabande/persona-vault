@@ -55,6 +55,7 @@ import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.tactilePress
 
 @Composable
 fun PimsSectionHeader(
@@ -76,11 +77,11 @@ fun PimsClassificationBadge(
     modifier: Modifier = Modifier
 ) {
     val (badgeColor, label) = when (classification) {
-        SecurityClassification.ZONE_0_PUBLIC -> MaterialTheme.colorScheme.secondary to "Zone 0: Public"
-        SecurityClassification.ZONE_1_PERSONAL -> MaterialTheme.colorScheme.secondary to "Zone 1: Personal"
-        SecurityClassification.ZONE_2_PRIVATE -> StateWarning to "Zone 2: Private"
-        SecurityClassification.ZONE_3_SENSITIVE -> StateWarning to "Zone 3: Sensitive"
-        SecurityClassification.ZONE_4_CRITICAL -> StateError to "Zone 4: Critical"
+        SecurityClassification.ZONE_0_PUBLIC -> MaterialTheme.colorScheme.secondary to "Public"
+        SecurityClassification.ZONE_1_PERSONAL -> MaterialTheme.colorScheme.secondary to "Personal"
+        SecurityClassification.ZONE_2_PRIVATE -> StateWarning to "Private"
+        SecurityClassification.ZONE_3_SENSITIVE -> StateWarning to "Sensitive"
+        SecurityClassification.ZONE_4_CRITICAL -> StateError to "Critical"
     }
 
     Surface(
@@ -282,12 +283,13 @@ fun PimsOutlinedInput(
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
             singleLine = singleLine,
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(10.dp),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                 cursorColor = MaterialTheme.colorScheme.primary,
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface
@@ -375,45 +377,30 @@ fun PimsOutlinedTextField(
 
 /**
  * Persona Avatar: Central visual anchor.
- * 72–96dp circular avatar with warm tint, initials or icon, generous breathing room.
- * Never trapped inside a card.
+ * Seamlessly renders custom vector avatar with subtle expressions,
+ * deterministic contact avatars, and tactile spring responsiveness.
  */
 @Composable
 fun PersonaAvatar(
-    name: String,
+    name: String = "",
     modifier: Modifier = Modifier,
+    config: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
+    expression: com.pims.vault.presentation.avatar.AvatarExpression? = null,
     size: androidx.compose.ui.unit.Dp = 84.dp,
     avatarTextSize: androidx.compose.ui.unit.TextUnit = 28.sp,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null
 ) {
-    val initials = name.trim().split(" ")
-        .filter { it.isNotBlank() }
-        .take(2)
-        .mapNotNull { it.firstOrNull()?.uppercase() }
-        .joinToString("")
-        .ifEmpty { "P" }
-
-    Box(
-        modifier = modifier
-            .size(size)
-            .background(
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                shape = androidx.compose.foundation.shape.CircleShape
-            )
-            .then(
-                if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = initials,
-            color = MaterialTheme.colorScheme.tertiary,
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontSize = avatarTextSize,
-                fontWeight = FontWeight.Bold
-            )
-        )
-    }
+    com.pims.vault.presentation.avatar.PersonaAvatar(
+        name = name,
+        modifier = modifier,
+        config = config,
+        expression = expression,
+        size = size,
+        avatarTextSize = avatarTextSize,
+        onClick = onClick,
+        onLongClick = onLongClick
+    )
 }
 
 /**
@@ -563,19 +550,19 @@ fun ContactChip(
 ) {
     Surface(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.size(16.dp)
             )
             Text(
                 text = label,

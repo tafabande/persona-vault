@@ -7,7 +7,10 @@ import com.pims.vault.core.crypto.SessionState
 import com.pims.vault.core.model.AddressLabel
 import com.pims.vault.core.model.AllergySeverity
 import com.pims.vault.core.model.ConditionStatus
+import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.core.model.ContactType
+import com.pims.vault.core.model.InformationCategory
+import com.pims.vault.core.model.InformationSensitivity
 import com.pims.vault.core.model.MedicalRecordType
 import com.pims.vault.core.model.RelationshipType
 import com.pims.vault.data.local.dao.AddressDao
@@ -39,8 +42,11 @@ import java.util.UUID
 import javax.inject.Inject
 
 data class CustomField(
+    val id: String = UUID.randomUUID().toString(),
     val label: String,
-    val value: String
+    val value: String,
+    val category: InformationCategory = InformationCategory.PERSONAL,
+    val sensitivity: InformationSensitivity = category.defaultSensitivity
 )
 
 data class KinRelationshipItem(
@@ -54,7 +60,8 @@ data class KinRelationshipItem(
     val dateOfBirth: String = "",
     val anniversary: String = "",
     val notes: String = "",
-    val isNextOfKin: Boolean = false
+    val isNextOfKin: Boolean = false,
+    val isVerified: Boolean = false
 )
 
 data class ProfileUiState(
@@ -67,6 +74,7 @@ data class ProfileUiState(
     val certificates: List<EducationRecordEntity> = emptyList(),
     val medicalRecords: List<MedicalRecordEntity> = emptyList(),
     val relationships: List<KinRelationshipItem> = emptyList(),
+    val socialAccounts: List<com.pims.vault.data.local.entity.SocialAccountEntity> = emptyList(),
     val sexuality: String = "",
     val bloodGroup: String = "",
     val customFields: List<CustomField> = emptyList(),
@@ -86,7 +94,11 @@ sealed interface ProfileEvent {
         val bloodGroup: String
     ) : ProfileEvent
 
-    data class AddCustomField(val label: String, val value: String) : ProfileEvent
+    data class AddCustomField(
+        val label: String,
+        val value: String,
+        val category: InformationCategory = InformationCategory.PERSONAL
+    ) : ProfileEvent
     data class DeleteCustomField(val label: String) : ProfileEvent
 
     data class AddPhone(val phone: String, val label: String, val isPrimary: Boolean) : ProfileEvent
@@ -156,6 +168,27 @@ sealed interface ProfileEvent {
     ) : ProfileEvent
     data class DeleteRelationship(val relationshipId: String, val targetPersonId: String) : ProfileEvent
 
+    data class AddSocialAccount(
+        val platform: String,
+        val username: String?,
+        val url: String,
+        val displayName: String? = null
+    ) : ProfileEvent
+    data class DeleteSocialAccount(val accountId: String) : ProfileEvent
+
+    data class UpdatePersonDetails(
+        val personId: String,
+        val firstName: String,
+        val lastName: String,
+        val relationRole: String,
+        val phone: String,
+        val email: String,
+        val address: String,
+        val dob: String,
+        val anniversary: String,
+        val notes: String
+    ) : ProfileEvent
+
     data object ClearFeedback : ProfileEvent
 }
 
@@ -168,6 +201,7 @@ class ProfileViewModel @Inject constructor(
     private val employmentDao: EmploymentDao,
     private val medicalDao: MedicalDao,
     private val relationshipDao: RelationshipDao,
+    private val socialAccountDao: com.pims.vault.data.local.dao.SocialAccountDao,
     private val sessionManager: BiometricSessionManager
 ) : ViewModel() {
 
@@ -226,6 +260,9 @@ class ProfileViewModel @Inject constructor(
                         )
                     }
 
+                    // Load Social accounts
+                    val socials = socialAccountDao.getSocialAccountsFlow(p.id).firstOrNull() ?: emptyList()
+
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -237,6 +274,7 @@ class ProfileViewModel @Inject constructor(
                             certificates = certs,
                             medicalRecords = fullProfile.medicalRecords,
                             relationships = kinItems,
+                            socialAccounts = socials,
                             sexuality = meta.sexuality,
                             bloodGroup = meta.bloodGroup,
                             customFields = meta.customFields,
@@ -265,20 +303,75 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    private suspend fun getOrCreatePrimaryOwnerId(): String {
+    suspend fun getOrCreatePrimaryOwnerId(): String {
         val existing = personDao.getPrimaryOwner()
         if (existing != null) return existing.id
 
-        val newId = "primary_owner_${UUID.randomUUID().toString().take(8)}"
         val defaultOwner = PersonEntity(
-            id = newId,
+            id = CANONICAL_PRIMARY_OWNER_ID,
             isPrimaryOwner = true,
             firstName = "",
             lastName = "",
             countryOfResidence = java.util.Locale.getDefault().displayCountry.ifBlank { "Country" }
         )
         personDao.insertOrUpdate(defaultOwner)
-        return newId
+        return CANONICAL_PRIMARY_OWNER_ID
+    }
+
+    fun savePrimaryPhone(phone: String, label: String = "Mobile") {
+        viewModelScope.launch {
+            val ownerId = getOrCreatePrimaryOwnerId()
+            val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
+            val existingPhone = existingContacts.firstOrNull { it.contactType == ContactType.PHONE && it.isPrimary }
+                ?: existingContacts.firstOrNull { it.contactType == ContactType.PHONE }
+
+            if (phone.isBlank()) {
+                existingPhone?.let { contactDao.deleteById(it.id) }
+                return@launch
+            }
+
+            if (existingPhone != null) {
+                contactDao.insertOrUpdate(existingPhone.copy(value = phone.trim(), label = label, isPrimary = true))
+            } else {
+                val newContact = ContactMethodEntity(
+                    id = UUID.randomUUID().toString(),
+                    personId = ownerId,
+                    contactType = ContactType.PHONE,
+                    label = label,
+                    value = phone.trim(),
+                    isPrimary = true
+                )
+                contactDao.insertOrUpdate(newContact)
+            }
+        }
+    }
+
+    fun savePrimaryEmail(email: String, label: String = "Personal") {
+        viewModelScope.launch {
+            val ownerId = getOrCreatePrimaryOwnerId()
+            val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
+            val existingEmail = existingContacts.firstOrNull { it.contactType == ContactType.EMAIL && it.isPrimary }
+                ?: existingContacts.firstOrNull { it.contactType == ContactType.EMAIL }
+
+            if (email.isBlank()) {
+                existingEmail?.let { contactDao.deleteById(it.id) }
+                return@launch
+            }
+
+            if (existingEmail != null) {
+                contactDao.insertOrUpdate(existingEmail.copy(value = email.trim(), label = label, isPrimary = true))
+            } else {
+                val newContact = ContactMethodEntity(
+                    id = UUID.randomUUID().toString(),
+                    personId = ownerId,
+                    contactType = ContactType.EMAIL,
+                    label = label,
+                    value = email.trim(),
+                    isPrimary = true
+                )
+                contactDao.insertOrUpdate(newContact)
+            }
+        }
     }
 
     fun onEvent(event: ProfileEvent) {
@@ -313,7 +406,7 @@ class ProfileViewModel @Inject constructor(
                         val ownerId = getOrCreatePrimaryOwnerId()
                         val currentMeta = parseNotesMeta(_uiState.value.person?.notes)
                         val list = currentMeta.customFields.filterNot { it.label.equals(event.label, ignoreCase = true) }.toMutableList()
-                        list.add(CustomField(event.label.trim(), event.value.trim()))
+                        list.add(CustomField(label = event.label.trim(), value = event.value.trim(), category = event.category, sensitivity = event.category.defaultSensitivity))
                         val updatedMeta = currentMeta.copy(customFields = list)
                         val notesJson = serializeNotesMeta(updatedMeta)
 
@@ -336,6 +429,12 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.AddPhone -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
+                        val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
+                        if (event.isPrimary) {
+                            existingContacts.filter { it.contactType == ContactType.PHONE && it.isPrimary }.forEach {
+                                contactDao.insertOrUpdate(it.copy(isPrimary = false))
+                            }
+                        }
                         val contact = ContactMethodEntity(
                             id = UUID.randomUUID().toString(),
                             personId = ownerId,
@@ -350,6 +449,12 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.AddEmail -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
+                        val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
+                        if (event.isPrimary) {
+                            existingContacts.filter { it.contactType == ContactType.EMAIL && it.isPrimary }.forEach {
+                                contactDao.insertOrUpdate(it.copy(isPrimary = false))
+                            }
+                        }
                         val contact = ContactMethodEntity(
                             id = UUID.randomUUID().toString(),
                             personId = ownerId,
@@ -582,6 +687,97 @@ class ProfileViewModel @Inject constructor(
                         _uiState.update { it.copy(userFeedbackMessage = "Relationship removed") }
                     }
 
+                    is ProfileEvent.AddSocialAccount -> {
+                        val owner = personDao.getPrimaryOwner()
+                        if (owner != null) {
+                            val account = com.pims.vault.data.local.entity.SocialAccountEntity(
+                                id = UUID.randomUUID().toString(),
+                                personId = owner.id,
+                                platform = event.platform,
+                                username = event.username,
+                                url = event.url,
+                                displayName = event.displayName
+                            )
+                            socialAccountDao.insertOrUpdate(account)
+                            loadFullProfileAndRelationships()
+                            _uiState.update { it.copy(userFeedbackMessage = "Added ${event.platform} profile") }
+                        }
+                    }
+
+                    is ProfileEvent.DeleteSocialAccount -> {
+                        socialAccountDao.deleteById(event.accountId)
+                        loadFullProfileAndRelationships()
+                        _uiState.update { it.copy(userFeedbackMessage = "Social profile removed") }
+                    }
+
+                    is ProfileEvent.UpdatePersonDetails -> {
+                        val existing = personDao.getPersonById(event.personId)
+                        if (existing != null) {
+                            val updated = existing.copy(
+                                firstName = event.firstName.trim(),
+                                lastName = event.lastName.trim(),
+                                dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
+                                countryOfResidence = event.address.trim().takeIf { it.isNotBlank() },
+                                occupation = event.anniversary.trim().takeIf { it.isNotBlank() },
+                                notes = event.notes.trim().takeIf { it.isNotBlank() },
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            personDao.insertOrUpdate(updated)
+
+                            val currentContacts = contactDao.getContactsForPersonFlow(event.personId).firstOrNull() ?: emptyList()
+                            if (event.phone.isNotBlank()) {
+                                val phoneContact = currentContacts.firstOrNull { it.contactType == ContactType.PHONE }
+                                if (phoneContact != null) {
+                                    contactDao.insertOrUpdate(phoneContact.copy(value = event.phone.trim()))
+                                } else {
+                                    contactDao.insertOrUpdate(
+                                        ContactMethodEntity(
+                                            id = UUID.randomUUID().toString(),
+                                            personId = event.personId,
+                                            contactType = ContactType.PHONE,
+                                            label = "Phone",
+                                            value = event.phone.trim(),
+                                            isPrimary = true
+                                        )
+                                    )
+                                }
+                            }
+                            if (event.email.isNotBlank()) {
+                                val emailContact = currentContacts.firstOrNull { it.contactType == ContactType.EMAIL }
+                                if (emailContact != null) {
+                                    contactDao.insertOrUpdate(emailContact.copy(value = event.email.trim()))
+                                } else {
+                                    contactDao.insertOrUpdate(
+                                        ContactMethodEntity(
+                                            id = UUID.randomUUID().toString(),
+                                            personId = event.personId,
+                                            contactType = ContactType.EMAIL,
+                                            label = "Email",
+                                            value = event.email.trim(),
+                                            isPrimary = true
+                                        )
+                                    )
+                                }
+                            }
+
+                            val owner = personDao.getPrimaryOwner()
+                            if (owner != null) {
+                                val rel = relationshipDao.getRelationshipBetween(owner.id, event.personId)
+                                if (rel != null) {
+                                    relationshipDao.insertOrUpdate(
+                                        rel.copy(
+                                            customLabel = event.relationRole.trim(),
+                                            notes = event.notes.trim().takeIf { it.isNotBlank() },
+                                            updatedAt = System.currentTimeMillis()
+                                        )
+                                    )
+                                }
+                            }
+                            loadFullProfileAndRelationships()
+                            _uiState.update { it.copy(userFeedbackMessage = "Updated ${event.firstName}'s details") }
+                        }
+                    }
+
                     ProfileEvent.ClearFeedback -> {
                         _uiState.update { it.copy(userFeedbackMessage = null, errorMessage = null) }
                     }
@@ -609,9 +805,12 @@ class ProfileViewModel @Inject constructor(
             if (arr != null) {
                 for (i in 0 until arr.length()) {
                     val item = arr.getJSONObject(i)
+                    val id = item.optString("id", UUID.randomUUID().toString())
                     val l = item.optString("label", "")
                     val v = item.optString("value", "")
-                    if (l.isNotBlank()) fields.add(CustomField(l, v))
+                    val cat = InformationCategory.fromName(item.optString("category", "PERSONAL"))
+                    val sens = InformationSensitivity.fromName(item.optString("sensitivity", cat.defaultSensitivity.name))
+                    if (l.isNotBlank()) fields.add(CustomField(id, l, v, cat, sens))
                 }
             }
             NotesMeta(sexuality, bloodGroup, fields)
@@ -627,8 +826,11 @@ class ProfileViewModel @Inject constructor(
         val arr = JSONArray()
         for (f in meta.customFields) {
             val item = JSONObject()
+            item.put("id", f.id)
             item.put("label", f.label)
             item.put("value", f.value)
+            item.put("category", f.category.name)
+            item.put("sensitivity", f.sensitivity.name)
             arr.put(item)
         }
         obj.put("customFields", arr)

@@ -1,6 +1,6 @@
-# Built files & outputs
+# Built files & compiler outputs
 *.iml
-.gradle
+.gradle/
 build/
 */build/
 /build
@@ -11,13 +11,24 @@ captures/
 *.apk
 *.aab
 
-# Local configuration & Keystores (Sensitive)
+# Local configuration & Secrets (NEVER COMMIT TO GIT)
 local.properties
 /local.properties
+secrets.properties
+/secrets.properties
+secrets.env
 *.jks
 *.keystore
+*.pem
+*.key
+*.p12
+*.p8
+google-services.json
+
+# Encrypted database backups & offline vault archives
 *.pimsbak
 *.penc
+*.bin
 
 # IDE & Editor artifacts
 .idea/
@@ -29,3 +40,14 @@ local.properties
 .DS_Store
 Thumbs.db
 ehthumbs.db
+
+# Development screenshots, captures & temporary test artifacts
+/*.png
+*.png
+.tempmediaStorage/
+.firebase/
+
+# JVM crash logs & replay files
+hs_err_pid*.log
+replay_pid*.log
+

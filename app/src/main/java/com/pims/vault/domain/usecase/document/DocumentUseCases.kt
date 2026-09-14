@@ -27,8 +27,13 @@ import javax.inject.Inject
 class GetDocumentsUseCase @Inject constructor(
     private val documentDao: DocumentDao
 ) {
-    operator fun invoke(personId: String): Flow<List<DocumentWithHistory>> {
-        return documentDao.getDocumentsForPersonFlow(personId).map { docWithVersionsList ->
+    operator fun invoke(personId: String? = null): Flow<List<DocumentWithHistory>> {
+        val baseFlow = if (personId.isNullOrBlank()) {
+            documentDao.getAllDocumentsFlow()
+        } else {
+            documentDao.getDocumentsForPersonFlow(personId)
+        }
+        return baseFlow.map { docWithVersionsList ->
             docWithVersionsList.map { item ->
                 val category = DocumentRules.resolveCategory(item.document.documentType)
                 val domainDoc = DocumentItem(
@@ -294,3 +299,27 @@ class DeleteDocumentUseCase @Inject constructor(
         )
     }
 }
+
+class DecryptDocumentUseCase @Inject constructor(
+    private val fileStorage: FileStorageService,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(
+        version: DocumentVersionItem,
+        outputStream: OutputStream
+    ) {
+        fileStorage.readDecryptedFile(
+            relativePath = version.storagePath,
+            encryptionIvHex = version.encryptionIvHex,
+            expectedSha256Hex = version.sha256Hex,
+            outputStream = outputStream
+        )
+        auditLogger.recordEvent(
+            eventType = AuditEventType.READ,
+            entityType = "DocumentVersion",
+            entityId = version.id,
+            description = "Decrypted document version ${version.versionNumber} (doc: ${version.documentId})"
+        )
+    }
+}
+

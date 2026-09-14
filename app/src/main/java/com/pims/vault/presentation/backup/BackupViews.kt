@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.sp
 import com.pims.vault.domain.model.BackupProgressState
 
 // AMOLED Strict Design System Colors
-private val AmoledBackground = Color(0xFF000000)
 private val SurfaceBorder = Color(0xFF383430)
 private val TextPrimary = Color(0xFFD0C2B5)
 private val TextSecondary = Color(0xFF8A827A)
@@ -42,7 +41,7 @@ fun BackupDashboardScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(AmoledBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
         // Top Header
@@ -136,7 +135,7 @@ private fun TabButton(
         modifier = modifier.height(40.dp),
         shape = RoundedCornerShape(4.dp),
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = if (isSelected) Color(0xFF181614) else AmoledBackground
+            containerColor = if (isSelected) Color(0xFF181614) else MaterialTheme.colorScheme.background
         ),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,

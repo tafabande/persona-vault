@@ -23,8 +23,12 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DocumentDao {
     @Transaction
-    @Query("SELECT * FROM documents WHERE person_id = :personId ORDER BY created_at DESC")
+    @Query("SELECT * FROM documents WHERE person_id = :personId OR person_id = 'primary_owner' OR person_id IN (SELECT id FROM persons WHERE is_primary_owner = 1) ORDER BY created_at DESC")
     fun getDocumentsForPersonFlow(personId: String): Flow<List<DocumentWithVersions>>
+
+    @Transaction
+    @Query("SELECT * FROM documents ORDER BY created_at DESC")
+    fun getAllDocumentsFlow(): Flow<List<DocumentWithVersions>>
 
     @Transaction
     @Query("SELECT * FROM documents WHERE person_id = :personId AND document_type = :type ORDER BY created_at DESC")

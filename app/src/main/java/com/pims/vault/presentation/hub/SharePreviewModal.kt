@@ -60,14 +60,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.components.PersonaAvatar
+import com.pims.vault.presentation.ui.components.PersonaShareCard
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.StateWarning
 
 enum class SharePreset {
-    PERSONAL,
+    GENERAL,
+    MEDICAL,
     PROFESSIONAL,
-    EMERGENCY
+    CONTACT
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,7 +83,7 @@ fun SharePreviewModal(
     onCopyShareLink: (String) -> Unit
 ) {
     var selectedPresetIndex by remember { mutableIntStateOf(0) }
-    val presets = listOf("Personal", "Professional", "Emergency ICE")
+    val presets = listOf("General", "Medical ICE", "Professional", "Contact Card")
 
     // State for granular disclosure permissions
     var shareName by remember { mutableStateOf(true) }
@@ -94,11 +96,11 @@ fun SharePreviewModal(
     var sharePortfolio by remember { mutableStateOf(false) }
     var shareEmergencyIce by remember { mutableStateOf(false) }
 
-    // When preset tab changes, configure defaults
+    // When preset tab changes, configure defaults adhering to minimal disclosure principle
     fun updatePreset(index: Int) {
         selectedPresetIndex = index
         when (index) {
-            0 -> { // Personal
+            0 -> { // General Card
                 shareName = true
                 sharePhoto = true
                 shareProfession = true
@@ -109,7 +111,18 @@ fun SharePreviewModal(
                 sharePortfolio = false
                 shareEmergencyIce = false
             }
-            1 -> { // Professional
+            1 -> { // Medical ICE Card
+                shareName = true
+                sharePhoto = true
+                shareProfession = false
+                sharePhone = true
+                shareEmail = false
+                shareAddress = false
+                shareEducation = false
+                sharePortfolio = false
+                shareEmergencyIce = true
+            }
+            2 -> { // Professional Card
                 shareName = true
                 sharePhoto = true
                 shareProfession = true
@@ -120,16 +133,16 @@ fun SharePreviewModal(
                 sharePortfolio = true
                 shareEmergencyIce = false
             }
-            2 -> { // Emergency ICE
+            3 -> { // Contact Card
                 shareName = true
                 sharePhoto = true
                 shareProfession = false
                 sharePhone = true
-                shareEmail = false
-                shareAddress = false
+                shareEmail = true
+                shareAddress = true
                 shareEducation = false
                 sharePortfolio = false
-                shareEmergencyIce = true
+                shareEmergencyIce = false
             }
         }
     }
@@ -202,61 +215,19 @@ fun SharePreviewModal(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // QR Card Preview
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    PersonaAvatar(name = personName, size = 64.dp, avatarTextSize = 22.sp)
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = personName.ifBlank { "My Profile" },
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    if (selectedPresetIndex != 2 && occupation.isNotBlank()) {
-                        Text(
-                            text = occupation,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    if (country.isNotBlank()) {
-                        Text(
-                            text = com.pims.vault.core.util.CountryUtils.formatCountryWithFlag(country),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // QR Matrix Visualizer
-                    CleanQrCodeVisualizer(
-                        seed = "$personName-$selectedPresetIndex",
-                        modifier = Modifier.size(160.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(
-                        text = "Scan to connect • Permission-controlled",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            // Photographic Instant-Film Share Card with quiet-zone QR
+            PersonaShareCard(
+                personName = personName,
+                occupation = when (selectedPresetIndex) {
+                    1 -> "Emergency Responder Info"
+                    3 -> "Direct Contact Card"
+                    else -> occupation.ifBlank { "Personal Profile" }
+                },
+                country = country,
+                presetTitle = presets[selectedPresetIndex],
+                qrSeed = "$personName;${presets[selectedPresetIndex]};name=$shareName;phone=$sharePhone;email=$shareEmail;addr=$shareAddress;med=$shareEmergencyIce;edu=$shareEducation",
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 

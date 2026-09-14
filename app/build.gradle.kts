@@ -1,3 +1,27 @@
+import java.util.Properties
+import java.io.FileInputStream
+
+// Enterprise Secrets Loader: Environment Variables > secrets.properties > local.properties
+val secretsProperties = Properties().apply {
+    val secretsFile = rootProject.file("secrets.properties")
+    if (secretsFile.exists()) {
+        load(FileInputStream(secretsFile))
+    }
+}
+
+val localProperties = Properties().apply {
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        load(FileInputStream(localFile))
+    }
+}
+
+fun resolveSecret(key: String): String? {
+    return System.getenv(key)
+        ?: secretsProperties.getProperty(key)
+        ?: localProperties.getProperty(key)
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -23,6 +47,22 @@ android {
         }
     }
 
+    signingConfigs {
+        val releaseKeystorePath = resolveSecret("RELEASE_KEYSTORE_PATH")
+        val releaseKeystorePassword = resolveSecret("RELEASE_KEYSTORE_PASSWORD")
+        val releaseKeyAlias = resolveSecret("RELEASE_KEY_ALIAS")
+        val releaseKeyPassword = resolveSecret("RELEASE_KEY_PASSWORD")
+
+        if (!releaseKeystorePath.isNullOrBlank() && file(releaseKeystorePath).exists()) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -34,7 +74,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -101,7 +141,8 @@ dependencies {
     // Room & Encrypted Database (SQLCipher)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
+    kspDebug(libs.androidx.room.compiler)
+    kspRelease(libs.androidx.room.compiler)
     implementation(libs.sqlcipher)
     implementation(libs.androidx.sqlite)
 
@@ -111,7 +152,8 @@ dependencies {
 
     // Hilt Dependency Injection
     implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
+    kspDebug(libs.hilt.compiler)
+    kspRelease(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
 
     // Unit & Integration Testing

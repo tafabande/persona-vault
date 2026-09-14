@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -288,7 +289,9 @@ fun DocumentsWalletSheet(
     sheetState: SheetState,
     onDismissRequest: () -> Unit,
     onUploadClick: () -> Unit,
-    onDeleteClick: (DocumentWithHistory) -> Unit
+    onDeleteClick: (DocumentWithHistory) -> Unit,
+    onViewClick: (DocumentWithHistory) -> Unit = {},
+    onExportClick: (DocumentWithHistory) -> Unit = {}
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -332,8 +335,8 @@ fun DocumentsWalletSheet(
             if (documents.isEmpty()) {
                 PersonaEmptyState(
                     icon = Icons.Default.Description,
-                    title = "Your documents will live here.",
-                    description = "Keep certificates, IDs and important files together securely with cryptographic verification.",
+                    title = "Your document shelf is empty",
+                    description = "Important documents will appear here.",
                     actionLabel = "Add document",
                     onActionClick = onUploadClick
                 )
@@ -342,7 +345,8 @@ fun DocumentsWalletSheet(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
+                            .padding(vertical = 4.dp)
+                            .clickable { onViewClick(doc) },
                         shape = RoundedCornerShape(10.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     ) {
@@ -382,20 +386,38 @@ fun DocumentsWalletSheet(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "${doc.document.documentType} • ${doc.document.issuingCountry ?: "ZW"}",
+                                        text = "${doc.document.documentType} • ${doc.currentVersion?.formattedSize ?: ""} • ${doc.document.issuingCountry ?: "ZW"}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
 
-                            IconButton(onClick = { onDeleteClick(doc) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(18.dp)
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onViewClick(doc) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Visibility,
+                                        contentDescription = "View",
+                                        tint = MaterialTheme.colorScheme.tertiary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                IconButton(onClick = { onExportClick(doc) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Export / Share",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                IconButton(onClick = { onDeleteClick(doc) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }
