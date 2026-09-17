@@ -32,7 +32,7 @@ import com.pims.vault.domain.model.SelectiveFieldSelection
 import com.pims.vault.domain.model.ShareDuration
 import com.pims.vault.domain.model.SharePolicy
 import com.pims.vault.domain.rules.RelationshipGraphRules
-import com.pims.vault.domain.usecase.medical.SaveMedicalRecordUseCase
+import com.pims.vault.domain.usecase.medical.AddAllergyUseCase
 import com.pims.vault.domain.usecase.profile.SavePersonProfileUseCase
 import com.pims.vault.domain.usecase.relationship.CreateRelationshipUseCase
 import com.pims.vault.domain.usecase.sharing.CreateSharePackageUseCase
@@ -61,7 +61,7 @@ import java.util.UUID
  */
 class FullLifecycleE2ETests {
 
-    private val masterKey = ByteArray(32) { 0x55 }
+    private val masterKey = ByteArray(32) { 0x42.toByte() }
     private val vaultRootKey = HkdfKeyDerivation.deriveKey(masterKey, infoContext = "PIMS/vault/v1")
     private val sharingKey = ByteArray(32) { 0x66 }
     private val cryptoEngine = StandardCryptoEngine()
@@ -91,6 +91,10 @@ class FullLifecycleE2ETests {
         override fun getAllPersonsFlow(): Flow<List<PersonEntity>> = flowOf(inMemoryPersons.values.toList())
         override fun getPersonWithFullProfileFlow(id: String) = flowOf(null)
         override fun getPrimaryOwnerWithFullProfileFlow() = flowOf(null)
+        override suspend fun insert(person: PersonEntity): Long {
+            inMemoryPersons[person.id] = person
+            return 1L
+        }
         override suspend fun insertOrUpdate(person: PersonEntity): Long {
             inMemoryPersons[person.id] = person
             return 1L
@@ -118,14 +122,18 @@ class FullLifecycleE2ETests {
     }
 
     private val fakeMedicalDao = object : MedicalDao {
+        override fun getMedicalProfileFlow(personId: String) = flowOf(null)
+        override suspend fun getMedicalProfile(personId: String) = null
+        override suspend fun insertOrUpdateProfile(profile: com.pims.vault.data.local.entity.MedicalProfileEntity): Long = 1L
         override fun getMedicalRecordsFlow(personId: String): Flow<List<MedicalRecordEntity>> =
             flowOf(inMemoryMedical.values.filter { it.personId == personId })
         override fun getRecordsByTypeFlow(personId: String, type: MedicalRecordType): Flow<List<MedicalRecordEntity>> =
             flowOf(inMemoryMedical.values.filter { it.personId == personId && it.recordType == type })
         override fun getEmergencyCardRecordsFlow(personId: String): Flow<List<MedicalRecordEntity>> =
-            flowOf(inMemoryMedical.values.filter { it.personId == personId && it.isEmergencyCardEligible })
+            flowOf(inMemoryMedical.values.filter { it.personId == personId && it.isEmergencyCardVisible })
         override suspend fun getEmergencyCardRecords(personId: String): List<MedicalRecordEntity> =
-            inMemoryMedical.values.filter { it.personId == personId && it.isEmergencyCardEligible }
+            inMemoryMedical.values.filter { it.personId == personId && it.isEmergencyCardVisible }
+        override suspend fun getRecordById(id: String): MedicalRecordEntity? = inMemoryMedical[id]
         override suspend fun insertOrUpdate(record: MedicalRecordEntity): Long {
             inMemoryMedical[record.id] = record
             return 1L
@@ -142,9 +150,16 @@ class FullLifecycleE2ETests {
             inMemoryRelations.values.filter { it.sourcePersonId == personId }
         override suspend fun getRelationshipBetween(p1: String, p2: String): RelationshipEntity? =
             inMemoryRelations.values.find { (it.sourcePersonId == p1 && it.targetPersonId == p2) || (it.sourcePersonId == p2 && it.targetPersonId == p1) }
+        override suspend fun insert(relationship: RelationshipEntity): Long {
+            inMemoryRelations[relationship.id] = relationship
+            return 1L
+        }
         override suspend fun insertOrUpdate(relationship: RelationshipEntity): Long {
             inMemoryRelations[relationship.id] = relationship
             return 1L
+        }
+        override suspend fun update(relationship: RelationshipEntity) {
+            inMemoryRelations[relationship.id] = relationship
         }
         override suspend fun deleteById(id: String) { inMemoryRelations.remove(id) }
         override suspend fun deleteBetweenPersons(p1: String, p2: String) {}
@@ -153,7 +168,7 @@ class FullLifecycleE2ETests {
     private lateinit var auditLogger: HardenedAuditLogger
     private lateinit var saveProfileUseCase: SavePersonProfileUseCase
     private lateinit var createRelationshipUseCase: CreateRelationshipUseCase
-    private lateinit var saveMedicalUseCase: SaveMedicalRecordUseCase
+    private lateinit var addAllergyUseCase: AddAllergyUseCase
     private lateinit var savePasswordUseCase: SavePasswordUseCase
     private lateinit var saveTotpUseCase: SaveTotpSecretUseCase
     private lateinit var generateLiveTotpUseCase: GenerateLiveTotpUseCase
@@ -173,7 +188,7 @@ class FullLifecycleE2ETests {
         auditLogger = HardenedAuditLogger(fakeAuditDao, masterKey)
         saveProfileUseCase = SavePersonProfileUseCase(fakePersonDao, auditLogger)
         createRelationshipUseCase = CreateRelationshipUseCase(fakeRelationshipDao, auditLogger)
-        saveMedicalUseCase = SaveMedicalRecordUseCase(fakeMedicalDao, auditLogger)
+        addAllergyUseCase = AddAllergyUseCase(fakeMedicalDao, auditLogger)
         savePasswordUseCase = SavePasswordUseCase(fakeVaultDao, cryptoEngine, auditLogger)
         saveTotpUseCase = SaveTotpSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger)
         generateLiveTotpUseCase = GenerateLiveTotpUseCase(fakeVaultDao, cryptoEngine, auditLogger)
@@ -209,15 +224,13 @@ class FullLifecycleE2ETests {
         assertEquals(2, inMemoryRelations.size) // Forward & inverse
 
         // STEP 3: Create Medical Record & ICE Card (M4)
-        val medId = saveMedicalUseCase(
+        val medId = addAllergyUseCase(
             personId = personId,
-            recordType = MedicalRecordType.ALLERGY,
-            title = "Severe Penicillin Allergy",
-            details = "Anaphylactic shock risk",
-            severity = "CRITICAL",
-            bloodGroup = "O+",
-            isEmergencyCardEligible = true,
-            emergencyDirective = "Administer epinephrine immediately"
+            allergen = "Severe Penicillin Allergy",
+            reaction = "Anaphylactic shock risk",
+            severity = com.pims.vault.core.model.AllergySeverity.CRITICAL,
+            isEmergencyCardVisible = true,
+            notes = "Administer epinephrine immediately"
         )
         val emergencyCard = fakeMedicalDao.getEmergencyCardRecords(personId)
         assertEquals(1, emergencyCard.size)

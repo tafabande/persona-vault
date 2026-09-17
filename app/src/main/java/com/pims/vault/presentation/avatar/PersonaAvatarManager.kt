@@ -76,69 +76,63 @@ class PersonaAvatarManager @Inject constructor(
         }
     }
 
-    private fun loadConfig(): PersonaAvatarConfig {
-        val jsonStr = prefs.getString(KEY_CONFIG, null) ?: return PersonaAvatarConfig.default()
-        return try {
-            val json = JSONObject(jsonStr)
-            val genderStr = json.optString("gender", AvatarGender.UNSPECIFIED.name)
-            val gender = try { AvatarGender.valueOf(genderStr) } catch (_: Exception) { AvatarGender.UNSPECIFIED }
-            val sourceStr = json.optString("avatarSource", AvatarSource.GENERATED.name)
-            val source = try { AvatarSource.valueOf(sourceStr) } catch (_: Exception) { AvatarSource.GENERATED }
-            val customPath = json.optString("customAvatarPath", "").takeIf { it.isNotBlank() }
+    private fun parseConfigFromJson(json: JSONObject): PersonaAvatarConfig {
+        val genderStr = json.optString("gender", AvatarGender.UNSPECIFIED.name)
+        val gender = try { AvatarGender.valueOf(genderStr) } catch (_: Exception) { AvatarGender.UNSPECIFIED }
+        val sourceStr = json.optString("avatarSource", AvatarSource.GENERATED.name)
+        val source = try { AvatarSource.valueOf(sourceStr) } catch (_: Exception) { AvatarSource.GENERATED }
+        val customPath = json.optString("customAvatarPath", "").takeIf { it.isNotBlank() }
 
-            val headShapeStr = json.optString("headShape", if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR.name else HeadShape.SOFT_OVAL.name)
-            val headShape = try { HeadShape.valueOf(headShapeStr) } catch (_: Exception) { if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR else HeadShape.SOFT_OVAL }
-            val eyebrowStr = json.optString("eyebrowType", EyebrowType.NEUTRAL_ARCH.name)
-            val eyebrowType = try { EyebrowType.valueOf(eyebrowStr) } catch (_: Exception) { EyebrowType.NEUTRAL_ARCH }
+        val headShapeStr = json.optString("headShape", if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR.name else HeadShape.SOFT_OVAL.name)
+        val headShape = try { HeadShape.valueOf(headShapeStr) } catch (_: Exception) { if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR else HeadShape.SOFT_OVAL }
+        val eyebrowStr = json.optString("eyebrowType", EyebrowType.NEUTRAL_ARCH.name)
+        val eyebrowType = try { EyebrowType.valueOf(eyebrowStr) } catch (_: Exception) { EyebrowType.NEUTRAL_ARCH }
 
-            PersonaAvatarConfig(
-                id = json.optString("id", "user_primary"),
-                style = AvatarStyle.valueOf(json.optString("style", AvatarStyle.SOFT.name)),
-                seed = json.optString("seed", "persona"),
-                gender = gender,
-                headShape = headShape,
-                avatarSource = source,
-                customAvatarPath = customPath,
-                skinTone = try {
-                    SkinTone.valueOf(json.optString("skinTone", SkinTone.WARM_BEIGE.name))
-                } catch (_: Exception) {
-                    SkinTone.WARM_BEIGE
-                },
-                hairStyle = try {
-                    HairStyle.valueOf(json.optString("hairStyle", HairStyle.DEFAULT.name))
-                } catch (_: Exception) {
-                    HairStyle.DEFAULT
-                },
-                hairColor = try {
-                    HairColor.valueOf(json.optString("hairColor", HairColor.ESPRESSO_BLACK.name))
-                } catch (_: Exception) {
-                    HairColor.ESPRESSO_BLACK
-                },
-                eyeType = EyeType.valueOf(json.optString("eyeType", EyeType.GENTLE_DOT.name)),
-                eyebrowType = eyebrowType,
-                mouthType = MouthType.valueOf(json.optString("mouthType", MouthType.WARM_SMILE.name)),
-                facialFeature = FacialFeature.valueOf(json.optString("facialFeature", FacialFeature.CUTE_BLUSH.name)),
-                accessory = Accessory.valueOf(json.optString("accessory", Accessory.NONE.name)),
-                clothingStyle = try {
-                    ClothingStyle.valueOf(json.optString("clothingStyle", ClothingStyle.MINIMAL_CREW.name))
-                } catch (_: Exception) {
-                    ClothingStyle.MINIMAL_CREW
-                },
-                clothingColor = try {
-                    ClothingColor.valueOf(json.optString("clothingColor", ClothingColor.TERRACOTTA.name))
-                } catch (_: Exception) {
-                    ClothingColor.TERRACOTTA
-                },
-                backgroundShape = BackgroundShape.valueOf(json.optString("backgroundShape", BackgroundShape.ORGANIC_BLOB.name)),
-                expression = AvatarExpression.NORMAL
-            )
-        } catch (_: Exception) {
-            PersonaAvatarConfig.default()
-        }
+        return PersonaAvatarConfig(
+            id = json.optString("id", "user_primary"),
+            style = AvatarStyle.valueOf(json.optString("style", AvatarStyle.SOFT.name)),
+            seed = json.optString("seed", "persona"),
+            gender = gender,
+            headShape = headShape,
+            avatarSource = source,
+            customAvatarPath = customPath,
+            skinTone = try {
+                SkinTone.valueOf(json.optString("skinTone", SkinTone.WARM_BEIGE.name))
+            } catch (_: Exception) {
+                SkinTone.WARM_BEIGE
+            },
+            hairStyle = try {
+                HairStyle.valueOf(json.optString("hairStyle", HairStyle.FADE.name))
+            } catch (_: Exception) {
+                HairStyle.FADE
+            },
+            hairColor = try {
+                HairColor.valueOf(json.optString("hairColor", HairColor.ESPRESSO_BLACK.name))
+            } catch (_: Exception) {
+                HairColor.ESPRESSO_BLACK
+            },
+            eyeType = EyeType.valueOf(json.optString("eyeType", EyeType.GENTLE_DOT.name)),
+            eyebrowType = eyebrowType,
+            mouthType = MouthType.valueOf(json.optString("mouthType", MouthType.WARM_SMILE.name)),
+            facialFeature = FacialFeature.valueOf(json.optString("facialFeature", FacialFeature.CUTE_BLUSH.name)),
+            accessory = Accessory.valueOf(json.optString("accessory", Accessory.NONE.name)),
+            clothingStyle = try {
+                ClothingStyle.valueOf(json.optString("clothingStyle", ClothingStyle.MINIMAL_CREW.name))
+            } catch (_: Exception) {
+                ClothingStyle.MINIMAL_CREW
+            },
+            clothingColor = try {
+                ClothingColor.valueOf(json.optString("clothingColor", ClothingColor.TERRACOTTA.name))
+            } catch (_: Exception) {
+                ClothingColor.TERRACOTTA
+            },
+            backgroundShape = BackgroundShape.valueOf(json.optString("backgroundShape", BackgroundShape.ORGANIC_BLOB.name)),
+            expression = AvatarExpression.NORMAL
+        )
     }
 
-    fun saveConfig(config: PersonaAvatarConfig) {
-        val json = JSONObject().apply {
+    private fun configToJson(config: PersonaAvatarConfig): JSONObject {
+        return JSONObject().apply {
             put("id", config.id)
             put("style", config.style.name)
             put("seed", config.seed)
@@ -158,10 +152,40 @@ class PersonaAvatarManager @Inject constructor(
             put("clothingColor", config.clothingColor.name)
             put("backgroundShape", config.backgroundShape.name)
         }
+    }
+
+    private fun loadConfig(): PersonaAvatarConfig {
+        val jsonStr = prefs.getString(KEY_CONFIG, null) ?: return PersonaAvatarConfig.default()
+        return try {
+            parseConfigFromJson(JSONObject(jsonStr))
+        } catch (_: Exception) {
+            PersonaAvatarConfig.default()
+        }
+    }
+
+    fun saveConfig(config: PersonaAvatarConfig) {
+        val json = configToJson(config)
         prefs.edit().putString(KEY_CONFIG, json.toString()).apply()
         _avatarConfig.value = config.copy(expression = AvatarExpression.NORMAL)
         _avatarSource.value = config.avatarSource
         _customAvatarPath.value = config.customAvatarPath
+    }
+
+    fun getAvatarConfigForRelationship(personId: String, name: String, role: String): PersonaAvatarConfig {
+        val customKey = "rel_avatar_$personId"
+        val jsonStr = prefs.getString(customKey, null)
+        if (!jsonStr.isNullOrBlank()) {
+            try {
+                return parseConfigFromJson(JSONObject(jsonStr))
+            } catch (_: Exception) {}
+        }
+        return PersonaAvatarConfig.fromRelationship(name, role)
+    }
+
+    fun saveAvatarConfigForRelationship(personId: String, config: PersonaAvatarConfig) {
+        val customKey = "rel_avatar_$personId"
+        val json = configToJson(config)
+        prefs.edit().putString(customKey, json.toString()).apply()
     }
 
     /**
@@ -235,6 +259,33 @@ class PersonaAvatarManager @Inject constructor(
     fun getDeterministicAvatarForPerson(personId: String, name: String): PersonaAvatarConfig {
         val seed = if (personId.isNotBlank()) personId else name
         return PersonaAvatarConfig.fromSeed(seed, style = AvatarStyle.SOFT)
+    }
+
+    fun getPersonPhotoPath(personId: String): String? {
+        val path = prefs.getString("person_photo_$personId", null) ?: return null
+        return if (File(path).exists()) path else null
+    }
+
+    fun setPersonPhotoPath(personId: String, path: String?) {
+        if (path == null) {
+            prefs.edit().remove("person_photo_$personId").apply()
+        } else {
+            prefs.edit().putString("person_photo_$personId", path).apply()
+        }
+    }
+
+    fun saveRelationshipPhotoFromBitmap(personId: String, bitmap: Bitmap): String? {
+        return try {
+            val avatarsDir = File(context.filesDir, "contact_photos").apply { mkdirs() }
+            val destFile = File(avatarsDir, "contact_${personId}_${System.currentTimeMillis()}.jpg")
+            FileOutputStream(destFile).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+            }
+            setPersonPhotoPath(personId, destFile.absolutePath)
+            destFile.absolutePath
+        } catch (_: Exception) {
+            null
+        }
     }
 
     companion object {

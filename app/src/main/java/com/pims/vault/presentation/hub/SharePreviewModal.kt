@@ -56,9 +56,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.ui.components.MinimalQrCodeCanvas
+import com.pims.vault.presentation.ui.components.PersonaShareCard
 import com.pims.vault.presentation.ui.components.PersonaAvatar
 import com.pims.vault.presentation.ui.components.PersonaShareCard
 import com.pims.vault.presentation.ui.theme.StateError
@@ -442,55 +443,25 @@ fun CleanQrCodeVisualizer(
     seed: String,
     modifier: Modifier = Modifier
 ) {
-    val darkColor = MaterialTheme.colorScheme.primary
-    val lightColor = MaterialTheme.colorScheme.surface
+    val darkColor = Color(0xFF0F172A)
+    val centerColor = MaterialTheme.colorScheme.primary
 
-    Box(
-        modifier = modifier
-            .background(color = lightColor, shape = RoundedCornerShape(12.dp))
-            .padding(10.dp),
-        contentAlignment = Alignment.Center
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = Color.White,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f))
     ) {
-        Canvas(modifier = Modifier.size(140.dp)) {
-            val cols = 17
-            val cellSize = size.width / cols
-            val hash = seed.hashCode()
-
-            for (r in 0 until cols) {
-                for (c in 0 until cols) {
-                    val isCorner = (r < 4 && c < 4) || (r < 4 && c >= cols - 4) || (r >= cols - 4 && c < 4)
-                    val isCenter = (r in 7..9 && c in 7..9)
-                    val filled = if (isCorner) {
-                        (r == 0 || r == 3 || c == 0 || c == 3) || (r in 1..2 && c in 1..2)
-                    } else if (isCenter) {
-                        false
-                    } else {
-                        ((hash + (r * 31 + c * 17)) % 3 == 0)
-                    }
-
-                    if (filled) {
-                        drawRect(
-                            color = darkColor,
-                            topLeft = Offset(c * cellSize, r * cellSize),
-                            size = Size(cellSize * 0.9f, cellSize * 0.9f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Quiet center person mark
         Box(
-            modifier = Modifier
-                .size(24.dp)
-                .background(color = MaterialTheme.colorScheme.tertiary, shape = CircleShape),
+            modifier = Modifier.padding(14.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "P",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+            MinimalQrCodeCanvas(
+                seed = seed,
+                modifier = Modifier.size(160.dp),
+                darkColor = darkColor,
+                accentColor = centerColor
             )
         }
     }

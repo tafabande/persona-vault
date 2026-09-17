@@ -67,27 +67,12 @@ enum class SkinTone(
 }
 
 /**
- * Realistic Hairstyle Presets (Sections 2-6)
+ * Two signature hairstyle presets: the male cut (short hair with fade)
+ * and the female cut (long hair). Generators pick between them by gender.
  */
 enum class HairStyle(val label: String) {
-    DEFAULT("Default / Native"),
-    TEXTURED_FADE("Textured Fade"),
-    SHORT_CROP("Crop"),
-    BOB("Bob"),
-    CURLY_AFRO("Afro"),
-    WAVY_LONG("Long Wavy"),
-    TOP_BUN("Top Bun"),
-    SIDE_PART("Side Part"),
-    BUZZ("Buzz"),
-    BRAIDS("Classic Braids"),
-    BOX_BRAIDS("Box Braids"),
-    CORNROWS("Cornrows"),
-    LOCS("Locs"),
-    PONYTAIL("Ponytail"),
-    LONG_STRAIGHT("Long Straight"),
-    LOW_FADE("Low Fade"),
-    HIGH_FADE("High Fade"),
-    SHORT_CURS("Short Curls")
+    FADE("Short Fade"),
+    LONG("Long Hair")
 }
 
 enum class HairColor(val label: String, val color: Color) {
@@ -238,7 +223,7 @@ data class PersonaAvatarConfig(
     val avatarSource: AvatarSource = AvatarSource.GENERATED,
     val customAvatarPath: String? = null,
     val skinTone: SkinTone = SkinTone.WARM_BEIGE,
-    val hairStyle: HairStyle = HairStyle.DEFAULT,
+    val hairStyle: HairStyle = HairStyle.FADE,
     val hairColor: HairColor = HairColor.ESPRESSO_BLACK,
     val eyeType: EyeType = EyeType.GENTLE_DOT,
     val eyebrowType: EyebrowType = EyebrowType.NEUTRAL_ARCH,
@@ -248,7 +233,9 @@ data class PersonaAvatarConfig(
     val clothingStyle: ClothingStyle = ClothingStyle.MINIMAL_CREW,
     val clothingColor: ClothingColor = ClothingColor.TERRACOTTA,
     val backgroundShape: BackgroundShape = BackgroundShape.ORGANIC_BLOB,
-    val expression: AvatarExpression = AvatarExpression.NORMAL
+    val expression: AvatarExpression = AvatarExpression.NORMAL,
+    val riveAssetPath: String? = null,
+    val useRiveAnimation: Boolean = false
 ) {
     companion object {
         fun default(): PersonaAvatarConfig = PersonaAvatarConfig()
@@ -259,28 +246,16 @@ data class PersonaAvatarConfig(
         ): PersonaAvatarConfig {
             val randomSeed = UUID.randomUUID().toString().take(8)
             val skin = SkinTone.values().random()
-            val availableHairs = when (gender) {
-                AvatarGender.FEMALE -> listOf(
-                    HairStyle.DEFAULT,
-                    HairStyle.BRAIDS, HairStyle.BOX_BRAIDS, HairStyle.CORNROWS,
-                    HairStyle.LOCS, HairStyle.PONYTAIL, HairStyle.WAVY_LONG,
-                    HairStyle.LONG_STRAIGHT, HairStyle.BOB, HairStyle.CURLY_AFRO,
-                    HairStyle.SHORT_CROP, HairStyle.TOP_BUN
-                )
-                AvatarGender.MALE -> listOf(
-                    HairStyle.TEXTURED_FADE, HairStyle.DEFAULT,
-                    HairStyle.SHORT_CROP, HairStyle.LOW_FADE, HairStyle.HIGH_FADE,
-                    HairStyle.SHORT_CURS, HairStyle.CURLY_AFRO, HairStyle.LOCS,
-                    HairStyle.BRAIDS, HairStyle.BUZZ, HairStyle.SIDE_PART
-                )
-                else -> HairStyle.values().toList()
-            }
             val headShape = when (gender) {
                 AvatarGender.MALE -> listOf(HeadShape.CHISELED_ANGULAR, HeadShape.SQUARE_BROAD).random()
                 AvatarGender.FEMALE -> listOf(HeadShape.SOFT_OVAL, HeadShape.ROUND_YOUTHFUL).random()
                 else -> HeadShape.values().random()
             }
-            val hair = availableHairs.random()
+            val hair = when (gender) {
+                AvatarGender.MALE -> HairStyle.FADE
+                AvatarGender.FEMALE -> HairStyle.LONG
+                else -> HairStyle.values().random()
+            }
             val hairColor = HairColor.values().random()
             val eye = EyeType.values().random()
             val brow = EyebrowType.values().random()
@@ -319,26 +294,15 @@ data class PersonaAvatarConfig(
         ): PersonaAvatarConfig {
             val hash = seedText.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
             val skins = SkinTone.values()
-            val availableHairs = when (gender) {
-                AvatarGender.FEMALE -> listOf(
-                    HairStyle.DEFAULT,
-                    HairStyle.BRAIDS, HairStyle.BOX_BRAIDS, HairStyle.CORNROWS,
-                    HairStyle.LOCS, HairStyle.PONYTAIL, HairStyle.WAVY_LONG,
-                    HairStyle.LONG_STRAIGHT, HairStyle.BOB, HairStyle.CURLY_AFRO,
-                    HairStyle.SHORT_CROP, HairStyle.TOP_BUN
-                )
-                AvatarGender.MALE -> listOf(
-                    HairStyle.TEXTURED_FADE, HairStyle.DEFAULT,
-                    HairStyle.SHORT_CROP, HairStyle.LOW_FADE, HairStyle.HIGH_FADE,
-                    HairStyle.SHORT_CURS, HairStyle.CURLY_AFRO, HairStyle.LOCS,
-                    HairStyle.BRAIDS, HairStyle.BUZZ, HairStyle.SIDE_PART
-                )
-                else -> HairStyle.values().toList()
-            }
             val headShapes = when (gender) {
                 AvatarGender.MALE -> listOf(HeadShape.CHISELED_ANGULAR, HeadShape.SQUARE_BROAD)
                 AvatarGender.FEMALE -> listOf(HeadShape.SOFT_OVAL, HeadShape.ROUND_YOUTHFUL)
                 else -> HeadShape.values().toList()
+            }
+            val hair = when (gender) {
+                AvatarGender.MALE -> HairStyle.FADE
+                AvatarGender.FEMALE -> HairStyle.LONG
+                else -> HairStyle.values()[(hash / 2) % HairStyle.values().size]
             }
             val hairColors = HairColor.values()
             val eyes = EyeType.values()
@@ -357,7 +321,7 @@ data class PersonaAvatarConfig(
                 headShape = headShapes[hash % headShapes.size],
                 avatarSource = AvatarSource.GENERATED,
                 skinTone = skins[hash % skins.size],
-                hairStyle = availableHairs[(hash / 2) % availableHairs.size],
+                hairStyle = hair,
                 hairColor = hairColors[(hash / 3) % hairColors.size],
                 eyeType = eyes[(hash / 5) % eyes.size],
                 eyebrowType = brows[(hash / 6) % brows.size],
@@ -390,7 +354,6 @@ data class PersonaAvatarConfig(
 
             return when {
                 normalizedRole in listOf("MOTHER", "MOM", "MAMA", "GRANDMOTHER", "GRANDMA", "NANA") -> {
-                    val matureHairs = listOf(HairStyle.BOB, HairStyle.TOP_BUN, HairStyle.SHORT_CROP, HairStyle.WAVY_LONG)
                     val matureColors = listOf(HairColor.SILVER_SLATE, HairColor.DARK_BROWN, HairColor.RICH_CHESTNUT)
                     PersonaAvatarConfig(
                         style = style,
@@ -400,7 +363,7 @@ data class PersonaAvatarConfig(
                         bodyShape = BodyShape.AVERAGE,
                         avatarSource = AvatarSource.GENERATED,
                         skinTone = skin,
-                        hairStyle = matureHairs[hash % matureHairs.size],
+                        hairStyle = HairStyle.LONG,
                         hairColor = matureColors[hash % matureColors.size],
                         eyeType = EyeType.GENTLE_DOT,
                         eyebrowType = EyebrowType.NEUTRAL_ARCH,
@@ -414,7 +377,6 @@ data class PersonaAvatarConfig(
                     )
                 }
                 normalizedRole in listOf("FATHER", "DAD", "PAPA", "GRANDFATHER", "GRANDPA") -> {
-                    val matureHairs = listOf(HairStyle.SHORT_CROP, HairStyle.LOW_FADE, HairStyle.BUZZ, HairStyle.SIDE_PART)
                     val matureColors = listOf(HairColor.SILVER_SLATE, HairColor.DARK_BROWN, HairColor.ESPRESSO_BLACK)
                     PersonaAvatarConfig(
                         style = style,
@@ -424,7 +386,7 @@ data class PersonaAvatarConfig(
                         bodyShape = BodyShape.BROAD,
                         avatarSource = AvatarSource.GENERATED,
                         skinTone = skin,
-                        hairStyle = matureHairs[hash % matureHairs.size],
+                        hairStyle = HairStyle.FADE,
                         hairColor = matureColors[hash % matureColors.size],
                         eyeType = EyeType.GENTLE_DOT,
                         eyebrowType = EyebrowType.NEUTRAL_ARCH,
@@ -437,10 +399,52 @@ data class PersonaAvatarConfig(
                         expression = AvatarExpression.NORMAL
                     )
                 }
-                normalizedRole in listOf("SISTER", "AUNT", "DAUGHTER", "WIFE", "GIRLFRIEND") -> {
+                normalizedRole in listOf("SPOUSE", "WIFE", "GIRLFRIEND", "PARTNER", "FIANCEE") -> {
+                    PersonaAvatarConfig(
+                        style = style,
+                        seed = name.take(8),
+                        gender = AvatarGender.FEMALE,
+                        headShape = HeadShape.SOFT_OVAL,
+                        bodyShape = BodyShape.AVERAGE,
+                        avatarSource = AvatarSource.GENERATED,
+                        skinTone = skin,
+                        hairStyle = HairStyle.LONG,
+                        hairColor = HairColor.DARK_BROWN,
+                        eyeType = EyeType.ALMOND,
+                        eyebrowType = EyebrowType.NEUTRAL_ARCH,
+                        mouthType = MouthType.WARM_SMILE,
+                        facialFeature = FacialFeature.CUTE_BLUSH,
+                        clothingStyle = ClothingStyle.COZY_KNIT,
+                        clothingColor = ClothingColor.SAGE,
+                        backgroundShape = BackgroundShape.SOFT_SQUIRCLE,
+                        expression = AvatarExpression.NORMAL
+                    )
+                }
+                normalizedRole in listOf("SISTER", "AUNT", "DAUGHTER") -> {
                     fromSeed(name, style = style, gender = AvatarGender.FEMALE)
                 }
-                normalizedRole in listOf("BROTHER", "UNCLE", "SON", "HUSBAND", "BOYFRIEND") -> {
+                normalizedRole in listOf("HUSBAND", "BOYFRIEND", "FIANCE") -> {
+                    PersonaAvatarConfig(
+                        style = style,
+                        seed = name.take(8),
+                        gender = AvatarGender.MALE,
+                        headShape = HeadShape.CHISELED_ANGULAR,
+                        bodyShape = BodyShape.AVERAGE,
+                        avatarSource = AvatarSource.GENERATED,
+                        skinTone = skin,
+                        hairStyle = HairStyle.FADE,
+                        hairColor = HairColor.ESPRESSO_BLACK,
+                        eyeType = EyeType.GENTLE_DOT,
+                        eyebrowType = EyebrowType.NEUTRAL_ARCH,
+                        mouthType = MouthType.WARM_SMILE,
+                        facialFeature = if (hash % 2 == 0) FacialFeature.SOFT_STUBBLE else FacialFeature.NONE,
+                        clothingStyle = ClothingStyle.COLLARED_SHIRT,
+                        clothingColor = ClothingColor.SLATE_NAVY,
+                        backgroundShape = BackgroundShape.CIRCLE,
+                        expression = AvatarExpression.NORMAL
+                    )
+                }
+                normalizedRole in listOf("BROTHER", "UNCLE", "SON") -> {
                     fromSeed(name, style = style, gender = AvatarGender.MALE)
                 }
                 normalizedRole in listOf("CHILD", "BABY", "KID") -> {
@@ -452,7 +456,7 @@ data class PersonaAvatarConfig(
                         bodyShape = BodyShape.SLENDER,
                         avatarSource = AvatarSource.GENERATED,
                         skinTone = skin,
-                        hairStyle = listOf(HairStyle.SHORT_CURS, HairStyle.PONYTAIL, HairStyle.CURLY_AFRO)[hash % 3],
+                        hairStyle = if (hash % 2 == 0) HairStyle.FADE else HairStyle.LONG,
                         hairColor = HairColor.values()[hash % HairColor.values().size],
                         eyeType = EyeType.KAWAII_SPARKLE,
                         eyebrowType = EyebrowType.PLAYFUL_CURVED,
@@ -463,6 +467,77 @@ data class PersonaAvatarConfig(
                         backgroundShape = BackgroundShape.ORGANIC_BLOB,
                         expression = AvatarExpression.NORMAL
                     )
+                }
+                normalizedRole in listOf("DOCTOR", "PHYSICIAN", "SURGEON", "DENTIST", "NURSE", "THERAPIST", "PSYCHIATRIST", "PSYCHOLOGIST", "SPECIALIST", "PEDIATRICIAN") -> {
+                    val isFemale = hash % 2 == 0
+                    PersonaAvatarConfig(
+                        style = AvatarStyle.SOFT,
+                        seed = name.take(8),
+                        gender = if (isFemale) AvatarGender.FEMALE else AvatarGender.MALE,
+                        headShape = HeadShape.SOFT_OVAL,
+                        bodyShape = BodyShape.AVERAGE,
+                        avatarSource = AvatarSource.GENERATED,
+                        skinTone = skin,
+                        hairStyle = if (isFemale) HairStyle.LONG else HairStyle.FADE,
+                        hairColor = HairColor.DARK_BROWN,
+                        eyeType = EyeType.GENTLE_DOT,
+                        eyebrowType = EyebrowType.NEUTRAL_ARCH,
+                        mouthType = MouthType.GENTLE_NEUTRAL,
+                        facialFeature = FacialFeature.NONE,
+                        accessory = if (hash % 2 == 0) Accessory.ROUND_WIRE else Accessory.NONE,
+                        clothingStyle = ClothingStyle.COLLARED_SHIRT,
+                        clothingColor = ClothingColor.SLATE_NAVY,
+                        backgroundShape = BackgroundShape.CIRCLE,
+                        expression = AvatarExpression.NORMAL
+                    )
+                }
+                normalizedRole in listOf("COLLEAGUE", "COWORKER", "MANAGER", "BOSS", "DIRECTOR", "MENTOR", "SUPERVISOR", "LAWYER", "ATTORNEY", "ACCOUNTANT", "ADVISOR", "BUSINESS_PARTNER") -> {
+                    val isFemale = hash % 2 == 0
+                    PersonaAvatarConfig(
+                        style = style,
+                        seed = name.take(8),
+                        gender = if (isFemale) AvatarGender.FEMALE else AvatarGender.MALE,
+                        headShape = HeadShape.CHISELED_ANGULAR,
+                        bodyShape = BodyShape.AVERAGE,
+                        avatarSource = AvatarSource.GENERATED,
+                        skinTone = skin,
+                        hairStyle = if (isFemale) HairStyle.LONG else HairStyle.FADE,
+                        hairColor = HairColor.ESPRESSO_BLACK,
+                        eyeType = EyeType.GENTLE_DOT,
+                        eyebrowType = EyebrowType.NEUTRAL_ARCH,
+                        mouthType = MouthType.WARM_SMILE,
+                        facialFeature = FacialFeature.NONE,
+                        accessory = if (hash % 3 == 0) Accessory.CLASSIC_SQUARE else Accessory.NONE,
+                        clothingStyle = ClothingStyle.COLLARED_SHIRT,
+                        clothingColor = ClothingColor.WARM_CHARCOAL,
+                        backgroundShape = BackgroundShape.SOFT_SQUIRCLE,
+                        expression = AvatarExpression.NORMAL
+                    )
+                }
+                normalizedRole in listOf("FRIEND", "BEST FRIEND", "BEST_FRIEND", "ROOMMATE", "PAL", "BUDDY", "NEIGHBOR") -> {
+                    PersonaAvatarConfig(
+                        style = style,
+                        seed = name.take(8),
+                        gender = AvatarGender.UNSPECIFIED,
+                        headShape = HeadShape.SOFT_OVAL,
+                        bodyShape = BodyShape.AVERAGE,
+                        avatarSource = AvatarSource.GENERATED,
+                        skinTone = skin,
+                        hairStyle = if (hash % 2 == 0) HairStyle.FADE else HairStyle.LONG,
+                        hairColor = HairColor.values()[hash % HairColor.values().size],
+                        eyeType = EyeType.KAWAII_SPARKLE,
+                        eyebrowType = EyebrowType.PLAYFUL_CURVED,
+                        mouthType = MouthType.WARM_SMILE,
+                        facialFeature = if (hash % 2 == 0) FacialFeature.CUTE_BLUSH else FacialFeature.NONE,
+                        accessory = Accessory.NONE,
+                        clothingStyle = ClothingStyle.HOODIE,
+                        clothingColor = ClothingColor.SAGE,
+                        backgroundShape = BackgroundShape.ORGANIC_BLOB,
+                        expression = AvatarExpression.NORMAL
+                    )
+                }
+                normalizedRole in listOf("EMERGENCY_CONTACT", "GUARDIAN", "NEXT_OF_KIN") -> {
+                    fromSeed(name, style = AvatarStyle.SOFT, gender = AvatarGender.UNSPECIFIED)
                 }
                 else -> {
                     fromSeed(name, style = style, gender = AvatarGender.UNSPECIFIED)

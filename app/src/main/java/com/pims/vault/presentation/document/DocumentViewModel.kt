@@ -106,9 +106,8 @@ class DocumentViewModel @Inject constructor(
 
     private fun observeSessionAndDocuments() {
         viewModelScope.launch {
-            personDao.getPrimaryOwnerFlow().collectLatest { owner ->
-                val canonicalOwner = owner ?: personDao.getPrimaryOwner()
-                val canonicalOwnerId = canonicalOwner?.id ?: CANONICAL_PRIMARY_OWNER_ID
+            personDao.getPersonByIdFlow(CANONICAL_PRIMARY_OWNER_ID).collectLatest { owner ->
+                val canonicalOwnerId = CANONICAL_PRIMARY_OWNER_ID
                 activeOwnerId = canonicalOwnerId
                 android.util.Log.d("DocumentViewModel", "Observing documents for canonical ownerId='$canonicalOwnerId'")
                 getDocumentsUseCase(canonicalOwnerId).collectLatest { docList ->
@@ -130,8 +129,8 @@ class DocumentViewModel @Inject constructor(
                 when (event) {
                     is DocumentEvent.IngestDocument -> {
                         _uiState.update { it.copy(isIngestingDocument = true, errorMessage = null) }
-                        val owner = personDao.getPrimaryOwner()
-                        val canonicalOwnerId = owner?.id ?: activeOwnerId ?: CANONICAL_PRIMARY_OWNER_ID
+                        val canonicalOwnerId = CANONICAL_PRIMARY_OWNER_ID
+                        val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
                         if (owner == null) {
                             personDao.insertOrUpdate(
                                 PersonEntity(

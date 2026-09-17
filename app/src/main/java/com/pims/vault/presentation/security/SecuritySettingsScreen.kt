@@ -1,5 +1,6 @@
 package com.pims.vault.presentation.security
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -110,6 +111,20 @@ fun SecuritySettingsScreen(
         } else {
             // First time PIN setup
             action()
+        }
+    }
+
+    BackHandler(enabled = true) {
+        when {
+            showPinChallengeDialog -> {
+                showPinChallengeDialog = false
+                pendingGatedAction = null
+            }
+            showPinSetupDialog -> showPinSetupDialog = false
+            showChangePinDialog -> showChangePinDialog = false
+            showDisablePinDialog -> showDisablePinDialog = false
+            showTimeoutDialog -> showTimeoutDialog = false
+            else -> onBack()
         }
     }
 

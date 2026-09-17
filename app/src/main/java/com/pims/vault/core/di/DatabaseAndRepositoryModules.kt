@@ -63,6 +63,7 @@ object DatabaseModule {
     @Provides fun provideContactDao(db: PimsDatabase): ContactDao = db.contactDao()
     @Provides fun provideAddressDao(db: PimsDatabase): AddressDao = db.addressDao()
     @Provides fun provideRelationshipDao(db: PimsDatabase): RelationshipDao = db.relationshipDao()
+    @Provides fun provideRelationshipNoteDao(db: PimsDatabase): com.pims.vault.data.local.dao.RelationshipNoteDao = db.relationshipNoteDao()
     @Provides fun provideDocumentDao(db: PimsDatabase): DocumentDao = db.documentDao()
     @Provides fun provideMedicalDao(db: PimsDatabase): MedicalDao = db.medicalDao()
     @Provides fun provideEducationDao(db: PimsDatabase): EducationDao = db.educationDao()
@@ -99,6 +100,12 @@ object RepositoryModule {
         relationshipDao: RelationshipDao,
         auditLogger: HardenedAuditLogger
     ): RelationshipRepository = RelationshipRepositoryImpl(relationshipDao, auditLogger)
+
+    @Provides
+    @Singleton
+    fun provideRelationshipNotesRepository(
+        impl: com.pims.vault.data.repository.RelationshipNotesRepositoryImpl
+    ): com.pims.vault.domain.repository.RelationshipNotesRepository = impl
 
     @Provides
     @Singleton

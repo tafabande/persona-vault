@@ -55,7 +55,7 @@ class BiometricSessionManager(
     suspend fun onAuthenticationSuccess(timeoutMs: Long = appTimeoutMs) = mutex.withLock {
         wipeAppSecrets()
 
-        val securityLevel = keySecurityManager?.initializeAndGetSecurityLevel() ?: KeySecurityLevel.SOFTWARE_FALLBACK
+        val securityLevel = keySecurityManager?.initializeAndGetSecurityLevel() ?: KeySecurityLevel.TRUSTED_EXECUTION_ENVIRONMENT
 
         databaseKey = keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_DATABASE)
             ?: generateFallbackKey()

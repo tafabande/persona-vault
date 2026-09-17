@@ -238,7 +238,7 @@ class ProfileViewModel @Inject constructor(
 
     private fun loadFullProfileAndRelationships() {
         viewModelScope.launch {
-            personDao.getPrimaryOwnerWithFullProfileFlow().collectLatest { fullProfile ->
+            personDao.getPersonWithFullProfileFlow(CANONICAL_PRIMARY_OWNER_ID).collectLatest { fullProfile ->
                 if (fullProfile != null) {
                     val p = fullProfile.person
                     val meta = parseNotesMeta(p.notes)
@@ -314,8 +314,8 @@ class ProfileViewModel @Inject constructor(
     }
 
     suspend fun getOrCreatePrimaryOwnerId(): String {
-        val existing = personDao.getPrimaryOwner()
-        if (existing != null) return existing.id
+        val canonical = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
+        if (canonical != null) return CANONICAL_PRIMARY_OWNER_ID
 
         val defaultOwner = PersonEntity(
             id = CANONICAL_PRIMARY_OWNER_ID,
@@ -390,7 +390,7 @@ class ProfileViewModel @Inject constructor(
                 when (event) {
                     is ProfileEvent.SaveIdentityDetails -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
-                        val existing = personDao.getPrimaryOwner()
+                        val existing = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
                         val nameParts = event.fullName.trim().split(" ", limit = 2)
                         val first = nameParts.getOrElse(0) { event.fullName }
                         val last = nameParts.getOrElse(1) { "" }
@@ -402,7 +402,7 @@ class ProfileViewModel @Inject constructor(
                         val notesJson = serializeNotesMeta(updatedMeta)
 
                         val updatedPerson = (existing ?: PersonEntity(
-                            id = ownerId,
+                            id = CANONICAL_PRIMARY_OWNER_ID,
                             isPrimaryOwner = true,
                             firstName = first,
                             lastName = last
@@ -461,26 +461,23 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.SavePersonalDetails -> {
-                        val ownerId = getOrCreatePrimaryOwnerId()
-                        val currentMeta = parseNotesMeta(_uiState.value.person?.notes)
-                        val updatedMeta = currentMeta.copy(
-                            sexuality = event.sexuality,
-                            bloodGroup = event.bloodGroup
-                        )
-                        val notesJson = serializeNotesMeta(updatedMeta)
-
-                        val updatedPerson = PersonEntity(
-                            id = ownerId,
+                        val existing = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
+                        val updatedPerson = (existing ?: PersonEntity(
+                            id = CANONICAL_PRIMARY_OWNER_ID,
                             isPrimaryOwner = true,
-                            firstName = event.firstName,
-                            lastName = event.lastName,
-                            dateOfBirth = event.dob.takeIf { it.isNotBlank() },
-                            gender = event.gender.takeIf { it.isNotBlank() },
-                            nationality = event.nationality.takeIf { it.isNotBlank() },
-                            countryOfResidence = event.country.takeIf { it.isNotBlank() },
-                            notes = notesJson
+                            firstName = "",
+                            lastName = ""
+                        )).copy(
+                            firstName = event.firstName.trim(),
+                            lastName = event.lastName.trim(),
+                            dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
+                            gender = event.gender.trim().takeIf { it.isNotBlank() },
+                            nationality = event.nationality.trim().takeIf { it.isNotBlank() },
+                            countryOfResidence = event.country.trim().takeIf { it.isNotBlank() },
+                            updatedAt = System.currentTimeMillis()
                         )
                         personDao.insertOrUpdate(updatedPerson)
+                        loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Profile updated successfully") }
                     }
 
@@ -492,7 +489,7 @@ class ProfileViewModel @Inject constructor(
                         val updatedMeta = currentMeta.copy(customFields = list)
                         val notesJson = serializeNotesMeta(updatedMeta)
 
-                        val currentPerson = personDao.getPrimaryOwner() ?: PersonEntity(id = ownerId, isPrimaryOwner = true, firstName = "", lastName = "")
+                        val currentPerson = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID) ?: PersonEntity(id = ownerId, isPrimaryOwner = true, firstName = "", lastName = "")
                         personDao.insertOrUpdate(currentPerson.copy(notes = notesJson))
                         _uiState.update { it.copy(customFields = list, userFeedbackMessage = "Added ${event.label}") }
                     }
@@ -504,7 +501,7 @@ class ProfileViewModel @Inject constructor(
                         val updatedMeta = currentMeta.copy(customFields = list)
                         val notesJson = serializeNotesMeta(updatedMeta)
 
-                        val currentPerson = personDao.getPrimaryOwner() ?: PersonEntity(id = ownerId, isPrimaryOwner = true, firstName = "", lastName = "")
+                        val currentPerson = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID) ?: PersonEntity(id = ownerId, isPrimaryOwner = true, firstName = "", lastName = "")
                         personDao.insertOrUpdate(currentPerson.copy(notes = notesJson))
                         _uiState.update { it.copy(customFields = list, userFeedbackMessage = "Field removed") }
                     }
@@ -765,12 +762,11 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteRelationship -> {
                         relationshipDao.deleteById(event.relationshipId)
-                        personDao.deleteById(event.targetPersonId)
                         _uiState.update { it.copy(userFeedbackMessage = "Relationship removed") }
                     }
 
                     is ProfileEvent.AddSocialAccount -> {
-                        val owner = personDao.getPrimaryOwner()
+                        val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
                         if (owner != null) {
                             val account = com.pims.vault.data.local.entity.SocialAccountEntity(
                                 id = UUID.randomUUID().toString(),
@@ -842,7 +838,7 @@ class ProfileViewModel @Inject constructor(
                                 }
                             }
 
-                            val owner = personDao.getPrimaryOwner()
+                            val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
                             if (owner != null) {
                                 val rel = relationshipDao.getRelationshipBetween(owner.id, event.personId)
                                 if (rel != null) {
@@ -874,7 +870,8 @@ class ProfileViewModel @Inject constructor(
         val sexuality: String = "",
         val bloodGroup: String = "",
         val customFields: List<CustomField> = emptyList(),
-        val idPhotoPath: String? = null
+        val idPhotoPath: String? = null,
+        val userNotes: String? = null
     )
 
     private fun parseNotesMeta(raw: String?): NotesMeta {
@@ -884,6 +881,7 @@ class ProfileViewModel @Inject constructor(
             val sexuality = obj.optString("sexuality", "")
             val bloodGroup = obj.optString("bloodGroup", "")
             val idPhotoPath = obj.optString("idPhotoPath", "").takeIf { it.isNotBlank() }
+            val userNotes = obj.optString("userNotes", "").takeIf { it.isNotBlank() }
             val fields = mutableListOf<CustomField>()
             val arr = obj.optJSONArray("customFields")
             if (arr != null) {
@@ -897,9 +895,9 @@ class ProfileViewModel @Inject constructor(
                     if (l.isNotBlank()) fields.add(CustomField(id, l, v, cat, sens))
                 }
             }
-            NotesMeta(sexuality, bloodGroup, fields, idPhotoPath)
+            NotesMeta(sexuality, bloodGroup, fields, idPhotoPath, userNotes)
         } catch (e: Exception) {
-            NotesMeta()
+            NotesMeta(userNotes = raw)
         }
     }
 
@@ -909,6 +907,9 @@ class ProfileViewModel @Inject constructor(
         obj.put("bloodGroup", meta.bloodGroup)
         if (!meta.idPhotoPath.isNullOrBlank()) {
             obj.put("idPhotoPath", meta.idPhotoPath)
+        }
+        if (!meta.userNotes.isNullOrBlank()) {
+            obj.put("userNotes", meta.userNotes)
         }
         val arr = JSONArray()
         for (f in meta.customFields) {

@@ -1,7 +1,7 @@
 package com.pims.vault.presentation.hub
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -97,7 +98,7 @@ fun NotificationCenterSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
+                .padding(top = 16.dp, bottom = 32.dp)
         ) {
             // Header
             Row(
@@ -258,7 +259,7 @@ private fun NotificationCardItem(
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .tactilePress(onClick = onClick)
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -328,26 +329,33 @@ private fun NotificationCardItem(
                 )
             }
 
-            // Connection Request Direct Action Buttons (Accept / Decline)
+            // Connection Request Direct Action Buttons (Approve / Decline)
             if (item.category == NotificationCategory.CONNECTION_REQUEST) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(
+                    FilledTonalButton(
                         onClick = {
                             haptics.selection()
                             sound.delete()
                             onDecline()
                         },
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(34.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        modifier = Modifier.height(36.dp)
                     ) {
-                        Text("Decline", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            text = "Decline",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
 
                     Button(
                         onClick = {
@@ -355,13 +363,20 @@ private fun NotificationCardItem(
                             sound.success()
                             onAccept()
                         },
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.height(34.dp)
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
+                        modifier = Modifier.height(36.dp)
                     ) {
-                        Text("Accept", style = MaterialTheme.typography.labelMedium)
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Approve",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                        )
                     }
                 }
             }

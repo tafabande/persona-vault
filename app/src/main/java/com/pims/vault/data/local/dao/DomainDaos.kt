@@ -14,6 +14,7 @@ import com.pims.vault.data.local.entity.DocumentEntity
 import com.pims.vault.data.local.entity.DocumentVersionEntity
 import com.pims.vault.data.local.entity.EducationRecordEntity
 import com.pims.vault.data.local.entity.EmploymentRecordEntity
+import com.pims.vault.data.local.entity.MedicalProfileEntity
 import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.data.local.entity.SocialAccountEntity
 import com.pims.vault.data.local.entity.VaultItemEntity
@@ -42,8 +43,19 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE id = :documentId")
     suspend fun getDocumentWithVersions(documentId: String): DocumentWithVersions?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertDocument(document: DocumentEntity)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertDoc(document: DocumentEntity): Long
+
+    @androidx.room.Update
+    suspend fun updateDoc(document: DocumentEntity)
+
+    @Transaction
+    suspend fun insertDocument(document: DocumentEntity) {
+        val rowId = insertDoc(document)
+        if (rowId == -1L) {
+            updateDoc(document)
+        }
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVersion(version: DocumentVersionEntity)
@@ -66,6 +78,15 @@ interface DocumentDao {
 
 @Dao
 interface MedicalDao {
+    @Query("SELECT * FROM medical_profiles WHERE person_id = :personId LIMIT 1")
+    fun getMedicalProfileFlow(personId: String): Flow<MedicalProfileEntity?>
+
+    @Query("SELECT * FROM medical_profiles WHERE person_id = :personId LIMIT 1")
+    suspend fun getMedicalProfile(personId: String): MedicalProfileEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateProfile(profile: MedicalProfileEntity): Long
+
     @Query("SELECT * FROM medical_records WHERE person_id = :personId ORDER BY created_at DESC")
     fun getMedicalRecordsFlow(personId: String): Flow<List<MedicalRecordEntity>>
 
@@ -77,6 +98,9 @@ interface MedicalDao {
 
     @Query("SELECT * FROM medical_records WHERE person_id = :personId AND is_emergency_card_visible = 1")
     suspend fun getEmergencyCardRecords(personId: String): List<MedicalRecordEntity>
+
+    @Query("SELECT * FROM medical_records WHERE id = :id LIMIT 1")
+    suspend fun getRecordById(id: String): MedicalRecordEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(record: MedicalRecordEntity): Long

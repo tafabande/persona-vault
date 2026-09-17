@@ -119,6 +119,57 @@ data class DocumentVersionEntity(
 )
 
 @Entity(
+    tableName = "medical_profiles",
+    foreignKeys = [
+        ForeignKey(
+            entity = PersonEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["person_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["person_id"])]
+)
+data class MedicalProfileEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "person_id")
+    val personId: String,
+
+    @ColumnInfo(name = "blood_type")
+    val bloodType: String? = null,
+
+    @ColumnInfo(name = "height_cm")
+    val heightCm: String? = null,
+
+    @ColumnInfo(name = "weight_kg")
+    val weightKg: String? = null,
+
+    @ColumnInfo(name = "emergency_contact_name")
+    val emergencyContactName: String? = null,
+
+    @ColumnInfo(name = "emergency_contact_phone")
+    val emergencyContactPhone: String? = null,
+
+    @ColumnInfo(name = "emergency_contact_relationship")
+    val emergencyContactRelationship: String? = null,
+
+    @ColumnInfo(name = "medical_aid_provider")
+    val medicalAidProvider: String? = null,
+
+    @ColumnInfo(name = "medical_aid_number")
+    val medicalAidNumber: String? = null,
+
+    @ColumnInfo(name = "membership_number")
+    val membershipNumber: String? = null,
+
+    @ColumnInfo(name = "policy_number")
+    val policyNumber: String? = null,
+
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
     tableName = "medical_records",
     foreignKeys = [
         ForeignKey(
@@ -162,6 +213,15 @@ data class MedicalRecordEntity(
     @ColumnInfo(name = "frequency")
     val frequency: String? = null,
 
+    @ColumnInfo(name = "route")
+    val route: String? = null,
+
+    @ColumnInfo(name = "start_date")
+    val startDate: String? = null,
+
+    @ColumnInfo(name = "end_date")
+    val endDate: String? = null,
+
     @ColumnInfo(name = "practitioner_name")
     val practitionerName: String? = null,
 
@@ -170,6 +230,45 @@ data class MedicalRecordEntity(
 
     @ColumnInfo(name = "contact_phone")
     val contactPhone: String? = null,
+
+    @ColumnInfo(name = "contact_email")
+    val contactEmail: String? = null,
+
+    @ColumnInfo(name = "address")
+    val address: String? = null,
+
+    @ColumnInfo(name = "specialty")
+    val specialty: String? = null,
+
+    @ColumnInfo(name = "patient_number")
+    val patientNumber: String? = null,
+
+    @ColumnInfo(name = "policy_number")
+    val policyNumber: String? = null,
+
+    @ColumnInfo(name = "membership_number")
+    val membershipNumber: String? = null,
+
+    @ColumnInfo(name = "plan_name")
+    val planName: String? = null,
+
+    @ColumnInfo(name = "valid_until")
+    val validUntil: String? = null,
+
+    @ColumnInfo(name = "visit_date")
+    val visitDate: String? = null,
+
+    @ColumnInfo(name = "treatment")
+    val treatment: String? = null,
+
+    @ColumnInfo(name = "follow_up_date")
+    val followUpDate: String? = null,
+
+    @ColumnInfo(name = "instructions")
+    val instructions: String? = null,
+
+    @ColumnInfo(name = "photo_uri")
+    val photoUri: String? = null,
 
     @ColumnInfo(name = "is_emergency_card_visible")
     val isEmergencyCardVisible: Boolean = false,

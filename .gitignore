@@ -35,6 +35,9 @@ google-services.json
 /.idea
 .vscode/
 .kotlin/
+*.swp
+*~
+.navigation/
 
 # OS generated files
 .DS_Store
@@ -44,10 +47,22 @@ ehthumbs.db
 # Development screenshots, captures & temporary test artifacts
 /*.png
 *.png
+!**/src/main/res/**/*.png
 .tempmediaStorage/
-.firebase/
 
-# JVM crash logs & replay files
+# Firebase & Cloud Functions
+.firebase/
+node_modules/
+functions/node_modules/
+*-debug.log*
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# JVM crash logs, profiler & heap dumps
+*.log
 hs_err_pid*.log
 replay_pid*.log
+*.hprof
+
 

@@ -120,6 +120,7 @@ class CreateRelationshipUseCase @Inject constructor(
             override suspend fun getPrimaryOwner(): PersonEntity? = null
             override fun getPersonWithFullProfileFlow(id: String): Flow<PersonWithFullProfile?> = kotlinx.coroutines.flow.flowOf(null)
             override fun getPrimaryOwnerWithFullProfileFlow(): Flow<PersonWithFullProfile?> = kotlinx.coroutines.flow.flowOf(null)
+            override suspend fun insert(person: PersonEntity): Long = 1L
             override suspend fun insertOrUpdate(person: PersonEntity): Long = 1L
             override suspend fun insertAll(persons: List<PersonEntity>) {}
             override suspend fun update(person: PersonEntity) {}

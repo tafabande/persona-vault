@@ -95,3 +95,20 @@ data class IdentityGraph(
     val totalConnections: Int
         get() = familyConnections.size + personalConnections.size + professionalConnections.size + careConnections.size
 }
+
+enum class NoteFormat {
+    PLAIN,
+    BULLETS
+}
+
+data class RelationshipNote(
+    val id: String,
+    val relationshipId: String,
+    val topic: String, // Defaults to "Note" if left blank
+    val content: String,
+    val format: NoteFormat = NoteFormat.PLAIN,
+    val isPrivate: Boolean = false,
+    val isDecrypted: Boolean = true, // False when private and locked
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)

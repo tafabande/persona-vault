@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Home
@@ -65,7 +66,8 @@ fun PublicResumeModal(
     data: PublicResumeData,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     onDismissRequest: () -> Unit,
-    onExportPdf: () -> Unit
+    onExportPdf: () -> Unit,
+    onEditProfile: () -> Unit = {}
 ) {
     val haptics = rememberPimsHaptics()
     val context = LocalContext.current
@@ -96,21 +98,15 @@ fun PublicResumeModal(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Collective Public Dossier",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-0.3).sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Unified Professional Dossier",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Text(
+                        text = "Profile Dossier",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.3).sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
 
                     // Sleek Apple-style circular close button
                     IconButton(
@@ -512,32 +508,8 @@ fun PublicResumeModal(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            haptics.selection()
-                            val plainText = buildString {
-                                appendLine(data.fullName)
-                                if (data.headline.isNotBlank()) appendLine(data.headline)
-                                if (!data.primaryEmail.isNullOrBlank()) appendLine("Email: ${data.primaryEmail}")
-                                if (!data.primaryPhone.isNullOrBlank()) appendLine("Phone: ${data.primaryPhone}")
-                                if (data.location.isNotBlank()) appendLine("Location: ${data.location}")
-                                if (!data.bioOrSummary.isNullOrBlank()) {
-                                    appendLine("\n--- PROFESSIONAL SUMMARY ---")
-                                    appendLine(data.bioOrSummary)
-                                }
-                                if (data.hasCareerHistory) {
-                                    appendLine("\n--- EXPERIENCE ---")
-                                    data.employments.forEach {
-                                        appendLine("${it.position} at ${it.company} (${it.startDate ?: ""} - ${if (it.isCurrent) "Present" else it.endDate ?: ""})")
-                                    }
-                                }
-                                if (data.educations.isNotEmpty()) {
-                                    appendLine("\n--- EDUCATION ---")
-                                    data.educations.forEach {
-                                        appendLine("${it.qualification} - ${it.institution}")
-                                    }
-                                }
-                            }
-                            clipboardManager.setText(AnnotatedString(plainText))
-                            Toast.makeText(context, "Dossier copied to clipboard", Toast.LENGTH_SHORT).show()
+                            haptics.light()
+                            onEditProfile()
                         },
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
@@ -545,14 +517,13 @@ fun PublicResumeModal(
                             .height(50.dp)
                             .tactilePress(),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            contentColor = MaterialTheme.colorScheme.onSurface
+                            containerColor = MaterialTheme.colorScheme.surface
                         ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
                     ) {
-                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(17.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Copy Text", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("Edit Information", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     }
 
                     Button(
@@ -563,13 +534,13 @@ fun PublicResumeModal(
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         modifier = Modifier
-                            .weight(1.3f)
+                            .weight(1f)
                             .height(50.dp)
                             .tactilePress()
                     ) {
                         Icon(Icons.Default.FileDownload, null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Export as PDF", fontWeight = FontWeight.Bold, fontSize = 14.5.sp)
+                        Text("Export to PDF", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
             }

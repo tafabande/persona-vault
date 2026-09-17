@@ -454,7 +454,7 @@ fun StatusPill(
 @Composable
 fun FacetSummaryRow(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     icon: ImageVector,
     modifier: Modifier = Modifier,
     trailingBadge: String? = null,
@@ -486,7 +486,7 @@ fun FacetSummaryRow(
                         .size(38.dp)
                         .background(
                             color = if (isSensitive) MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                                    else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+                                     else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
                             shape = RoundedCornerShape(10.dp)
                         ),
                     contentAlignment = Alignment.Center
@@ -507,11 +507,13 @@ fun FacetSummaryRow(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (!subtitle.isNullOrBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 

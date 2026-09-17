@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
+import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.core.model.VaultCategory
 import com.pims.vault.domain.model.LiveTotpToken
 import com.pims.vault.domain.model.PasswordSecret
@@ -88,11 +89,11 @@ class VaultViewModel @Inject constructor(
     private var tickerJob: Job? = null
     private var timeoutJob: Job? = null
     private var revealTimers: MutableMap<String, Job> = mutableMapOf()
-    private var activePersonId: String = "primary_user"
+    private var activePersonId: String = CANONICAL_PRIMARY_OWNER_ID
 
     init {
         viewModelScope.launch {
-            val owner = personDao.getPrimaryOwner()
+            val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
             if (owner != null) {
                 activePersonId = owner.id
             }
@@ -107,7 +108,7 @@ class VaultViewModel @Inject constructor(
 
     private fun loadItems() {
         viewModelScope.launch {
-            val owner = personDao.getPrimaryOwner()
+            val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
             val targetId = owner?.id ?: activePersonId
             activePersonId = targetId
             getVaultItemsUseCase(targetId).collect { items ->

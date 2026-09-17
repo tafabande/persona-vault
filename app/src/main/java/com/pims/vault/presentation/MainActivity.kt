@@ -2,6 +2,7 @@ package com.pims.vault.presentation
 
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -9,7 +10,15 @@ import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.SideEffect
 import androidx.biometric.BiometricPrompt
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import com.pims.vault.presentation.ui.theme.LocalReducedMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +59,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
+import com.pims.vault.core.crypto.KeySecurityLevel
 import com.pims.vault.core.crypto.SessionState
 import com.pims.vault.core.session.AccountMode
 import com.pims.vault.core.session.AccountModeManager
@@ -133,8 +143,8 @@ class MainViewModel @Inject constructor(
         isAccount: Boolean
     ) {
         viewModelScope.launch {
-            val existing = personDao.getPrimaryOwner()
-            val ownerId = existing?.id ?: com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
+            val existing = personDao.getPersonById(com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID)
+            val ownerId = com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
             val nameParts = preferredName.trim().split(" ", limit = 2)
             val first = nameParts.getOrElse(0) { preferredName }
             val last = nameParts.getOrElse(1) { "" }
@@ -230,13 +240,23 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
-                Crossfade(
+                val reducedMotion = LocalReducedMotion.current
+                AnimatedContent(
                     targetState = when {
                         showSplash -> "SPLASH"
                         !hasCompletedWalkthrough || isRevisitingWalkthrough -> "WALKTHROUGH"
                         accountMode == AccountMode.UNSET -> "ACCOUNT_CHOICE"
                         !hasCompletedInitialProfile -> "MINIMAL_SETUP"
                         else -> "APP"
+                    },
+                    transitionSpec = {
+                        if (reducedMotion) {
+                            fadeIn(tween(durationMillis = 0)) togetherWith fadeOut(tween(durationMillis = 0))
+                        } else {
+                            fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) +
+                                slideInVertically(spring(stiffness = Spring.StiffnessMediumLow)) { it / 12 } togetherWith
+                                fadeOut(spring(stiffness = Spring.StiffnessMedium))
+                        }
                     },
                     label = "main_navigation_state"
                 ) { state ->
@@ -245,12 +265,20 @@ class MainActivity : FragmentActivity() {
                             PimsVaultSplashScreen()
                         }
                         "WALKTHROUGH" -> {
+                            if (isRevisitingWalkthrough) {
+                                BackHandler(enabled = true) {
+                                    viewModel.closeRevisitWalkthrough()
+                                }
+                            }
                             OnboardingWalkthroughScreen(
                                 onFinish = { viewModel.completeWalkthrough() },
                                 onSkip = { viewModel.completeWalkthrough() }
                             )
                         }
                         "ACCOUNT_CHOICE" -> {
+                            BackHandler(enabled = pendingSetupChoice != null) {
+                                pendingSetupChoice = null
+                            }
                             if (pendingSetupChoice == null) {
                                 AccountChoiceScreen(
                                     onCreateAccount = { pendingSetupChoice = "CREATE" },

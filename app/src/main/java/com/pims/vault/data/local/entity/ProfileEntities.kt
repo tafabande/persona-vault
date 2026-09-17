@@ -15,6 +15,7 @@ import com.pims.vault.core.model.MedicalRecordType
 import com.pims.vault.core.model.RelationshipType
 import com.pims.vault.core.model.SecurityClassification
 import com.pims.vault.core.model.VaultCategory
+import com.pims.vault.domain.model.NoteFormat
 
 @Entity(
     tableName = "persons",
@@ -257,3 +258,89 @@ data class RelationshipEntity(
     @ColumnInfo(name = "updated_at")
     val updatedAt: Long = System.currentTimeMillis()
 )
+
+@Entity(
+    tableName = "relationship_notes",
+    foreignKeys = [
+        ForeignKey(
+            entity = RelationshipEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["relationship_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [
+        Index(value = ["relationship_id"]),
+        Index(value = ["relationship_id", "is_private"])
+    ]
+)
+data class RelationshipNoteEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "id")
+    val id: String,
+
+    @ColumnInfo(name = "relationship_id")
+    val relationshipId: String,
+
+    @ColumnInfo(name = "topic")
+    val topic: String? = null,
+
+    @ColumnInfo(name = "content_plaintext")
+    val contentPlaintext: String? = null,
+
+    @ColumnInfo(name = "encrypted_payload")
+    val encryptedPayload: ByteArray? = null,
+
+    @ColumnInfo(name = "encryption_iv")
+    val encryptionIv: String? = null,
+
+    @ColumnInfo(name = "format")
+    val format: NoteFormat = NoteFormat.PLAIN,
+
+    @ColumnInfo(name = "is_private")
+    val isPrivate: Boolean = false,
+
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as RelationshipNoteEntity
+
+        if (id != other.id) return false
+        if (relationshipId != other.relationshipId) return false
+        if (topic != other.topic) return false
+        if (contentPlaintext != other.contentPlaintext) return false
+        if (encryptedPayload != null) {
+            if (other.encryptedPayload == null) return false
+            if (!encryptedPayload.contentEquals(other.encryptedPayload)) return false
+        } else if (other.encryptedPayload != null) return false
+        if (encryptionIv != other.encryptionIv) return false
+        if (format != other.format) return false
+        if (isPrivate != other.isPrivate) return false
+        if (createdAt != other.createdAt) return false
+        if (updatedAt != other.updatedAt) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = id.hashCode()
+        result = 31 * result + relationshipId.hashCode()
+        result = 31 * result + (topic?.hashCode() ?: 0)
+        result = 31 * result + (contentPlaintext?.hashCode() ?: 0)
+        result = 31 * result + (encryptedPayload?.contentHashCode() ?: 0)
+        result = 31 * result + (encryptionIv?.hashCode() ?: 0)
+        result = 31 * result + format.hashCode()
+        result = 31 * result + isPrivate.hashCode()
+        result = 31 * result + createdAt.hashCode()
+        result = 31 * result + updatedAt.hashCode()
+        return result
+    }
+}
+

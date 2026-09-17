@@ -281,12 +281,14 @@ fun AvatarEditorContent(
             contentAlignment = Alignment.Center
         ) {
             PersonaAvatar(
-                config = config.copy(avatarSource = activeSource),
-                expression = liveExpression,
+                config = config.copy(
+                    avatarSource = activeSource,
+                    expression = liveExpression ?: AvatarExpression.NORMAL // Force awake in editor!
+                ),
+                expression = liveExpression ?: AvatarExpression.NORMAL,
                 size = 156.dp,
                 showBackground = true,
-                customMood = activeMood,
-                behaviorMode = currentBehaviorMode
+                behaviorMode = AvatarBehaviorMode.STATIC // Prevent idle sleep overrides during editing
             )
         }
 
@@ -559,40 +561,7 @@ fun AvatarEditorContent(
                         }
 
                         EditorTab.HAIR -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Hairstyle", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
-                                Text(
-                                    text = if (showAllHairs) "Showing all" else "Filter: Recommended",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.clickable { showAllHairs = !showAllHairs }
-                                )
-                            }
-
-                            val availableHairs = remember(config.gender, showAllHairs) {
-                                if (showAllHairs || config.gender == AvatarGender.UNSPECIFIED || config.gender == AvatarGender.NON_BINARY) {
-                                    HairStyle.values().toList()
-                                } else if (config.gender == AvatarGender.FEMALE) {
-                                    listOf(
-                                        HairStyle.DEFAULT,
-                                        HairStyle.BRAIDS, HairStyle.BOX_BRAIDS, HairStyle.CORNROWS,
-                                        HairStyle.LOCS, HairStyle.PONYTAIL, HairStyle.WAVY_LONG,
-                                        HairStyle.LONG_STRAIGHT, HairStyle.BOB, HairStyle.CURLY_AFRO,
-                                        HairStyle.SHORT_CROP, HairStyle.TOP_BUN, HairStyle.TEXTURED_FADE
-                                    )
-                                } else {
-                                    listOf(
-                                        HairStyle.TEXTURED_FADE, HairStyle.DEFAULT,
-                                        HairStyle.SHORT_CROP, HairStyle.LOW_FADE, HairStyle.HIGH_FADE,
-                                        HairStyle.SHORT_CURS, HairStyle.CURLY_AFRO, HairStyle.LOCS,
-                                        HairStyle.BRAIDS, HairStyle.BUZZ, HairStyle.SIDE_PART
-                                    )
-                                }
-                            }
+                            Text("Hairstyle", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold))
 
                             Row(
                                 modifier = Modifier
@@ -600,7 +569,7 @@ fun AvatarEditorContent(
                                     .horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                availableHairs.forEach { hair ->
+                                HairStyle.values().forEach { hair ->
                                     val isSelected = config.hairStyle == hair
                                     ChoiceChip(label = hair.label, isSelected = isSelected) {
                                         haptics.light()

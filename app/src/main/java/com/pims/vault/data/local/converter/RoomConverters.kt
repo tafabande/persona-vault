@@ -106,4 +106,25 @@ class RoomConverters {
     @TypeConverter
     fun toSyncOperationStatus(value: String?): com.pims.vault.data.local.entity.SyncOperationStatus? =
         safeValueOf(value, fallback = com.pims.vault.data.local.entity.SyncOperationStatus.PENDING)
+
+    @TypeConverter
+    fun fromNoteFormat(value: com.pims.vault.domain.model.NoteFormat?): String? = value?.name
+
+    @TypeConverter
+    fun toNoteFormat(value: String?): com.pims.vault.domain.model.NoteFormat? =
+        safeValueOf(value, fallback = com.pims.vault.domain.model.NoteFormat.PLAIN)
+
+    @TypeConverter
+    fun fromCoverageType(value: com.pims.vault.core.model.CoverageType?): String? = value?.name
+
+    @TypeConverter
+    fun toCoverageType(value: String?): com.pims.vault.core.model.CoverageType? =
+        safeValueOf(value, fallback = com.pims.vault.core.model.CoverageType.MEDICAL_AID)
+
+    @TypeConverter
+    fun fromMedicationRoute(value: com.pims.vault.core.model.MedicationRoute?): String? = value?.name
+
+    @TypeConverter
+    fun toMedicationRoute(value: String?): com.pims.vault.core.model.MedicationRoute? =
+        safeValueOf(value, fallback = com.pims.vault.core.model.MedicationRoute.ORAL)
 }

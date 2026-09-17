@@ -1,7 +1,7 @@
 package com.pims.vault.presentation.hub
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -98,6 +99,7 @@ fun MeView(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(18.dp)
@@ -110,36 +112,12 @@ fun MeView(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
-                    modifier = Modifier.padding(bottom = 14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = "Your Own Profile",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
                 PersonaAvatar(
                     name = personName,
                     config = avatarConfig,
                     size = 96.dp,
                     avatarTextSize = 32.sp,
+                    onClick = onOpenAvatarEditor,
                     onLongClick = onOpenAvatarEditor
                 )
 
@@ -174,10 +152,10 @@ fun MeView(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Box(modifier = Modifier.clickable {
+                Box(modifier = Modifier.tactilePress(onClick = {
                     haptics.light()
                     onSyncClick()
-                }) {
+                })) {
                     StatusPill(text = syncStatusText, isGood = syncIsGood)
                 }
 
@@ -187,12 +165,16 @@ fun MeView(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(
+                    Button(
                         onClick = {
-                            haptics.selection()
-                            onOpenAvatarEditor()
+                            haptics.light()
+                            onViewPublicDossier()
                         },
                         shape = RoundedCornerShape(24.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
                         modifier = Modifier.height(42.dp)
                     ) {
                         Row(
@@ -200,28 +182,24 @@ fun MeView(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Edit,
+                                imageVector = Icons.Default.Visibility,
                                 contentDescription = null,
-                                modifier = Modifier.size(15.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "Edit Persona",
-                                fontWeight = FontWeight.SemiBold,
+                                text = "View Profile",
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
                             )
                         }
                     }
 
-                    Button(
+                    OutlinedButton(
                         onClick = {
                             haptics.light()
                             onShareProfileClick()
                         },
                         shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
                         modifier = Modifier.height(42.dp)
                     ) {
                         Row(
@@ -237,109 +215,6 @@ fun MeView(
                                 text = "Share profile",
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Unified Public Dossier & Resume Card
-        item {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Description,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Unified Public Dossier & Resume",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "All public details in an executive resume format",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                haptics.light()
-                                onViewPublicDossier()
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Visibility,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "View All Info",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                haptics.light()
-                                onExportPdf()
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PictureAsPdf,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Export PDF",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -398,7 +273,7 @@ fun MeView(
                 // Education & Career
                 FacetSummaryRow(
                     title = "Education & Career",
-                    subtitle = if (educationCount + certCount == 0) "No entries yet" else "$educationCount qualifications • $certCount certs",
+                    subtitle = if (educationCount + certCount > 0) "$educationCount qualifications • $certCount certs" else null,
                     icon = Icons.Default.School,
                     onClick = {
                         haptics.light()
@@ -409,7 +284,7 @@ fun MeView(
                 // Health
                 FacetSummaryRow(
                     title = "Health",
-                    subtitle = if (medicalCount == 0) "No medical records" else "$medicalCount records",
+                    subtitle = if (medicalCount > 0) "$medicalCount records" else null,
                     icon = Icons.Default.MedicalServices,
                     onClick = {
                         haptics.light()
@@ -420,7 +295,7 @@ fun MeView(
                 // Vault
                 FacetSummaryRow(
                     title = "Vault",
-                    subtitle = if (vaultAccountsCount == 0) "Empty" else "$vaultAccountsCount items",
+                    subtitle = if (vaultAccountsCount > 0) "$vaultAccountsCount items" else null,
                     icon = Icons.Default.Key,
                     isSensitive = true,
                     trailingBadge = "LOCKED",
@@ -433,7 +308,7 @@ fun MeView(
                 // Documents
                 FacetSummaryRow(
                     title = "Documents",
-                    subtitle = if (documentsCount == 0) "No documents" else "$documentsCount documents",
+                    subtitle = if (documentsCount > 0) "$documentsCount documents" else null,
                     icon = Icons.Default.Description,
                     onClick = {
                         haptics.light()
@@ -444,7 +319,7 @@ fun MeView(
                 // People
                 FacetSummaryRow(
                     title = "People",
-                    subtitle = if (relationshipsCount == 0) "No connections" else "$relationshipsCount people",
+                    subtitle = if (relationshipsCount > 0) "$relationshipsCount people" else null,
                     icon = Icons.Default.People,
                     onClick = {
                         haptics.light()

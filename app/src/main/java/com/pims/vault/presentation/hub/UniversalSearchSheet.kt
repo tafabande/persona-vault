@@ -1,7 +1,7 @@
 package com.pims.vault.presentation.hub
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -427,7 +427,7 @@ fun UniversalSearchSheet(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable(onClick = result.onClick),
+                                .tactilePress(onClick = result.onClick),
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                         ) {

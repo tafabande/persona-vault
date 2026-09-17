@@ -35,10 +35,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -113,75 +115,88 @@ fun PersonaShareCard(
             .fillMaxWidth()
             .aspectRatio(1.586f)
             .shadow(
-                elevation = 20.dp,
+                elevation = 24.dp,
                 shape = RoundedCornerShape(22.dp),
-                spotColor = if (isLight) Color.Black.copy(alpha = 0.18f) else selectedPalette.baseColor.copy(alpha = 0.7f),
-                ambientColor = Color.Black.copy(alpha = 0.25f)
+                spotColor = if (isLight) Color.Black.copy(alpha = 0.22f) else selectedPalette.baseColor.copy(alpha = 0.75f),
+                ambientColor = Color.Black.copy(alpha = 0.28f)
             ),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = selectedPalette.baseColor),
-        border = BorderStroke(1.2.dp, cardBorderColor)
+        border = BorderStroke(0.8.dp, cardBorderColor)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // Matte gradient surface
+                // Sophisticated matte gradient surface with depth
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            selectedPalette.accentColor.copy(alpha = 0.95f),
+                            selectedPalette.accentColor.copy(alpha = 0.92f),
                             selectedPalette.baseColor,
-                            selectedPalette.baseColor.copy(alpha = 0.98f)
+                            selectedPalette.baseColor.copy(alpha = 0.96f),
+                            selectedPalette.accentColor.copy(alpha = 0.88f)
                         ),
                         start = Offset(0f, 0f),
-                        end = Offset(800f, 600f)
+                        end = Offset(900f, 700f)
                     )
                 )
-                // Specular light reflection on corner that gleams and glistens
+                // Premium matte finish with subtle texture and specular effects
                 .drawWithContent {
                     drawContent()
 
-                    // 1. Static ambient corner light gleam (radiating from top-right corner)
+                    // 1. Soft ambient corner light (matte diffused glow)
                     val cornerGleam = Brush.radialGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = if (isLight) 0.50f else 0.32f),
-                            Color.White.copy(alpha = if (isLight) 0.22f else 0.14f),
-                            Color.White.copy(alpha = if (isLight) 0.06f else 0.03f),
+                            Color.White.copy(alpha = if (isLight) 0.38f else 0.24f),
+                            Color.White.copy(alpha = if (isLight) 0.16f else 0.10f),
+                            Color.White.copy(alpha = if (isLight) 0.04f else 0.02f),
                             Color.Transparent
                         ),
-                        center = Offset(size.width * 0.96f, size.height * 0.04f),
-                        radius = size.width * 0.58f
+                        center = Offset(size.width * 0.94f, size.height * 0.06f),
+                        radius = size.width * 0.52f
                     )
                     drawRect(cornerGleam)
 
-                    // 2. Animated specular reflection sweep across the gleaming corner
+                    // 2. Animated specular reflection sweep (elegant sheen)
                     val p = gleamPhase
                     val sheenBrush = Brush.linearGradient(
                         0.0f to Color.Transparent,
-                        (p - 0.14f).coerceIn(0f, 1f) to Color.Transparent,
-                        p.coerceIn(0f, 1f) to Color.White.copy(alpha = if (isLight) 0.45f else 0.28f),
-                        (p + 0.14f).coerceIn(0f, 1f) to Color.Transparent,
+                        (p - 0.18f).coerceIn(0f, 1f) to Color.Transparent,
+                        p.coerceIn(0f, 1f) to Color.White.copy(alpha = if (isLight) 0.38f else 0.22f),
+                        (p + 0.18f).coerceIn(0f, 1f) to Color.Transparent,
                         1.0f to Color.Transparent,
-                        start = Offset(size.width * 0.55f, 0f),
-                        end = Offset(size.width, size.height * 0.65f)
+                        start = Offset(size.width * 0.50f, 0f),
+                        end = Offset(size.width, size.height * 0.70f)
                     )
                     drawRect(sheenBrush)
 
-                    // 3. Subtle rim specular highlight on top corner edge
+                    // 3. Refined rim highlight on top edge (3D depth)
                     val rimHighlight = Brush.horizontalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color.White.copy(alpha = if (isLight) 0.40f else 0.22f),
-                            Color.White.copy(alpha = if (isLight) 0.70f else 0.45f)
+                            Color.White.copy(alpha = if (isLight) 0.32f else 0.18f),
+                            Color.White.copy(alpha = if (isLight) 0.58f else 0.36f),
+                            Color.White.copy(alpha = if (isLight) 0.32f else 0.18f)
                         ),
-                        startX = size.width * 0.6f,
+                        startX = size.width * 0.55f,
                         endX = size.width
                     )
                     drawRect(
                         brush = rimHighlight,
-                        topLeft = Offset(size.width * 0.6f, 0f),
-                        size = Size(size.width * 0.4f, 2.5.dp.toPx())
+                        topLeft = Offset(size.width * 0.55f, 0f),
+                        size = Size(size.width * 0.45f, 1.8.dp.toPx())
                     )
+
+                    // 4. Subtle bottom edge shadow for depth
+                    val bottomShadow = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = if (isLight) 0.06f else 0.12f)
+                        ),
+                        startY = size.height * 0.85f,
+                        endY = size.height
+                    )
+                    drawRect(bottomShadow)
                 }
                 .padding(24.dp)
         ) {
@@ -201,16 +216,31 @@ fun PersonaShareCard(
                     .fillMaxWidth(0.55f)
             )
 
-            // RIGHT-MIDDLE: Quiet-Zone Scannable QR Code
+            // RIGHT-MIDDLE: Premium Quiet-Zone QR Code
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .size(108.dp)
-                    .shadow(10.dp, shape = RoundedCornerShape(14.dp), spotColor = Color.Black.copy(alpha = 0.3f))
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White)
-                    .border(1.dp, Color.Black.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-                    .padding(8.dp),
+                    .size(112.dp)
+                    .shadow(
+                        elevation = 12.dp,
+                        shape = RoundedCornerShape(16.dp),
+                        spotColor = Color.Black.copy(alpha = 0.25f),
+                        ambientColor = Color.Black.copy(alpha = 0.15f)
+                    )
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFFFFFFF),
+                                Color(0xFFFAFAFA),
+                                Color(0xFFF5F5F5)
+                            ),
+                            center = Offset(0f, 0f),
+                            radius = 200f
+                        )
+                    )
+                    .border(0.6.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                    .padding(9.dp),
                 contentAlignment = Alignment.Center
             ) {
                 MinimalQrCodeCanvas(
@@ -223,46 +253,163 @@ fun PersonaShareCard(
 }
 
 /**
- * Crisp, high-contrast QR code canvas visualizer with quiet zone and corner markers.
+ * Premium, sleek QR code visualizer with depth and sophistication.
+ *
+ * Implements refined finder patterns with subtle gradients, 25x25 dense dot matrix
+ * with polished rounded modules, and an elegant center emblem.
+ * Designed for a state-of-the-art credential aesthetic.
  */
 @Composable
-private fun MinimalQrCodeCanvas(
+fun MinimalQrCodeCanvas(
     seed: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    darkColor: Color = Color(0xFF0A0E1A),
+    accentColor: Color = Color(0xFF2563EB)
 ) {
     Canvas(modifier = modifier) {
-        val cols = 15
+        val cols = 25
         val cellSize = size.width / cols
         val hash = seed.hashCode()
-        val qrDark = Color(0xFF0F172A)
+        val dotRadius = CornerRadius(cellSize * 0.32f, cellSize * 0.32f)
+        val dotSize = cellSize * 0.78f
+        val dotInset = (cellSize - dotSize) / 2f
 
+        // Helper to draw a refined, elegant finder pattern with depth
+        fun drawFinderEye(startCol: Int, startRow: Int) {
+            val left = startCol * cellSize
+            val top = startRow * cellSize
+            val finderSize = 7 * cellSize
+            val frameStroke = cellSize * 0.88f
+            val cornerRad = CornerRadius(cellSize * 1.6f, cellSize * 1.6f)
+
+            // Outer rounded frame with subtle gradient for depth
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(darkColor, darkColor.copy(alpha = 0.85f)),
+                    start = Offset(left, top),
+                    end = Offset(left + finderSize, top + finderSize)
+                ),
+                topLeft = Offset(left + frameStroke / 2f, top + frameStroke / 2f),
+                size = Size(finderSize - frameStroke, finderSize - frameStroke),
+                cornerRadius = cornerRad,
+                style = Stroke(width = frameStroke)
+            )
+
+            // Center solid rounded eye with refined gradient
+            val eyeInset = 2f * cellSize
+            val eyeSize = 3f * cellSize
+            drawRoundRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        darkColor,
+                        darkColor.copy(alpha = 0.92f)
+                    ),
+                    center = Offset(left + eyeInset + eyeSize / 2f, top + eyeInset + eyeSize / 2f),
+                    radius = eyeSize * 0.6f
+                ),
+                topLeft = Offset(left + eyeInset, top + eyeInset),
+                size = Size(eyeSize, eyeSize),
+                cornerRadius = CornerRadius(cellSize * 0.85f, cellSize * 0.85f)
+            )
+        }
+
+        // 1. Draw three corner finders with depth
+        drawFinderEye(0, 0)
+        drawFinderEye(cols - 7, 0)
+        drawFinderEye(0, cols - 7)
+
+        // 2. Alignment pattern with refined styling
+        val alignCol = cols - 9
+        val alignRow = cols - 9
+        val alignLeft = alignCol * cellSize
+        val alignTop = alignRow * cellSize
+        val alignStroke = cellSize * 0.75f
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(darkColor, darkColor.copy(alpha = 0.88f)),
+                start = Offset(alignLeft, alignTop),
+                end = Offset(alignLeft + 5 * cellSize, alignTop + 5 * cellSize)
+            ),
+            topLeft = Offset(alignLeft + alignStroke / 2f, alignTop + alignStroke / 2f),
+            size = Size(5 * cellSize - alignStroke, 5 * cellSize - alignStroke),
+            cornerRadius = CornerRadius(cellSize * 1.1f, cellSize * 1.1f),
+            style = Stroke(width = alignStroke)
+        )
+        drawRoundRect(
+            color = darkColor,
+            topLeft = Offset(alignLeft + 2 * cellSize, alignTop + 2 * cellSize),
+            size = Size(cellSize, cellSize),
+            cornerRadius = CornerRadius(cellSize * 0.38f, cellSize * 0.38f)
+        )
+
+        // 3. Draw data modules with refined precision
         for (r in 0 until cols) {
             for (c in 0 until cols) {
-                val isCornerFinder = (r < 3 && c < 3) || (r < 3 && c >= cols - 3) || (r >= cols - 3 && c < 3)
-                val isCenterMark = (r in 6..8 && c in 6..8)
-                val filled = if (isCornerFinder) {
-                    (r == 0 || r == 2 || c == 0 || c == 2) || (r == 1 && c == 1)
-                } else if (isCenterMark) {
-                    false
-                } else {
-                    ((hash + (r * 31 + c * 17)) % 3 == 0)
+                val inTopLeftFinder = (r < 8 && c < 8)
+                val inTopRightFinder = (r < 8 && c >= cols - 8)
+                val inBottomLeftFinder = (r >= cols - 8 && c < 8)
+                val inAlignment = (r in alignRow..(alignRow + 4) && c in alignCol..(alignCol + 4))
+                val inCenterQuietZone = (r in 10..14 && c in 10..14)
+
+                if (inTopLeftFinder || inTopRightFinder || inBottomLeftFinder || inAlignment || inCenterQuietZone) {
+                    continue
                 }
 
-                if (filled) {
-                    drawRect(
-                        color = qrDark,
-                        topLeft = Offset(c * cellSize, r * cellSize),
-                        size = Size(cellSize * 0.94f, cellSize * 0.94f)
+                // Timing tracks on row 6 and col 6
+                val isTiming = (r == 6 && c % 2 == 0) || (c == 6 && r % 2 == 0)
+
+                // Deterministic pseudo-random data mask based on seed hash
+                val isDataActive = isTiming || run {
+                    val bitSeed = (hash xor (r * 31 + c * 17 + (r * c)))
+                    val p1 = (bitSeed and 0x7FFFFFFF) % 7
+                    p1 in 0..3 // ~57% fill density
+                }
+
+                if (isDataActive) {
+                    // Subtle gradient on data modules for depth
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                darkColor,
+                                darkColor.copy(alpha = 0.94f)
+                            ),
+                            start = Offset(c * cellSize + dotInset, r * cellSize + dotInset),
+                            end = Offset(c * cellSize + dotInset + dotSize, r * cellSize + dotInset + dotSize)
+                        ),
+                        topLeft = Offset(c * cellSize + dotInset, r * cellSize + dotInset),
+                        size = Size(dotSize, dotSize),
+                        cornerRadius = dotRadius
                     )
                 }
             }
         }
 
-        // Center discrete security pip
+        // 4. Elegant center security emblem
+        val center = Offset(size.width / 2f, size.height / 2f)
+        // Quiet zone circle to isolate center emblem cleanly
         drawCircle(
-            color = Color(0xFF10B981),
-            radius = cellSize * 0.85f,
-            center = Offset(size.width / 2f, size.height / 2f)
+            color = Color.White,
+            radius = cellSize * 2.1f,
+            center = center
+        )
+        // Emblem outer circle with refined gradient
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    accentColor,
+                    accentColor.copy(alpha = 0.88f)
+                ),
+                center = center,
+                radius = cellSize * 1.5f
+            ),
+            radius = cellSize * 1.5f,
+            center = center
+        )
+        // Minimalist inner eye dot
+        drawCircle(
+            color = Color.White,
+            radius = cellSize * 0.58f,
+            center = center
         )
     }
 }

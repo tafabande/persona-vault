@@ -1,9 +1,8 @@
 package com.pims.vault.presentation.hub
 
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,46 +13,29 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material.icons.filled.MedicalServices
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.VolunteerActivism
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -72,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -140,24 +123,18 @@ enum class AddActionType {
     SOCIAL_PROFILE
 }
 
-private enum class AddSheetScreen {
-    ROOT,
-    CATEGORIES,
-    DETAIL_IDENTITY,
-    DETAIL_CONTACT,
-    DETAIL_EDUCATION,
-    DETAIL_CAREER,
-    DETAIL_HEALTH,
-    DETAIL_PERSONAL
-}
+private data class ActionTileItem(
+    val icon: ImageVector,
+    val label: String,
+    val action: AddActionType,
+    val keywords: String = ""
+)
 
 /**
  * AddActionBottomSheet
  *
- * Implements progressive disclosure for Persona:
- * Level 1: "What would you like to add?" (Add person vs Add to my profile)
- * Level 2: 6 clean broad domain sections + Document + Custom information
- * Level 3: Tailored domain options mapping to the complete personal information universe.
+ * Streamlined 3x3 icon grid with 3 high-level buckets, top 4 Quick Add pill chips,
+ * and rapid search filtering with 0.2s visual cognitive recognition.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,8 +143,43 @@ fun AddActionBottomSheet(
     onDismissRequest: () -> Unit,
     onSelectAction: (AddActionType) -> Unit
 ) {
-    var currentScreen by remember { mutableStateOf(AddSheetScreen.ROOT) }
+    var searchQuery by remember { mutableStateOf("") }
     val haptics = rememberPimsHaptics()
+
+    // 3 High-Level Buckets (3x3 Grid)
+    val credentialsMoneyBucket = remember {
+        listOf(
+            ActionTileItem(Icons.Default.Key, "Password", AddActionType.PASSWORD, "password login credential website pin auth key secret"),
+            ActionTileItem(Icons.Default.CreditCard, "Card", AddActionType.PAYMENT_CARD, "card credit debit payment visa mastercard expiry cvv cc"),
+            ActionTileItem(Icons.Default.Shield, "Bank", AddActionType.BANK_ACCOUNT, "bank account routing branch iban wire financial money institution")
+        )
+    }
+
+    val personalIdentityBucket = remember {
+        listOf(
+            ActionTileItem(Icons.Default.Badge, "Identity", AddActionType.PERSONAL_DETAILS, "identity id personal driver license dl passport national citizenship name details"),
+            ActionTileItem(Icons.Default.Phone, "Contact", AddActionType.PHONE, "contact phone mobile email number cell call message"),
+            ActionTileItem(Icons.Default.Home, "Address", AddActionType.ADDRESS, "address home street postal residence city location postal zip house")
+        )
+    }
+
+    val filesVaultBucket = remember {
+        listOf(
+            ActionTileItem(Icons.Default.Description, "Document", AddActionType.DOCUMENT, "document driver license dl pdf file scan upload diploma cert identification records"),
+            ActionTileItem(Icons.Default.MedicalServices, "Medical", AddActionType.ALLERGIES, "medical health medicine allergy condition doctor prescription emergency hospital blood aid"),
+            ActionTileItem(Icons.Default.Public, "Social", AddActionType.SOCIAL_PROFILE, "social profile online presence instagram linkedin github twitter web handle website")
+        )
+    }
+
+    // Extended searchable catalog for full discoverability
+    val searchableItems = remember {
+        credentialsMoneyBucket + personalIdentityBucket + filesVaultBucket + listOf(
+            ActionTileItem(Icons.Default.School, "Education", AddActionType.EDUCATION, "education school university college degree certification diploma course training study"),
+            ActionTileItem(Icons.Default.Work, "Career", AddActionType.EXPERIENCE, "career job work company employment resume experience project reference"),
+            ActionTileItem(Icons.Default.PersonAdd, "Person", AddActionType.PERSON, "person kin relative emergency contact friend family mother father peer connection"),
+            ActionTileItem(Icons.Default.Extension, "Custom", AddActionType.CUSTOM_FIELD, "custom note field arbitrary information extra")
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -179,906 +191,358 @@ fun AddActionBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
+                .padding(bottom = 20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            AnimatedContent(
-                targetState = currentScreen,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "AddActionScreenTransition"
-            ) { screen ->
-                when (screen) {
-                    // =========================================================
-                    // LEVEL 1: ROOT (Add person vs Add to my profile)
-                    // =========================================================
-                    AddSheetScreen.ROOT -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "Add Information",
-                                        style = MaterialTheme.typography.titleLarge.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            letterSpacing = (-0.3).sp
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Select what you want to store",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                IconButton(onClick = onDismissRequest) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Close",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+            // Header Row: Title & Close Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Add Information",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.3).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(
+                    onClick = onDismissRequest,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Top 4 "Quick Add" Chips
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "QUICK ADD",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    ),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    QuickAddPill(
+                        icon = Icons.Default.Key,
+                        label = "Password",
+                        onClick = {
+                            haptics.selection()
+                            onSelectAction(AddActionType.PASSWORD)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickAddPill(
+                        icon = Icons.Default.Phone,
+                        label = "Contact",
+                        onClick = {
+                            haptics.selection()
+                            onSelectAction(AddActionType.PHONE)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickAddPill(
+                        icon = Icons.Default.CreditCard,
+                        label = "Card",
+                        onClick = {
+                            haptics.selection()
+                            onSelectAction(AddActionType.PAYMENT_CARD)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickAddPill(
+                        icon = Icons.Default.Description,
+                        label = "Document",
+                        onClick = {
+                            haptics.selection()
+                            onSelectAction(AddActionType.DOCUMENT)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            // Quick Search Bar
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        singleLine = true,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { innerTextField ->
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Quick search (e.g. Card, License, Bank)...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
                             }
-
-                            Spacer(modifier = Modifier.height(2.dp))
-
-                            // 1. Password
-                            CategoryDomainCard(
-                                icon = Icons.Default.Key,
-                                title = "Password",
-                                subtitle = "Website or app login credential",
-                                isAccent = true,
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.PASSWORD)
-                                }
-                            )
-
-                            // 2. Payment Card
-                            CategoryDomainCard(
-                                icon = Icons.Default.CreditCard,
-                                title = "Payment Card",
-                                subtitle = "Credit / debit card with encrypted details",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.PAYMENT_CARD)
-                                }
-                            )
-
-                            // 3. Bank Account
-                            CategoryDomainCard(
-                                icon = Icons.Default.Shield,
-                                title = "Bank Account",
-                                subtitle = "Account number, branch code & banking institution",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.BANK_ACCOUNT)
-                                }
-                            )
-
-                            // 4. Medical Record
-                            CategoryDomainCard(
-                                icon = Icons.Default.MedicalServices,
-                                title = "Medical Record",
-                                subtitle = "Allergies, conditions, medications & emergency info",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.ALLERGIES)
-                                }
-                            )
-
-                            // 5. Identity
-                            CategoryDomainCard(
-                                icon = Icons.Default.Badge,
-                                title = "Identity",
-                                subtitle = "Legal name, birth date, citizenship & identity data",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.PERSONAL_DETAILS)
-                                }
-                            )
-
-                            // 6. Contact Details
-                            CategoryDomainCard(
-                                icon = Icons.Default.Phone,
-                                title = "Contact",
-                                subtitle = "Phone numbers, mobile lines & primary email",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.PHONE)
-                                }
-                            )
-
-                            // 7. Residential Address
-                            CategoryDomainCard(
-                                icon = Icons.Default.Home,
-                                title = "Address",
-                                subtitle = "Residential address, postal code & location",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.ADDRESS)
-                                }
-                            )
-
-                            // 8. Document
-                            CategoryDomainCard(
-                                icon = Icons.Default.Description,
-                                title = "Document",
-                                subtitle = "Upload national ID, passport, diploma or PDF",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.DOCUMENT)
-                                }
-                            )
-
-                            // 9. Social Profile
-                            CategoryDomainCard(
-                                icon = Icons.Default.Public,
-                                title = "Social Profile",
-                                subtitle = "Instagram, WhatsApp, LinkedIn, GitHub & links",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.SOCIAL_PROFILE)
-                                }
-                            )
-
-                            // 10. Professional & Education
-                            CategoryDomainCard(
-                                icon = Icons.Default.Work,
-                                title = "Professional & Education",
-                                subtitle = "Schools, degrees, career history & certifications",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.EDUCATION)
-                                }
-                            )
-
-                            // 11. Person / Kin
-                            CategoryDomainCard(
-                                icon = Icons.Default.PersonAdd,
-                                title = "Person / Kin",
-                                subtitle = "Family member, emergency ICE contact, or connection",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.PERSON)
-                                }
-                            )
-
-                            // 12. Custom Information
-                            CategoryDomainCard(
-                                icon = Icons.Default.Extension,
-                                title = "Custom Field",
-                                subtitle = "Flexible custom field with smart semantic normalization",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.CUSTOM_FIELD)
-                                }
-                            )
-
-                            Spacer(modifier = Modifier.height(14.dp))
+                            innerTextField()
                         }
-                    }
-
-                    // =========================================================
-                    // LEVEL 2: 6 MAIN CATEGORIES + DOCUMENT + CUSTOM
-                    // =========================================================
-                    AddSheetScreen.CATEGORIES -> {
-                        Column(
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            // Header with Back to Root
-                            SheetHeaderWithBack(
-                                title = "Add to my profile",
-                                onBack = {
-                                    haptics.light()
-                                    currentScreen = AddSheetScreen.ROOT
-                                },
-                                onClose = onDismissRequest
-                            )
-
-                            // 1. Identity
-                            CategoryDomainCard(
-                                icon = Icons.Default.Badge,
-                                title = "Identity",
-                                subtitle = "Identity, names, identification & emergency ID",
-                                onClick = {
-                                    haptics.selection()
-                                    currentScreen = AddSheetScreen.DETAIL_IDENTITY
-                                }
-                            )
-
-                            // 2. Contact
-                            CategoryDomainCard(
-                                icon = Icons.Default.Phone,
-                                title = "Contact",
-                                subtitle = "Phone, email, addresses & online presence",
-                                onClick = {
-                                    haptics.selection()
-                                    currentScreen = AddSheetScreen.DETAIL_CONTACT
-                                }
-                            )
-
-                            // 3. Education
-                            CategoryDomainCard(
-                                icon = Icons.Default.School,
-                                title = "Education",
-                                subtitle = "Schools, qualifications, certifications & skills",
-                                onClick = {
-                                    haptics.selection()
-                                    currentScreen = AddSheetScreen.DETAIL_EDUCATION
-                                }
-                            )
-
-                            // 4. Career
-                            CategoryDomainCard(
-                                icon = Icons.Default.Work,
-                                title = "Career",
-                                subtitle = "Work experience, projects, portfolio & references",
-                                onClick = {
-                                    haptics.selection()
-                                    currentScreen = AddSheetScreen.DETAIL_CAREER
-                                }
-                            )
-
-                            // 5. Health
-                            CategoryDomainCard(
-                                icon = Icons.Default.Favorite,
-                                title = "Health",
-                                subtitle = "Medical conditions, allergies, medications & doctors",
-                                onClick = {
-                                    haptics.selection()
-                                    currentScreen = AddSheetScreen.DETAIL_HEALTH
-                                }
-                            )
-
-                            // 6. Personal
-                            CategoryDomainCard(
-                                icon = Icons.Default.Extension,
-                                title = "Personal",
-                                subtitle = "Interests, preferences, goals & important dates",
-                                onClick = {
-                                    haptics.selection()
-                                    currentScreen = AddSheetScreen.DETAIL_PERSONAL
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                thickness = 0.8.dp,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-
-                            // 7. Document (Direct action)
-                            CategoryDomainCard(
-                                icon = Icons.Default.Description,
-                                title = "Document",
-                                subtitle = "Store or upload an encrypted file about yourself",
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.DOCUMENT)
-                                }
-                            )
-
-                            // 8. Custom information (Direct action)
-                            CategoryDomainCard(
-                                icon = Icons.Default.AutoAwesome,
-                                title = "Custom information",
-                                subtitle = "Create your own type of field, identifier, or note",
-                                isAccent = true,
-                                onClick = {
-                                    haptics.selection()
-                                    onSelectAction(AddActionType.CUSTOM_FIELD)
-                                }
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
-                        }
-                    }
-
-                    // =========================================================
-                    // LEVEL 3: DETAIL - IDENTITY
-                    // =========================================================
-                    AddSheetScreen.DETAIL_IDENTITY -> {
-                        DetailScreenLayout(
-                            title = "Identity",
-                            description = "Core identifiers and legal identity records",
-                            onBack = { currentScreen = AddSheetScreen.CATEGORIES },
-                            onClose = onDismissRequest
-                        ) {
-                            DetailItemRow(
-                                icon = Icons.Default.Badge,
-                                title = "Personal details",
-                                subtitle = "Name, preferred name, DOB, nationality, occupation",
-                                onClick = { onSelectAction(AddActionType.PERSONAL_DETAILS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Description,
-                                title = "Identification",
-                                subtitle = "National ID, passport, driver's licence, birth cert",
-                                onClick = { onSelectAction(AddActionType.IDENTIFICATION_DOC) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Person,
-                                title = "Names & identity history",
-                                subtitle = "Previous names, aliases, legal name changes",
-                                onClick = { onSelectAction(AddActionType.NAMES_HISTORY) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Favorite,
-                                title = "Emergency identity",
-                                subtitle = "Blood type, emergency identifiers, critical information",
-                                onClick = { onSelectAction(AddActionType.EMERGENCY_IDENTITY) }
-                            )
-                        }
-                    }
-
-                    // =========================================================
-                    // LEVEL 3: DETAIL - CONTACT
-                    // =========================================================
-                    AddSheetScreen.DETAIL_CONTACT -> {
-                        DetailScreenLayout(
-                            title = "Contact",
-                            description = "Ways to reach and connect with you",
-                            onBack = { currentScreen = AddSheetScreen.CATEGORIES },
-                            onClose = onDismissRequest
-                        ) {
-                            DetailItemRow(
-                                icon = Icons.Default.Phone,
-                                title = "Phone number",
-                                subtitle = "Personal, work, secondary numbers",
-                                onClick = { onSelectAction(AddActionType.PHONE) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Email,
-                                title = "Email address",
-                                subtitle = "Personal, work, academic, other",
-                                onClick = { onSelectAction(AddActionType.EMAIL) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Home,
-                                title = "Physical address",
-                                subtitle = "Home, work, postal, previous addresses",
-                                onClick = { onSelectAction(AddActionType.ADDRESS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Public,
-                                title = "Online presence",
-                                subtitle = "Website, portfolio, social profiles, usernames",
-                                onClick = { onSelectAction(AddActionType.ONLINE_PRESENCE) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Tune,
-                                title = "Communication preferences",
-                                subtitle = "Preferred contact method, availability notes",
-                                onClick = { onSelectAction(AddActionType.COMMUNICATION_PREFS) }
-                            )
-                        }
-                    }
-
-                    // =========================================================
-                    // LEVEL 3: DETAIL - EDUCATION
-                    // =========================================================
-                    AddSheetScreen.DETAIL_EDUCATION -> {
-                        DetailScreenLayout(
-                            title = "Education",
-                            description = "Academic background, credentials and capabilities",
-                            onBack = { currentScreen = AddSheetScreen.CATEGORIES },
-                            onClose = onDismissRequest
-                        ) {
-                            DetailItemRow(
-                                icon = Icons.Default.School,
-                                title = "Education",
-                                subtitle = "Schools, colleges, universities attended",
-                                onClick = { onSelectAction(AddActionType.EDUCATION) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Description,
-                                title = "Degree & qualification",
-                                subtitle = "Degrees, diplomas, certificates earned",
-                                onClick = { onSelectAction(AddActionType.QUALIFICATION) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Star,
-                                title = "Professional certification",
-                                subtitle = "Certifications, licences, registrations",
-                                onClick = { onSelectAction(AddActionType.CERTIFICATION) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.EmojiEvents,
-                                title = "Academic achievements",
-                                subtitle = "Honours, awards, distinctions, scholarships",
-                                onClick = { onSelectAction(AddActionType.ACADEMIC_ACHIEVEMENT) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Psychology,
-                                title = "Courses & training",
-                                subtitle = "Short courses, workshops, bootcamps, training",
-                                onClick = { onSelectAction(AddActionType.COURSES_TRAINING) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Language,
-                                title = "Skills & languages",
-                                subtitle = "Technical skills, soft skills, spoken languages",
-                                onClick = { onSelectAction(AddActionType.SKILLS_LANGUAGES) }
-                            )
-                        }
-                    }
-
-                    // =========================================================
-                    // LEVEL 3: DETAIL - CAREER
-                    // =========================================================
-                    AddSheetScreen.DETAIL_CAREER -> {
-                        DetailScreenLayout(
-                            title = "Career",
-                            description = "Professional life, projects and accomplishments",
-                            onBack = { currentScreen = AddSheetScreen.CATEGORIES },
-                            onClose = onDismissRequest
-                        ) {
-                            DetailItemRow(
-                                icon = Icons.Default.Work,
-                                title = "Work experience",
-                                subtitle = "Jobs, roles, employers, career history",
-                                onClick = { onSelectAction(AddActionType.EXPERIENCE) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Folder,
-                                title = "Projects",
-                                subtitle = "Personal, academic and professional projects",
-                                onClick = { onSelectAction(AddActionType.PROJECTS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Public,
-                                title = "Portfolio",
-                                subtitle = "Work you've created, links, descriptions",
-                                onClick = { onSelectAction(AddActionType.PORTFOLIO) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.EmojiEvents,
-                                title = "Awards & achievements",
-                                subtitle = "Professional and personal achievements",
-                                onClick = { onSelectAction(AddActionType.AWARDS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.VolunteerActivism,
-                                title = "Volunteering & activities",
-                                subtitle = "Volunteer work, clubs, organisations",
-                                onClick = { onSelectAction(AddActionType.VOLUNTEERING) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Groups,
-                                title = "Professional memberships",
-                                subtitle = "Associations, societies, registrations",
-                                onClick = { onSelectAction(AddActionType.PROFESSIONAL_MEMBERSHIPS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Person,
-                                title = "References",
-                                subtitle = "Professional or academic references",
-                                onClick = { onSelectAction(AddActionType.REFERENCES) }
-                            )
-                        }
-                    }
-
-                    // =========================================================
-                    // LEVEL 3: DETAIL - HEALTH
-                    // =========================================================
-                    AddSheetScreen.DETAIL_HEALTH -> {
-                        DetailScreenLayout(
-                            title = "Health",
-                            description = "Medical conditions, medications and emergency records",
-                            onBack = { currentScreen = AddSheetScreen.CATEGORIES },
-                            onClose = onDismissRequest
-                        ) {
-                            DetailItemRow(
-                                icon = Icons.Default.MedicalServices,
-                                title = "Medical history",
-                                subtitle = "Conditions, diagnoses, medical history",
-                                onClick = { onSelectAction(AddActionType.MEDICAL_HISTORY) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Favorite,
-                                title = "Allergies",
-                                subtitle = "Food, medication, environmental allergies",
-                                onClick = { onSelectAction(AddActionType.ALLERGIES) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Medication,
-                                title = "Medications",
-                                subtitle = "Current and previous medications, dosages",
-                                onClick = { onSelectAction(AddActionType.MEDICATIONS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.CheckCircle,
-                                title = "Emergency information",
-                                subtitle = "Critical medical information and emergency contacts",
-                                onClick = { onSelectAction(AddActionType.EMERGENCY_INFO) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Person,
-                                title = "Doctors & providers",
-                                subtitle = "Doctors, clinics, hospitals, specialists",
-                                onClick = { onSelectAction(AddActionType.DOCTORS_PROVIDERS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Description,
-                                title = "Health documents",
-                                subtitle = "Prescriptions, reports, medical certificates",
-                                onClick = { onSelectAction(AddActionType.HEALTH_DOCUMENTS) }
-                            )
-                        }
-                    }
-
-                    // =========================================================
-                    // LEVEL 3: DETAIL - PERSONAL
-                    // =========================================================
-                    AddSheetScreen.DETAIL_PERSONAL -> {
-                        DetailScreenLayout(
-                            title = "Personal",
-                            description = "Interests, lifestyle, reflections and milestones",
-                            onBack = { currentScreen = AddSheetScreen.CATEGORIES },
-                            onClose = onDismissRequest
-                        ) {
-                            DetailItemRow(
-                                icon = Icons.Default.Extension,
-                                title = "Interests & hobbies",
-                                subtitle = "Activities, hobbies, creative pursuits",
-                                onClick = { onSelectAction(AddActionType.INTERESTS_HOBBIES) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Tune,
-                                title = "Preferences",
-                                subtitle = "Travel, dining, lifestyle, personal preferences",
-                                onClick = { onSelectAction(AddActionType.PREFERENCES) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Bookmark,
-                                title = "Personal notes",
-                                subtitle = "Private reflections, thoughts, personal notes",
-                                onClick = { onSelectAction(AddActionType.PERSONAL_NOTES) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.FitnessCenter,
-                                title = "Goals",
-                                subtitle = "Personal, fitness, career or life milestones",
-                                onClick = { onSelectAction(AddActionType.GOALS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.CalendarToday,
-                                title = "Important dates",
-                                subtitle = "Birthdays, anniversaries, special occasions",
-                                onClick = { onSelectAction(AddActionType.IMPORTANT_DATES) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Star,
-                                title = "Favourite things",
-                                subtitle = "Books, movies, music, places, memorable items",
-                                onClick = { onSelectAction(AddActionType.FAVOURITE_THINGS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.Groups,
-                                title = "Memberships & affiliations",
-                                subtitle = "Clubs, community groups, memberships",
-                                onClick = { onSelectAction(AddActionType.MEMBERSHIPS_AFFILIATIONS) }
-                            )
-                            DetailItemRow(
-                                icon = Icons.Default.AutoAwesome,
-                                title = "Custom information",
-                                subtitle = "Create your own field when not predefined",
-                                onClick = { onSelectAction(AddActionType.CUSTOM_FIELD) }
-                            )
-                        }
+                                .size(18.dp)
+                                .clickable { searchQuery = "" }
+                        )
                     }
                 }
             }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                thickness = 0.8.dp,
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
+
+            val query = searchQuery.trim().lowercase()
+
+            if (query.isNotEmpty()) {
+                // Real-time Search Results in 3-Column Grid
+                Text(
+                    text = "MATCHING CATEGORIES",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                val filtered = searchableItems.filter {
+                    it.label.lowercase().contains(query) || it.keywords.contains(query)
+                }
+
+                if (filtered.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No category matching \"$searchQuery\"",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    filtered.chunked(3).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            rowItems.forEach { item ->
+                                CompactActionTile(
+                                    icon = item.icon,
+                                    label = item.label,
+                                    onClick = {
+                                        haptics.selection()
+                                        onSelectAction(item.action)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            repeat(3 - rowItems.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            } else {
+                // 3 High-Level Buckets (3x3 Grid)
+
+                // 1. Credentials & Money
+                ActionBucketSection(
+                    title = "CREDENTIALS & MONEY",
+                    items = credentialsMoneyBucket,
+                    onSelectAction = onSelectAction
+                )
+
+                // 2. Personal & Identity
+                ActionBucketSection(
+                    title = "PERSONAL & IDENTITY",
+                    items = personalIdentityBucket,
+                    onSelectAction = onSelectAction
+                )
+
+                // 3. Files & Vault
+                ActionBucketSection(
+                    title = "FILES & VAULT",
+                    items = filesVaultBucket,
+                    onSelectAction = onSelectAction
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
 
-/**
- * Standard reusable detail screen layout with back navigation and close button
- */
+// ---------------------------------------------------------------------------
+// Compact Components (0.2s Cognitive Recognition)
+// ---------------------------------------------------------------------------
+
 @Composable
-private fun DetailScreenLayout(
+private fun QuickAddPill(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        modifier = modifier.tactilePress(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.5.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActionBucketSection(
     title: String,
-    description: String,
-    onBack: () -> Unit,
-    onClose: () -> Unit,
-    content: @Composable () -> Unit
+    items: List<ActionTileItem>,
+    onSelectAction: (AddActionType) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val haptics = rememberPimsHaptics()
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        SheetHeaderWithBack(
-            title = title,
-            onBack = {
-                haptics.light()
-                onBack()
-            },
-            onClose = onClose
-        )
         Text(
-            text = description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            text = title,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        content()
-        Spacer(modifier = Modifier.height(14.dp))
-    }
-}
-
-@Composable
-private fun SheetHeaderWithBack(
-    title: String,
-    onBack: () -> Unit,
-    onClose: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface
+            items.forEach { item ->
+                CompactActionTile(
+                    icon = item.icon,
+                    label = item.label,
+                    onClick = {
+                        haptics.selection()
+                        onSelectAction(item.action)
+                    },
+                    modifier = Modifier.weight(1f)
                 )
             }
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.3).sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-        IconButton(onClick = onClose) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Close",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
 
-/**
- * Level 1 Choice Card
- */
 @Composable
-private fun PrimaryChoiceCard(
+private fun CompactActionTile(
     icon: ImageVector,
-    title: String,
-    description: String,
-    showChevron: Boolean = false,
-    onClick: () -> Unit
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .tactilePress(onClick = onClick)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        modifier = modifier.tactilePress(onClick = onClick)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (showChevron) {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
-}
-
-/**
- * Level 2 Domain Category Card
- */
-@Composable
-private fun CategoryDomainCard(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    isAccent: Boolean = false,
-    onClick: () -> Unit
-) {
-    val haptics = rememberPimsHaptics()
-
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            1.dp,
-            if (isAccent) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.50f)
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .tactilePress {
-                haptics.selection()
-                onClick()
-            }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(vertical = 12.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(
-                        color = if (isAccent) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(10.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (isAccent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-/**
- * Level 3 Detailed Option Row
- */
-@Composable
-private fun DetailItemRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
-    val haptics = rememberPimsHaptics()
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .tactilePress {
-                haptics.selection()
-                onClick()
-            },
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surface
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 9.dp, horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(8.dp)
-                    ),
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(16.dp)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
             )
         }
     }
 }
-

@@ -4,19 +4,20 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Warm Cream Base Surface (#F7F5F0) -->
+
+    <!-- Deep warm espresso base -->
     <path
-        android:fillColor="#F7F5F0"
+        android:fillColor="#221C17"
         android:pathData="M0,0h108v108h-108z" />
 
-    <!-- Soft elevated circular halo (#FFFDF8) -->
+    <!-- Soft elevated halo disc -->
     <path
-        android:fillColor="#FFFDF8"
-        android:pathData="M54,16 C74.987,16 92,33.013 92,54 C92,74.987 74.987,92 54,92 C33.013,92 16,74.987 16,54 C16,33.013 33.013,16 54,16 Z" />
+        android:fillColor="#2A231C"
+        android:pathData="M54,6 C80.51,6 102,27.49 102,54 C102,80.51 80.51,102 54,102 C27.49,102 6,80.51 6,54 C6,27.49 27.49,6 54,6 Z" />
 
-    <!-- Subtle warm divider ring (#E5E0D6) -->
+    <!-- Faint ambient ring for depth -->
     <path
-        android:strokeColor="#E5E0D6"
-        android:strokeWidth="1.2"
-        android:pathData="M54,16 C74.987,16 92,33.013 92,54 C92,74.987 74.987,92 54,92 C33.013,92 16,74.987 16,54 C16,33.013 33.013,16 54,16 Z" />
+        android:strokeColor="#3D3327"
+        android:strokeWidth="1.4"
+        android:pathData="M54,14 C76.09,14 94,31.91 94,54 C94,76.09 76.09,94 54,94 C31.91,94 14,76.09 14,54 C14,31.91 31.91,14 54,14 Z" />
 </vector>

@@ -46,12 +46,12 @@ class LocalWallpaperManager @Inject constructor(
 ) {
     private val wallpaperDir = File(context.filesDir, "wallpapers").apply { if (!exists()) mkdirs() }
     private val storeFile = File(context.filesDir, "wallpapers_meta.json")
+    private val activeIndexFile = File(context.filesDir, "wallpapers_active.txt")
 
-    private val defaultPresets = listOf(
+    val defaultPresets = listOf(
         WallpaperItem(
             id = "preset_amber",
             title = "Terracotta Dunes",
-            subtitle = "12 September 2026 · Personal",
             type = WallpaperType.GENERATIVE_ARTWORK,
             artSeed = 2,
             isBuiltIn = true
@@ -59,7 +59,6 @@ class LocalWallpaperManager @Inject constructor(
         WallpaperItem(
             id = "preset_kariba",
             title = "Lake Kariba",
-            subtitle = "August 2026 · Journey",
             type = WallpaperType.GENERATIVE_ARTWORK,
             artSeed = 1,
             isBuiltIn = true
@@ -67,18 +66,45 @@ class LocalWallpaperManager @Inject constructor(
         WallpaperItem(
             id = "preset_grad",
             title = "Graduation Day",
-            subtitle = "June 2026 · Education",
             type = WallpaperType.GENERATIVE_ARTWORK,
             artSeed = 3,
             isBuiltIn = true
         )
     )
 
+    fun selectOrAddPreset(preset: WallpaperItem) {
+        val existingIndex = _wallpapers.value.indexOfFirst { 
+            it.id == preset.id || (it.type == WallpaperType.GENERATIVE_ARTWORK && it.artSeed == preset.artSeed) 
+        }
+        if (existingIndex >= 0) {
+            setActiveIndex(existingIndex)
+        } else {
+            val updated = _wallpapers.value + preset
+            persistWallpapers(updated)
+            _wallpapers.value = updated
+            _activeWallpaperIndex.value = updated.size - 1
+        }
+    }
+
     private val _wallpapers = MutableStateFlow<List<WallpaperItem>>(loadWallpapers())
     val wallpapers: StateFlow<List<WallpaperItem>> = _wallpapers.asStateFlow()
 
-    private val _activeWallpaperIndex = MutableStateFlow(0)
+    private val _activeWallpaperIndex = MutableStateFlow(loadActiveIndex())
     val activeWallpaperIndex: StateFlow<Int> = _activeWallpaperIndex.asStateFlow()
+
+    private fun loadActiveIndex(): Int {
+        return try {
+            if (activeIndexFile.exists()) activeIndexFile.readText().trim().toInt() else 0
+        } catch (_: Exception) {
+            0
+        }
+    }
+
+    private fun persistActiveIndex(index: Int) {
+        try {
+            activeIndexFile.writeText(index.toString())
+        } catch (_: Exception) {}
+    }
 
     private fun loadWallpapers(): List<WallpaperItem> {
         if (!storeFile.exists()) return defaultPresets
@@ -127,24 +153,22 @@ class LocalWallpaperManager @Inject constructor(
 
     fun setActiveIndex(index: Int) {
         val total = _wallpapers.value.size
-        if (total > 0) {
-            _activeWallpaperIndex.value = index.coerceIn(0, total - 1)
-        } else {
-            _activeWallpaperIndex.value = 0
-        }
+        val coerced = if (total > 0) index.coerceIn(0, total - 1) else 0
+        _activeWallpaperIndex.value = coerced
+        persistActiveIndex(coerced)
     }
 
     fun nextWallpaper() {
         val total = _wallpapers.value.size
         if (total > 0) {
-            _activeWallpaperIndex.value = (_activeWallpaperIndex.value + 1) % total
+            setActiveIndex((_activeWallpaperIndex.value + 1) % total)
         }
     }
 
     fun previousWallpaper() {
         val total = _wallpapers.value.size
         if (total > 0) {
-            _activeWallpaperIndex.value = if (_activeWallpaperIndex.value - 1 < 0) total - 1 else _activeWallpaperIndex.value - 1
+            setActiveIndex(if (_activeWallpaperIndex.value - 1 < 0) total - 1 else _activeWallpaperIndex.value - 1)
         }
     }
 
@@ -169,7 +193,7 @@ class LocalWallpaperManager @Inject constructor(
             val updated = _wallpapers.value + newItem
             persistWallpapers(updated)
             _wallpapers.value = updated
-            _activeWallpaperIndex.value = updated.size - 1
+            setActiveIndex(updated.size - 1)
             true
         } catch (_: Exception) {
             false
@@ -189,7 +213,7 @@ class LocalWallpaperManager @Inject constructor(
         val updated = _wallpapers.value.filterNot { it.id == current.id }
         persistWallpapers(updated)
         _wallpapers.value = updated
-        _activeWallpaperIndex.value = if (updated.isEmpty()) 0 else (_activeWallpaperIndex.value - 1).coerceAtLeast(0)
+        setActiveIndex(if (updated.isEmpty()) 0 else (_activeWallpaperIndex.value - 1).coerceAtLeast(0))
         return true
     }
 
@@ -201,14 +225,14 @@ class LocalWallpaperManager @Inject constructor(
         val updated = _wallpapers.value.filterNot { it.id == id }
         persistWallpapers(updated)
         _wallpapers.value = updated
-        _activeWallpaperIndex.value = if (updated.isEmpty()) 0 else (_activeWallpaperIndex.value.coerceAtMost(updated.size - 1))
+        setActiveIndex(if (updated.isEmpty()) 0 else _activeWallpaperIndex.value.coerceAtMost(updated.size - 1))
         return true
     }
 
     fun restoreDefaultPresets() {
         persistWallpapers(defaultPresets)
         _wallpapers.value = defaultPresets
-        _activeWallpaperIndex.value = 0
+        setActiveIndex(0)
     }
 
     fun clearAllWallpapers() {
@@ -219,7 +243,7 @@ class LocalWallpaperManager @Inject constructor(
         }
         persistWallpapers(emptyList())
         _wallpapers.value = emptyList()
-        _activeWallpaperIndex.value = 0
+        setActiveIndex(0)
     }
 
     fun loadBitmap(filePath: String): Bitmap? {

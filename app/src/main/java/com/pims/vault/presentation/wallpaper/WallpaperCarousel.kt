@@ -39,7 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.sin
 
 /**
@@ -79,16 +80,20 @@ fun WallpaperCarousel(
     onActiveIndexChanged: (Int) -> Unit,
     onOpenOptions: () -> Unit,
     modifier: Modifier = Modifier,
-    carouselHeight: Dp = 340.dp
+    carouselHeight: Dp? = null
 ) {
     val haptics = rememberPimsHaptics()
     val backgroundColor = MaterialTheme.colorScheme.background
+    val scope = rememberCoroutineScope()
 
     if (wallpapers.isEmpty()) {
+        val emptyModifier = if (carouselHeight != null) {
+            modifier.fillMaxWidth().height(carouselHeight)
+        } else {
+            modifier.fillMaxSize()
+        }
         Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .height(240.dp)
+            modifier = emptyModifier
                 .padding(horizontal = 24.dp, vertical = 12.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
@@ -135,19 +140,12 @@ fun WallpaperCarousel(
         pageCount = { wallpapers.size }
     )
 
-    // Synchronize external index changes with pager
+    // Synchronize explicit external selection changes with the pager.
+    // Auto-rotation and free swiping only change what is DISPLAYED here;
+    // they never touch the persisted "active" wallpaper (that is sheet-only).
     LaunchedEffect(activeIndex) {
         if (pagerState.currentPage != activeIndex && activeIndex in wallpapers.indices) {
             pagerState.animateScrollToPage(activeIndex)
-        }
-    }
-
-    // Report user swipe changes
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { page ->
-            if (page != activeIndex) {
-                onActiveIndexChanged(page)
-            }
         }
     }
 
@@ -178,16 +176,22 @@ fun WallpaperCarousel(
         label = "kenBurnsScale"
     )
 
+    val boxModifier = if (carouselHeight != null) {
+        modifier.fillMaxWidth().height(carouselHeight)
+    } else {
+        modifier.fillMaxSize()
+    }
+
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(carouselHeight)
+        modifier = boxModifier
             .combinedClickable(
                 onClick = {
                     haptics.selection()
                     if (wallpapers.isNotEmpty()) {
+                        // Visual-only advance: browses the reel without
+                        // touching the persisted active wallpaper.
                         val next = (pagerState.currentPage + 1) % wallpapers.size
-                        onActiveIndexChanged(next)
+                        scope.launch { pagerState.animateScrollToPage(next) }
                     }
                 },
                 onLongClick = {
@@ -263,23 +267,14 @@ fun WallpaperCarousel(
                     },
                     label = "WpMeta"
                 ) { item ->
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-0.3).sp
-                            ),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        item.subtitle?.takeIf { it.isNotBlank() }?.let { sub ->
-                            Text(
-                                text = sub,
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.3).sp
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
                 }
             }
         }
@@ -293,7 +288,7 @@ fun WallpaperCarousel(
  * Seed 3: Graduation Day - Radiant twilight horizon with majestic hills
  */
 @Composable
-private fun GenerativeArtworkVisual(
+internal fun GenerativeArtworkVisual(
     seed: Int,
     modifier: Modifier = Modifier
 ) {

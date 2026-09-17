@@ -78,6 +78,7 @@ class VaultSessionTests {
         override fun getAllPersonsFlow(): Flow<List<com.pims.vault.data.local.entity.PersonEntity>> = flowOf(emptyList())
         override fun getPersonWithFullProfileFlow(id: String): Flow<com.pims.vault.data.local.relation.PersonWithFullProfile?> = flowOf(null)
         override fun getPrimaryOwnerWithFullProfileFlow(): Flow<com.pims.vault.data.local.relation.PersonWithFullProfile?> = flowOf(null)
+        override suspend fun insert(person: com.pims.vault.data.local.entity.PersonEntity): Long = 1L
         override suspend fun insertOrUpdate(person: com.pims.vault.data.local.entity.PersonEntity): Long = 1L
         override suspend fun insertAll(persons: List<com.pims.vault.data.local.entity.PersonEntity>) {}
         override suspend fun update(person: com.pims.vault.data.local.entity.PersonEntity) {}

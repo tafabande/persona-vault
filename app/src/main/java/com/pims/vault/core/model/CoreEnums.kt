@@ -66,9 +66,30 @@ enum class MedicalRecordType {
     CONDITION,
     ALLERGY,
     MEDICATION,
+    PRESCRIPTION,
     DOCTOR,
     HOSPITAL,
+    FACILITY,
+    VISIT,
+    COVERAGE,
     EMERGENCY_DIRECTIVE
+}
+
+enum class CoverageType(val displayLabel: String) {
+    MEDICAL_AID("Medical Aid"),
+    HEALTH_INSURANCE("Health Insurance"),
+    DENTAL_COVERAGE("Dental Coverage"),
+    GAP_COVER("Gap Cover"),
+    OTHER("Other Coverage")
+}
+
+enum class MedicationRoute(val displayLabel: String) {
+    ORAL("Oral"),
+    INJECTION("Injection"),
+    INHALATION("Inhalation"),
+    TOPICAL("Topical"),
+    DROPS("Drops"),
+    OTHER("Other")
 }
 
 enum class ConditionStatus {

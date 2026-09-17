@@ -12,6 +12,7 @@ import com.pims.vault.data.local.entity.DocumentEntity
 import com.pims.vault.data.local.entity.DocumentVersionEntity
 import com.pims.vault.data.local.entity.EducationRecordEntity
 import com.pims.vault.data.local.entity.EmploymentRecordEntity
+import com.pims.vault.data.local.entity.MedicalProfileEntity
 import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.data.local.entity.PersonEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
@@ -67,6 +68,8 @@ interface DocumentRepository {
 }
 
 interface MedicalRepository {
+    fun getMedicalProfileFlow(personId: String): Flow<MedicalProfileEntity?>
+    suspend fun saveMedicalProfile(profile: MedicalProfileEntity)
     fun getMedicalRecordsFlow(personId: String): Flow<List<MedicalRecordEntity>>
     fun getRecordsByTypeFlow(personId: String, type: MedicalRecordType): Flow<List<MedicalRecordEntity>>
     fun getEmergencyCardFlow(personId: String): Flow<List<MedicalRecordEntity>>

@@ -3,6 +3,16 @@ package com.pims.vault.presentation.avatar
 import android.graphics.BitmapFactory
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -11,12 +21,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -39,6 +52,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.avatar.engine.kinetics.rememberHumanMotion
 import com.pims.vault.presentation.ui.theme.LocalPersonaMood
 import com.pims.vault.presentation.ui.theme.LocalReducedMotion
 import com.pims.vault.presentation.ui.theme.PersonaMotion
@@ -125,71 +139,105 @@ fun PersonaAvatar(
     var interactiveExpression by remember { mutableStateOf<AvatarExpression?>(null) }
     var isInteracting by remember { mutableStateOf(false) }
 
-    val activeExpression = remember(expression, interactiveExpression, isNightTime) {
+    // Observe global autonomous life cycle activity
+    val ambientActivity by com.pims.vault.presentation.avatar.engine.ambient.PersonaLifeCycleManager.instance.currentActivity.collectAsState()
+
+    val activeExpression = remember(expression, interactiveExpression, behaviorMode, ambientActivity) {
         interactiveExpression
             ?: expression
-            ?: if (isNightTime && behaviorMode == AvatarBehaviorMode.ALIVE) AvatarExpression.SLEEPY else effectiveConfig.expression
+            ?: when {
+                behaviorMode == AvatarBehaviorMode.STATIC -> effectiveConfig.expression
+                ambientActivity == com.pims.vault.presentation.avatar.engine.ambient.AmbientActivity.LISTENING_MUSIC -> AvatarExpression.HAPPY_SQUISH
+                else -> effectiveConfig.expression
+            }
     }
 
     // 5. Smooth Spring Scale for Tap / Interaction
-    // 5. Smooth Spring Scale for Tap / Interaction
     val scaleAnim = remember { Animatable(1f) }
 
-    // 6. Procedural Alive Animation States (Blink, Tilt, Yawn, Sparkle, Blush)
-    val blinkAnim = remember { Animatable(0f) }
+    // 6.1. Hairstyle-Specific Secondary Motion driven by modular HairPhysicsProfiles
+    val hairPhysicsProfile = remember(effectiveConfig.hairStyle) {
+        com.pims.vault.presentation.avatar.hair.HairPhysicsProfiles.forStyle(effectiveConfig.hairStyle)
+    }
+
+    // 6.2. Human-Paced Motion Controller (breathing, asymmetrical blinking, saccades, drift & gusts)
+    val humanMotion = rememberHumanMotion(hairPhysicsProfile)
+
+    // 6.3. Interactive & Activity Animation States (Yawns, Sparkles, Blush, Hop, Gaze Flick)
     val headTiltAnim = remember { Animatable(0f) }
     val yawnAnim = remember { Animatable(0f) }
     val sparkleProgressAnim = remember { Animatable(0f) }
     val blushBoostAnim = remember { Animatable(0f) }
+    val hopAnim = remember { Animatable(0f) }
+    val gazeFlickAnim = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
 
-    // 7. Idle Animation Loop: Blinks, Head Tilts, and Occasional Yawns without user interaction
+    // 6.4. Hairstyle Inertia Spring (rotation lag follow-through + interaction whip)
+    val hairSwayAnim = remember { Animatable(0f) }
+
+    // 6.3. Rhythm Oscillator for Listening to Music (120 BPM head bop)
+    val infiniteTransition = rememberInfiniteTransition(label = "MusicBopTransition")
+    val musicBopY by infiniteTransition.animateFloat(
+        initialValue = -2.5f,
+        targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "MusicBop"
+    )
+
+    LaunchedEffect(headTiltAnim.value) {
+        when {
+            behaviorMode != AvatarBehaviorMode.ALIVE || isReducedMotion -> hairSwayAnim.snapTo(0f)
+            isInteracting -> Unit // Interaction whip owns the spring; don't fight it
+            else -> {
+                val delta = headTiltAnim.value
+                // Counter-inertia lag: hair drags behind head rotation using data-driven physics profile
+                hairSwayAnim.animateTo(
+                    targetValue = -delta * hairPhysicsProfile.followThrough * 0.55f,
+                    animationSpec = tween(
+                        durationMillis = (180 + hairPhysicsProfile.mass * 60).toInt(),
+                        easing = FastOutSlowInEasing
+                    )
+                )
+                // Hair catches up and settles with bouncy spring
+                hairSwayAnim.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = if (hairPhysicsProfile.stiffness > 250f) Spring.StiffnessMedium else Spring.StiffnessLow
+                    )
+                )
+            }
+        }
+    }
+
+    // 7. Idle Animation Loop: Occasional Yawns without user interaction
     LaunchedEffect(behaviorMode, isReducedMotion, isCustomPhoto) {
         if (!isCustomPhoto && behaviorMode == AvatarBehaviorMode.ALIVE && !isReducedMotion) {
             var cycleCount = 0
             while (true) {
                 val interval = if (isNightTime) {
-                    Random.nextLong(4500, 7500)
+                    Random.nextLong(6000, 11000)
                 } else {
-                    Random.nextLong(3000, 5200)
+                    Random.nextLong(10000, 18000)
                 }
                 delay(interval)
                 cycleCount++
 
-                // 1. Natural organic blink
-                launch {
-                    blinkAnim.animateTo(1f, tween(durationMillis = 65))
-                    delay(35)
-                    blinkAnim.animateTo(0f, tween(durationMillis = 85))
-                }
-
-                // 2. Subtle organic head tilt every 2-3 cycles
-                if (cycleCount % 2 == 0) {
-                    val angles = listOf(-3.5f, 3.5f, -2.0f, 2.0f, 0f)
-                    val nextAngle = angles.random()
-                    launch {
-                        headTiltAnim.animateTo(
-                            nextAngle,
-                            tween(durationMillis = 1100, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-                        )
-                    }
-                }
-
-                // 3. Occasional organic yawn (every 6-8 cycles or more frequent if night)
-                val shouldYawn = (isNightTime && cycleCount % 4 == 0) || (cycleCount % 7 == 0)
+                // Occasional organic yawn
+                val shouldYawn = (isNightTime && cycleCount % 2 == 0) || (cycleCount % 4 == 0)
                 if (shouldYawn) {
                     launch {
-                        // Inhale / open mouth yawn stretch
                         headTiltAnim.animateTo(-3.5f, tween(durationMillis = 700))
                         yawnAnim.animateTo(1f, tween(durationMillis = 900, easing = androidx.compose.animation.core.FastOutSlowInEasing))
                         delay(650)
-                        // Exhale / relax back to normal
                         yawnAnim.animateTo(0f, tween(durationMillis = 800, easing = androidx.compose.animation.core.FastOutSlowInEasing))
                         headTiltAnim.animateTo(0f, tween(durationMillis = 700))
                     }
                 }
             }
         } else {
-            blinkAnim.snapTo(0f)
             headTiltAnim.snapTo(0f)
             yawnAnim.snapTo(0f)
         }
@@ -211,7 +259,7 @@ fun PersonaAvatar(
                     }
                     delay(300)
                 } else {
-                    // Procedural avatar: smile reaction, cute sparkles, hearts, and spring squish-bounce
+                    // Procedural avatar: excited nod + hop, hair whip, gaze flick, sparkles & squish-bounce
                     interactiveExpression = AvatarExpression.HAPPY_SQUISH
 
                     if (!isReducedMotion && behaviorMode != AvatarBehaviorMode.STATIC) {
@@ -224,6 +272,32 @@ fun PersonaAvatar(
                             )
                             sparkleProgressAnim.snapTo(0f)
                             blushBoostAnim.animateTo(0f, tween(durationMillis = 400))
+                        }
+                        // Excited hop: snappy rise, bouncy landing
+                        launch {
+                            hopAnim.animateTo(-11f, tween(durationMillis = 150, easing = FastOutLinearInEasing))
+                            hopAnim.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium))
+                        }
+                        // Acknowledgment nod: quick dip, slight overshoot, settle
+                        launch {
+                            headTiltAnim.animateTo(4.5f, tween(durationMillis = 110, easing = FastOutLinearInEasing))
+                            headTiltAnim.animateTo(-1.5f, tween(durationMillis = 130, easing = LinearOutSlowInEasing))
+                            headTiltAnim.animateTo(0f, tween(durationMillis = 220, easing = LinearOutSlowInEasing))
+                        }
+                        // Hair whip: sharp kick scaled by hairstyle follow-through, spring settle
+                        launch {
+                            val whipDirection = if (Random.nextBoolean()) 1f else -1f
+                            val whipPower = (9f + hairPhysicsProfile.followThrough * 16f) * whipDirection
+                            hairSwayAnim.animateTo(whipPower, tween(durationMillis = 90, easing = FastOutLinearInEasing))
+                            hairSwayAnim.animateTo(
+                                targetValue = 0f,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+                            )
+                        }
+                        // Curious gaze flick toward a random point, easing back into ambient saccades
+                        launch {
+                            gazeFlickAnim.snapTo(Offset(Random.nextDouble(-4.0, 4.0).toFloat(), Random.nextDouble(-2.0, 2.0).toFloat()))
+                            gazeFlickAnim.animateTo(Offset.Zero, tween(durationMillis = 620, easing = LinearOutSlowInEasing))
                         }
                         scaleAnim.snapTo(0.90f)
                         scaleAnim.animateTo(1.08f, PersonaMotion.bouncySpring(isReducedMotion))
@@ -242,6 +316,7 @@ fun PersonaAvatar(
     Box(
         modifier = modifier
             .size(size)
+            .offset(y = hopAnim.value.dp)
             .scale(scaleAnim.value)
             .clip(CircleShape)
             .semantics {
@@ -264,7 +339,62 @@ fun PersonaAvatar(
             ),
         contentAlignment = Alignment.Center
     ) {
-        if (isCustomPhoto && customBitmap != null) {
+        val renderProceduralCanvas = @Composable {
+            // Human-paced kinetics & micro-movements
+            val isAlive = behaviorMode == AvatarBehaviorMode.ALIVE && !isReducedMotion
+            val effectiveHeadTilt = (if (isAlive) humanMotion.headTiltDeg else 0f) + headTiltAnim.value + if (isAlive) ambientActivity.headTiltBias else 0f
+            val tiltMagnitude = kotlin.math.abs(effectiveHeadTilt)
+            val squashScaleX = if (isAlive) 1f + (tiltMagnitude * 0.0035f) else 1f
+            val squashScaleY = if (isAlive) 1f - (tiltMagnitude * 0.0035f) else 1f
+
+            val bopOffset = if (ambientActivity == com.pims.vault.presentation.avatar.engine.ambient.AmbientActivity.LISTENING_MUSIC) musicBopY else 0f
+            val effectiveShoulderY = if (isAlive) humanMotion.breathShoulderY + bopOffset else 0f
+            val effectiveHeadY = if (isAlive) humanMotion.breathHeadY + bopOffset else 0f
+
+            val effectiveBlink = if (!isAlive) 0f else humanMotion.blinkProgress
+ 
+            // Procedural Vector Avatar with human kinetic cadence
+            Box(modifier = Modifier.fillMaxSize()) {
+                PersonaAvatarCanvas(
+                    config = effectiveConfig.copy(expression = activeExpression),
+                    size = size,
+                    showBackground = showBackground,
+                    customMood = customMood,
+                    blinkProgress = effectiveBlink,
+                    isSleepy = false,
+                    headTiltAngle = effectiveHeadTilt,
+                    hairSwayAngle = hairSwayAnim.value + if (isAlive) humanMotion.ambientHairSway else 0f,
+                    idleBreathY = effectiveShoulderY,
+                    breathShoulderY = effectiveShoulderY,
+                    breathHeadY = effectiveHeadY,
+                    gazeOffset = if (isAlive) humanMotion.gazeOffset + gazeFlickAnim.value else Offset.Zero,
+                    hairInertiaAngle = if (isAlive) humanMotion.hairInertiaAngle else 0f,
+                    squashScaleX = squashScaleX,
+                    squashScaleY = squashScaleY,
+                    yawnProgress = yawnAnim.value,
+                    sparkleProgress = sparkleProgressAnim.value,
+                    blushBoost = blushBoostAnim.value
+                )
+
+                // Render dynamic autonomous activity props only for music listening, never facial snoring Zzz
+                if (isAlive && ambientActivity == com.pims.vault.presentation.avatar.engine.ambient.AmbientActivity.LISTENING_MUSIC) {
+                    com.pims.vault.presentation.avatar.engine.ambient.AmbientActivityPropRenderer(
+                        activity = ambientActivity,
+                        bopOffset = musicBopY,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        if (effectiveConfig.useRiveAnimation && !effectiveConfig.riveAssetPath.isNullOrBlank()) {
+            RivePersonaAvatar(
+                size = size,
+                riveAssetPath = effectiveConfig.riveAssetPath,
+                modifier = Modifier.fillMaxSize(),
+                fallback = renderProceduralCanvas
+            )
+        } else if (isCustomPhoto && customBitmap != null) {
             // High-fidelity custom photo display
             Image(
                 bitmap = customBitmap.asImageBitmap(),
@@ -282,19 +412,7 @@ fun PersonaAvatar(
             // Elegant Brand Default Avatar Fallback (Section 37)
             DefaultPersonaFallbackAvatar(name = name, size = size, textSize = avatarTextSize)
         } else {
-            // Procedural Vector Avatar with dynamic live tilt, yawn, blush, and cute sparkles
-            PersonaAvatarCanvas(
-                config = effectiveConfig.copy(expression = activeExpression),
-                size = size,
-                showBackground = showBackground,
-                customMood = customMood,
-                blinkProgress = blinkAnim.value,
-                isSleepy = isNightTime && activeExpression != AvatarExpression.HAPPY_SQUISH,
-                headTiltAngle = headTiltAnim.value,
-                yawnProgress = yawnAnim.value,
-                sparkleProgress = sparkleProgressAnim.value,
-                blushBoost = blushBoostAnim.value
-            )
+            renderProceduralCanvas()
         }
     }
 }

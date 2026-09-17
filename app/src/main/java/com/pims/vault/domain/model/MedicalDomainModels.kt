@@ -1,5 +1,7 @@
 package com.pims.vault.domain.model
 
+import com.pims.vault.core.model.CoverageType
+import com.pims.vault.core.model.MedicationRoute
 import com.pims.vault.core.model.SecurityClassification
 
 enum class BloodType(val displayLabel: String) {
@@ -47,6 +49,21 @@ enum class EmergencyCardField(val displayLabel: String) {
     RESIDENTIAL_ADDRESS("Residential Address")
 }
 
+data class MedicalProfile(
+    val personId: String,
+    val bloodType: BloodType = BloodType.UNKNOWN,
+    val heightCm: String? = null,
+    val weightKg: String? = null,
+    val emergencyContactName: String? = null,
+    val emergencyContactPhone: String? = null,
+    val emergencyContactRelationship: String? = null,
+    val primaryMedicalAidProvider: String? = null,
+    val medicalAidNumber: String? = null,
+    val membershipNumber: String? = null,
+    val policyNumber: String? = null,
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
 data class MedicalConditionItem(
     val id: String,
     val personId: String,
@@ -57,6 +74,8 @@ data class MedicalConditionItem(
     val diagnosedDate: String? = null,
     val resolvedDate: String? = null,
     val notes: String? = null,
+    val treatingDoctor: String? = null,
+    val facility: String? = null,
     val securityClassification: SecurityClassification = SecurityClassification.ZONE_3_SENSITIVE,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
@@ -81,16 +100,29 @@ data class MedicationItem(
     val name: String,
     val dosage: String,
     val frequency: String,
-    val route: String? = null, // "Oral", "Injection", "Inhalation"
+    val route: MedicationRoute = MedicationRoute.ORAL,
     val purpose: String? = null,
     val startDate: String? = null,
     val endDate: String? = null,
+    val prescribedBy: String? = null,
+    val instructions: String? = null,
     val isActive: Boolean = true,
-    val prescribingDoctorId: String? = null,
     val notes: String? = null,
     val securityClassification: SecurityClassification = SecurityClassification.ZONE_3_SENSITIVE,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+data class PrescriptionItem(
+    val id: String,
+    val personId: String,
+    val doctorName: String,
+    val issueDate: String? = null,
+    val instructions: String? = null,
+    val photoUri: String? = null,
+    val medicationsSummary: String? = null,
+    val notes: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 data class MedicalDoctorItem(
@@ -101,19 +133,56 @@ data class MedicalDoctorItem(
     val phone: String? = null,
     val email: String? = null,
     val facility: String? = null,
+    val address: String? = null,
+    val patientReferenceNumber: String? = null,
     val notes: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
-data class MedicalHospitalItem(
+data class HealthcareFacilityItem(
     val id: String,
     val personId: String,
     val name: String,
+    val patientNumber: String? = null,
     val phone: String? = null,
     val address: String? = null,
     val notes: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+data class InsuranceCoverageItem(
+    val id: String,
+    val personId: String,
+    val coverageType: CoverageType = CoverageType.MEDICAL_AID,
+    val provider: String,
+    val policyNumber: String? = null,
+    val membershipNumber: String? = null,
+    val memberNumber: String? = null,
+    val planName: String? = null,
+    val validUntil: String? = null,
+    val contactPhone: String? = null,
+    val coverageNotes: String? = null,
+    val cardPhotoUri: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class MedicalVisitItem(
+    val id: String,
+    val personId: String,
+    val visitDate: String, // e.g. "2026-09-12"
+    val doctorName: String? = null,
+    val facilityName: String? = null,
+    val reason: String,
+    val diagnosis: String? = null,
+    val treatment: String? = null,
+    val prescriptionSummary: String? = null,
+    val followUpDate: String? = null,
+    val notes: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+// Legacy alias to avoid breaking existing callers
+typealias MedicalHospitalItem = HealthcareFacilityItem
 
 data class MedicalDossier(
     val personId: String,
@@ -123,6 +192,23 @@ data class MedicalDossier(
     val medications: List<MedicationItem> = emptyList(),
     val doctors: List<MedicalDoctorItem> = emptyList(),
     val hospitals: List<MedicalHospitalItem> = emptyList()
+)
+
+/**
+ * Unified Medical Information Hub Data Model
+ */
+data class MedicalHubData(
+    val personId: String,
+    val profile: MedicalProfile = MedicalProfile(personId = personId),
+    val allergies: List<AllergyItem> = emptyList(),
+    val conditions: List<MedicalConditionItem> = emptyList(),
+    val medications: List<MedicationItem> = emptyList(),
+    val prescriptions: List<PrescriptionItem> = emptyList(),
+    val doctors: List<MedicalDoctorItem> = emptyList(),
+    val facilities: List<HealthcareFacilityItem> = emptyList(),
+    val coverages: List<InsuranceCoverageItem> = emptyList(),
+    val visits: List<MedicalVisitItem> = emptyList(),
+    val emergencyProjection: EmergencyCardProjection? = null
 )
 
 /**

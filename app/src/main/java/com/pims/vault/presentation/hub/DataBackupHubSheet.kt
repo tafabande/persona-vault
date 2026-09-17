@@ -1,7 +1,7 @@
 package com.pims.vault.presentation.hub
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,7 +108,7 @@ fun DataBackupHubSheet(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(onClick = onOpenSyncConflicts),
+                            .tactilePress(onClick = onOpenSyncConflicts),
                         shape = RoundedCornerShape(14.dp),
                         color = if (syncIsGood) StateSuccess.copy(alpha = 0.12f) else StateWarning.copy(alpha = 0.12f)
                     ) {
@@ -216,7 +216,7 @@ private fun DataActionRow(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .tactilePress(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
     ) {

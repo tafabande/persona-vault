@@ -43,6 +43,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -336,6 +340,36 @@ fun formatNationalDigits(digits: String, callingCode: String): String {
 }
 
 /**
+ * VisualTransformation that formats phone digits with clean spaced grouping (e.g. "77 123 4567")
+ * while preserving pure digits in the input buffer.
+ * With bidirectional OffsetMapping, the cursor NEVER jumps around or shifts unpredictably.
+ */
+class PhoneVisualTransformation(private val callingCode: String) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text
+        val formatted = formatNationalDigits(digits, callingCode)
+
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                if (offset <= 0) return 0
+                val clamped = offset.coerceAtMost(digits.length)
+                val sub = digits.take(clamped)
+                return formatNationalDigits(sub, callingCode).length
+            }
+
+            override fun transformedToOriginal(offset: Int): Int {
+                if (offset <= 0) return 0
+                val clamped = offset.coerceAtMost(formatted.length)
+                val sub = formatted.take(clamped)
+                return sub.count { it.isDigit() }.coerceAtMost(digits.length)
+            }
+        }
+
+        return TransformedText(AnnotatedString(formatted), offsetMapping)
+    }
+}
+
+/**
  * Universal International Phone Input with Country Picker.
  *
  * Places a clickable country flag and dial code prefix (such as +263 for Zimbabwe or +27 for South Africa)
@@ -376,8 +410,8 @@ fun InternationalPhoneInput(
         }
     }
 
-    val displayFormatted = remember(rawDigits, selectedCountry) {
-        formatNationalDigits(rawDigits, selectedCountry.callingCode)
+    val phoneVisualTransformation = remember(selectedCountry.callingCode) {
+        PhoneVisualTransformation(selectedCountry.callingCode)
     }
 
     val effectivePlaceholder = placeholder ?: selectedCountry.example
@@ -457,7 +491,7 @@ fun InternationalPhoneInput(
                         .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
-                    if (displayFormatted.isEmpty()) {
+                    if (rawDigits.isEmpty()) {
                         Text(
                             text = effectivePlaceholder,
                             style = MaterialTheme.typography.bodyLarge,
@@ -466,7 +500,7 @@ fun InternationalPhoneInput(
                     }
 
                     BasicTextField(
-                        value = displayFormatted,
+                        value = rawDigits,
                         onValueChange = { input ->
                             // If user pasted a number with '+' or country code
                             if (input.contains("+")) {
@@ -484,6 +518,7 @@ fun InternationalPhoneInput(
                                 onValueChange(canonical)
                             }
                         },
+                        visualTransformation = phoneVisualTransformation,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium

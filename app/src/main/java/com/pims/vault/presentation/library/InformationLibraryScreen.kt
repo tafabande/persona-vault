@@ -1,5 +1,6 @@
 package com.pims.vault.presentation.library
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -126,6 +127,16 @@ fun InformationLibraryScreen(
             }
             matchesCategory && matchesFavorite && matchesSearch
         }.sortedByDescending { it.updatedAt }
+    }
+
+    BackHandler(enabled = true) {
+        when {
+            selectedItemForDetail != null -> selectedItemForDetail = null
+            selectedCategory != null -> selectedCategory = null
+            searchQuery.isNotBlank() -> searchQuery = ""
+            onlyFavorites -> onlyFavorites = false
+            else -> onBack()
+        }
     }
 
     Surface(

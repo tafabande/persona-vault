@@ -3,6 +3,7 @@ package com.pims.vault.presentation.hub
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -435,7 +436,7 @@ private fun StorageBreakdownRow(
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = MaterialTheme.colorScheme.tertiaryContainer,
-                        modifier = Modifier.clickable(onClick = onAction)
+                        modifier = Modifier.tactilePress(onClick = onAction)
                     ) {
                         Text(
                             text = actionButtonText,

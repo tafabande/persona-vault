@@ -1,5 +1,6 @@
 package com.pims.vault.presentation.vault
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -124,22 +126,34 @@ import com.pims.vault.presentation.ui.theme.PimsSurface
 import com.pims.vault.presentation.ui.theme.PimsTextPrimary
 import com.pims.vault.presentation.ui.theme.PimsTextSecondary
 import com.pims.vault.presentation.ui.theme.PimsWarning
+import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 
 @Composable
 fun VaultDashboardView(
     viewModel: VaultViewModel,
     onRequireBiometricReauth: (() -> Unit)? = null,
+    onBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val isDark = isSystemInDarkTheme()
-    val vaultBg = if (isDark) Color(0xFF121212) else Color(0xFFFFFFFF)
-    val cardBg = if (isDark) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
-    val borderCol = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE5E7EB)
+    val isDark = LocalPimsDarkTheme.current
+    val vaultBg = if (isDark) Color(0xFF121212) else MaterialTheme.colorScheme.background
+    val cardBg = if (isDark) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.surface
+    val borderCol = if (isDark) Color(0xFF2E2E2E) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
 
     var showCreateMenu by remember { mutableStateOf(false) }
     var activeViewTab by remember { mutableStateOf("DASHBOARD") }
+
+    BackHandler(enabled = true) {
+        if (showCreateMenu) {
+            showCreateMenu = false
+        } else if (activeViewTab != "DASHBOARD") {
+            activeViewTab = "DASHBOARD"
+        } else {
+            onBack()
+        }
+    }
 
     Box(
         modifier = modifier
@@ -512,13 +526,58 @@ fun VaultDashboardView(
 
     // Editor Dialogs
     if (uiState.isEditing && uiState.editorCategory != null) {
-        VaultEditorDialog(
-            category = uiState.editorCategory!!,
-            activeItemId = uiState.activeItemId,
-            uiState = uiState,
-            viewModel = viewModel,
-            onDismiss = { viewModel.closeEditor() }
-        )
+        if (uiState.editorCategory == VaultCategory.PASSWORD) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { viewModel.closeEditor() },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                com.pims.vault.presentation.vault.password.AddPasswordScreen(
+                    onNavigateBack = { viewModel.closeEditor() },
+                    onSavePassword = { title, username, pass, url, notes ->
+                        viewModel.savePassword(title, username, pass, url, notes, uiState.activeItemId)
+                    }
+                )
+            }
+        } else if (uiState.editorCategory == VaultCategory.PAYMENT_REFERENCE) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { viewModel.closeEditor() },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                com.pims.vault.presentation.vault.card.AddCardScreen(
+                    onNavigateBack = { viewModel.closeEditor() },
+                    onSaveCard = { holder, number, expiry, cvv ->
+                        val parts = expiry.split("/")
+                        val month = parts.getOrNull(0)?.trim() ?: ""
+                        val year = parts.getOrNull(1)?.trim() ?: ""
+                        val cleanNum = number.replace(" ", "").trim()
+                        val last4 = if (cleanNum.length >= 4) cleanNum.takeLast(4) else cleanNum
+                        val brand = when {
+                            cleanNum.startsWith("4") -> "Visa"
+                            cleanNum.startsWith("5") -> "Mastercard"
+                            cleanNum.startsWith("3") -> "Amex"
+                            else -> "Debit/Credit Card"
+                        }
+                        viewModel.savePaymentReference(
+                            nickname = if (holder.isNotBlank()) "$holder ($brand)" else brand,
+                            provider = brand,
+                            cardholderName = holder.takeIf { it.isNotBlank() },
+                            lastFour = last4,
+                            month = month,
+                            year = year,
+                            notes = null
+                        )
+                    }
+                )
+            }
+        } else {
+            VaultEditorDialog(
+                category = uiState.editorCategory!!,
+                activeItemId = uiState.activeItemId,
+                uiState = uiState,
+                viewModel = viewModel,
+                onDismiss = { viewModel.closeEditor() }
+            )
+        }
     }
 }
 
@@ -533,7 +592,7 @@ private fun VaultNavChip(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalPimsDarkTheme.current
     val bg = if (isSelected) MaterialTheme.colorScheme.primary else (if (isDark) Color(0xFF222222) else Color(0xFFF3F4F6))
     val contentColor = if (isSelected) Color.White else (if (isDark) Color(0xFFCCCCCC) else Color(0xFF374151))
     val border = if (isSelected) MaterialTheme.colorScheme.primary else (if (isDark) Color(0xFF333333) else Color(0xFFE5E7EB))
@@ -568,9 +627,9 @@ private fun VaultModularDashboard(
     onOpenItem: (VaultItemHeader) -> Unit,
     onCopy: (String, String) -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
-    val cardBg = if (isDark) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
-    val borderCol = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE5E7EB)
+    val isDark = LocalPimsDarkTheme.current
+    val cardBg = if (isDark) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.surface
+    val borderCol = if (isDark) Color(0xFF2E2E2E) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
 
     val passwords = uiState.vaultItems.filter { it.category == VaultCategory.PASSWORD }
     val notes = uiState.vaultItems.filter { it.category == VaultCategory.SECURE_NOTE }
@@ -840,9 +899,9 @@ private fun GooglePasswordsSection(
     onAddNew: () -> Unit,
     onBackToDashboard: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
-    val cardBg = if (isDark) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
-    val borderCol = if (isDark) Color(0xFF2E2E2E) else Color(0xFFE5E7EB)
+    val isDark = LocalPimsDarkTheme.current
+    val cardBg = if (isDark) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.surface
+    val borderCol = if (isDark) Color(0xFF2E2E2E) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
 
     val passwordItems = remember(items, searchQuery) {
         val userItems = items.filter { it.category == VaultCategory.PASSWORD }
@@ -860,57 +919,33 @@ private fun GooglePasswordsSection(
             .padding(bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Top Header Bar: Back, "Password Manager", Settings, Profile Avatar
+        // Top Header Bar: Back, "Password Manager"
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBackToDashboard) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Password Manager",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
+            IconButton(onClick = onBackToDashboard) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { /* Settings */ }) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(34.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "P",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "Password Manager",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
+
+        var showPasswordCheckupDialog by remember { mutableStateOf(false) }
+        var showPasskeyDialog by remember { mutableStateOf(false) }
 
         // Card 1: Password Checkup
         Surface(
@@ -922,7 +957,7 @@ private fun GooglePasswordsSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { /* Password checkup action */ }
+                    .clickable { showPasswordCheckupDialog = true }
                     .padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -973,7 +1008,7 @@ private fun GooglePasswordsSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { /* Passkey settings */ }
+                    .clickable { showPasskeyDialog = true }
                     .padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1012,6 +1047,21 @@ private fun GooglePasswordsSection(
                     modifier = Modifier.size(20.dp)
                 )
             }
+        }
+
+        if (showPasswordCheckupDialog) {
+            PasswordCheckupModal(
+                passwordCount = passwordItems.size,
+                onAddNew = {
+                    showPasswordCheckupDialog = false
+                    onAddNew()
+                },
+                onDismiss = { showPasswordCheckupDialog = false }
+            )
+        }
+
+        if (showPasskeyDialog) {
+            PasskeyInfoModal(onDismiss = { showPasskeyDialog = false })
         }
 
         // Search Bar with integrated `+` button
@@ -1169,6 +1219,187 @@ private fun GooglePasswordCredentialRow(
                 )
             }
         }
+
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+@Composable
+private fun PasswordCheckupModal(
+    passwordCount: Int,
+    onAddNew: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        PimsCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF10B981).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AssignmentTurnedIn,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "Password Security Checkup",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = PimsTextPrimary
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = if (passwordCount > 0)
+                        "All $passwordCount saved credentials in your vault are encrypted with AES-256-GCM hardware-backed cryptography and monitored for vulnerabilities."
+                    else
+                        "No credentials stored yet. Add passwords to your vault to monitor breach exposures and strengthen your accounts.",
+                    fontSize = 13.sp,
+                    color = PimsTextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "$passwordCount", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF3B82F6))
+                        Text(text = "Total", fontSize = 11.sp, color = PimsTextSecondary)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "0", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF10B981))
+                        Text(text = "Breached", fontSize = 11.sp, color = PimsTextSecondary)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "0", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF10B981))
+                        Text(text = "Reused", fontSize = 11.sp, color = PimsTextSecondary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    PimsButton(
+                        text = "CLOSE",
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    )
+                    PimsButton(
+                        text = "ADD PASSWORD",
+                        onClick = onAddNew,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PasskeyInfoModal(
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        PimsCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF6366F1).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PersonSearch,
+                        contentDescription = null,
+                        tint = Color(0xFF6366F1),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "Passkeys in Persona Vault",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = PimsTextPrimary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Passkeys replace passwords with biometric cryptographic keys stored in your device's Secure Enclave. Sign-in is seamless, phishing-proof, and unlocked with your biometric screen lock.",
+                    fontSize = 13.sp,
+                    color = PimsTextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF6366F1).copy(alpha = 0.08f))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF6366F1),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Hardware Biometric Keystore Ready",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PimsTextPrimary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+                PimsButton(
+                    text = "GOT IT",
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
     }
 }
 
@@ -1181,7 +1412,7 @@ private fun GoogleNotesSection(
     onAddNew: () -> Unit,
     onBackToDashboard: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalPimsDarkTheme.current
 
     val noteItems = remember(items, searchQuery) {
         val userNotes = items.filter { it.category == VaultCategory.SECURE_NOTE }
@@ -1373,7 +1604,7 @@ private fun GoogleNoteCardItem(
     item: VaultItemHeader,
     onClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalPimsDarkTheme.current
     val pastelColors = listOf(
         Color(0xFFFFF9C4), // Lemon
         Color(0xFFE8F5E9), // Mint
@@ -1421,6 +1652,10 @@ private fun GoogleWalletSection(
 ) {
     var selectedWalletCard by remember { mutableStateOf<VaultItemHeader?>(null) }
 
+    BackHandler(enabled = selectedWalletCard != null) {
+        selectedWalletCard = null
+    }
+
     if (selectedWalletCard != null) {
         // SCREEN 2B: Full Card Detail Screen
         GoogleWalletCardDetailScreen(
@@ -1439,13 +1674,13 @@ private fun GoogleWalletSection(
 }
 
 @Composable
-private fun GoogleWalletMainScreen(
+internal fun GoogleWalletMainScreen(
     items: List<VaultItemHeader>,
     onCardClick: (VaultItemHeader) -> Unit,
     onAddNew: () -> Unit,
     onBackToDashboard: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalPimsDarkTheme.current
 
     val walletCards = remember(items) {
         items.filter { it.category == VaultCategory.PAYMENT_REFERENCE }
@@ -1455,6 +1690,7 @@ private fun GoogleWalletMainScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .padding(bottom = 88.dp),
@@ -1703,7 +1939,7 @@ private fun WalletPassCardRow(
     subtitle: String,
     onClick: () -> Unit = {}
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalPimsDarkTheme.current
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = if (isDark) Color(0xFF242528) else Color(0xFFF1F3F4),
@@ -1747,7 +1983,7 @@ private fun GoogleWalletCardDetailScreen(
     card: VaultItemHeader,
     onBack: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalPimsDarkTheme.current
     var paymentNetworkSelection by remember { mutableStateOf("Auto") }
 
     Column(
@@ -2501,29 +2737,11 @@ private fun VaultEditorDialog(
 
                 when (category) {
                     VaultCategory.PASSWORD -> {
-                        var title by remember { mutableStateOf("") }
-                        var username by remember { mutableStateOf("") }
-                        var password by remember { mutableStateOf("") }
-                        var website by remember { mutableStateOf("") }
-                        var notes by remember { mutableStateOf("") }
-
-                        PimsOutlinedTextField(value = title, onValueChange = { title = it }, label = "Title (e.g. GitHub)", modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(8.dp))
-                        PimsOutlinedTextField(value = username, onValueChange = { username = it }, label = "Username or Email", modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(8.dp))
-                        PimsOutlinedTextField(value = password, onValueChange = { password = it }, label = "Password", modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(8.dp))
-                        PimsOutlinedTextField(value = website, onValueChange = { website = it }, label = "Website URL (Optional)", modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(8.dp))
-                        PimsOutlinedTextField(value = notes, onValueChange = { notes = it }, label = "Notes (Optional)", modifier = Modifier.fillMaxWidth())
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        PimsButton(
-                            text = "SAVE PASSWORD",
-                            onClick = {
-                                viewModel.savePassword(title, username, password, website.ifBlank { null }, notes.ifBlank { null })
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                        com.pims.vault.presentation.vault.password.AddPasswordScreen(
+                            onNavigateBack = onDismiss,
+                            onSavePassword = { title, username, password, website, notes ->
+                                viewModel.savePassword(title, username, password, website, notes, activeItemId)
+                            }
                         )
                     }
 

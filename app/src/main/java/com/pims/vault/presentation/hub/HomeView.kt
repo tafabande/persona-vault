@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,6 +57,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.components.InternationalPhoneInput
@@ -111,6 +113,7 @@ fun HomeView(
     onOpenEmergency: () -> Unit = {},
     onOpenCredentials: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onOpenCentralizedEditor: () -> Unit = {},
     onSaveIdentityDetails: ((name: String, email: String, phone: String, idNumber: String, idPhotoUri: Uri?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -127,26 +130,18 @@ fun HomeView(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 1. TOP BAR (Name + Avatar + Notification Bell; "Your Persona" removed)
-        HomeHeaderRow(
-            displayName = displayName,
-            avatarConfig = avatarConfig,
-            unreadNotificationCount = unreadNotificationCount,
-            onOpenProfile = onOpenProfile,
-            onOpenAvatarEditor = onOpenAvatarEditor,
-            onNotificationClick = onNotificationClick
-        )
-
-        // 2. EXPANDED HERO PHOTO AREA (Autoadjusts to available screen height without scrolling)
+        // 1 & 2: EXTENDED HERO PHOTO AREA WITH OVERLAYING FLOATING TOP BAR
+        // Top corners are square so the artwork bleeds up under the status bar.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(RoundedCornerShape(24.dp))
+                .clip(RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 26.dp, bottomEnd = 26.dp))
         ) {
+            // Wallpaper Background
             if (wallpapers.isNotEmpty()) {
                 com.pims.vault.presentation.wallpaper.WallpaperCarousel(
                     wallpapers = wallpapers,
@@ -185,6 +180,35 @@ fun HomeView(
                     }
                 }
             }
+
+            // Top Ambient Gradient Scrim & Floating Top Identity Bar.
+            // Strongest right at the status bar, dissolving softly downward so
+            // the artwork stays visible through the middle of the hero.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                                0.55f to MaterialTheme.colorScheme.background.copy(alpha = 0.42f),
+                                1.0f to Color.Transparent
+                            )
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                HomeHeaderRow(
+                    displayName = displayName,
+                    avatarConfig = avatarConfig,
+                    unreadNotificationCount = unreadNotificationCount,
+                    onOpenProfile = onOpenProfile,
+                    onOpenAvatarEditor = onOpenAvatarEditor,
+                    onNotificationClick = onNotificationClick
+                )
+            }
         }
 
         // 3. IDENTITY DETAILS CARD (Displays Name, Email, Phone, ID Number, and ID Photo)
@@ -196,40 +220,43 @@ fun HomeView(
             idPhotoPath = idPhotoPath,
             onEdit = {
                 haptics.light()
-                showIdentitySheet = true
+                onOpenCentralizedEditor()
             }
         )
 
-        // 4. THREE VERTICAL SHORTCUT OPTIONS UNDER IDENTITY DETAILS CARD
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        // 4. THREE VERTICAL CARDS SITTING SIDE BY SIDE IN THE SAME THEME ON THE BOTTOM JUST ABOVE THE NAVBAR
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            HomeShortcutCard(
+            HomeShortcutVerticalCard(
                 icon = Icons.Default.Badge,
                 title = "View Info",
-                subtitle = "Profile attributes, identity & personal info",
+                subtitle = "Profile",
                 accentColor = MaterialTheme.colorScheme.primary,
-                onClick = onOpenProfile
+                onClick = onOpenProfile,
+                modifier = Modifier.weight(1f)
             )
-            HomeShortcutCard(
+            HomeShortcutVerticalCard(
                 icon = Icons.Default.Lock,
                 title = "Vault",
-                subtitle = "Passwords, payment cards & secure notes",
+                subtitle = "Credentials",
                 accentColor = Color(0xFF10B981),
-                onClick = onOpenCredentials
+                onClick = onOpenCredentials,
+                modifier = Modifier.weight(1f)
             )
-            HomeShortcutCard(
+            HomeShortcutVerticalCard(
                 icon = Icons.Default.Share,
                 title = "Share",
-                subtitle = "Export identity pass & QR card",
+                subtitle = "Pass & QR",
                 accentColor = Color(0xFF8B5CF6),
-                onClick = onOpenShare
+                onClick = onOpenShare,
+                modifier = Modifier.weight(1f)
             )
         }
-
-        // Spacer to ensure bottom floating navigation dock clears content
-        Spacer(modifier = Modifier.height(64.dp))
     }
 
     // Modal Sheet to Ingest Text Details + ID Card Photo
@@ -270,18 +297,14 @@ private fun HomeHeaderRow(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .weight(1f)
-                .clickable {
-                    haptics.selection()
-                    onOpenProfile()
-                }
+            modifier = Modifier.weight(1f)
         ) {
             PersonaAvatar(
                 name = displayName,
                 config = avatarConfig,
                 size = 46.dp,
                 avatarTextSize = 18.sp,
+                onClick = onOpenProfile,
                 onLongClick = onOpenAvatarEditor
             )
 
@@ -289,6 +312,10 @@ private fun HomeHeaderRow(
 
             Text(
                 text = displayName,
+                modifier = Modifier.clickable {
+                    haptics.selection()
+                    onOpenProfile()
+                },
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.3).sp
@@ -712,67 +739,65 @@ private fun IdentityDetailsEditorSheet(
 }
 
 @Composable
-private fun HomeShortcutCard(
+private fun HomeShortcutVerticalCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
     accentColor: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
-    val cardBg = if (isDark) Color(0xFF1E1E22) else Color(0xFFFFFFFF)
-    val borderColor = if (isDark) Color(0xFF2E2E34) else Color(0xFFE2E8F0)
-
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = cardBg,
-        border = BorderStroke(1.dp, borderColor),
-        modifier = Modifier
-            .fillMaxWidth()
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+        shadowElevation = 2.dp,
+        modifier = modifier
             .pimsApplePress { onClick() }
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 6.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
-                    .background(accentColor.copy(alpha = 0.14f)),
+                    .background(accentColor.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = accentColor,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                textAlign = TextAlign.Center
+            )
 
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.size(18.dp)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
             )
         }
     }

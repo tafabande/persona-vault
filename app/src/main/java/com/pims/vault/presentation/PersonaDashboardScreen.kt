@@ -4,11 +4,21 @@ import android.app.Activity
 import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import com.pims.vault.presentation.ui.theme.LocalReducedMotion
+import com.pims.vault.presentation.ui.util.screenEnterRise
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +33,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -118,6 +132,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -134,6 +149,7 @@ import com.pims.vault.presentation.backup.BackupDashboardScreen
 import com.pims.vault.presentation.backup.BackupViewModel
 import com.pims.vault.presentation.document.DocumentEvent
 import com.pims.vault.presentation.document.DocumentViewModel
+import com.pims.vault.presentation.document.DocumentUploadSheet
 import com.pims.vault.core.model.ContactType
 import com.pims.vault.presentation.hub.AddActionBottomSheet
 import com.pims.vault.presentation.hub.AddActionType
@@ -156,6 +172,8 @@ import com.pims.vault.presentation.profile.ProfileViewModel
 import com.pims.vault.presentation.profile.CustomField
 import com.pims.vault.presentation.profile.KinRelationshipItem
 import com.pims.vault.presentation.profile.ProfileEvent
+import com.pims.vault.presentation.relationship.RelationshipViewModel
+import com.pims.vault.presentation.relationship.RelationshipEvent
 import com.pims.vault.presentation.sharing.SharingViewModel
 import com.pims.vault.core.model.InformationCategory
 import com.pims.vault.core.model.InformationSensitivity
@@ -290,7 +308,8 @@ fun PersonaDashboardScreen(
     medicalViewModel: MedicalViewModel = hiltViewModel(),
     backupViewModel: BackupViewModel = hiltViewModel(),
     syncViewModel: SyncViewModel = hiltViewModel(),
-    accountSecurityViewModel: AccountSecurityViewModel = hiltViewModel()
+    accountSecurityViewModel: AccountSecurityViewModel = hiltViewModel(),
+    relationshipViewModel: RelationshipViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -325,6 +344,7 @@ fun PersonaDashboardScreen(
     val documentState by documentViewModel.uiState.collectAsState()
     val vaultState by vaultViewModel.uiState.collectAsState()
     val medicalState by medicalViewModel.uiState.collectAsState()
+    val relationshipState by relationshipViewModel.uiState.collectAsState()
     val syncState by syncViewModel.syncState.collectAsState()
     val conflicts by syncViewModel.unresolvedConflicts.collectAsState()
     val activeSessions by syncViewModel.activeSessions.collectAsState()
@@ -446,7 +466,9 @@ fun PersonaDashboardScreen(
                 "storage" to false,
                 "dataBackup" to false,
                 "wallpaperOptions" to false,
-                "avatarEditor" to false
+                "avatarEditor" to false,
+                "uploadDoc" to false,
+                "centralizedEditor" to false
             )
         )
     }
@@ -481,6 +503,7 @@ fun PersonaDashboardScreen(
     val eduSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val healthSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val docsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val uploadDocSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val vaultSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val personDetailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val conflictSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -491,6 +514,7 @@ fun PersonaDashboardScreen(
     val dataBackupSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val wallpaperOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val avatarEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val centralizedEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     
     var selectedPersonForDetail by remember { mutableStateOf<KinRelationshipItem?>(null) }
     var personToEditForDialog by remember { mutableStateOf<KinRelationshipItem?>(null) }
@@ -772,7 +796,7 @@ fun PersonaDashboardScreen(
                 uploadDocExpiryDate = ""
                 uploadDocClassification = DocumentRules.resolveDefaultClassification(guessed.first)
 
-                showDialog("upload")
+                showSheet("uploadDoc")
             } catch (e: Exception) {
                 scope.launch {
                     snackbarHostState.showSnackbar("Could not read selected file: ${e.localizedMessage}")
@@ -1035,7 +1059,7 @@ fun PersonaDashboardScreen(
     if (fullScreenOverlay != null) {
         when (fullScreenOverlay) {
             "VAULT" -> {
-                Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().screenEnterRise()) {
                     // Top bar to return to Hub
                     Row(
                         modifier = Modifier
@@ -1072,13 +1096,17 @@ fun PersonaDashboardScreen(
                                 )
                             }
                         },
+                        onBack = { fullScreenOverlay = null },
                         modifier = Modifier.weight(1f)
                     )
                 }
                 return
             }
             "BACKUP" -> {
-                Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                BackHandler(enabled = true) {
+                    fullScreenOverlay = null
+                }
+                Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().screenEnterRise()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1098,11 +1126,13 @@ fun PersonaDashboardScreen(
                 return
             }
             "SECURITY_SETTINGS" -> {
-                SecuritySettingsScreen(
-                    pinSecurityManager = pinSecurityManager,
-                    onBack = { fullScreenOverlay = null },
-                    onRequestBiometricAuth = onRequestBiometricAuth
-                )
+                Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
+                    SecuritySettingsScreen(
+                        pinSecurityManager = pinSecurityManager,
+                        onBack = { fullScreenOverlay = null },
+                        onRequestBiometricAuth = onRequestBiometricAuth
+                    )
+                }
                 return
             }
             "INFORMATION_LIBRARY" -> {
@@ -1376,19 +1406,60 @@ fun PersonaDashboardScreen(
                     list
                 }
 
-                InformationLibraryScreen(
-                    items = libraryItems,
-                    onBack = { fullScreenOverlay = null },
-                    onRequestAuthToReveal = { onSuccess ->
-                        requestGatedAccess(
-                            SecurityTier.LEVEL_2_SENSITIVE,
-                            "Protected Information",
-                            "Verify identity to reveal this record",
-                            onSuccess
-                        )
-                    }
-                )
+                Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
+                    InformationLibraryScreen(
+                        items = libraryItems,
+                        onBack = { fullScreenOverlay = null },
+                        onRequestAuthToReveal = { onSuccess ->
+                            requestGatedAccess(
+                                SecurityTier.LEVEL_2_SENSITIVE,
+                                "Protected Information",
+                                "Verify identity to reveal this record",
+                                onSuccess
+                            )
+                        }
+                    )
+                }
                 return
+            }
+        }
+    }
+
+    val hasOpenDialog = remember(dialogStates.value) { dialogStates.value.any { it.value } }
+    val hasOpenSheet = remember(sheetStates.value) { sheetStates.value.any { it.value } }
+
+    BackHandler(
+        enabled = isPinChallengeVisible ||
+                personToEditForDialog != null ||
+                showPublicResumeModal ||
+                selectedPersonForDetail != null ||
+                hasOpenDialog ||
+                hasOpenSheet ||
+                selectedTab != 0
+    ) {
+        when {
+            isPinChallengeVisible -> {
+                isPinChallengeVisible = false
+                pendingSensitiveAction = null
+                pendingSecurityTier = null
+            }
+            personToEditForDialog != null -> {
+                personToEditForDialog = null
+            }
+            showPublicResumeModal -> {
+                showPublicResumeModal = false
+            }
+            selectedPersonForDetail != null -> {
+                selectedPersonForDetail = null
+            }
+            hasOpenDialog -> {
+                dialogStates.value = dialogStates.value.mapValues { false }
+            }
+            hasOpenSheet -> {
+                sheetStates.value = sheetStates.value.mapValues { false }
+            }
+            selectedTab != 0 -> {
+                selectedTab = 0
             }
         }
     }
@@ -1400,10 +1471,10 @@ fun PersonaDashboardScreen(
         floatingActionButton = {
             com.pims.vault.presentation.ui.components.AnimatedFAB(
                 onClick = {
-                    if (selectedTab == 2) {
-                        showDialog("addRelationship")
-                    } else {
-                        showSheet("addAction")
+                    when (selectedTab) {
+                        0 -> showSheet("centralizedEditor")
+                        2 -> showDialog("addRelationship")
+                        else -> showSheet("addAction")
                     }
                 }
             )
@@ -1480,12 +1551,33 @@ fun PersonaDashboardScreen(
             }
         }
     ) { innerPadding ->
+        // Top inset is applied per-tab (Home bleeds wallpaper under the status
+        // bar; the other tabs pad themselves below it).
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(
+                    start = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
+                    end = innerPadding.calculateEndPadding(LocalLayoutDirection.current),
+                    bottom = innerPadding.calculateBottomPadding()
+                )
         ) {
-            Crossfade(targetState = selectedTab, label = "TabSwitch") { tab ->
+            val reducedMotion = LocalReducedMotion.current
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    if (reducedMotion) {
+                        fadeIn(tween(durationMillis = 0)) togetherWith fadeOut(tween(durationMillis = 0))
+                    } else {
+                        val direction = if (targetState > initialState) 1 else -1
+                        (slideInHorizontally(spring(stiffness = Spring.StiffnessMediumLow)) { it / 10 * direction } +
+                            fadeIn(spring(stiffness = Spring.StiffnessMediumLow))) togetherWith
+                            (slideOutHorizontally(spring(stiffness = Spring.StiffnessMedium)) { -it / 10 * direction } +
+                                fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                    }
+                },
+                label = "TabSwitch"
+            ) { tab ->
                 when (tab) {
                     // TAB 0: HOME LANDING SCREEN (Personal Identity Dashboard)
                     0 -> HomeView(
@@ -1533,6 +1625,7 @@ fun PersonaDashboardScreen(
                         activeWallpaperIndex = activeWallpaperIndex,
                         onActiveWallpaperChanged = { wallpaperManager.setActiveIndex(it) },
                         onOpenWallpaperOptions = { showSheet("wallpaperOptions") },
+                        onOpenCentralizedEditor = { showSheet("centralizedEditor") },
                         onNotificationClick = {
                             soundManager.navigation()
                             showSheet("notification")
@@ -1654,7 +1747,10 @@ fun PersonaDashboardScreen(
                     2 -> PeopleView(
                         relationships = profileState.relationships,
                         onAddPersonClick = { showDialog("addRelationship") },
-                        onSelectPerson = { person -> selectedPersonForDetail = person }
+                        onSelectPerson = { person ->
+                            relationshipViewModel.onEvent(RelationshipEvent.LoadNotes(person.id))
+                            selectedPersonForDetail = person
+                        }
                     )
 
                     // TAB 3: MORE & SETTINGS
@@ -1930,15 +2026,23 @@ fun PersonaDashboardScreen(
         )
     }
 
-    // 4. HEALTH FACET SHEET
+    // 4. HEALTH FACET SHEET (Full Medical Dossier)
     if (sheetStates.value["health"] == true) {
-        HealthSheet(
-            medicalRecords = profileState.medicalRecords,
-            bloodGroup = bloodGroup,
-            sheetState = healthSheetState,
+        ModalBottomSheet(
             onDismissRequest = { hideSheet("health") },
-            onAddRecord = { showDialog("addAllergy") }
-        )
+            sheetState = healthSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+        ) {
+            MedicalDossierView(
+                uiState = medicalState,
+                onEvent = medicalViewModel::onEvent,
+                onDismiss = { hideSheet("health") },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 
     // 5. DOCUMENTS WALLET SHEET
@@ -1973,6 +2077,58 @@ fun PersonaDashboardScreen(
             onEditPerson = { p ->
                 selectedPersonForDetail = null
                 personToEditForDialog = p
+            },
+            relationshipNotes = relationshipState.relationshipNotes,
+            isVaultUnlocked = relationshipState.isVaultUnlocked,
+            onAddNote = { topic, content, format, isPrivate ->
+                relationshipViewModel.onEvent(
+                    RelationshipEvent.SaveNote(
+                        relationshipId = person.id,
+                        topic = topic,
+                        content = content,
+                        format = format,
+                        isPrivate = isPrivate
+                    )
+                )
+                soundManager.success()
+                scope.launch {
+                    snackbarHostState.showSnackbar("Note saved to memory dossier")
+                }
+            },
+            onEditNote = { note ->
+                relationshipViewModel.onEvent(
+                    RelationshipEvent.SaveNote(
+                        relationshipId = person.id,
+                        topic = note.topic,
+                        content = note.content,
+                        format = note.format,
+                        isPrivate = note.isPrivate,
+                        noteId = note.id
+                    )
+                )
+                soundManager.success()
+                scope.launch {
+                    snackbarHostState.showSnackbar("Note updated")
+                }
+            },
+            onDeleteNote = { note ->
+                relationshipViewModel.onEvent(RelationshipEvent.DeleteNote(note.id))
+                soundManager.delete()
+                scope.launch {
+                    snackbarHostState.showSnackbar("Note deleted")
+                }
+            },
+            onToggleNotePrivacy = { noteId, makePrivate ->
+                relationshipViewModel.onEvent(RelationshipEvent.ToggleNotePrivacy(noteId, makePrivate))
+            },
+            onUnlockVaultSession = {
+                requestGatedAccess(
+                    SecurityTier.LEVEL_3_VAULT,
+                    "Unlock Private Memory Notes",
+                    "Authenticate to view confidential relationship notes"
+                ) {
+                    relationshipViewModel.onEvent(RelationshipEvent.UnlockVaultSession)
+                }
             }
         )
     }
@@ -2076,38 +2232,30 @@ fun PersonaDashboardScreen(
     if (sheetStates.value["wallpaperOptions"] == true) {
         WallpaperOptionsSheet(
             sheetState = wallpaperOptionsSheetState,
+            wallpapers = wallpapers,
+            availablePresets = wallpaperManager.defaultPresets,
             currentIndex = activeWallpaperIndex,
-            totalCount = wallpapers.size,
-            canRemoveCurrent = wallpapers.isNotEmpty(),
-            onPrevious = {
-                wallpaperManager.previousWallpaper()
+            onSelectWallpaper = { index ->
+                wallpaperManager.setActiveIndex(index)
                 soundManager.navigation()
                 haptics.selection()
             },
-            onNext = {
-                wallpaperManager.nextWallpaper()
-                soundManager.navigation()
-                haptics.selection()
-            },
-            onChooseArtwork = {
-                val nextBuiltInIndex = wallpapers.mapIndexedNotNull { i, item -> if (item.isBuiltIn && i > activeWallpaperIndex) i else null }
-                    .firstOrNull() ?: wallpapers.indexOfFirst { it.isBuiltIn }
-                if (nextBuiltInIndex >= 0) {
-                    wallpaperManager.setActiveIndex(nextBuiltInIndex)
-                }
+            onSelectPreset = { preset ->
+                wallpaperManager.selectOrAddPreset(preset)
                 soundManager.navigation()
                 haptics.selection()
             },
             onPickFromDevice = {
                 soundManager.navigation()
+                haptics.selection()
                 wallpaperPickerLauncher.launch("image/*")
             },
-            onRemoveCurrent = {
-                val removed = wallpaperManager.removeCurrentWallpaper()
+            onRemoveWallpaper = { item ->
+                val removed = wallpaperManager.removeWallpaperById(item.id)
                 if (removed) {
                     recentActivityManager.recordActivity("Removed profile wallpaper")
                     soundManager.delete()
-                    haptics.selection()
+                    haptics.warning()
                     scope.launch {
                         snackbarHostState.showSnackbar("Wallpaper removed")
                     }
@@ -2140,6 +2288,244 @@ fun PersonaDashboardScreen(
                 scope.launch {
                     snackbarHostState.showSnackbar("✓ Persona avatar updated")
                 }
+            }
+        )
+    }
+
+    // 15. CENTRALIZED INFORMATION EDITOR BOTTOM SHEET
+    if (sheetStates.value["centralizedEditor"] == true) {
+        val currentPhones = remember(profileState.contacts) {
+            profileState.contacts
+                .filter { it.contactType == ContactType.PHONE }
+                .map {
+                    com.pims.vault.presentation.hub.EditablePhone(
+                        id = it.id,
+                        number = it.value,
+                        label = it.label,
+                        isPrimary = it.isPrimary
+                    )
+                }
+        }
+        val currentEmails = remember(profileState.contacts) {
+            profileState.contacts
+                .filter { it.contactType == ContactType.EMAIL }
+                .map {
+                    com.pims.vault.presentation.hub.EditableEmail(
+                        id = it.id,
+                        address = it.value,
+                        label = it.label,
+                        isPrimary = it.isPrimary
+                    )
+                }
+        }
+        val currentAddresses = remember(profileState.addresses) {
+            profileState.addresses.map {
+                com.pims.vault.presentation.hub.EditableAddress(
+                    id = it.id,
+                    street1 = it.streetLine1,
+                    street2 = it.streetLine2 ?: "",
+                    city = it.city,
+                    state = it.stateProvince ?: "",
+                    postalCode = it.postalCode ?: "",
+                    country = it.country,
+                    label = it.label.name
+                )
+            }
+        }
+
+        com.pims.vault.presentation.hub.CentralizedInformationEditorSheet(
+            sheetState = centralizedEditorSheetState,
+            initialFullName = fullName.takeIf { it != "My Profile" } ?: "",
+            initialOccupation = occupation,
+            initialCountry = country,
+            initialNationalId = profileState.person?.nationalIdNumber,
+            initialIdPhotoPath = profileState.idPhotoPath,
+            initialPhones = currentPhones,
+            initialEmails = currentEmails,
+            initialAddresses = currentAddresses,
+            onDismissRequest = { hideSheet("centralizedEditor") },
+            onSaveAll = { name, occ, ctry, natId, photoUri, phonesList, emailsList, addrsList, allergiesList, conditionsList, medsList, edusList, worksList, socialsList, customList ->
+                val localPhotoPath = photoUri?.let { uri ->
+                    try {
+                        val destFile = java.io.File(context.filesDir, "identity_id_photo_${System.currentTimeMillis()}.jpg")
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            destFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        destFile.absolutePath
+                    } catch (_: Exception) {
+                        null
+                    }
+                } ?: profileState.idPhotoPath
+
+                val primaryPhoneVal = phonesList.firstOrNull { it.isPrimary }?.number
+                    ?: phonesList.firstOrNull()?.number ?: ""
+                val primaryEmailVal = emailsList.firstOrNull { it.isPrimary }?.address
+                    ?: emailsList.firstOrNull()?.address ?: ""
+
+                profileViewModel.onEvent(
+                    ProfileEvent.SaveIdentityDetails(
+                        fullName = name,
+                        email = primaryEmailVal,
+                        phone = primaryPhoneVal,
+                        nationalId = natId,
+                        idPhotoPath = localPhotoPath
+                    )
+                )
+
+                if (name.isNotBlank()) {
+                    firstName = name.substringBefore(" ")
+                    lastName = name.substringAfter(" ", "")
+                }
+                if (occ.isNotBlank()) occupation = occ
+                if (ctry.isNotBlank()) country = ctry
+
+                profileViewModel.onEvent(
+                    ProfileEvent.SavePersonalDetails(
+                        firstName = firstName,
+                        lastName = lastName,
+                        dob = dob,
+                        nationality = nationality,
+                        country = country,
+                        gender = gender,
+                        sexuality = sexuality,
+                        bloodGroup = bloodGroup
+                    )
+                )
+
+                phonesList.drop(1).forEach { p ->
+                    if (p.number.isNotBlank()) {
+                        profileViewModel.onEvent(ProfileEvent.AddPhone(p.number.trim(), p.label, p.isPrimary))
+                    }
+                }
+
+                emailsList.drop(1).forEach { e ->
+                    if (e.address.isNotBlank()) {
+                        profileViewModel.onEvent(ProfileEvent.AddEmail(e.address.trim(), e.label, e.isPrimary))
+                    }
+                }
+
+                addrsList.forEach { a ->
+                    if (a.street1.isNotBlank()) {
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddAddress(
+                                street1 = a.street1.trim(),
+                                street2 = a.street2.trim().ifBlank { null },
+                                city = a.city.trim(),
+                                stateProvince = a.state.trim().ifBlank { null },
+                                postalCode = a.postalCode.trim().ifBlank { null },
+                                country = a.country.trim().ifBlank { country }
+                            )
+                        )
+                    }
+                }
+
+                allergiesList.forEach { al ->
+                    if (al.allergen.isNotBlank()) {
+                        val sev = try {
+                            AllergySeverity.valueOf(al.severity.uppercase())
+                        } catch (_: Exception) {
+                            AllergySeverity.MODERATE
+                        }
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddAllergy(
+                                allergen = al.allergen.trim(),
+                                severity = sev,
+                                reaction = al.reaction.trim().ifBlank { null }
+                            )
+                        )
+                    }
+                }
+
+                conditionsList.forEach { cd ->
+                    if (cd.name.isNotBlank()) {
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddMedicalCondition(
+                                condition = cd.name.trim(),
+                                status = try { ConditionStatus.valueOf(cd.status.uppercase()) } catch (_: Exception) { ConditionStatus.ACTIVE },
+                                notes = cd.diagnosedDate.trim().ifBlank { null }
+                            )
+                        )
+                    }
+                }
+
+                medsList.forEach { md ->
+                    if (md.name.isNotBlank()) {
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddMedication(
+                                name = md.name.trim(),
+                                dosage = md.dosage.trim(),
+                                frequency = md.frequency.trim(),
+                                notes = null
+                            )
+                        )
+                    }
+                }
+
+                edusList.forEach { ed ->
+                    if (ed.institution.isNotBlank() || ed.qualification.isNotBlank()) {
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddQualification(
+                                institution = ed.institution.trim(),
+                                qualification = ed.qualification.trim(),
+                                fieldOfStudy = ed.fieldOfStudy.trim().ifBlank { null },
+                                startDate = ed.year.trim().ifBlank { null },
+                                endDate = null,
+                                grade = null,
+                                description = null
+                            )
+                        )
+                    }
+                }
+
+                worksList.forEach { wk ->
+                    if (wk.company.isNotBlank() || wk.position.isNotBlank()) {
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddWorkHistory(
+                                company = wk.company.trim(),
+                                position = wk.position.trim(),
+                                department = null,
+                                location = null,
+                                startDate = wk.startDate.trim().ifBlank { null },
+                                endDate = wk.endDate.trim().ifBlank { null },
+                                isCurrent = wk.isCurrent,
+                                responsibilities = null
+                            )
+                        )
+                    }
+                }
+
+                socialsList.forEach { sc ->
+                    if (sc.usernameOrUrl.isNotBlank()) {
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddSocialAccount(
+                                platform = sc.platform.trim(),
+                                username = sc.usernameOrUrl.trim(),
+                                url = sc.usernameOrUrl.trim()
+                            )
+                        )
+                    }
+                }
+
+                customList.forEach { cf ->
+                    if (cf.label.isNotBlank() && cf.value.isNotBlank()) {
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddCustomField(
+                                label = cf.label.trim(),
+                                value = cf.value.trim()
+                            )
+                        )
+                    }
+                }
+
+                recentActivityManager.recordActivity("Profile Updated", "Centralized profile & records updated")
+                soundManager.success()
+                haptics.success()
+                scope.launch {
+                    snackbarHostState.showSnackbar("✓ Personal information updated successfully")
+                }
+                hideSheet("centralizedEditor")
             }
         )
     }
@@ -2491,12 +2877,33 @@ fun PersonaDashboardScreen(
         var editFirstName by remember(person) { mutableStateOf(person.fullName.substringBefore(" ")) }
         var editLastName by remember(person) { mutableStateOf(person.fullName.substringAfter(" ", "")) }
         var editRole by remember(person) { mutableStateOf(person.relationRole) }
-        var editPhone by remember(person) { mutableStateOf(person.phone) }
-        var editEmail by remember(person) { mutableStateOf(person.email) }
+        var editPhones by remember(person) {
+            mutableStateOf(
+                person.phone.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .ifEmpty { listOf("") }
+            )
+        }
+        var editEmails by remember(person) {
+            mutableStateOf(
+                person.email.split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .ifEmpty { listOf("") }
+            )
+        }
         var editAddress by remember(person) { mutableStateOf(person.address) }
         var editDob by remember(person) { mutableStateOf(person.dateOfBirth) }
         var editAnniversary by remember(person) { mutableStateOf(person.anniversary) }
-        var editNotes by remember(person) { mutableStateOf(person.notes) }
+        var editNotesList by remember(person) {
+            mutableStateOf(
+                person.notes.split("\n\n")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .ifEmpty { listOf("") }
+            )
+        }
         val editManagedPersonSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
         ModalBottomSheet(
@@ -2566,20 +2973,93 @@ fun PersonaDashboardScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                InternationalPhoneInput(
-                    value = editPhone,
-                    onValueChange = { editPhone = it },
-                    label = "Phone number",
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Phone Numbers
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Phone Numbers", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        TextButton(onClick = { editPhones = editPhones + "" }) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Phone", fontSize = 12.sp)
+                        }
+                    }
+                    editPhones.forEachIndexed { idx, phone ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                InternationalPhoneInput(
+                                    value = phone,
+                                    onValueChange = { newVal ->
+                                        editPhones = editPhones.toMutableList().also { it[idx] = newVal }
+                                    },
+                                    label = if (idx == 0) "Primary Phone" else "Phone ${idx + 1}"
+                                )
+                            }
+                            if (editPhones.size > 1) {
+                                IconButton(
+                                    onClick = {
+                                        editPhones = editPhones.toMutableList().also { it.removeAt(idx) }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
 
-                PersonaTextInput(
-                    value = editEmail,
-                    onValueChange = { editEmail = it },
-                    label = "Email address",
-                    keyboardType = KeyboardType.Email,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Email Addresses
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Email Addresses", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        TextButton(onClick = { editEmails = editEmails + "" }) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Email", fontSize = 12.sp)
+                        }
+                    }
+                    editEmails.forEachIndexed { idx, email ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                PersonaTextInput(
+                                    value = email,
+                                    onValueChange = { newVal ->
+                                        editEmails = editEmails.toMutableList().also { it[idx] = newVal }
+                                    },
+                                    label = if (idx == 0) "Primary Email" else "Email ${idx + 1}",
+                                    placeholder = "name@example.com",
+                                    keyboardType = KeyboardType.Email
+                                )
+                            }
+                            if (editEmails.size > 1) {
+                                IconButton(
+                                    onClick = {
+                                        editEmails = editEmails.toMutableList().also { it.removeAt(idx) }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
 
                 PersonaTextInput(
                     value = editAddress,
@@ -2602,30 +3082,70 @@ fun PersonaDashboardScreen(
                     )
                 }
 
-                PersonaTextInput(
-                    value = editNotes,
-                    onValueChange = { editNotes = it },
-                    label = "Private memory notes (never shared)",
-                    singleLine = false,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Private Memory Notes
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Private Memory Notes", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        TextButton(onClick = { editNotesList = editNotesList + "" }) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Note", fontSize = 12.sp)
+                        }
+                    }
+                    editNotesList.forEachIndexed { idx, noteItem ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                PersonaTextInput(
+                                    value = noteItem,
+                                    onValueChange = { newVal ->
+                                        editNotesList = editNotesList.toMutableList().also { it[idx] = newVal }
+                                    },
+                                    label = if (idx == 0) "Note" else "Note ${idx + 1}",
+                                    singleLine = false
+                                )
+                            }
+                            if (editNotesList.size > 1) {
+                                IconButton(
+                                    onClick = {
+                                        editNotesList = editNotesList.toMutableList().also { it.removeAt(idx) }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Button(
                     onClick = {
+                        val savedPhone = editPhones.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
+                        val savedEmail = editEmails.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
+                        val savedNotes = editNotesList.map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n\n")
+
                         profileViewModel.onEvent(
                             ProfileEvent.UpdatePersonDetails(
                                 personId = person.targetPersonId,
                                 firstName = editFirstName.ifBlank { person.fullName },
                                 lastName = editLastName,
                                 relationRole = editRole.ifBlank { person.relationRole },
-                                phone = editPhone,
-                                email = editEmail,
+                                phone = savedPhone,
+                                email = savedEmail,
                                 address = editAddress,
                                 dob = editDob,
                                 anniversary = editAnniversary,
-                                notes = editNotes
+                                notes = savedNotes
                             )
                         )
                         recentActivityManager.recordActivity("Updated ${person.fullName}'s profile")
@@ -2899,12 +3419,12 @@ fun PersonaDashboardScreen(
         var relRole by remember { mutableStateOf("Mother") }
         var personGender by remember { mutableStateOf(com.pims.vault.presentation.avatar.AvatarGender.FEMALE) }
         var relName by remember { mutableStateOf("") }
-        var relPhone by remember { mutableStateOf("") }
-        var relEmail by remember { mutableStateOf("") }
+        var relPhones by remember { mutableStateOf(listOf("")) }
+        var relEmails by remember { mutableStateOf(listOf("")) }
         var relAddress by remember { mutableStateOf("") }
         var relDob by remember { mutableStateOf("") }
         var relAnniversary by remember { mutableStateOf("") }
-        var relNotes by remember { mutableStateOf("") }
+        var relNotesList by remember { mutableStateOf(listOf("")) }
         var isNok by remember { mutableStateOf(false) }
 
         val relRoles = listOf(
@@ -2940,16 +3460,20 @@ fun PersonaDashboardScreen(
             confirmEnabled = relName.isNotBlank() && relRole.isNotBlank(),
             onConfirm = {
                 if (relName.isNotBlank()) {
+                    val savedPhone = relPhones.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
+                    val savedEmail = relEmails.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
+                    val savedNotes = relNotesList.map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n\n")
+
                     profileViewModel.onEvent(
                         ProfileEvent.AddRelationship(
                             role = effectiveRole,
                             fullName = relName.trim(),
-                            phone = relPhone.trim(),
-                            email = relEmail.trim(),
+                            phone = savedPhone,
+                            email = savedEmail,
                             address = relAddress.trim(),
                             dob = relDob.trim(),
                             anniversary = relAnniversary.trim(),
-                            notes = relNotes.trim(),
+                            notes = savedNotes,
                             isNextOfKin = isNok
                         )
                     )
@@ -2998,18 +3522,94 @@ fun PersonaDashboardScreen(
                 title = "Contact Information",
                 icon = Icons.Default.Phone
             ) {
-                InternationalPhoneInput(
-                    value = relPhone,
-                    onValueChange = { relPhone = it },
-                    label = "Phone number"
-                )
-                PersonaTextInput(
-                    value = relEmail,
-                    onValueChange = { relEmail = it },
-                    label = "Email address",
-                    placeholder = "name@example.com",
-                    keyboardType = KeyboardType.Email
-                )
+                // Phone Numbers
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Phone Numbers", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        TextButton(onClick = { relPhones = relPhones + "" }) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Phone", fontSize = 12.sp)
+                        }
+                    }
+                    relPhones.forEachIndexed { idx, phone ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                InternationalPhoneInput(
+                                    value = phone,
+                                    onValueChange = { newVal ->
+                                        relPhones = relPhones.toMutableList().also { it[idx] = newVal }
+                                    },
+                                    label = if (idx == 0) "Primary Phone" else "Phone ${idx + 1}"
+                                )
+                            }
+                            if (relPhones.size > 1) {
+                                IconButton(
+                                    onClick = {
+                                        relPhones = relPhones.toMutableList().also { it.removeAt(idx) }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Email Addresses
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Email Addresses", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        TextButton(onClick = { relEmails = relEmails + "" }) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Email", fontSize = 12.sp)
+                        }
+                    }
+                    relEmails.forEachIndexed { idx, email ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                PersonaTextInput(
+                                    value = email,
+                                    onValueChange = { newVal ->
+                                        relEmails = relEmails.toMutableList().also { it[idx] = newVal }
+                                    },
+                                    label = if (idx == 0) "Primary Email" else "Email ${idx + 1}",
+                                    placeholder = "name@example.com",
+                                    keyboardType = KeyboardType.Email
+                                )
+                            }
+                            if (relEmails.size > 1) {
+                                IconButton(
+                                    onClick = {
+                                        relEmails = relEmails.toMutableList().also { it.removeAt(idx) }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 PersonaTextInput(
                     value = relAddress,
                     onValueChange = { relAddress = it },
@@ -3035,13 +3635,50 @@ fun PersonaDashboardScreen(
                         label = "Anniversary"
                     )
                 }
-                PersonaTextInput(
-                    value = relNotes,
-                    onValueChange = { relNotes = it },
-                    label = "Private notes",
-                    placeholder = "e.g. Likes gardening, allergies, memories",
-                    singleLine = false
-                )
+                // Private notes
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Private Notes", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        TextButton(onClick = { relNotesList = relNotesList + "" }) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Note", fontSize = 12.sp)
+                        }
+                    }
+                    relNotesList.forEachIndexed { idx, noteItem ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                PersonaTextInput(
+                                    value = noteItem,
+                                    onValueChange = { newVal ->
+                                        relNotesList = relNotesList.toMutableList().also { it[idx] = newVal }
+                                    },
+                                    label = if (idx == 0) "Private notes" else "Note ${idx + 1}",
+                                    placeholder = "e.g. Likes gardening, allergies, memories",
+                                    singleLine = false
+                                )
+                            }
+                            if (relNotesList.size > 1) {
+                                IconButton(
+                                    onClick = {
+                                        relNotesList = relNotesList.toMutableList().also { it.removeAt(idx) }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
                 PersonaToggleRow(
                     title = "Mark as Next of Kin / ICE",
                     checked = isNok,
@@ -3086,39 +3723,35 @@ fun PersonaDashboardScreen(
         }
     }
 
-    // 11. Document Upload Dialog
-    if (dialogStates.value["upload"] == true && pendingUploadUri != null) {
-        val documentTypeOptions = remember {
-            listOf(
-                DocumentType.NATIONAL_ID to "National Identity Card",
-                DocumentType.PASSPORT to "Passport",
-                DocumentType.DRIVING_LICENCE to "Driver's License",
-                DocumentType.BIRTH_CERTIFICATE to "Birth Certificate",
-                DocumentType.ACADEMIC_CERTIFICATE to "Academic Certificate / Degree",
-                DocumentType.TRANSCRIPT to "Academic Transcript",
-                DocumentType.CURRICULUM_VITAE to "Curriculum Vitae / Resume",
-                DocumentType.EMPLOYMENT_CONTRACT to "Employment Contract",
-                DocumentType.MEDICAL_RECORD to "Medical / Health Record",
-                DocumentType.INSURANCE_POLICY to "Insurance Policy",
-                DocumentType.LEGAL_CONTRACT to "Legal Agreement / Contract",
-                DocumentType.PASSPORT_PHOTO to "ID / Passport Photo",
-                DocumentType.OTHER to "General Document / Other"
-            )
-        }
-        val currentTypeLabel = documentTypeOptions.firstOrNull { it.first == uploadDocType }?.second ?: "General Document / Other"
-
-        PersonaDialog(
+    // 11. Document Upload Bottom Sheet (Section 11)
+    if (sheetStates.value["uploadDoc"] == true && pendingUploadUri != null && pendingUploadBytes != null) {
+        DocumentUploadSheet(
+            sheetState = uploadDocSheetState,
+            fileName = uploadDocFileName,
+            fileSizeBytes = uploadDocSizeBytes,
+            mimeType = uploadDocMimeType,
+            title = uploadDocTitle,
+            onTitleChange = { uploadDocTitle = it },
+            documentType = uploadDocType,
+            onDocumentTypeChange = { uploadDocType = it },
+            docNumber = uploadDocNumber,
+            onDocNumberChange = { uploadDocNumber = it },
+            authority = uploadDocAuthority,
+            onAuthorityChange = { uploadDocAuthority = it },
+            expiryDate = uploadDocExpiryDate,
+            onExpiryDateChange = { uploadDocExpiryDate = it },
+            classification = uploadDocClassification,
+            onClassificationChange = { uploadDocClassification = it },
+            isProcessing = isEncryptingAndSavingDoc,
+            onChangeFileClick = { filePickerLauncher.launch("*/*") },
             onDismissRequest = {
                 if (!isEncryptingAndSavingDoc) {
-                    hideDialog("upload")
+                    hideSheet("uploadDoc")
                     pendingUploadBytes = null
                     pendingUploadUri = null
                 }
             },
-            title = "Save Document to Wallet",
-            confirmText = if (isEncryptingAndSavingDoc) "Encrypting & Saving..." else "Encrypt & Save",
-            confirmEnabled = uploadDocTitle.isNotBlank() && !isEncryptingAndSavingDoc,
-            onConfirm = {
+            onConfirmSave = {
                 val bytes = pendingUploadBytes
                 if (bytes != null && uploadDocTitle.isNotBlank()) {
                     isEncryptingAndSavingDoc = true
@@ -3142,7 +3775,7 @@ fun PersonaDashboardScreen(
                                 isEncryptingAndSavingDoc = false
                                 pendingUploadBytes = null
                                 pendingUploadUri = null
-                                hideDialog("upload")
+                                hideSheet("uploadDoc")
                             },
                             onError = { _ ->
                                 isEncryptingAndSavingDoc = false
@@ -3151,243 +3784,7 @@ fun PersonaDashboardScreen(
                     )
                 }
             }
-        ) {
-            // A. File Source Preview Card
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    val isPdf = uploadDocFileName.endsWith(".pdf", ignoreCase = true) || uploadDocMimeType.contains("pdf", ignoreCase = true)
-                    val isImg = uploadDocFileName.endsWith(".png", ignoreCase = true) || uploadDocFileName.endsWith(".jpg", ignoreCase = true) || uploadDocFileName.endsWith(".jpeg", ignoreCase = true) || uploadDocMimeType.contains("image", ignoreCase = true)
-
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .background(
-                                color = when {
-                                    isPdf -> Color(0xFFEF4444).copy(alpha = 0.15f)
-                                    isImg -> Color(0xFF10B981).copy(alpha = 0.15f)
-                                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                },
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Description,
-                            contentDescription = null,
-                            tint = when {
-                                isPdf -> Color(0xFFDC2626)
-                                isImg -> Color(0xFF059669)
-                                else -> MaterialTheme.colorScheme.primary
-                            },
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = uploadDocFileName.ifBlank { "Selected File" },
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = formatUploadFileSize(uploadDocSizeBytes),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp
-                            )
-                            Text(
-                                text = "•",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Shield,
-                                    contentDescription = null,
-                                    tint = Color(0xFF10B981),
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "AES-256-GCM encrypted locally",
-                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = Color(0xFF059669),
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // B. Document Classification
-            PersonaFormSection(title = "Classification") {
-                PersonaDropdownSelector(
-                    label = "Document Type",
-                    selectedOption = currentTypeLabel,
-                    options = documentTypeOptions.map { it.second },
-                    onOptionSelected = { selectedLabel ->
-                        val matched = documentTypeOptions.firstOrNull { it.second == selectedLabel }
-                        if (matched != null) {
-                            uploadDocType = matched.first
-                            uploadDocClassification = DocumentRules.resolveDefaultClassification(matched.first)
-                        }
-                    }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // C. Document Details
-            PersonaFormSection(title = "Document Details") {
-                PersonaTextInput(
-                    value = uploadDocTitle,
-                    onValueChange = { uploadDocTitle = it },
-                    label = "Document Title *",
-                    placeholder = "e.g. National ID, Passport, Degree"
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                PersonaTextInput(
-                    value = uploadDocNumber,
-                    onValueChange = { uploadDocNumber = it },
-                    label = "Document / Reference Number",
-                    placeholder = "e.g. 63-1234567-A-89"
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                PersonaTextInput(
-                    value = uploadDocAuthority,
-                    onValueChange = { uploadDocAuthority = it },
-                    label = "Issuing Authority / Institution",
-                    placeholder = "e.g. Registrar General, Harvard"
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                PersonaTextInput(
-                    value = uploadDocExpiryDate,
-                    onValueChange = { uploadDocExpiryDate = it },
-                    label = "Expiration Date (Optional)",
-                    placeholder = "e.g. YYYY-MM-DD"
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // D. Security Tier Selection
-            PersonaFormSection(title = "Vault Security Level") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    val isStandard = uploadDocClassification == SecurityClassification.ZONE_1_PERSONAL ||
-                            uploadDocClassification == SecurityClassification.ZONE_2_PRIVATE
-
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { uploadDocClassification = SecurityClassification.ZONE_2_PRIVATE },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isStandard) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                        else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(
-                            if (isStandard) 1.5.dp else 1.dp,
-                            if (isStandard) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = null,
-                                    tint = if (isStandard) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Standard Vault",
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Encrypted on-device, instant access in app",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    val isHighSecurity = uploadDocClassification == SecurityClassification.ZONE_3_SENSITIVE ||
-                            uploadDocClassification == SecurityClassification.ZONE_4_CRITICAL
-
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { uploadDocClassification = SecurityClassification.ZONE_3_SENSITIVE },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isHighSecurity) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                        else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(
-                            if (isHighSecurity) 1.5.dp else 1.dp,
-                            if (isHighSecurity) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Shield,
-                                    contentDescription = null,
-                                    tint = if (isHighSecurity) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "High Security",
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "PIN / biometric gated access",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        )
     }
 
     // 12. Add Custom Information Dialog
@@ -3665,7 +4062,11 @@ fun PersonaDashboardScreen(
         PublicResumeModal(
             data = resumeData,
             onDismissRequest = { showPublicResumeModal = false },
-            onExportPdf = { handleExportPdf() }
+            onExportPdf = { handleExportPdf() },
+            onEditProfile = {
+                showPublicResumeModal = false
+                showSheet("centralizedEditor")
+            }
         )
     }
 }

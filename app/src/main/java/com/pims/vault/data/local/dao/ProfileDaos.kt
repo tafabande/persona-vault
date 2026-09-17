@@ -18,10 +18,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PersonDao {
-    @Query("SELECT * FROM persons WHERE is_primary_owner = 1 LIMIT 1")
+    @Query("SELECT * FROM persons WHERE id = 'primary_owner' LIMIT 1")
     fun getPrimaryOwnerFlow(): Flow<PersonEntity?>
 
-    @Query("SELECT * FROM persons WHERE is_primary_owner = 1 LIMIT 1")
+    @Query("SELECT * FROM persons WHERE id = 'primary_owner' LIMIT 1")
     suspend fun getPrimaryOwner(): PersonEntity?
 
     @Query("SELECT * FROM persons WHERE id = :id")
@@ -38,17 +38,26 @@ interface PersonDao {
     fun getPersonWithFullProfileFlow(id: String): Flow<PersonWithFullProfile?>
 
     @Transaction
-    @Query("SELECT * FROM persons WHERE is_primary_owner = 1 LIMIT 1")
+    @Query("SELECT * FROM persons WHERE id = 'primary_owner' LIMIT 1")
     fun getPrimaryOwnerWithFullProfileFlow(): Flow<PersonWithFullProfile?>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(person: PersonEntity): Long
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(person: PersonEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(persons: List<PersonEntity>)
 
     @Update
     suspend fun update(person: PersonEntity)
+
+    @Transaction
+    suspend fun insertOrUpdate(person: PersonEntity): Long {
+        val rowId = insert(person)
+        if (rowId == -1L) {
+            update(person)
+        }
+        return rowId
+    }
 
     @Query("DELETE FROM persons WHERE id = :id")
     suspend fun deleteById(id: String)
@@ -100,8 +109,20 @@ interface RelationshipDao {
     @Query("SELECT * FROM persons WHERE id = :personId")
     fun getPersonRelationshipGraphFlow(personId: String): Flow<PersonRelationshipGraph?>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertOrUpdate(relationship: RelationshipEntity): Long
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(relationship: RelationshipEntity): Long
+
+    @Update
+    suspend fun update(relationship: RelationshipEntity)
+
+    @Transaction
+    suspend fun insertOrUpdate(relationship: RelationshipEntity): Long {
+        val rowId = insert(relationship)
+        if (rowId == -1L) {
+            update(relationship)
+        }
+        return rowId
+    }
 
     @Query("SELECT * FROM relationships WHERE (source_person_id = :p1 AND target_person_id = :p2) OR (source_person_id = :p2 AND target_person_id = :p1) LIMIT 1")
     suspend fun getRelationshipBetween(p1: String, p2: String): RelationshipEntity?

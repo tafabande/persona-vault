@@ -23,6 +23,7 @@ import com.pims.vault.data.local.entity.AuditEventEntity
 import com.pims.vault.data.local.entity.ContactMethodEntity
 import com.pims.vault.data.local.entity.DocumentEntity
 import com.pims.vault.data.local.entity.DocumentVersionEntity
+import com.pims.vault.data.local.entity.MedicalProfileEntity
 import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.data.local.entity.PersonEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
@@ -279,6 +280,19 @@ class MedicalRepositoryImpl(
     private val medicalDao: MedicalDao,
     private val auditLogger: HardenedAuditLogger
 ) : MedicalRepository {
+    override fun getMedicalProfileFlow(personId: String): Flow<MedicalProfileEntity?> =
+        medicalDao.getMedicalProfileFlow(personId)
+
+    override suspend fun saveMedicalProfile(profile: MedicalProfileEntity) {
+        medicalDao.insertOrUpdateProfile(profile)
+        auditLogger.recordEvent(
+            eventType = AuditEventType.UPDATE,
+            entityType = "MedicalProfile",
+            entityId = profile.personId,
+            description = "Saved medical profile baseline"
+        )
+    }
+
     override fun getMedicalRecordsFlow(personId: String): Flow<List<MedicalRecordEntity>> =
         medicalDao.getMedicalRecordsFlow(personId)
 
@@ -297,7 +311,7 @@ class MedicalRepositoryImpl(
             eventType = AuditEventType.UPDATE,
             entityType = "MedicalRecord",
             entityId = record.id,
-            description = "Saved medical record '${record.title}'"
+            description = "Saved medical record '${record.title}' (${record.recordType.name})"
         )
     }
 
