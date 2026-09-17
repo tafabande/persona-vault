@@ -14,3 +14,11 @@ allprojects {
     }
 }
 
+tasks.register("clean", Delete::class) {
+    delete(rootProject.layout.buildDirectory)
+    val userHome = System.getProperty("user.home").replace("\\", "/")
+    delete(file("$userHome/.gradle-builds/PimsVault"))
+    delete(file("${rootProject.projectDir}/.kotlin"))
+}
+
+
