@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -89,10 +90,15 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.Brush
@@ -188,6 +194,7 @@ private val BankIcon: ImageVector by lazy {
     }.build()
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VaultDashboardView(
     viewModel: VaultViewModel,
@@ -205,6 +212,7 @@ fun VaultDashboardView(
     val vaultTextSecondary = if (isDark) Color(0xFFE2E8F0) else PimsTextSecondary
 
     var showCreateMenu by remember { mutableStateOf(false) }
+    val createSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var activeViewTab by remember { mutableStateOf("DASHBOARD") }
 
     BackHandler(enabled = true) {
@@ -226,25 +234,39 @@ fun VaultDashboardView(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Back",
+                                tint = vaultTextPrimary
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
                         Icon(
                             imageVector = Icons.Default.Lock,
                             contentDescription = null,
                             tint = PimsWarning,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Vault",
                             color = vaultTextPrimary,
-                            fontSize = 20.sp,
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -258,27 +280,36 @@ fun VaultDashboardView(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                // Header with Session Timeout Status
+                // Header with Back Navigation & Session Timeout Status
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.LockOpen,
-                            contentDescription = null,
-                            tint = vaultTextPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Back",
+                                tint = vaultTextPrimary
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Vault",
-                            color = vaultTextPrimary,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = vaultTextPrimary
                         )
                     }
 
@@ -444,6 +475,7 @@ fun VaultDashboardView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .navigationBarsPadding()
                     .padding(end = 20.dp, bottom = 24.dp),
                 contentAlignment = Alignment.BottomEnd
             ) {
@@ -453,7 +485,9 @@ fun VaultDashboardView(
                     color = MaterialTheme.colorScheme.primary,
                     shadowElevation = 8.dp,
                     border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)),
-                    modifier = Modifier.height(54.dp)
+                    modifier = Modifier
+                        .height(54.dp)
+                        .tactilePress()
                 ) {
                     Row(
                         modifier = Modifier
@@ -594,74 +628,16 @@ fun VaultDashboardView(
         }
     }
 
-    // Modal Create Category Picker
+    // Modal Create Category Sheet
     if (showCreateMenu) {
-        Dialog(onDismissRequest = { showCreateMenu = false }) {
-            PimsCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Add to Vault",
-                        color = PimsTextPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    CreateCategoryItem(
-                        icon = Icons.Default.Key,
-                        title = "Password",
-                        onClick = {
-                            showCreateMenu = false
-                            viewModel.openEditor(VaultCategory.PASSWORD)
-                        }
-                    )
-                    CreateCategoryItem(
-                        icon = Icons.Default.Timer,
-                        title = "2FA Authenticator",
-                        onClick = {
-                            showCreateMenu = false
-                            viewModel.openEditor(VaultCategory.TOTP_2FA)
-                        }
-                    )
-                    CreateCategoryItem(
-                        icon = Icons.Default.Shield,
-                        title = "Recovery Codes",
-                        onClick = {
-                            showCreateMenu = false
-                            viewModel.openEditor(VaultCategory.RECOVERY_CODE)
-                        }
-                    )
-                    CreateCategoryItem(
-                        icon = Icons.Default.Note,
-                        title = "Secure Note",
-                        onClick = {
-                            showCreateMenu = false
-                            viewModel.openEditor(VaultCategory.SECURE_NOTE)
-                        }
-                    )
-                    CreateCategoryItem(
-                        icon = Icons.Default.CreditCard,
-                        title = "Payment Card",
-                        onClick = {
-                            showCreateMenu = false
-                            viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE)
-                        }
-                    )
-                    CreateCategoryItem(
-                        icon = BankIcon,
-                        title = "Bank Account",
-                        onClick = {
-                            showCreateMenu = false
-                            viewModel.openEditor(VaultCategory.BANK_ACCOUNT)
-                        }
-                    )
-                }
+        VaultCreateSecretSheet(
+            sheetState = createSheetState,
+            onDismissRequest = { showCreateMenu = false },
+            onSelectCategory = { category ->
+                showCreateMenu = false
+                viewModel.openEditor(category)
             }
-        }
+        )
     }
 
     // Item Detail / View Dialogs (Suppress popup dialog for cards and banking which have dedicated full views)
@@ -853,7 +829,7 @@ private fun VaultModularDashboard(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 88.dp)
+        contentPadding = PaddingValues(top = 4.dp, bottom = 100.dp)
     ) {
         // Passwords Bento Card
         item {
@@ -3588,32 +3564,247 @@ private fun VaultEditorDialog(
     }
 }
 
+private data class VaultSecretCategoryOption(
+    val category: VaultCategory,
+    val title: String,
+    val subtitle: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val accentColor: Color
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CreateCategoryItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    onClick: () -> Unit
+private fun VaultCreateSecretSheet(
+    sheetState: SheetState,
+    onDismissRequest: () -> Unit,
+    onSelectCategory: (VaultCategory) -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .border(1.dp, PimsBorder, RoundedCornerShape(6.dp))
-                .background(PimsBackground),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(imageVector = icon, contentDescription = null, tint = PimsTextPrimary, modifier = Modifier.size(18.dp))
+    val isDark = LocalPimsDarkTheme.current
+
+    val options = remember {
+        listOf(
+            VaultSecretCategoryOption(
+                category = VaultCategory.PASSWORD,
+                title = "Password",
+                subtitle = "Web credentials & logins",
+                icon = Icons.Default.Key,
+                accentColor = Color(0xFF3B82F6)
+            ),
+            VaultSecretCategoryOption(
+                category = VaultCategory.TOTP_2FA,
+                title = "Authenticator",
+                subtitle = "Time-based 2FA codes",
+                icon = Icons.Default.Timer,
+                accentColor = Color(0xFF8B5CF6)
+            ),
+            VaultSecretCategoryOption(
+                category = VaultCategory.SECURE_NOTE,
+                title = "Secure Note",
+                subtitle = "Confidential memos & keys",
+                icon = Icons.Default.Note,
+                accentColor = Color(0xFFF59E0B)
+            ),
+            VaultSecretCategoryOption(
+                category = VaultCategory.PAYMENT_REFERENCE,
+                title = "Payment Card",
+                subtitle = "Credit, debit & passes",
+                icon = Icons.Default.CreditCard,
+                accentColor = Color(0xFF10B981)
+            ),
+            VaultSecretCategoryOption(
+                category = VaultCategory.BANK_ACCOUNT,
+                title = "Bank Account",
+                subtitle = "IBAN, swift & account info",
+                icon = BankIcon,
+                accentColor = Color(0xFF06B6D4)
+            ),
+            VaultSecretCategoryOption(
+                category = VaultCategory.RECOVERY_CODE,
+                title = "Recovery Codes",
+                subtitle = "Emergency access keys",
+                icon = Icons.Default.Shield,
+                accentColor = Color(0xFFF43F5E)
+            )
+        )
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 10.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(text = title, color = PimsTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp)
+        ) {
+            // Header Bar with Title & Close Action
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "New Secret",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Select a secret type to safeguard in your vault",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                IconButton(
+                    onClick = onDismissRequest,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // 2-Column Grid of 6 Secret Types (Bento-styled Cards)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                for (chunk in options.chunked(2)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        for (item in chunk) {
+                            Surface(
+                                onClick = { onSelectCategory(item.category) },
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isDark) {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                },
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = item.accentColor.copy(alpha = if (isDark) 0.28f else 0.22f)
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .tactilePress()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(item.accentColor.copy(alpha = 0.15f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = item.icon,
+                                                contentDescription = null,
+                                                tint = item.accentColor,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
+                                    Column {
+                                        Text(
+                                            text = item.title,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = item.subtitle,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontSize = 11.sp,
+                                                lineHeight = 14.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Footer Schematic / Hardware Isolation Badge
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Hardware-isolated and protected locally on device",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 
