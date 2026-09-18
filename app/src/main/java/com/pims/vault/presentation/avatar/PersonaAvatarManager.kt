@@ -82,6 +82,8 @@ class PersonaAvatarManager @Inject constructor(
         val sourceStr = json.optString("avatarSource", AvatarSource.GENERATED.name)
         val source = try { AvatarSource.valueOf(sourceStr) } catch (_: Exception) { AvatarSource.GENERATED }
         val customPath = json.optString("customAvatarPath", "").takeIf { it.isNotBlank() }
+        val customAlignX = json.optDouble("customAvatarAlignmentX", 0.0).toFloat()
+        val customAlignY = json.optDouble("customAvatarAlignmentY", 0.0).toFloat()
 
         val headShapeStr = json.optString("headShape", if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR.name else HeadShape.SOFT_OVAL.name)
         val headShape = try { HeadShape.valueOf(headShapeStr) } catch (_: Exception) { if (gender == AvatarGender.MALE) HeadShape.CHISELED_ANGULAR else HeadShape.SOFT_OVAL }
@@ -96,6 +98,8 @@ class PersonaAvatarManager @Inject constructor(
             headShape = headShape,
             avatarSource = source,
             customAvatarPath = customPath,
+            customAvatarAlignmentX = customAlignX,
+            customAvatarAlignmentY = customAlignY,
             skinTone = try {
                 SkinTone.valueOf(json.optString("skinTone", SkinTone.WARM_BEIGE.name))
             } catch (_: Exception) {
@@ -140,6 +144,8 @@ class PersonaAvatarManager @Inject constructor(
             put("headShape", config.headShape.name)
             put("avatarSource", config.avatarSource.name)
             config.customAvatarPath?.let { put("customAvatarPath", it) }
+            put("customAvatarAlignmentX", config.customAvatarAlignmentX.toDouble())
+            put("customAvatarAlignmentY", config.customAvatarAlignmentY.toDouble())
             put("skinTone", config.skinTone.name)
             put("hairStyle", config.hairStyle.name)
             put("hairColor", config.hairColor.name)
@@ -235,6 +241,14 @@ class PersonaAvatarManager @Inject constructor(
         val updated = _avatarConfig.value.copy(
             customAvatarPath = null,
             avatarSource = AvatarSource.GENERATED
+        )
+        saveConfig(updated)
+    }
+
+    fun updateCustomPhotoAlignment(alignX: Float, alignY: Float) {
+        val updated = _avatarConfig.value.copy(
+            customAvatarAlignmentX = alignX.coerceIn(-1f, 1f),
+            customAvatarAlignmentY = alignY.coerceIn(-1f, 1f)
         )
         saveConfig(updated)
     }

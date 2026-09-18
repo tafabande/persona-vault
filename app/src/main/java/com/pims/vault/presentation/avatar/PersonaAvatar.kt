@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -400,6 +401,7 @@ fun PersonaAvatar(
                 bitmap = customBitmap.asImageBitmap(),
                 contentDescription = "Custom photo for ${name.ifBlank { "you" }}",
                 contentScale = ContentScale.Crop,
+                alignment = BiasAlignment(effectiveConfig.customAvatarAlignmentX, effectiveConfig.customAvatarAlignmentY),
                 modifier = Modifier
                     .fillMaxSize()
                     .border(

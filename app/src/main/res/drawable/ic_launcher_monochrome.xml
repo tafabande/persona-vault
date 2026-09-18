@@ -29,6 +29,7 @@
         android:strokeWidth="1.8"
         android:fillColor="#00000000"
         android:strokeLineCap="round"
+        android:alpha="0.7"
         android:pathData="M44,52 L64,52" />
 
     <path
@@ -36,6 +37,7 @@
         android:strokeWidth="1.8"
         android:fillColor="#00000000"
         android:strokeLineCap="round"
+        android:alpha="0.7"
         android:pathData="M44,58 L60,58" />
 
     <path
@@ -43,6 +45,7 @@
         android:strokeWidth="1.8"
         android:fillColor="#00000000"
         android:strokeLineCap="round"
+        android:alpha="0.7"
         android:pathData="M44,64 L56,64" />
 
     <!-- Pen/Pencil overlapping diagonally -->
@@ -69,5 +72,6 @@
         android:strokeWidth="1.5"
         android:fillColor="#00000000"
         android:strokeLineCap="round"
+        android:alpha="0.6"
         android:pathData="M70,30 L74,34" />
 </vector>

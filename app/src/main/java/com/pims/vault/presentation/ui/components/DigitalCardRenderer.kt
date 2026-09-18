@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import com.pims.vault.core.model.DigitalCardRecord
 import com.pims.vault.core.model.DigitalCardType
 import com.pims.vault.core.model.FinancialCardRecord
+import com.pims.vault.presentation.ui.components.DefaultAvatar
 import java.io.File
 
 /**
@@ -168,10 +169,9 @@ fun DigitalCardRepresentation(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Card Avatar
-                        PersonaAvatar(
+                        DefaultAvatar(
                             name = card.holderName,
-                            size = 56.dp,
-                            avatarTextSize = 20.sp
+                            size = 56.dp
                         )
 
                         Column(modifier = Modifier.weight(1f)) {

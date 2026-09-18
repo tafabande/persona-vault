@@ -91,7 +91,10 @@ fun PersonaShareCard(
     selectedPalette: ShareCardPalette = ShareCardPalette.OBSIDIAN,
     occupation: String = "",
     country: String = "",
-    presetTitle: String = ""
+    phone: String = "",
+    email: String = "",
+    bloodGroup: String = "",
+    presetTitle: String = "General"
 ) {
     // Dynamic specular gleam animation across the top-right corner
     val infiniteTransition = rememberInfiniteTransition(label = "cornerGleamTransition")
@@ -198,23 +201,151 @@ fun PersonaShareCard(
                     )
                     drawRect(bottomShadow)
                 }
-                .padding(24.dp)
+                .padding(20.dp)
         ) {
-            // TOP-LEFT CORNER: The user's name
-            Text(
-                text = personName.ifBlank { "Personal Persona" },
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.6.sp
-                ),
-                color = textColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            // LEFT SIDE: Preset badge & aligned identity information
+            Column(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth(0.55f)
-            )
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(0.56f),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                // Preset badge pill
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = when {
+                        presetTitle.contains("Medical", ignoreCase = true) -> Color(0xFFDC2626).copy(alpha = 0.25f)
+                        presetTitle.contains("Professional", ignoreCase = true) -> Color(0xFF2563EB).copy(alpha = 0.25f)
+                        presetTitle.contains("Contact", ignoreCase = true) -> Color(0xFF059669).copy(alpha = 0.25f)
+                        else -> Color.White.copy(alpha = 0.15f)
+                    }
+                ) {
+                    Text(
+                        text = when {
+                            presetTitle.contains("Medical", ignoreCase = true) -> "⚕ MEDICAL ICE"
+                            presetTitle.contains("Professional", ignoreCase = true) -> "💼 PROFESSIONAL"
+                            presetTitle.contains("Contact", ignoreCase = true) -> "📇 CONTACT CARD"
+                            else -> "✦ PERSONAL ID"
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                            fontSize = 9.sp
+                        ),
+                        color = when {
+                            presetTitle.contains("Medical", ignoreCase = true) -> Color(0xFFFCA5A5)
+                            presetTitle.contains("Professional", ignoreCase = true) -> Color(0xFF93C5FD)
+                            presetTitle.contains("Contact", ignoreCase = true) -> Color(0xFF6EE7B7)
+                            else -> textColor.copy(alpha = 0.85f)
+                        },
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                Text(
+                    text = personName.ifBlank { "Personal Persona" },
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.4.sp
+                    ),
+                    color = textColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                when {
+                    presetTitle.contains("Medical", ignoreCase = true) -> {
+                        if (bloodGroup.isNotBlank()) {
+                            Text(
+                                text = "Blood Type: $bloodGroup",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color(0xFFFCA5A5),
+                                maxLines = 1
+                            )
+                        }
+                        if (phone.isNotBlank()) {
+                            Text(
+                                text = "ICE: $phone",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor.copy(alpha = 0.75f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            Text(
+                                text = "Emergency Health Record",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor.copy(alpha = 0.75f)
+                            )
+                        }
+                    }
+                    presetTitle.contains("Professional", ignoreCase = true) -> {
+                        if (occupation.isNotBlank()) {
+                            Text(
+                                text = occupation,
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = textColor.copy(alpha = 0.90f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (email.isNotBlank()) {
+                            Text(
+                                text = email,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor.copy(alpha = 0.70f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else if (country.isNotBlank()) {
+                            Text(
+                                text = country,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor.copy(alpha = 0.70f)
+                            )
+                        }
+                    }
+                    presetTitle.contains("Contact", ignoreCase = true) -> {
+                        if (phone.isNotBlank()) {
+                            Text(
+                                text = phone,
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = textColor.copy(alpha = 0.90f),
+                                maxLines = 1
+                            )
+                        }
+                        if (email.isNotBlank()) {
+                            Text(
+                                text = email,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor.copy(alpha = 0.70f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    else -> {
+                        if (occupation.isNotBlank()) {
+                            Text(
+                                text = occupation,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = textColor.copy(alpha = 0.85f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (country.isNotBlank()) {
+                            Text(
+                                text = country,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = textColor.copy(alpha = 0.65f),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
 
             // RIGHT-MIDDLE: Premium Quiet-Zone QR Code
             Box(

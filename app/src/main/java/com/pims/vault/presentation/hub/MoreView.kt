@@ -7,7 +7,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import com.pims.vault.presentation.ui.theme.tactilePress
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,14 +72,13 @@ import com.pims.vault.presentation.ui.util.rememberPimsHaptics
  * MoreView
  *
  * Implements a quiet, human-readable settings hub organized into clean collapsible groups:
+ * - Personalisation (Theme Mode, Mood, Wallpapers)
  * - Security
- * - Devices
  * - Data & Backup
- * - Preferences (Sounds, Notifications, Language, Accessibility)
+ * - Preferences (Sounds, Haptics, Motion, Language, Accessibility)
  * - About (Walkthrough, Privacy, Version)
  *
- * Strict LIGHT THEME ONLY: No dark mode or theme switcher exposed.
- * Implementation jargon (Firestore, capability tokens, tombstones) is eliminated.
+ * Supports Light, Dark, and System theme modes with smooth animated transitions.
  */
 @Composable
 fun MoreView(
@@ -86,7 +92,6 @@ fun MoreView(
     onToggleReducedMotion: (Boolean) -> Unit = {},
     isHapticsEnabled: Boolean = true,
     onToggleHaptics: (Boolean) -> Unit = {},
-    onOpenAvatarEditor: () -> Unit = {},
     onOpenWallpaperOptions: () -> Unit = {},
     onThemeModeSelected: (ThemeMode) -> Unit = {},
     onToggleSound: (Boolean) -> Unit = {},
@@ -109,7 +114,6 @@ fun MoreView(
     // Collapsible Category Section States
     var personalisationExpanded by remember { mutableStateOf(true) }
     var securityExpanded by remember { mutableStateOf(false) }
-    var devicesExpanded by remember { mutableStateOf(false) }
     var backupExpanded by remember { mutableStateOf(false) }
     var preferencesExpanded by remember { mutableStateOf(false) }
     var aboutExpanded by remember { mutableStateOf(false) }
@@ -118,12 +122,6 @@ fun MoreView(
     // Account Upgrade Dialog State
     var showUpgradeDialog by remember { mutableStateOf(false) }
     var upgradeEmailInput by remember { mutableStateOf("") }
-
-    val deviceName = remember {
-        val manu = android.os.Build.MANUFACTURER.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
-        val model = android.os.Build.MODEL
-        "$manu $model"
-    }
 
     LazyColumn(
         modifier = modifier
@@ -142,7 +140,7 @@ fun MoreView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "More",
+                    text = "Settings",
                     style = MaterialTheme.typography.headlineLarge.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.5).sp
@@ -164,59 +162,7 @@ fun MoreView(
             }
         }
 
-        // Optional Account Upgrade Banner (Local-only mode)
-        if (isLocalOnly) {
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CloudUpload,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "Connect an account",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
 
-                        Text(
-                            text = "Your local data will be safely connected to this account.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        Button(
-                            onClick = {
-                                haptics.light()
-                                showUpgradeDialog = true
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Sign in / Create account")
-                        }
-                    }
-                }
-            }
-        }
 
         // =====================================================================
         // 0. PERSONALISATION (Collapsible - Mood, Avatar, Wallpapers)
@@ -242,24 +188,74 @@ fun MoreView(
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                    ) {
+                    // Theme Mode Selector
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+                            .background(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .border(
+                                BorderStroke(0.4.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clip(RoundedCornerShape(10.dp))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val modes = listOf(
+                                ThemeMode.LIGHT to "Light",
+                                ThemeMode.DARK to "Dark",
+                                ThemeMode.SYSTEM to "System"
+                            )
+                            modes.forEach { (mode, label) ->
+                                val isSelected = currentThemeMode == mode
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(36.dp)
+                                        .then(
+                                            if (isSelected) {
+                                                Modifier.background(
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                )
+                                            } else Modifier
+                                        )
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            haptics.selection()
+                                            onThemeModeSelected(mode)
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                                        ),
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     com.pims.vault.presentation.ui.components.PersonaMoodSelector(
                         selectedMood = currentMood,
                         onMoodSelected = onMoodSelected
                     )
 
                     QuietSettingRow(
-                        title = "Edit Persona Avatar",
-                        trailingText = "Customize",
-                        onClick = {
-                            haptics.selection()
-                            onOpenAvatarEditor()
-                        }
-                    )
-
-                    QuietSettingRow(
                         title = "Home Wallpapers",
-                        trailingText = "Local only",
                         onClick = {
                             haptics.selection()
                             onOpenWallpaperOptions()
@@ -295,66 +291,11 @@ fun MoreView(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     QuietSettingRow(
-                        title = "Biometrics & Master Password",
+                        title = "Security & PIN Policies",
+                        trailingText = "Biometrics & App PIN",
                         onClick = {
                             haptics.light()
                             onSecurityClicked()
-                        }
-                    )
-                    QuietSettingRow(
-                        title = "App PIN & Security Policies",
-                        trailingText = "Configure",
-                        onClick = {
-                            haptics.light()
-                            onAppPinSecurityClicked()
-                        }
-                    )
-                    QuietSettingRow(
-                        title = "Emergency Card (ICE)",
-                        onClick = {
-                            haptics.light()
-                            onEmergencyCardClicked()
-                        }
-                    )
-                }
-            }
-        }
-
-        // =====================================================================
-        // 2. DEVICES (Collapsible)
-        // =====================================================================
-        item {
-            CollapsibleCategoryHeader(
-                icon = Icons.Default.Devices,
-                title = "Devices",
-                isExpanded = devicesExpanded,
-                onClick = {
-                    haptics.light()
-                    devicesExpanded = !devicesExpanded
-                }
-            )
-        }
-
-        item {
-            AnimatedVisibility(
-                visible = devicesExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    QuietSettingRow(
-                        title = "This Device",
-                        trailingText = deviceName,
-                        onClick = {}
-                    )
-                    QuietSettingRow(
-                        title = "Active Sessions",
-                        onClick = {
-                            haptics.light()
-                            onDevicesClicked()
                         }
                     )
                 }
@@ -387,10 +328,24 @@ fun MoreView(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Calm status row
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        color = StateSuccess.copy(alpha = 0.1f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = StateSuccess.copy(alpha = 0.06f), spotColor = StateSuccess.copy(alpha = 0.04f))
+                            .background(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        StateSuccess.copy(alpha = 0.12f),
+                                        StateSuccess.copy(alpha = 0.06f)
+                                    )
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .border(
+                                BorderStroke(0.4.dp, StateSuccess.copy(alpha = 0.15f)),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clip(RoundedCornerShape(10.dp))
                     ) {
                         Text(
                             text = if (isLocalOnly) "Stored locally on this device" else syncStatusText,
@@ -402,7 +357,6 @@ fun MoreView(
 
                     QuietSettingRow(
                         title = "Information Library & Search",
-                        trailingText = "All Records",
                         onClick = {
                             haptics.light()
                             onOpenInformationLibrary()
@@ -496,10 +450,19 @@ fun MoreView(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Tactile In-App Sounds Toggle
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+                            .background(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .border(
+                                BorderStroke(0.4.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clip(RoundedCornerShape(10.dp))
                     ) {
                         Row(
                             modifier = Modifier
@@ -514,11 +477,6 @@ fun MoreView(
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Text(
-                                    text = "Subtle tactile confirmations",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                             Switch(
                                 checked = isSoundEnabled,
@@ -531,10 +489,19 @@ fun MoreView(
                     }
 
                     // Tactile Haptics Toggle
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+                            .background(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .border(
+                                BorderStroke(0.4.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clip(RoundedCornerShape(10.dp))
                     ) {
                         Row(
                             modifier = Modifier
@@ -549,11 +516,6 @@ fun MoreView(
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Text(
-                                    text = "Subtle vibration feedback on touch",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                             Switch(
                                 checked = isHapticsEnabled,
@@ -566,10 +528,19 @@ fun MoreView(
                     }
 
                     // Reduced Motion Toggle
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+                            .background(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .border(
+                                BorderStroke(0.4.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clip(RoundedCornerShape(10.dp))
                     ) {
                         Row(
                             modifier = Modifier
@@ -584,11 +555,6 @@ fun MoreView(
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Text(
-                                    text = "Disable playful spring physics",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                             Switch(
                                 checked = isReducedMotion,
@@ -602,19 +568,16 @@ fun MoreView(
 
                     QuietSettingRow(
                         title = "Language",
-                        trailingText = "System default",
                         onClick = {}
                     )
 
                     QuietSettingRow(
                         title = "Document Reminders",
-                        trailingText = "Active",
                         onClick = {}
                     )
 
                     QuietSettingRow(
                         title = "Accessibility",
-                        trailingText = "System settings",
                         onClick = {}
                     )
                 }
@@ -648,7 +611,6 @@ fun MoreView(
                 ) {
                     QuietSettingRow(
                         title = "Revisit Walkthrough",
-                        trailingText = "View guide",
                         onClick = {
                             haptics.light()
                             onRevisitWalkthrough()
@@ -656,7 +618,6 @@ fun MoreView(
                     )
                     QuietSettingRow(
                         title = "Privacy & Local Isolation",
-                        trailingText = "On-Device",
                         onClick = {}
                     )
                     QuietSettingRow(
@@ -729,15 +690,24 @@ private fun CollapsibleCategoryHeader(
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (isExpanded) 90f else 0f,
+        animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.snappySpring(false),
         label = "arrowRotation"
     )
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .tactilePress(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            .shadow(1.dp, RoundedCornerShape(12.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+            .background(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .border(
+                BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                RoundedCornerShape(12.dp)
+            )
+            .clip(RoundedCornerShape(12.dp))
+            .tactilePress(onClick = onClick)
     ) {
         Row(
             modifier = Modifier
@@ -782,12 +752,20 @@ private fun QuietSettingRow(
     textColor: Color = MaterialTheme.colorScheme.onSurface,
     onClick: () -> Unit
 ) {
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .tactilePress(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+            .shadow(1.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f))
+            .background(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(10.dp)
+            )
+            .border(
+                BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+                RoundedCornerShape(10.dp)
+            )
+            .clip(RoundedCornerShape(10.dp))
+            .tactilePress(onClick = onClick)
     ) {
         Row(
             modifier = Modifier

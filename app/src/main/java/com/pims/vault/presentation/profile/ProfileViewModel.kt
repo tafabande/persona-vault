@@ -20,6 +20,7 @@ import com.pims.vault.data.local.dao.EmploymentDao
 import com.pims.vault.data.local.dao.MedicalDao
 import com.pims.vault.data.local.dao.PersonDao
 import com.pims.vault.data.local.dao.RelationshipDao
+import com.pims.vault.data.local.dao.RelationshipNoteDao
 import com.pims.vault.data.local.entity.AddressEntity
 import com.pims.vault.data.local.entity.ContactMethodEntity
 import com.pims.vault.data.local.entity.EducationRecordEntity
@@ -27,6 +28,8 @@ import com.pims.vault.data.local.entity.EmploymentRecordEntity
 import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.data.local.entity.PersonEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
+import com.pims.vault.data.local.entity.RelationshipNoteEntity
+import com.pims.vault.domain.model.NoteFormat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -210,6 +213,7 @@ class ProfileViewModel @Inject constructor(
     private val employmentDao: EmploymentDao,
     private val medicalDao: MedicalDao,
     private val relationshipDao: RelationshipDao,
+    private val relationshipNoteDao: RelationshipNoteDao,
     private val socialAccountDao: com.pims.vault.data.local.dao.SocialAccountDao,
     private val sessionManager: BiometricSessionManager
 ) : ViewModel() {
@@ -254,6 +258,20 @@ class ProfileViewModel @Inject constructor(
                         val phone = targetContacts.firstOrNull { it.contactType == ContactType.PHONE }?.value ?: ""
                         val email = targetContacts.firstOrNull { it.contactType == ContactType.EMAIL }?.value ?: ""
 
+                        val dossierNotes = relationshipNoteDao.getNotesForRelationshipFlow(item.relationship.id).firstOrNull()
+                            ?.mapNotNull { it.contentPlaintext?.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                        val directNotes = listOfNotNull(
+                            item.relationship.notes?.trim()?.takeIf { it.isNotBlank() },
+                            target.notes?.trim()?.takeIf { it.isNotBlank() }
+                        ).firstOrNull() ?: ""
+                        val effectiveNotes = if (directNotes.isNotBlank()) {
+                            directNotes
+                        } else if (dossierNotes.isNotEmpty()) {
+                            dossierNotes.joinToString("\n\n")
+                        } else {
+                            ""
+                        }
+
                         KinRelationshipItem(
                             id = item.relationship.id,
                             targetPersonId = target.id,
@@ -264,7 +282,7 @@ class ProfileViewModel @Inject constructor(
                             address = target.countryOfResidence ?: "",
                             dateOfBirth = target.dateOfBirth ?: "",
                             anniversary = target.occupation ?: "",
-                            notes = item.relationship.notes ?: target.notes ?: "",
+                            notes = effectiveNotes,
                             isNextOfKin = item.relationship.isVerified || item.relationship.customLabel.equals("Next of Kin", ignoreCase = true)
                         )
                     }
@@ -757,11 +775,29 @@ class ProfileViewModel @Inject constructor(
                             isVerified = event.isNextOfKin
                         )
                         relationshipDao.insertOrUpdate(rel)
+
+                        if (event.notes.trim().isNotBlank()) {
+                            relationshipNoteDao.insertOrUpdate(
+                                RelationshipNoteEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    relationshipId = rel.id,
+                                    topic = "Personal Notes",
+                                    contentPlaintext = event.notes.trim(),
+                                    format = NoteFormat.PLAIN,
+                                    isPrivate = false,
+                                    createdAt = System.currentTimeMillis(),
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            )
+                        }
+
+                        loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Added ${event.role} (${event.fullName})") }
                     }
 
                     is ProfileEvent.DeleteRelationship -> {
                         relationshipDao.deleteById(event.relationshipId)
+                        loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Relationship removed") }
                     }
 
@@ -791,13 +827,14 @@ class ProfileViewModel @Inject constructor(
                     is ProfileEvent.UpdatePersonDetails -> {
                         val existing = personDao.getPersonById(event.personId)
                         if (existing != null) {
+                            val effectiveNotes = event.notes.trim().takeIf { it.isNotBlank() } ?: existing.notes
                             val updated = existing.copy(
                                 firstName = event.firstName.trim(),
                                 lastName = event.lastName.trim(),
                                 dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
                                 countryOfResidence = event.address.trim().takeIf { it.isNotBlank() },
                                 occupation = event.anniversary.trim().takeIf { it.isNotBlank() },
-                                notes = event.notes.trim().takeIf { it.isNotBlank() },
+                                notes = effectiveNotes,
                                 updatedAt = System.currentTimeMillis()
                             )
                             personDao.insertOrUpdate(updated)
@@ -842,13 +879,40 @@ class ProfileViewModel @Inject constructor(
                             if (owner != null) {
                                 val rel = relationshipDao.getRelationshipBetween(owner.id, event.personId)
                                 if (rel != null) {
+                                    val relNotes = event.notes.trim().takeIf { it.isNotBlank() } ?: rel.notes
                                     relationshipDao.insertOrUpdate(
                                         rel.copy(
                                             customLabel = event.relationRole.trim(),
-                                            notes = event.notes.trim().takeIf { it.isNotBlank() },
+                                            notes = relNotes,
                                             updatedAt = System.currentTimeMillis()
                                         )
                                     )
+
+                                    if (event.notes.trim().isNotBlank()) {
+                                        val existingNotes = relationshipNoteDao.getNotesForRelationshipFlow(rel.id).firstOrNull() ?: emptyList()
+                                        val primaryNote = existingNotes.firstOrNull()
+                                        if (primaryNote != null) {
+                                            relationshipNoteDao.insertOrUpdate(
+                                                primaryNote.copy(
+                                                    contentPlaintext = event.notes.trim(),
+                                                    updatedAt = System.currentTimeMillis()
+                                                )
+                                            )
+                                        } else {
+                                            relationshipNoteDao.insertOrUpdate(
+                                                RelationshipNoteEntity(
+                                                    id = UUID.randomUUID().toString(),
+                                                    relationshipId = rel.id,
+                                                    topic = "Personal Notes",
+                                                    contentPlaintext = event.notes.trim(),
+                                                    format = NoteFormat.PLAIN,
+                                                    isPrivate = false,
+                                                    createdAt = System.currentTimeMillis(),
+                                                    updatedAt = System.currentTimeMillis()
+                                                )
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             loadFullProfileAndRelationships()

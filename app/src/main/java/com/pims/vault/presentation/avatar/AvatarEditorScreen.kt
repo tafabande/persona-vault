@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -160,17 +161,20 @@ fun AvatarEditorContent(
                     context.contentResolver.openInputStream(pickedUri)?.use { stream ->
                         val original = BitmapFactory.decodeStream(stream)
                         if (original != null) {
-                            // Center-crop to square
-                            val side = minOf(original.width, original.height)
-                            val x = (original.width - side) / 2
-                            val y = (original.height - side) / 2
-                            val cropped = Bitmap.createBitmap(original, x, y, side, side)
+                            // Scale down large images while preserving full aspect ratio for recentering
+                            val maxDim = 1200
+                            val scaleFactor = minOf(1.0f, maxDim.toFloat() / maxOf(original.width, original.height))
+                            val targetW = (original.width * scaleFactor).toInt().coerceAtLeast(1)
+                            val targetH = (original.height * scaleFactor).toInt().coerceAtLeast(1)
+                            val scaled = if (scaleFactor < 1.0f) Bitmap.createScaledBitmap(original, targetW, targetH, true) else original
 
-                            val newPath = avatarManager?.saveCustomPhoto(cropped)
+                            val newPath = avatarManager?.saveCustomPhoto(scaled)
                             if (newPath != null) {
                                 config = config.copy(
                                     avatarSource = AvatarSource.CUSTOM_IMAGE,
-                                    customAvatarPath = newPath
+                                    customAvatarPath = newPath,
+                                    customAvatarAlignmentX = 0f,
+                                    customAvatarAlignmentY = 0f
                                 )
                                 activeSource = AvatarSource.CUSTOM_IMAGE
                                 haptics.success()
@@ -364,6 +368,74 @@ fun AvatarEditorContent(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("Remove", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+
+                    if (!config.customAvatarPath.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Recenter Photo Position",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Reset Center",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.clickable {
+                                            haptics.selection()
+                                            config = config.copy(
+                                                customAvatarAlignmentX = 0f,
+                                                customAvatarAlignmentY = 0f
+                                            )
+                                        }
+                                    )
+                                }
+
+                                Text(
+                                    text = "Vertical Position (${(config.customAvatarAlignmentY * 100).toInt()}%)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Slider(
+                                    value = config.customAvatarAlignmentY,
+                                    onValueChange = { newY ->
+                                        config = config.copy(customAvatarAlignmentY = newY)
+                                    },
+                                    valueRange = -1f..1f,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Text(
+                                    text = "Horizontal Position (${(config.customAvatarAlignmentX * 100).toInt()}%)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Slider(
+                                    value = config.customAvatarAlignmentX,
+                                    onValueChange = { newX ->
+                                        config = config.copy(customAvatarAlignmentX = newX)
+                                    },
+                                    valueRange = -1f..1f,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }

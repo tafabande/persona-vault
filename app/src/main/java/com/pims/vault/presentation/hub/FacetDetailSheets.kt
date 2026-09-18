@@ -1,6 +1,7 @@
 package com.pims.vault.presentation.hub
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -306,55 +307,38 @@ fun DocumentsWalletSheet(
     onExportClick: (DocumentWithHistory) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("All") }
+    var isSearchActive by remember { mutableStateOf(false) }
 
-    val categories = remember {
-        listOf("All", "Identity", "Education", "Legal & Work", "Medical", "Personal")
-    }
+    val filteredDocuments = remember(documents, searchQuery) {
+        if (searchQuery.isBlank()) documents
+        else {
+            val q = searchQuery.trim().lowercase()
+            documents.filter { docWithHist ->
+                val doc = docWithHist.document
+                val titleMatch = doc.title.lowercase().contains(q)
+                val typeMatch = doc.documentType.name.lowercase().contains(q)
+                val friendlyTypeMatch = when (doc.documentType) {
+                    DocumentType.PASSPORT, DocumentType.NATIONAL_ID, DocumentType.DRIVING_LICENCE, DocumentType.BIRTH_CERTIFICATE -> "identity id passport license driving birth"
+                    DocumentType.ACADEMIC_CERTIFICATE, DocumentType.TRANSCRIPT -> "education degree certificate academic transcript"
+                    DocumentType.EMPLOYMENT_CONTRACT, DocumentType.LEGAL_CONTRACT, DocumentType.INSURANCE_POLICY -> "legal work contract employment agreement insurance policy"
+                    DocumentType.MEDICAL_RECORD -> "medical health record prescription"
+                    DocumentType.CURRICULUM_VITAE, DocumentType.PASSPORT_PHOTO, DocumentType.OTHER -> "personal cv resume photo other"
+                }.contains(q)
+                val numberMatch = doc.documentNumber?.lowercase()?.contains(q) == true
 
-    val filteredDocuments = remember(documents, searchQuery, selectedCategory) {
-        documents.filter { docWithHist ->
-            val doc = docWithHist.document
-            val matchesCategory = when (selectedCategory) {
-                "Identity" -> doc.documentType == DocumentType.PASSPORT ||
-                        doc.documentType == DocumentType.NATIONAL_ID ||
-                        doc.documentType == DocumentType.DRIVING_LICENCE ||
-                        doc.documentType == DocumentType.BIRTH_CERTIFICATE
-                "Education" -> doc.documentType == DocumentType.ACADEMIC_CERTIFICATE ||
-                        doc.documentType == DocumentType.TRANSCRIPT
-                "Legal & Work" -> doc.documentType == DocumentType.EMPLOYMENT_CONTRACT ||
-                        doc.documentType == DocumentType.LEGAL_CONTRACT ||
-                        doc.documentType == DocumentType.INSURANCE_POLICY
-                "Medical" -> doc.documentType == DocumentType.MEDICAL_RECORD
-                "Personal" -> doc.documentType == DocumentType.CURRICULUM_VITAE ||
-                        doc.documentType == DocumentType.PASSPORT_PHOTO ||
-                        doc.documentType == DocumentType.OTHER
-                else -> true
+                titleMatch || typeMatch || friendlyTypeMatch || numberMatch
             }
-
-            val matchesSearch = if (searchQuery.isBlank()) true else {
-                doc.title.contains(searchQuery, ignoreCase = true) ||
-                        (doc.documentNumber?.contains(searchQuery, ignoreCase = true) == true) ||
-                        (doc.issuingAuthority?.contains(searchQuery, ignoreCase = true) == true) ||
-                        doc.documentType.name.contains(searchQuery, ignoreCase = true)
-            }
-
-            matchesCategory && matchesSearch
         }
     }
 
     val totalCount = documents.size
-    val sensitiveCount = documents.count {
-        it.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE ||
-                it.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL
-    }
-    val standardCount = totalCount - sensitiveCount
 
     BackHandler(enabled = true) {
         if (searchQuery.isNotBlank()) {
             searchQuery = ""
-        } else if (selectedCategory != "All") {
-            selectedCategory = "All"
+            isSearchActive = false
+        } else if (isSearchActive) {
+            isSearchActive = false
         } else {
             onDismissRequest()
         }
@@ -402,104 +386,96 @@ fun DocumentsWalletSheet(
                     }
                 }
 
-                IconButton(
-                    onClick = onDismissRequest,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
+                    IconButton(
+                        onClick = {
+                            isSearchActive = !isSearchActive
+                            if (!isSearchActive) searchQuery = ""
+                        },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(
+                                if (isSearchActive || searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                CircleShape
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = if (isSearchActive || searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDismissRequest,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = isSearchActive || searchQuery.isNotBlank()) {
+                Column {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text(
+                                "Search by name or category (e.g. Passport, Education)...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotBlank()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                        )
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 1. Sleek Security & Status Hero Banner
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(Color(0xFF10B981).copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Shield,
-                                contentDescription = null,
-                                tint = Color(0xFF10B981),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        Column {
-                            Text(
-                                text = "Zero-Knowledge Vault",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "AES-256-GCM encrypted on-device",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                        ) {
-                            Text(
-                                text = "🛡️ $standardCount standard",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        if (sensitiveCount > 0) {
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFFF59E0B).copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    text = "🔒 $sensitiveCount sensitive",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color(0xFFD97706),
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // 2. Overhauled "Add Document" Action Area
+            // Overhauled "Add Document" Action Area
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -565,147 +541,24 @@ fun DocumentsWalletSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = {
-                    Text(
-                        "Search documents by title, number or type...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotBlank()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 4. Category Filter Chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                categories.forEach { cat ->
-                    val isSelected = selectedCategory == cat
-                    val catCount = when (cat) {
-                        "Identity" -> documents.count {
-                            it.document.documentType == DocumentType.PASSPORT ||
-                                    it.document.documentType == DocumentType.NATIONAL_ID ||
-                                    it.document.documentType == DocumentType.DRIVING_LICENCE ||
-                                    it.document.documentType == DocumentType.BIRTH_CERTIFICATE
-                        }
-                        "Education" -> documents.count {
-                            it.document.documentType == DocumentType.ACADEMIC_CERTIFICATE ||
-                                    it.document.documentType == DocumentType.TRANSCRIPT
-                        }
-                        "Legal & Work" -> documents.count {
-                            it.document.documentType == DocumentType.EMPLOYMENT_CONTRACT ||
-                                    it.document.documentType == DocumentType.LEGAL_CONTRACT ||
-                                    it.document.documentType == DocumentType.INSURANCE_POLICY
-                        }
-                        "Medical" -> documents.count { it.document.documentType == DocumentType.MEDICAL_RECORD }
-                        "Personal" -> documents.count {
-                            it.document.documentType == DocumentType.CURRICULUM_VITAE ||
-                                    it.document.documentType == DocumentType.PASSPORT_PHOTO ||
-                                    it.document.documentType == DocumentType.OTHER
-                        }
-                        else -> documents.size
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (isSelected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        border = BorderStroke(
-                            1.dp,
-                            if (isSelected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                        ),
-                        modifier = Modifier.clickable { selectedCategory = cat }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = cat,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                ),
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                                else MaterialTheme.colorScheme.onSurface
-                            )
-                            Surface(
-                                shape = CircleShape,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
-                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                            ) {
-                                Text(
-                                    text = "$catCount",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 5. Document List or Empty State
+            // Document List or Empty State
             if (filteredDocuments.isEmpty()) {
-                if (searchQuery.isNotBlank() || selectedCategory != "All") {
+                if (searchQuery.isNotBlank()) {
                     PersonaEmptyState(
                         icon = Icons.Default.Search,
                         title = "No matching documents",
-                        description = "Try adjusting your search or category filter.",
-                        actionLabel = "Clear filters",
+                        description = "No documents match \"$searchQuery\". Try searching by name or category.",
+                        actionLabel = "Clear search",
                         onActionClick = {
                             searchQuery = ""
-                            selectedCategory = "All"
+                            isSearchActive = false
                         }
                     )
                 } else {
                     PersonaEmptyState(
                         icon = Icons.Default.Description,
                         title = "Your document shelf is empty",
-                        description = "Add passports, national IDs, degrees, contracts, or records to your encrypted wallet.",
+                        description = "Add passports, national IDs, degrees, contracts, or records to your wallet.",
                         actionLabel = "Upload your first document",
                         onActionClick = onUploadClick
                     )
@@ -928,7 +781,7 @@ fun DocumentsWalletSheet(
                                             modifier = Modifier.size(15.dp)
                                         )
                                         Text(
-                                            text = "View & Decrypt",
+                                            text = "View",
                                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.primary
                                         )

@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import com.pims.vault.presentation.ui.theme.LocalReducedMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -210,20 +211,20 @@ class MainActivity : FragmentActivity() {
             val currentMood by viewModel.currentMood.collectAsState()
             val isReducedMotion by viewModel.isReducedMotion.collectAsState()
 
-            val view = LocalView.current
-            if (!view.isInEditMode) {
-                SideEffect {
-                    val insetsController = WindowCompat.getInsetsController(window, view)
-                    insetsController.isAppearanceLightStatusBars = true
-                    insetsController.isAppearanceLightNavigationBars = true
-                }
-            }
-
             PimsVaultTheme(
                 themeMode = themeMode,
                 mood = currentMood,
                 isReducedMotion = isReducedMotion
             ) {
+                val view = LocalView.current
+                val isDark = LocalPimsDarkTheme.current
+                if (!view.isInEditMode) {
+                    SideEffect {
+                        val insetsController = WindowCompat.getInsetsController(window, view)
+                        insetsController.isAppearanceLightStatusBars = !isDark
+                        insetsController.isAppearanceLightNavigationBars = !isDark
+                    }
+                }
                 var showSplash by remember { mutableStateOf(true) }
                 val accountMode by viewModel.accountMode.collectAsState()
                 val hasCompletedWalkthrough by viewModel.hasCompletedWalkthrough.collectAsState()
@@ -234,14 +235,15 @@ class MainActivity : FragmentActivity() {
 
                 LaunchedEffect(Unit) {
                     delay(800L)
-                    showSplash = false
                     if (accountMode != AccountMode.UNSET && hasCompletedInitialProfile) {
                         viewModel.onAuthSuccess()
                     }
+                    showSplash = false
                 }
 
                 val reducedMotion = LocalReducedMotion.current
-                AnimatedContent(
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AnimatedContent(
                     targetState = when {
                         showSplash -> "SPLASH"
                         !hasCompletedWalkthrough || isRevisitingWalkthrough -> "WALKTHROUGH"
@@ -349,12 +351,16 @@ class MainActivity : FragmentActivity() {
                                     )
                                 }
                             }
-                        }
                     }
+                    }
+                    // Film grain noise texture overlay: Solves dark gradient banding and delivers tactile paper/vault depth
+                    com.pims.vault.presentation.ui.components.FilmGrainOverlay()
                 }
             }
         }
     }
+}
+
 
     override fun onUserInteraction() {
         super.onUserInteraction()
@@ -504,7 +510,7 @@ fun LockScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Fallback: Master Password
+            // Fallback: App PIN
             androidx.compose.material3.OutlinedButton(
                 onClick = { showPasswordDialog = true },
                 shape = RoundedCornerShape(12.dp),
@@ -512,7 +518,7 @@ fun LockScreen(
                     .fillMaxWidth()
                     .height(48.dp)
             ) {
-                Text("🔑 Enter Master Password Instead", fontWeight = FontWeight.Medium)
+                Text("🔢 Enter App PIN Instead", fontWeight = FontWeight.Medium)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -526,7 +532,7 @@ fun LockScreen(
                 Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("😊 Face", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("🔢 Phone PIN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("🔢 App PIN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -538,26 +544,30 @@ fun LockScreen(
                 passwordInput = ""
                 passwordError = null
             },
-            title = { Text("Master Password") },
+            containerColor = MaterialTheme.colorScheme.surface,
+            textContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text("Enter App PIN", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "Enter your master vault password if biometrics are currently unavailable.",
+                        "Enter your secure App PIN to unlock Persona Vault.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     androidx.compose.material3.OutlinedTextField(
                         value = passwordInput,
                         onValueChange = {
-                            passwordInput = it
-                            passwordError = null
+                            if (it.length <= 8 && it.all { ch -> ch.isDigit() }) {
+                                passwordInput = it
+                                passwordError = null
+                            }
                         },
-                        label = { Text("Password") },
+                        label = { Text("App PIN") },
                         isError = passwordError != null,
                         supportingText = passwordError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Password
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword
                         ),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -569,7 +579,7 @@ fun LockScreen(
                     onClick = {
                         val input = passwordInput.trim()
                         if (input.isBlank()) {
-                            passwordError = "PIN / password cannot be empty"
+                            passwordError = "PIN cannot be empty"
                         } else if (pinSecurityManager != null && pinSecurityManager.hasPin()) {
                             if (pinSecurityManager.verifyPin(input)) {
                                 showPasswordDialog = false

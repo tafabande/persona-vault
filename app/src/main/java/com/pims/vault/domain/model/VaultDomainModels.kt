@@ -1,5 +1,6 @@
 package com.pims.vault.domain.model
 
+import com.pims.vault.core.model.CardStatus
 import com.pims.vault.core.model.SecurityClassification
 import com.pims.vault.core.model.VaultCategory
 
@@ -59,10 +60,31 @@ data class PaymentReferenceSecret(
     val lastFourDigits: String, // Exactly 4 digits
     val expiryMonth: String,    // MM (e.g. "12")
     val expiryYear: String,     // YY or YYYY (e.g. "28")
-    val notes: String? = null
+    val notes: String? = null,
+    val status: CardStatus = CardStatus.IN_USE
 ) {
     val displayReference: String
         get() = "$provider ending in •••• $lastFourDigits"
+}
+
+data class BankingDetailsSecret(
+    val bankName: String,
+    val accountHolderName: String,
+    val accountNumber: String = "",
+    val accountType: String = "",
+    val sortCode: String = "",
+    val swiftBic: String = "",
+    val iban: String = "",
+    val routingNumber: String = "",
+    val bsb: String = "",
+    val branchName: String = "",
+    val linkedCardLastFour: List<String> = emptyList(),
+    val notes: String? = null,
+    val linkedCardId: String? = null,
+    val linkedCardSummary: String? = null
+) {
+    val displayReference: String
+        get() = "$bankName •••• ${accountNumber.takeLast(4).ifBlank { "----" }}"
 }
 
 data class LiveTotpToken(

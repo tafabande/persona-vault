@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    
+    <!-- Background circle -->
+    <path
+        android:fillColor="#E8E5E0"
+        android:pathData="M60,60m-60,0a60,60 0,1 1,120 0a60,60 0,1 1,-120 0" />
+    
+    <!-- Head -->
+    <path
+        android:fillColor="#A8A298"
+        android:pathData="M60,35m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0" />
+    
+    <!-- Shoulders (narrower, more curved for female) -->
+    <path
+        android:fillColor="#A8A298"
+        android:pathData="M60,65c-15,0 -26,7 -26,16v8c0,2 2,4 4,4h44c2,0 4,-2 4,-4v-8c0,-9 -11,-16 -26,-16z" />
+</vector>

@@ -46,13 +46,12 @@ fun BiometricReauthPrompt(
     isDeviceLockedOut: Boolean = false,
     onAuthenticateBiometric: () -> Unit,
     onUseDevicePin: () -> Unit,
-    onUseMasterPassword: (() -> Unit)? = null,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val title = when (tier) {
         SecurityTier.LEVEL_2_SENSITIVE -> "Verify Identity for Sensitive Records"
-        SecurityTier.LEVEL_3_VAULT -> "Unlock Vault Fortress"
+        SecurityTier.LEVEL_3_VAULT -> "Unlock Vault"
         else -> "Identity Verification"
     }
 
@@ -150,20 +149,6 @@ fun BiometricReauthPrompt(
                         modifier = Modifier.size(16.dp).padding(end = 4.dp)
                     )
                     Text("Use PIN")
-                }
-
-                if (onUseMasterPassword != null) {
-                    OutlinedButton(
-                        onClick = onUseMasterPassword,
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp).padding(end = 4.dp)
-                        )
-                        Text("Password")
-                    }
                 }
             }
         },

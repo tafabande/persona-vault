@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import com.pims.vault.presentation.ui.theme.tactilePress
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,7 +76,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -87,13 +88,8 @@ import androidx.compose.ui.unit.sp
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.RelationshipNote
 import com.pims.vault.presentation.DateHelper
-import com.pims.vault.presentation.avatar.AvatarBehaviorMode
-import com.pims.vault.presentation.avatar.ClothingColor
-import com.pims.vault.presentation.avatar.HairStyle
-import com.pims.vault.presentation.avatar.PersonaAvatar
-import com.pims.vault.presentation.avatar.PersonaAvatarConfig
+import com.pims.vault.presentation.ui.components.DefaultAvatar
 import com.pims.vault.presentation.avatar.PersonaAvatarManager
-import com.pims.vault.presentation.avatar.SkinTone
 import com.pims.vault.presentation.profile.KinRelationshipItem
 import com.pims.vault.presentation.relationship.AddOrEditRelationshipNoteDialog
 import com.pims.vault.presentation.relationship.RelationshipNotesSection
@@ -171,93 +167,7 @@ fun PeopleView(
     ) {
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
-        // Screen Header
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "People",
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.5).sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Managing other people • Separate from your own profile",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconButton(
-                        onClick = {
-                            haptics.light()
-                            showLinkAccountDialog = true
-                        },
-                        modifier = Modifier
-                            .background(
-                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Link,
-                            contentDescription = "Link Person Account",
-                            tint = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            haptics.light()
-                            onAddPersonClick()
-                        },
-                        modifier = Modifier
-                            .background(
-                                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PersonAdd,
-                            contentDescription = "Add Person",
-                            tint = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
-                }
-            }
-        }
-
-        // Search Bar
-        item {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search by name or relationship...") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                    focusedBorderColor = MaterialTheme.colorScheme.tertiary
-                ),
-                singleLine = true
-            )
-        }
 
         // Category Filter Chips
         item {
@@ -281,7 +191,7 @@ fun PeopleView(
                             selectedCategory = category
                         },
                         label = {
-                            Text("${category.label} ($badgeCount)", fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                            Text(category.label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
                         },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -310,9 +220,6 @@ fun PeopleView(
             items(filteredList, key = { it.id }) { person ->
                 PersonListItem(
                     person = person,
-                    avatarConfig = remember(person.id, person.fullName, person.relationRole) {
-                        avatarManager.getAvatarConfigForRelationship(person.id, person.fullName, person.relationRole)
-                    },
                     onClick = { onSelectPerson(person) }
                 )
             }
@@ -403,15 +310,22 @@ fun PeopleView(
 @Composable
 private fun PersonListItem(
     person: KinRelationshipItem,
-    avatarConfig: PersonaAvatarConfig,
     onClick: () -> Unit
 ) {
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .tactilePress(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            .shadow(2.dp, RoundedCornerShape(14.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
+            .background(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(14.dp)
+            )
+            .border(
+                BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                RoundedCornerShape(14.dp)
+            )
+            .clip(RoundedCornerShape(14.dp))
+            .tactilePress(onClick = onClick)
     ) {
         val context = LocalContext.current
         val avatarManager = remember { PersonaAvatarManager(context) }
@@ -428,9 +342,9 @@ private fun PersonListItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (contactBitmap != null) {
                 Image(
@@ -438,17 +352,14 @@ private fun PersonListItem(
                     contentDescription = person.fullName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(56.dp)
                         .clip(CircleShape)
-                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape)
                 )
             } else {
-                PersonaAvatar(
+                DefaultAvatar(
                     name = person.fullName,
-                    config = avatarConfig,
-                    size = 46.dp,
-                    avatarTextSize = 18.sp,
-                    behaviorMode = AvatarBehaviorMode.STATIC
+                    size = 56.dp
                 )
             }
 
@@ -456,13 +367,13 @@ private fun PersonListItem(
                 // Name first, visually dominant
                 Text(
                     text = person.fullName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 // Relationship second, subordinate
                 Text(
                     text = person.relationRole.lowercase().replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -500,14 +411,10 @@ fun PersonDetailSheet(
 ) {
     val context = LocalContext.current
     val avatarManager = remember { PersonaAvatarManager(context) }
-    var currentAvatarConfig by remember(person.id) {
-        mutableStateOf(avatarManager.getAvatarConfigForRelationship(person.id, person.fullName, person.relationRole))
-    }
     var contactPhotoPath by remember(person.id) {
         mutableStateOf(avatarManager.getPersonPhotoPath(person.id))
     }
     var showAvatarActionChooser by remember { mutableStateOf(false) }
-    var showAvatarCustomizer by remember { mutableStateOf(false) }
 
     val contactPhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -564,13 +471,13 @@ fun PersonDetailSheet(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.People,
+                            imageVector = Icons.Default.Person,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.size(15.dp)
                         )
                         Text(
-                            text = "People → ${person.fullName}",
+                            text = person.fullName,
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.secondary
                         )
@@ -603,12 +510,9 @@ fun PersonDetailSheet(
                             .clickable { showAvatarActionChooser = true }
                     )
                 } else {
-                    PersonaAvatar(
+                    DefaultAvatar(
                         name = person.fullName,
-                        config = currentAvatarConfig,
                         size = 84.dp,
-                        avatarTextSize = 28.sp,
-                        behaviorMode = AvatarBehaviorMode.ALIVE,
                         onClick = { showAvatarActionChooser = true }
                     )
                 }
@@ -624,7 +528,7 @@ fun PersonDetailSheet(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.CameraAlt,
-                            contentDescription = "Edit photo or avatar",
+                            contentDescription = "Change photo",
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(15.dp)
                         )
@@ -633,7 +537,7 @@ fun PersonDetailSheet(
             }
 
             Text(
-                text = "Tap to customize photo or avatar",
+                text = "Tap to add or change photo",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier
@@ -655,71 +559,7 @@ fun PersonDetailSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Link status indicator
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (person.isVerified) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    border = BorderStroke(
-                        1.dp,
-                        if (person.isVerified) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (person.isVerified) Icons.Default.CheckCircle else Icons.Default.Person,
-                            contentDescription = null,
-                            tint = if (person.isVerified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = if (person.isVerified) "Linked Account" else "Manual Person",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (person.isVerified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // RECIPROCAL RELATIONSHIP BADGE
-            val reciprocalText = when (person.relationRole.uppercase()) {
-                "MOTHER", "FATHER", "PARENT", "MOM", "DAD", "PAPA", "MAMA" -> "You are their child"
-                "CHILD", "SON", "DAUGHTER" -> "You are their parent"
-                "SIBLING", "BROTHER", "SISTER" -> "You are their sibling"
-                "PARTNER", "SPOUSE", "WIFE", "HUSBAND" -> "You are their partner"
-                "DOCTOR", "PHYSICIAN", "SURGEON", "DENTIST" -> "You are their patient"
-                "COLLEAGUE", "COWORKER" -> "Work connection"
-                "FRIEND", "BEST FRIEND" -> "Friendship connection"
-                else -> "Connected via relationship"
-            }
-
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
-            ) {
-                Text(
-                    text = reciprocalText,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(22.dp))
+            Spacer(modifier = Modifier.height(14.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             Spacer(modifier = Modifier.height(18.dp))
 
@@ -923,18 +763,6 @@ fun PersonDetailSheet(
         )
     }
 
-    if (showAvatarCustomizer) {
-        QuickAvatarCustomizerDialog(
-            initialConfig = currentAvatarConfig,
-            onDismiss = { showAvatarCustomizer = false },
-            onSave = { updated ->
-                avatarManager.saveAvatarConfigForRelationship(person.id, updated)
-                currentAvatarConfig = updated
-                showAvatarCustomizer = false
-            }
-        )
-    }
-
     if (showAvatarActionChooser) {
         AlertDialog(
             onDismissRequest = { showAvatarActionChooser = false },
@@ -956,19 +784,6 @@ fun PersonDetailSheet(
                         Text("Choose Photo from Gallery")
                     }
 
-                    OutlinedButton(
-                        onClick = {
-                            showAvatarActionChooser = false
-                            showAvatarCustomizer = true
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Customize Vector Avatar")
-                    }
-
                     if (!contactPhotoPath.isNullOrBlank()) {
                         TextButton(
                             onClick = {
@@ -980,7 +795,7 @@ fun PersonDetailSheet(
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Remove Custom Photo (Use Avatar)", color = MaterialTheme.colorScheme.error)
+                            Text("Remove Custom Photo (Use Default Icon)", color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -995,143 +810,27 @@ fun PersonDetailSheet(
 }
 
 @Composable
-fun QuickAvatarCustomizerDialog(
-    initialConfig: PersonaAvatarConfig,
-    onDismiss: () -> Unit,
-    onSave: (PersonaAvatarConfig) -> Unit
-) {
-    var config by remember { mutableStateOf(initialConfig) }
-    var hairIndex by remember { mutableIntStateOf(HairStyle.values().indexOf(config.hairStyle).coerceAtLeast(0)) }
-    var skinIndex by remember { mutableIntStateOf(SkinTone.values().indexOf(config.skinTone).coerceAtLeast(0)) }
-    var colorIndex by remember { mutableIntStateOf(ClothingColor.values().indexOf(config.clothingColor).coerceAtLeast(0)) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Customize Avatar Style") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Live preview
-                PersonaAvatar(
-                    config = config,
-                    size = 90.dp,
-                    behaviorMode = AvatarBehaviorMode.STATIC
-                )
-
-                // Hair Style
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Hairstyle: ${config.hairStyle.label}", style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(onClick = {
-                            val styles = HairStyle.values()
-                            hairIndex = (hairIndex - 1 + styles.size) % styles.size
-                            config = config.copy(hairStyle = styles[hairIndex])
-                        }) { Text("Prev") }
-                        Button(onClick = {
-                            val styles = HairStyle.values()
-                            hairIndex = (hairIndex + 1) % styles.size
-                            config = config.copy(hairStyle = styles[hairIndex])
-                        }) { Text("Next") }
-                    }
-                }
-
-                // Skin Tone
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Skin: ${config.skinTone.label}", style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(onClick = {
-                            val skins = SkinTone.values()
-                            skinIndex = (skinIndex - 1 + skins.size) % skins.size
-                            config = config.copy(skinTone = skins[skinIndex])
-                        }) { Text("Prev") }
-                        Button(onClick = {
-                            val skins = SkinTone.values()
-                            skinIndex = (skinIndex + 1) % skins.size
-                            config = config.copy(skinTone = skins[skinIndex])
-                        }) { Text("Next") }
-                    }
-                }
-
-                // Outfit Color
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Outfit: ${config.clothingColor.label}", style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(onClick = {
-                            val colors = ClothingColor.values()
-                            colorIndex = (colorIndex - 1 + colors.size) % colors.size
-                            config = config.copy(clothingColor = colors[colorIndex])
-                        }) { Text("Prev") }
-                        Button(onClick = {
-                            val colors = ClothingColor.values()
-                            colorIndex = (colorIndex + 1) % colors.size
-                            config = config.copy(clothingColor = colors[colorIndex])
-                        }) { Text("Next") }
-                    }
-                }
-
-                // Randomize look button
-                OutlinedButton(
-                    onClick = {
-                        val rand = java.util.Random()
-                        val styles = HairStyle.values()
-                        val skins = SkinTone.values()
-                        val colors = ClothingColor.values()
-                        config = config.copy(
-                            hairStyle = styles[rand.nextInt(styles.size)],
-                            skinTone = skins[rand.nextInt(skins.size)],
-                            clothingColor = colors[rand.nextInt(colors.size)]
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("🎲 Re-roll Style")
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onSave(config) }) {
-                Text("Save Style")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-@Composable
 private fun DetailActionRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
     onClick: () -> Unit
 ) {
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .shadow(1.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f))
+            .background(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(10.dp)
+            )
+            .border(
+                BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+                RoundedCornerShape(10.dp)
+            )
+            .clip(RoundedCornerShape(10.dp))
             .tactilePress(onClick = onClick)
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            .padding(vertical = 4.dp)
     ) {
         Row(
             modifier = Modifier

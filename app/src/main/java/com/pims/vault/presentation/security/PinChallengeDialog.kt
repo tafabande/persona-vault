@@ -51,7 +51,7 @@ import com.pims.vault.core.security.PinSecurityManager
 fun PinChallengeDialog(
     pinSecurityManager: PinSecurityManager,
     title: String = "Enter Security PIN",
-    subtitle: String = "Confirm your master PIN to access protected records",
+    subtitle: String = "Confirm your PIN to access protected records",
     onSuccess: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier

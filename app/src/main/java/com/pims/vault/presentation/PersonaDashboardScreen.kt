@@ -205,8 +205,6 @@ import com.pims.vault.presentation.sync.SyncViewModel
 import com.pims.vault.presentation.ui.state.AlertLevel
 import com.pims.vault.core.security.SecurityTier
 import com.pims.vault.presentation.security.BiometricReauthPrompt
-import com.pims.vault.presentation.security.AccountSecuritySheet
-import com.pims.vault.presentation.security.AccountSecurityViewModel
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -308,7 +306,6 @@ fun PersonaDashboardScreen(
     medicalViewModel: MedicalViewModel = hiltViewModel(),
     backupViewModel: BackupViewModel = hiltViewModel(),
     syncViewModel: SyncViewModel = hiltViewModel(),
-    accountSecurityViewModel: AccountSecurityViewModel = hiltViewModel(),
     relationshipViewModel: RelationshipViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -368,14 +365,14 @@ fun PersonaDashboardScreen(
     val wallpaperManager = remember { LocalWallpaperManager(context) }
     val wallpapers by wallpaperManager.wallpapers.collectAsState()
     val activeWallpaperIndex by wallpaperManager.activeWallpaperIndex.collectAsState()
-    val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager(context) }
-    val avatarConfig by avatarManager.avatarConfig.collectAsState()
     val moodManager = remember { com.pims.vault.presentation.ui.theme.PersonaMoodManager(context) }
     val currentMood by moodManager.currentMood.collectAsState()
     val motionManager = remember { com.pims.vault.presentation.ui.theme.PersonaMotionManager(context) }
     val isReducedMotion by motionManager.isReducedMotionPreferred.collectAsState()
     val recentActivityManager = remember { RecentActivityManager(context) }
     val pinSecurityManager = remember { PinSecurityManager(context) }
+    val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager(context) }
+    val customAvatarPath by avatarManager.customAvatarPath.collectAsState()
     var isHapticsEnabled by remember { mutableStateOf(haptics.isUserHapticsEnabled()) }
     var dismissedNotificationIds by remember { mutableStateOf(setOf<String>()) }
 
@@ -466,7 +463,6 @@ fun PersonaDashboardScreen(
                 "storage" to false,
                 "dataBackup" to false,
                 "wallpaperOptions" to false,
-                "avatarEditor" to false,
                 "uploadDoc" to false,
                 "centralizedEditor" to false
             )
@@ -513,7 +509,6 @@ fun PersonaDashboardScreen(
     val storageSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val dataBackupSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val wallpaperOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val avatarEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val centralizedEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     
     var selectedPersonForDetail by remember { mutableStateOf<KinRelationshipItem?>(null) }
@@ -1059,28 +1054,7 @@ fun PersonaDashboardScreen(
     if (fullScreenOverlay != null) {
         when (fullScreenOverlay) {
             "VAULT" -> {
-                Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().screenEnterRise()) {
-                    // Top bar to return to Hub
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            IconButton(onClick = { fullScreenOverlay = null }) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Back to Persona")
-                            }
-                            Text("Vault Fortress", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                        }
-                        OutlinedButton(onClick = { vaultViewModel.lockVault(); fullScreenOverlay = null }) {
-                            Text("Lock Vault")
-                        }
-                    }
+                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenEnterRise()) {
                     VaultDashboardView(
                         viewModel = vaultViewModel,
                         onRequireBiometricReauth = {
@@ -1097,7 +1071,7 @@ fun PersonaDashboardScreen(
                             }
                         },
                         onBack = { fullScreenOverlay = null },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
                 return
@@ -1468,17 +1442,7 @@ fun PersonaDashboardScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { PersonaToastHost(toastController) },
-        floatingActionButton = {
-            com.pims.vault.presentation.ui.components.AnimatedFAB(
-                onClick = {
-                    when (selectedTab) {
-                        0 -> showSheet("centralizedEditor")
-                        2 -> showDialog("addRelationship")
-                        else -> showSheet("addAction")
-                    }
-                }
-            )
-        },
+        floatingActionButton = {},
         bottomBar = {
             Box(
                 modifier = Modifier
@@ -1544,7 +1508,7 @@ fun PersonaDashboardScreen(
                                 }
                             },
                             icon = Icons.Default.Settings,
-                            label = "More"
+                            label = "Settings"
                         )
                     }
                 }
@@ -1588,6 +1552,7 @@ fun PersonaDashboardScreen(
                         primaryEmail = primaryEmail,
                         primaryAddress = primaryAddress,
                         nationalIdNumber = profileState.person?.nationalIdNumber,
+                        profilePhotoPath = customAvatarPath ?: profileState.idPhotoPath,
                         idPhotoPath = profileState.idPhotoPath,
                         onSaveIdentityDetails = { name, email, phone, idNum, idPhotoUri ->
                             val localPhotoPath = idPhotoUri?.let { uri ->
@@ -1619,8 +1584,6 @@ fun PersonaDashboardScreen(
                         syncStatusText = syncStatusText,
                         isLocalOnly = isLocalOnly,
                         unreadNotificationCount = notifications.count { !it.isRead },
-                        avatarConfig = avatarConfig,
-                        onOpenAvatarEditor = { showSheet("avatarEditor") },
                         wallpapers = wallpapers,
                         activeWallpaperIndex = activeWallpaperIndex,
                         onActiveWallpaperChanged = { wallpaperManager.setActiveIndex(it) },
@@ -1693,8 +1656,6 @@ fun PersonaDashboardScreen(
                         },
                         syncStatusText = syncStatusText,
                         syncIsGood = syncIsGood,
-                        avatarConfig = avatarConfig,
-                        onOpenAvatarEditor = { showSheet("avatarEditor") },
                         onSyncClick = { showSheet("conflict") },
                         onShareProfileClick = { showSheet("share") },
                         onEditProfileClick = { showDialog("editProfile") },
@@ -1771,7 +1732,6 @@ fun PersonaDashboardScreen(
                             haptics.setUserHapticsEnabled(it)
                             isHapticsEnabled = it
                         },
-                        onOpenAvatarEditor = { showSheet("avatarEditor") },
                         onOpenWallpaperOptions = { showSheet("wallpaperOptions") },
                         onThemeModeSelected = { mode ->
                             themeManager.setThemeMode(mode)
@@ -1783,7 +1743,7 @@ fun PersonaDashboardScreen(
                             haptics.selection()
                         },
                         onLockClicked = onLockClicked,
-                        onSecurityClicked = { showSheet("accountSecurity") },
+                        onSecurityClicked = { fullScreenOverlay = "SECURITY_SETTINGS" },
                         onAppPinSecurityClicked = { fullScreenOverlay = "SECURITY_SETTINGS" },
                         onOpenInformationLibrary = { fullScreenOverlay = "INFORMATION_LIBRARY" },
                         onDevicesClicked = { showSheet("sessions") },
@@ -1977,7 +1937,7 @@ fun PersonaDashboardScreen(
                         ) {
                             vaultViewModel.elevateAndUnlockVault(
                                 onSuccess = {
-                                    vaultViewModel.openEditor(com.pims.vault.core.model.VaultCategory.PAYMENT_REFERENCE)
+                                    vaultViewModel.openEditor(com.pims.vault.core.model.VaultCategory.BANK_ACCOUNT)
                                     fullScreenOverlay = "VAULT"
                                 },
                                 onError = { err ->
@@ -2002,6 +1962,9 @@ fun PersonaDashboardScreen(
             personName = fullName,
             occupation = occupation,
             country = country,
+            phone = profileState.contacts.firstOrNull { it.contactType == ContactType.PHONE }?.value ?: "",
+            email = profileState.contacts.firstOrNull { it.contactType == ContactType.EMAIL }?.value ?: "",
+            bloodGroup = bloodGroup,
             sheetState = shareModalState,
             onDismissRequest = { hideSheet("share") },
             onCopyShareLink = { url ->
@@ -2178,14 +2141,7 @@ fun PersonaDashboardScreen(
         )
     }
 
-    // 11. ACCOUNT SECURITY & TWO-TIER PASSWORD MANAGEMENT SHEET
-    if (sheetStates.value["accountSecurity"] == true) {
-        AccountSecuritySheet(
-            securityManager = accountSecurityViewModel.securityManager,
-            sessionManager = accountSecurityViewModel.sessionManager,
-            onDismissRequest = { hideSheet("accountSecurity") }
-        )
-    }
+
 
     // 12. NOTIFICATIONS & ACTIVITY SHEET
     if (sheetStates.value["notification"] == true) {
@@ -2270,25 +2226,10 @@ fun PersonaDashboardScreen(
                     snackbarHostState.showSnackbar("Default presets restored")
                 }
             },
+            onUpdateAlignment = { id, alignY ->
+                wallpaperManager.updateWallpaperAlignment(id, alignY)
+            },
             onDismiss = { hideSheet("wallpaperOptions") }
-        )
-    }
-
-    // 14. AVATAR EDITOR BOTTOM SHEET
-    if (sheetStates.value["avatarEditor"] == true) {
-        com.pims.vault.presentation.avatar.AvatarEditorSheet(
-            initialConfig = avatarConfig,
-            sheetState = avatarEditorSheetState,
-            avatarManager = avatarManager,
-            onDismissRequest = { hideSheet("avatarEditor") },
-            onSaveAvatar = { newConfig ->
-                avatarManager.saveConfig(newConfig)
-                recentActivityManager.recordActivity("Updated Persona avatar", "Hairstyle & visual presentation updated")
-                soundManager.success()
-                scope.launch {
-                    snackbarHostState.showSnackbar("✓ Persona avatar updated")
-                }
-            }
         )
     }
 
@@ -2541,11 +2482,11 @@ fun PersonaDashboardScreen(
         PinChallengeDialog(
             pinSecurityManager = pinSecurityManager,
             title = when (pendingSecurityTier) {
-                SecurityTier.LEVEL_3_VAULT -> "Unlock Vault Fortress"
+                SecurityTier.LEVEL_3_VAULT -> "Unlock Vault"
                 SecurityTier.LEVEL_2_SENSITIVE -> "Verify Identity"
                 else -> "Enter Security PIN"
             },
-            subtitle = "Confirm your master PIN to access protected records",
+            subtitle = "Confirm your PIN to access protected records",
             onSuccess = {
                 isPinChallengeVisible = false
                 if (pendingSecurityTier == SecurityTier.LEVEL_2_SENSITIVE) {
@@ -2587,15 +2528,6 @@ fun PersonaDashboardScreen(
                     scope.launch {
                         snackbarHostState.showSnackbar("No PIN configured. Setup PIN in Security Settings.")
                     }
-                }
-            },
-            onUseMasterPassword = {
-                isBiometricPromptVisible = false
-                if (pinSecurityManager.hasPin()) {
-                    isPinChallengeVisible = true
-                } else {
-                    pendingSensitiveAction = null
-                    pendingSecurityTier = null
                 }
             },
             onDismissRequest = {
@@ -2897,12 +2829,17 @@ fun PersonaDashboardScreen(
         var editDob by remember(person) { mutableStateOf(person.dateOfBirth) }
         var editAnniversary by remember(person) { mutableStateOf(person.anniversary) }
         var editNotesList by remember(person) {
-            mutableStateOf(
-                person.notes.split("\n\n")
-                    .map { it.trim() }
+            val existingNotes = person.notes.split("\n\n")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            val resolvedNotes = if (existingNotes.isNotEmpty()) {
+                existingNotes
+            } else {
+                relationshipState.relationshipNotes
+                    .map { it.content.trim() }
                     .filter { it.isNotEmpty() }
-                    .ifEmpty { listOf("") }
-            )
+            }
+            mutableStateOf(resolvedNotes.ifEmpty { listOf("") })
         }
         val editManagedPersonSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -3132,7 +3069,8 @@ fun PersonaDashboardScreen(
                     onClick = {
                         val savedPhone = editPhones.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
                         val savedEmail = editEmails.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
-                        val savedNotes = editNotesList.map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n\n")
+                        val enteredNotes = editNotesList.map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n\n")
+                        val savedNotes = enteredNotes.ifBlank { person.notes.trim() }
 
                         profileViewModel.onEvent(
                             ProfileEvent.UpdatePersonDetails(
@@ -3409,15 +3347,11 @@ fun PersonaDashboardScreen(
 
     // 8. Add Relationship / Relative Dialog
     if (dialogStates.value["addRelationship"] == true) {
-        val userGenderStr = profileState.person?.gender?.uppercase() ?: avatarConfig?.gender?.name ?: "MALE"
-        val oppositeGender = if (userGenderStr.startsWith("F") || userGenderStr.contains("FEMALE")) {
-            com.pims.vault.presentation.avatar.AvatarGender.MALE
-        } else {
-            com.pims.vault.presentation.avatar.AvatarGender.FEMALE
-        }
+        val userGenderStr = profileState.person?.gender?.uppercase() ?: "MALE"
+        val oppositeIsFemale = !(userGenderStr.startsWith("F") || userGenderStr.contains("FEMALE"))
 
         var relRole by remember { mutableStateOf("Mother") }
-        var personGender by remember { mutableStateOf(com.pims.vault.presentation.avatar.AvatarGender.FEMALE) }
+        var personIsFemale by remember { mutableStateOf(true) }
         var relName by remember { mutableStateOf("") }
         var relPhones by remember { mutableStateOf(listOf("")) }
         var relEmails by remember { mutableStateOf(listOf("")) }
@@ -3439,13 +3373,13 @@ fun PersonaDashboardScreen(
             relRole = role
             when (role.trim().lowercase()) {
                 "mother", "sister", "aunt", "wife", "daughter", "grandmother", "niece" -> {
-                    personGender = com.pims.vault.presentation.avatar.AvatarGender.FEMALE
+                    personIsFemale = true
                 }
                 "father", "brother", "uncle", "husband", "son", "grandfather", "nephew" -> {
-                    personGender = com.pims.vault.presentation.avatar.AvatarGender.MALE
+                    personIsFemale = false
                 }
                 "spouse", "partner" -> {
-                    personGender = oppositeGender
+                    personIsFemale = oppositeIsFemale
                 }
                 else -> {}
             }
@@ -3498,14 +3432,10 @@ fun PersonaDashboardScreen(
 
                 PersonaDropdownSelector(
                     label = "Person's Gender",
-                    selectedOption = personGender.label,
-                    options = listOf("Female", "Male", "Non-binary / Other"),
+                    selectedOption = if (personIsFemale) "Female" else "Male",
+                    options = listOf("Female", "Male"),
                     onOptionSelected = { label ->
-                        personGender = when (label) {
-                            "Female" -> com.pims.vault.presentation.avatar.AvatarGender.FEMALE
-                            "Male" -> com.pims.vault.presentation.avatar.AvatarGender.MALE
-                            else -> com.pims.vault.presentation.avatar.AvatarGender.NON_BINARY
-                        }
+                        personIsFemale = label == "Female"
                     }
                 )
 

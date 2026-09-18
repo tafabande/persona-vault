@@ -222,6 +222,8 @@ data class PersonaAvatarConfig(
     val bodyShape: BodyShape = BodyShape.AVERAGE,
     val avatarSource: AvatarSource = AvatarSource.GENERATED,
     val customAvatarPath: String? = null,
+    val customAvatarAlignmentX: Float = 0f,
+    val customAvatarAlignmentY: Float = 0f,
     val skinTone: SkinTone = SkinTone.WARM_BEIGE,
     val hairStyle: HairStyle = HairStyle.FADE,
     val hairColor: HairColor = HairColor.ESPRESSO_BLACK,

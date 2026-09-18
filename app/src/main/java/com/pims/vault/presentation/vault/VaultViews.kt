@@ -1,6 +1,10 @@
 package com.pims.vault.presentation.vault
 
+import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -14,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,16 +33,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import com.pims.vault.core.model.CardStatus
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -48,6 +57,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lightbulb
@@ -79,13 +89,22 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -120,13 +139,54 @@ import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.components.PimsCard
 import com.pims.vault.presentation.ui.components.PimsOutlinedTextField
 import com.pims.vault.presentation.ui.theme.PimsBackground
-import com.pims.vault.presentation.ui.theme.PimsBorder
 import com.pims.vault.presentation.ui.theme.PimsError
 import com.pims.vault.presentation.ui.theme.PimsSurface
-import com.pims.vault.presentation.ui.theme.PimsTextPrimary
-import com.pims.vault.presentation.ui.theme.PimsTextSecondary
 import com.pims.vault.presentation.ui.theme.PimsWarning
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+
+private val PimsBorder: Color
+    @Composable get() = if (LocalPimsDarkTheme.current) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+
+private val PimsTextPrimary: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurface
+
+private val PimsTextSecondary: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+
+private val BankIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Bank",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = null,
+            stroke = SolidColor(Color(0xFF9E9E9E)),
+            strokeLineWidth = 1.5f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round
+        ) {
+            moveTo(3f, 21f)
+            lineTo(21f, 21f)
+            moveTo(3f, 10f)
+            lineTo(21f, 10f)
+            moveTo(5f, 10f)
+            lineTo(5f, 21f)
+            moveTo(19f, 10f)
+            lineTo(19f, 21f)
+            moveTo(9f, 10f)
+            lineTo(9f, 21f)
+            moveTo(15f, 10f)
+            lineTo(15f, 21f)
+            moveTo(12f, 3f)
+            lineTo(21f, 10f)
+            lineTo(3f, 10f)
+            close()
+        }
+    }.build()
+}
 
 @Composable
 fun VaultDashboardView(
@@ -138,9 +198,11 @@ fun VaultDashboardView(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val isDark = LocalPimsDarkTheme.current
-    val vaultBg = if (isDark) Color(0xFF121212) else MaterialTheme.colorScheme.background
-    val cardBg = if (isDark) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.surface
-    val borderCol = if (isDark) Color(0xFF2E2E2E) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val vaultBg = MaterialTheme.colorScheme.background
+    val cardBg = if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = 0.82f) else MaterialTheme.colorScheme.surface
+    val borderCol = if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val vaultTextPrimary = if (isDark) Color.White else PimsTextPrimary
+    val vaultTextSecondary = if (isDark) Color(0xFFE2E8F0) else PimsTextSecondary
 
     var showCreateMenu by remember { mutableStateOf(false) }
     var activeViewTab by remember { mutableStateOf("DASHBOARD") }
@@ -160,34 +222,66 @@ fun VaultDashboardView(
             .fillMaxSize()
             .background(vaultBg)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-        ) {
-            // Header with Session Timeout Status
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        if (!uiState.isVaultUnlocked) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (uiState.isVaultUnlocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = if (uiState.isVaultUnlocked) PimsTextPrimary else PimsWarning,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Encrypted Vault",
-                        color = PimsTextPrimary,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = PimsWarning,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Vault",
+                            color = vaultTextPrimary,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.height(16.dp))
+                VaultLockedStateView(
+                    onUnlockClick = { onRequireBiometricReauth?.invoke() }
+                )
+            }
+        } else if (activeViewTab == "DASHBOARD") {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header with Session Timeout Status
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.LockOpen,
+                            contentDescription = null,
+                            tint = vaultTextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Vault",
+                            color = vaultTextPrimary,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
-                if (uiState.isVaultUnlocked) {
                     val minutes = uiState.timeoutRemainingSeconds / 60
                     val seconds = uiState.timeoutRemainingSeconds % 60
                     val timeFormatted = "%02d:%02d".format(minutes, seconds)
@@ -203,13 +297,13 @@ fun VaultDashboardView(
                         Icon(
                             imageVector = Icons.Default.Timer,
                             contentDescription = null,
-                            tint = if (uiState.timeoutRemainingSeconds < 60) PimsError else PimsTextSecondary,
+                            tint = if (uiState.timeoutRemainingSeconds < 60) PimsError else vaultTextSecondary,
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = timeFormatted,
-                            color = if (uiState.timeoutRemainingSeconds < 60) PimsError else PimsTextPrimary,
+                            color = if (uiState.timeoutRemainingSeconds < 60) PimsError else vaultTextPrimary,
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold
@@ -222,83 +316,76 @@ fun VaultDashboardView(
                             Icon(
                                 imageVector = Icons.Default.Lock,
                                 contentDescription = "Lock Vault",
-                                tint = PimsTextSecondary,
+                                tint = vaultTextSecondary,
                                 modifier = Modifier.size(14.dp)
                             )
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-            // Clipboard notification banner
-            uiState.clipboardMessage?.let { msg ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, PimsWarning, RoundedCornerShape(8.dp))
-                        .background(cardBg)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                // Clipboard notification banner
+                uiState.clipboardMessage?.let { msg ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, PimsWarning, RoundedCornerShape(8.dp))
+                            .background(cardBg)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
-                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = PimsWarning,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = msg,
-                                color = PimsTextPrimary,
-                                fontSize = 11.sp
-                            )
-                        }
-                        IconButton(
-                            onClick = { viewModel.dismissClipboardMessage() },
-                            modifier = Modifier.size(20.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Dismiss",
-                                tint = PimsTextSecondary,
-                                modifier = Modifier.size(14.dp)
-                            )
+                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = PimsWarning,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = msg,
+                                    color = PimsTextPrimary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            IconButton(
+                                onClick = { viewModel.dismissClipboardMessage() },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Dismiss",
+                                    tint = PimsTextSecondary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                         }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
 
-            // Error banner
-            uiState.errorMessage?.let { err ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, PimsError, RoundedCornerShape(8.dp))
-                        .background(cardBg)
-                        .padding(10.dp)
-                ) {
-                    Text(text = err, color = PimsError, fontSize = 12.sp)
+                // Error banner
+                uiState.errorMessage?.let { err ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, PimsError, RoundedCornerShape(8.dp))
+                            .background(cardBg)
+                            .padding(10.dp)
+                    ) {
+                        Text(text = err, color = PimsError, fontSize = 12.sp)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
 
-            if (!uiState.isVaultUnlocked) {
-                // Locked Screen State
-                VaultLockedStateView(
-                    onUnlockClick = { onRequireBiometricReauth?.invoke() }
-                )
-            } else {
-                // Top Navigation Chips (Dashboard by default, Google Passwords, Google Notes, Google Wallet, All)
+                // Top Navigation Chips (visible only on Dashboard)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -330,6 +417,12 @@ fun VaultDashboardView(
                         onClick = { activeViewTab = "WALLET" }
                     )
                     VaultNavChip(
+                        label = "Banking",
+                        icon = BankIcon,
+                        isSelected = activeViewTab == "BANKING",
+                        onClick = { activeViewTab = "BANKING" }
+                    )
+                    VaultNavChip(
                         label = "Search & All",
                         icon = Icons.Default.Search,
                         isSelected = activeViewTab == "ALL",
@@ -339,15 +432,76 @@ fun VaultDashboardView(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                when (activeViewTab) {
-                    "DASHBOARD" -> {
-                        VaultModularDashboard(
-                            uiState = uiState,
-                            onNavigateTo = { tab -> activeViewTab = tab },
-                            onOpenItem = { item -> viewModel.openItem(item) },
-                            onCopy = { text, label -> viewModel.copyToClipboard(context, text, label) }
+                VaultModularDashboard(
+                    uiState = uiState,
+                    onNavigateTo = { tab -> activeViewTab = tab },
+                    onOpenItem = { item -> viewModel.openItem(item) },
+                    onCopy = { text, label -> viewModel.copyToClipboard(context, text, label) }
+                )
+            }
+
+            // Dedicated Dashboard FAB (strictly on DASHBOARD)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(end = 20.dp, bottom = 24.dp),
+                contentAlignment = Alignment.BottomEnd
+            ) {
+                Surface(
+                    onClick = { showCreateMenu = true },
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)),
+                    modifier = Modifier.height(54.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .background(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary,
+                                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.95f)
+                                    )
+                                )
+                            )
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add Item",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Text(
+                            text = "New Secret",
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            letterSpacing = 0.3.sp
                         )
                     }
+                }
+            }
+        } else {
+            // Dedicated full separate module (not overlaying dashboard)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(vaultBg)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                when (activeViewTab) {
                     "PASSWORDS" -> {
                         GooglePasswordsSection(
                             items = uiState.vaultItems.filter { it.category == VaultCategory.PASSWORD },
@@ -372,13 +526,33 @@ fun VaultDashboardView(
                     "WALLET" -> {
                         GoogleWalletSection(
                             items = uiState.vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE },
+                            uiState = uiState,
+                            viewModel = viewModel,
                             onOpenItem = { item -> viewModel.openItem(item) },
                             onAddNew = { viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE) },
                             onBackToDashboard = { activeViewTab = "DASHBOARD" }
                         )
                     }
+                    "BANKING" -> {
+                        BankingSection(
+                            items = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT },
+                            onOpenItem = { item -> viewModel.openItem(item) },
+                            onAddNew = { viewModel.openEditor(VaultCategory.BANK_ACCOUNT) },
+                            onBackToDashboard = { activeViewTab = "DASHBOARD" }
+                        )
+                    }
                     "ALL" -> {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(onClick = { activeViewTab = "DASHBOARD" }) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("All Vault Items", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                            }
                             PimsOutlinedTextField(
                                 value = uiState.searchQuery,
                                 onValueChange = { viewModel.setSearchQuery(it) },
@@ -418,30 +592,6 @@ fun VaultDashboardView(
                 }
             }
         }
-
-        // Floating Action Button (FAB) at Bottom End
-        if (uiState.isVaultUnlocked) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                contentAlignment = Alignment.BottomEnd
-            ) {
-                FloatingActionButton(
-                    onClick = { showCreateMenu = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add Item",
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-            }
-        }
     }
 
     // Modal Create Category Picker
@@ -464,7 +614,6 @@ fun VaultDashboardView(
                     CreateCategoryItem(
                         icon = Icons.Default.Key,
                         title = "Password",
-                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.PASSWORD)
@@ -473,7 +622,6 @@ fun VaultDashboardView(
                     CreateCategoryItem(
                         icon = Icons.Default.Timer,
                         title = "2FA Authenticator",
-                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.TOTP_2FA)
@@ -482,7 +630,6 @@ fun VaultDashboardView(
                     CreateCategoryItem(
                         icon = Icons.Default.Shield,
                         title = "Recovery Codes",
-                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.RECOVERY_CODE)
@@ -491,7 +638,6 @@ fun VaultDashboardView(
                     CreateCategoryItem(
                         icon = Icons.Default.Note,
                         title = "Secure Note",
-                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.SECURE_NOTE)
@@ -500,10 +646,17 @@ fun VaultDashboardView(
                     CreateCategoryItem(
                         icon = Icons.Default.CreditCard,
                         title = "Payment Card",
-                        subtitle = "",
                         onClick = {
                             showCreateMenu = false
                             viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE)
+                        }
+                    )
+                    CreateCategoryItem(
+                        icon = BankIcon,
+                        title = "Bank Account",
+                        onClick = {
+                            showCreateMenu = false
+                            viewModel.openEditor(VaultCategory.BANK_ACCOUNT)
                         }
                     )
                 }
@@ -511,10 +664,10 @@ fun VaultDashboardView(
         }
     }
 
-    // Item Detail / View Dialogs
-    if (uiState.activeItemId != null && !uiState.isEditing) {
+    // Item Detail / View Dialogs (Suppress popup dialog for cards and banking which have dedicated full views)
+    if (uiState.activeItemId != null && !uiState.isEditing && activeViewTab != "WALLET" && activeViewTab != "BANKING") {
         val activeItem = uiState.vaultItems.find { it.id == uiState.activeItemId }
-        if (activeItem != null) {
+        if (activeItem != null && activeItem.category != VaultCategory.PAYMENT_REFERENCE && activeItem.category != VaultCategory.BANK_ACCOUNT) {
             VaultItemDetailDialog(
                 item = activeItem,
                 uiState = uiState,
@@ -545,30 +698,92 @@ fun VaultDashboardView(
             ) {
                 com.pims.vault.presentation.vault.card.AddCardScreen(
                     onNavigateBack = { viewModel.closeEditor() },
-                    onSaveCard = { holder, number, expiry, cvv ->
-                        val parts = expiry.split("/")
-                        val month = parts.getOrNull(0)?.trim() ?: ""
-                        val year = parts.getOrNull(1)?.trim() ?: ""
-                        val cleanNum = number.replace(" ", "").trim()
-                        val last4 = if (cleanNum.length >= 4) cleanNum.takeLast(4) else cleanNum
-                        val brand = when {
-                            cleanNum.startsWith("4") -> "Visa"
-                            cleanNum.startsWith("5") -> "Mastercard"
-                            cleanNum.startsWith("3") -> "Amex"
-                            else -> "Debit/Credit Card"
+                    onSaveCard = { bankName, holder, number, expiry, cvv ->
+                        val cleanExpiry = expiry.filter { it.isDigit() }
+                        val rawMonth = if (expiry.contains("/")) {
+                            expiry.split("/").getOrNull(0)?.filter { it.isDigit() } ?: ""
+                        } else {
+                            if (cleanExpiry.length >= 2) cleanExpiry.take(2) else cleanExpiry
                         }
+                        val rawYear = if (expiry.contains("/")) {
+                            expiry.split("/").getOrNull(1)?.filter { it.isDigit() } ?: ""
+                        } else {
+                            if (cleanExpiry.length >= 4) cleanExpiry.substring(2, 4) else if (cleanExpiry.length == 3) cleanExpiry.substring(2) else ""
+                        }
+
+                        val monthInt = rawMonth.toIntOrNull() ?: 12
+                        val month = monthInt.coerceIn(1, 12).toString().padStart(2, '0')
+                        val year = when {
+                            rawYear.length in 2..4 -> rawYear
+                            else -> "28"
+                        }
+
+                        val cleanNum = number.filter { it.isDigit() }
+                        val last4 = if (cleanNum.length >= 4) cleanNum.takeLast(4) else cleanNum.padStart(4, '0')
+                        val detectedBrand = detectCardBrand(cleanNum)
+                        val provider = bankName.trim().ifBlank { detectedBrand }
+                        val nickname = when {
+                            bankName.isNotBlank() && holder.isNotBlank() -> "$bankName — $holder"
+                            bankName.isNotBlank() -> bankName.trim()
+                            holder.isNotBlank() -> "$holder ($detectedBrand)"
+                            else -> detectedBrand
+                        }
+
                         viewModel.savePaymentReference(
-                            nickname = if (holder.isNotBlank()) "$holder ($brand)" else brand,
-                            provider = brand,
-                            cardholderName = holder.takeIf { it.isNotBlank() },
+                            nickname = nickname.ifBlank { "Personal Card" },
+                            provider = provider,
+                            cardholderName = holder,
                             lastFour = last4,
                             month = month,
                             year = year,
-                            notes = null
+                            notes = "",
+                            existingId = uiState.activeItemId
                         )
                     }
                 )
             }
+        } else if (uiState.editorCategory == VaultCategory.BANK_ACCOUNT) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { viewModel.closeEditor() },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                com.pims.vault.presentation.vault.banking.AddBankAccountScreen(
+                    availableCards = uiState.vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE },
+                    onNavigateBack = { viewModel.closeEditor() },
+                    onSaveAccount = { result ->
+                        viewModel.saveBankAccount(
+                            bankName = result.bankName,
+                            accountHolderName = result.accountHolderName,
+                            accountNumber = result.accountNumber,
+                            accountType = result.accountType,
+                            sortCode = result.sortCode,
+                            swiftBic = result.swiftBic,
+                            iban = result.iban,
+                            routingNumber = result.routingNumber,
+                            bsb = result.bsb,
+                            branchName = result.branchName,
+                            notes = result.notes.ifBlank { null },
+                            linkedCardId = result.linkedCardId,
+                            linkedCardSummary = result.linkedCardSummary,
+                            existingId = uiState.activeItemId
+                        )
+                    }
+                )
+            }
+        } else if (uiState.editorCategory == VaultCategory.SECURE_NOTE) {
+            val existingItem = uiState.vaultItems.find { it.id == uiState.activeItemId }
+            val initialTitle = existingItem?.title ?: ""
+            val initialContent = uiState.activeDecryptedNote?.noteContent ?: ""
+
+            SecureNoteEditorModal(
+                initialTitle = initialTitle,
+                initialContent = initialContent,
+                isEditingExisting = uiState.activeItemId != null,
+                onSave = { noteTitle, noteContent ->
+                    viewModel.saveSecureNote(noteTitle, noteContent, uiState.activeItemId)
+                },
+                onDismiss = { viewModel.closeEditor() }
+            )
         } else {
             VaultEditorDialog(
                 category = uiState.editorCategory!!,
@@ -592,10 +807,9 @@ private fun VaultNavChip(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val isDark = LocalPimsDarkTheme.current
-    val bg = if (isSelected) MaterialTheme.colorScheme.primary else (if (isDark) Color(0xFF222222) else Color(0xFFF3F4F6))
-    val contentColor = if (isSelected) Color.White else (if (isDark) Color(0xFFCCCCCC) else Color(0xFF374151))
-    val border = if (isSelected) MaterialTheme.colorScheme.primary else (if (isDark) Color(0xFF333333) else Color(0xFFE5E7EB))
+    val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    val border = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 
     Surface(
         onClick = onClick,
@@ -628,49 +842,20 @@ private fun VaultModularDashboard(
     onCopy: (String, String) -> Unit
 ) {
     val isDark = LocalPimsDarkTheme.current
-    val cardBg = if (isDark) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.surface
-    val borderCol = if (isDark) Color(0xFF2E2E2E) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val cardBg = if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = 0.82f) else MaterialTheme.colorScheme.surface
+    val borderCol = if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
 
     val passwords = uiState.vaultItems.filter { it.category == VaultCategory.PASSWORD }
     val notes = uiState.vaultItems.filter { it.category == VaultCategory.SECURE_NOTE }
     val cards = uiState.vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE }
+    val bankAccounts = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 88.dp)
     ) {
-        // 1. Vault Hardware Fortress Banner
-        item {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC),
-                border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF10B981).copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Shield, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(22.dp))
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Zero-Knowledge Vault Protected", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PimsTextPrimary)
-                        Text("${uiState.vaultItems.size} items guarded by AES-256-GCM & hardware Keystore", fontSize = 12.sp, color = PimsTextSecondary)
-                    }
-                }
-            }
-        }
-
-        // 2. Google Passwords Bento Card
+        // Passwords Bento Card
         item {
             Card(
                 modifier = Modifier
@@ -691,18 +876,17 @@ private fun VaultModularDashboard(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF1A73E8).copy(alpha = 0.12f)),
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFF1A73E8), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text("Passwords", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PimsTextPrimary)
-                                Text("${passwords.size} credentials saved", fontSize = 12.sp, color = PimsTextSecondary)
                             }
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = Color(0xFF1A73E8), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     }
 
                     if (passwords.isNotEmpty()) {
@@ -713,7 +897,7 @@ private fun VaultModularDashboard(
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (isDark) Color(0xFF262626) else Color(0xFFF9FAFB)
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -773,18 +957,17 @@ private fun VaultModularDashboard(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFF9AB00).copy(alpha = 0.15f)),
+                                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Note, contentDescription = null, tint = Color(0xFFF9AB00), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Note, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text("Secure Notes", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PimsTextPrimary)
-                                Text("${notes.size} encrypted notes", fontSize = 12.sp, color = PimsTextSecondary)
                             }
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = Color(0xFFF9AB00), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
                     }
 
                     if (notes.isNotEmpty()) {
@@ -802,12 +985,12 @@ private fun VaultModularDashboard(
                                         .height(84.dp),
                                     shape = RoundedCornerShape(12.dp),
                                     color = if (isDark) Color(0xFF262626) else pastel,
-                                    border = BorderStroke(1.dp, if (isDark) Color(0xFF333333) else Color(0xFFE5E0D6))
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp)) {
-                                        Text(note.title, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color(0xFF202020))
+                                        Text(note.title, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        Text(note.accountIdentifier ?: "Confidential note encrypted in vault", fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Color(0xFF424242))
+                                        Text(note.accountIdentifier ?: "Confidential note encrypted in vault", fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -838,48 +1021,125 @@ private fun VaultModularDashboard(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF1E8E3E).copy(alpha = 0.12f)),
+                                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.CreditCard, contentDescription = null, tint = Color(0xFF1E8E3E), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.CreditCard, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text("Payment Cards & Wallet", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PimsTextPrimary)
-                                Text("${cards.size} cards registered", fontSize = 12.sp, color = PimsTextSecondary)
                             }
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = Color(0xFF1E8E3E), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFF0F172A), Color(0xFF1E293B))))
-                            .padding(14.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.SpaceBetween
+                    if (cards.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFF0F172A), Color(0xFF1E293B))))
+                                .padding(14.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(cards.firstOrNull()?.title ?: "Primary Visa", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text(")))", color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(cards.first().title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text(")))", color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(cards.first().accountIdentifier ?: "•••• ••••", color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(detectCardBrand(cards.first().accountIdentifier ?: "").uppercase(), color = Color.White, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                                }
                             }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Banking Bento Card
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateTo("BANKING") },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                border = BorderStroke(1.dp, borderCol)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(cards.firstOrNull()?.accountIdentifier ?: "•••• •••• •••• 4821", color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                Text("VISA", color = Color.White, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                                Icon(BankIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text("Banking & Accounts", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PimsTextPrimary)
+                            }
+                        }
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    }
+
+                    if (bankAccounts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        bankAccounts.take(2).forEach { account ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(BankIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(account.title, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                                            Text(account.accountIdentifier ?: "Bank account", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                    Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                                }
                             }
                         }
                     }
@@ -899,9 +1159,8 @@ private fun GooglePasswordsSection(
     onAddNew: () -> Unit,
     onBackToDashboard: () -> Unit
 ) {
-    val isDark = LocalPimsDarkTheme.current
-    val cardBg = if (isDark) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.surface
-    val borderCol = if (isDark) Color(0xFF2E2E2E) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val cardBg = MaterialTheme.colorScheme.surface
+    val borderCol = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
 
     val passwordItems = remember(items, searchQuery) {
         val userItems = items.filter { it.category == VaultCategory.PASSWORD }
@@ -982,12 +1241,6 @@ private fun GooglePasswordsSection(
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Check your saved passwords to strengthen your security",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
@@ -1032,12 +1285,6 @@ private fun GooglePasswordsSection(
                         text = "Simplify your sign-in",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "2 of your accounts support passkeys. Passkeys are the simpler, safer way to sign-in that uses your device's screen lock.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Icon(
@@ -1156,6 +1403,7 @@ private fun GooglePasswordCredentialRow(
     item: VaultItemHeader,
     onClick: () -> Unit
 ) {
+    val isDark = LocalPimsDarkTheme.current
     val isGoogle = item.title.contains("google", ignoreCase = true)
     val isShoe = item.title.contains("shoe", ignoreCase = true)
     val isBank = item.title.contains("bank", ignoreCase = true)
@@ -1171,7 +1419,7 @@ private fun GooglePasswordCredentialRow(
         // Brand / Favicon Icon
         Surface(
             shape = CircleShape,
-            color = if (isGoogle) Color(0xFFF1F5F9) else MaterialTheme.colorScheme.surfaceVariant,
+            color = if (isGoogle) (if (isDark) Color(0xFF2A2D33) else Color(0xFFF1F5F9)) else MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier.size(40.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -1430,114 +1678,39 @@ private fun GoogleNotesSection(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 88.dp)
         ) {
-            // Headline: "Capture ideas at a moment's notice"
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Capture ideas at a moment's notice",
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Normal,
-                    letterSpacing = (-0.2).sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
+            // Clean Header: Back + Title
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Google Keep Search Bar
-            Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = if (isDark) Color(0xFF26262B) else Color(0xFFF1F3F4),
-                border = BorderStroke(1.dp, if (isDark) Color(0xFF373A40) else Color(0xFFE0E2E5)),
-                shadowElevation = 2.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
+                    .statusBarsPadding()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBackToDashboard) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = "Menu / Back",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    BasicTextField(
-                        value = searchQuery,
-                        onValueChange = onSearchChange,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp),
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        decorationBox = { innerTextField ->
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    text = "Search Keep",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            innerTextField()
-                        }
+                IconButton(onClick = onBackToDashboard) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
-
-                    IconButton(onClick = { /* Grid/List toggle */ }) {
-                        Icon(
-                            imageVector = Icons.Default.GridView,
-                            contentDescription = "View",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    IconButton(onClick = { /* Sort */ }) {
-                        Icon(
-                            imageVector = Icons.Default.SwapVert,
-                            contentDescription = "Sort",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .size(30.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "K",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
-                    }
                 }
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Secure Notes",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             if (noteItems.isEmpty()) {
                 PersonaEmptyState(
                     icon = Icons.Default.Note,
                     title = "No notes yet",
-                    description = if (searchQuery.isNotBlank()) "No notes match \"$searchQuery\"." else "Capture ideas, checklists, and secure memos at a moment's notice.",
+                    description = if (searchQuery.isNotBlank()) "No notes match \"$searchQuery\"." else "Capture ideas, checklists, and secure memos.",
                     actionLabel = "Take a note",
                     onActionClick = onAddNew
                 )
@@ -1577,24 +1750,6 @@ private fun GoogleNotesSection(
                     }
                 }
             }
-        }
-
-        // Floating Action Button
-        FloatingActionButton(
-            onClick = onAddNew,
-            containerColor = Color(0xFFC2E7FF),
-            contentColor = Color(0xFF001D35),
-            shape = CircleShape,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp)
-                .pimsApplePress { onAddNew() }
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "New note",
-                modifier = Modifier.size(24.dp)
-            )
         }
     }
 }
@@ -1646,11 +1801,14 @@ private fun GoogleNoteCardItem(
 @Composable
 private fun GoogleWalletSection(
     items: List<VaultItemHeader>,
+    uiState: VaultUiState,
+    viewModel: VaultViewModel,
     onOpenItem: (VaultItemHeader) -> Unit,
     onAddNew: () -> Unit,
     onBackToDashboard: () -> Unit
 ) {
     var selectedWalletCard by remember { mutableStateOf<VaultItemHeader?>(null) }
+    val isDark = LocalPimsDarkTheme.current
 
     BackHandler(enabled = selectedWalletCard != null) {
         selectedWalletCard = null
@@ -1660,13 +1818,17 @@ private fun GoogleWalletSection(
         // SCREEN 2B: Full Card Detail Screen
         GoogleWalletCardDetailScreen(
             card = selectedWalletCard!!,
+            uiState = uiState,
+            viewModel = viewModel,
             onBack = { selectedWalletCard = null }
         )
     } else {
         // SCREEN 2A: Main Wallet Screen
         GoogleWalletMainScreen(
             items = items,
-            onCardClick = { card -> selectedWalletCard = card },
+            onCardClick = { card ->
+                selectedWalletCard = card
+            },
             onAddNew = onAddNew,
             onBackToDashboard = onBackToDashboard
         )
@@ -1721,21 +1883,6 @@ internal fun GoogleWalletMainScreen(
                         ),
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                }
-
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(34.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "P",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontSize = 14.sp
-                        )
-                    }
                 }
             }
 
@@ -1831,7 +1978,7 @@ internal fun GoogleWalletMainScreen(
                                             fontWeight = FontWeight.Medium
                                         )
                                         Text(
-                                            text = "VISA",
+                                            text = detectCardBrand(heroCard.accountIdentifier ?: "").uppercase(),
                                             color = Color.White,
                                             fontWeight = FontWeight.Black,
                                             fontSize = 18.sp
@@ -1901,7 +2048,7 @@ internal fun GoogleWalletMainScreen(
         Surface(
             onClick = onAddNew,
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xFFD3E3FD),
+            color = if (isDark) Color(0xFF2A3545) else Color(0xFFD3E3FD),
             shadowElevation = 6.dp,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -1917,14 +2064,14 @@ internal fun GoogleWalletMainScreen(
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = null,
-                    tint = Color(0xFF041E49),
+                    tint = if (isDark) Color(0xFFBAE6FD) else Color(0xFF041E49),
                     modifier = Modifier.size(18.dp)
                 )
                 Text(
                     text = "Add to Wallet",
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = Color(0xFF041E49)
+                    color = if (isDark) Color(0xFFBAE6FD) else Color(0xFF041E49)
                 )
             }
         }
@@ -1978,25 +2125,201 @@ private fun WalletPassCardRow(
     }
 }
 
+data class CardReceiptEntry(
+    val id: String,
+    val merchant: String,
+    val amount: String,
+    val date: String,
+    val filePath: String? = null
+)
+
+private fun loadCardReceipts(context: Context, cardId: String): List<CardReceiptEntry> {
+    return try {
+        val prefs = context.getSharedPreferences("card_receipts_store", Context.MODE_PRIVATE)
+        val jsonStr = prefs.getString("receipts_$cardId", null) ?: return emptyList()
+        val array = org.json.JSONArray(jsonStr)
+        val list = mutableListOf<CardReceiptEntry>()
+        for (i in 0 until array.length()) {
+            val obj = array.getJSONObject(i)
+            list.add(
+                CardReceiptEntry(
+                    id = obj.getString("id"),
+                    merchant = obj.getString("merchant"),
+                    amount = obj.optString("amount", ""),
+                    date = obj.getString("date"),
+                    filePath = obj.optString("filePath").takeIf { it.isNotBlank() }
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun saveCardReceipts(context: Context, cardId: String, receipts: List<CardReceiptEntry>) {
+    try {
+        val prefs = context.getSharedPreferences("card_receipts_store", Context.MODE_PRIVATE)
+        val array = org.json.JSONArray()
+        receipts.forEach { item ->
+            val obj = org.json.JSONObject().apply {
+                put("id", item.id)
+                put("merchant", item.merchant)
+                put("amount", item.amount)
+                put("date", item.date)
+                put("filePath", item.filePath ?: "")
+            }
+            array.put(obj)
+        }
+        prefs.edit().putString("receipts_$cardId", array.toString()).apply()
+    } catch (_: Exception) {}
+}
+
 @Composable
 private fun GoogleWalletCardDetailScreen(
     card: VaultItemHeader,
+    uiState: VaultUiState,
+    viewModel: VaultViewModel,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val isDark = LocalPimsDarkTheme.current
-    var paymentNetworkSelection by remember { mutableStateOf("Auto") }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var showAddReceiptDialog by remember { mutableStateOf(false) }
+    var newMerchant by remember { mutableStateOf("") }
+    var newAmount by remember { mutableStateOf("") }
+    var selectedReceiptUri by remember { mutableStateOf<Uri?>(null) }
+    var receipts by remember(card.id) { mutableStateOf(loadCardReceipts(context, card.id)) }
+
+    val receiptPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            selectedReceiptUri = it
+            showAddReceiptDialog = true
+        }
+    }
+
+    LaunchedEffect(card.id) {
+        viewModel.openItem(card)
+    }
+
+    val activePayment = uiState.activeDecryptedPayment
+    val currentStatus = activePayment?.status ?: CardStatus.IN_USE
+
+    if (showDeleteConfirmation) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurface,
+            title = {
+                Text("Remove Card from Wallet", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("Are you sure you want to remove \"${card.title}\"? This encrypted card reference will be permanently removed from your secure vault.")
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        viewModel.deleteItem(card.id)
+                        onBack()
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Remove", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.OutlinedButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showAddReceiptDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showAddReceiptDialog = false },
+            containerColor = if (isDark) Color(0xFF1E1E22) else Color(0xFFFFFFFF),
+            titleContentColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111827),
+            textContentColor = if (isDark) Color(0xFFF1F5F9) else Color(0xFF1F2937),
+            title = { Text("Add Receipt / Payment Record", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PimsOutlinedTextField(
+                        value = newMerchant,
+                        onValueChange = { newMerchant = it },
+                        placeholder = "Merchant / Expense (e.g. Apple Store, Fuel)",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    PimsOutlinedTextField(
+                        value = newAmount,
+                        onValueChange = { newAmount = it },
+                        placeholder = "Amount (e.g. $49.99)",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        val targetFile = java.io.File(context.filesDir, "receipt_${java.util.UUID.randomUUID().toString().take(8)}.jpg")
+                        selectedReceiptUri?.let { uri ->
+                            try {
+                                context.contentResolver.openInputStream(uri)?.use { input ->
+                                    java.io.FileOutputStream(targetFile).use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        val entry = CardReceiptEntry(
+                            id = java.util.UUID.randomUUID().toString(),
+                            merchant = newMerchant.trim().ifBlank { "Receipt record" },
+                            amount = newAmount.trim(),
+                            date = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault()).format(java.util.Date()),
+                            filePath = if (targetFile.exists()) targetFile.absolutePath else null
+                        )
+                        val updated = listOf(entry) + receipts
+                        receipts = updated
+                        saveCardReceipts(context, card.id, updated)
+                        newMerchant = ""
+                        newAmount = ""
+                        selectedReceiptUri = null
+                        showAddReceiptDialog = false
+                    }
+                ) {
+                    Text("Save", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.OutlinedButton(onClick = { showAddReceiptDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .padding(bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Top Row: Back arrow + Spacer + Feedback Icon
+        // Card actions bar: Back navigation + Delete action
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -2007,173 +2330,356 @@ private fun GoogleWalletCardDetailScreen(
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
-            IconButton(onClick = { /* Feedback */ }) {
+            IconButton(onClick = { showDeleteConfirmation = true }) {
                 Icon(
-                    imageVector = Icons.Default.ChatBubbleOutline,
-                    contentDescription = "Feedback",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Remove Card",
+                    tint = MaterialTheme.colorScheme.error
                 )
             }
         }
 
-        // Miniature Blue Card
-        Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = Color(0xFF1976D2),
-            modifier = Modifier
-                .size(width = 54.dp, height = 34.dp)
+        // Miniature Card Preview + Status Badge
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(4.dp),
-                contentAlignment = Alignment.BottomEnd
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = when (currentStatus) {
+                    CardStatus.IN_USE -> Color(0xFF1976D2)
+                    CardStatus.PAUSED -> Color(0xFFD97706)
+                    CardStatus.FROZEN -> Color(0xFF0284C7)
+                    CardStatus.DISCARDED -> Color(0xFF475569)
+                },
+                modifier = Modifier.size(width = 58.dp, height = 36.dp)
             ) {
-                Text("VISA", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(5.dp),
+                    contentAlignment = Alignment.BottomEnd
+                ) {
+                    Text(card.title.take(4).uppercase(), color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                }
+            }
+
+            // Current Status Indicator Pill
+            val statusColor = when (currentStatus) {
+                CardStatus.IN_USE -> Color(0xFF10B981)
+                CardStatus.PAUSED -> Color(0xFFF59E0B)
+                CardStatus.FROZEN -> Color(0xFF06B6D4)
+                CardStatus.DISCARDED -> Color(0xFF94A3B8)
+            }
+            val statusBg = when (currentStatus) {
+                CardStatus.IN_USE -> Color(0xFF10B981).copy(alpha = 0.12f)
+                CardStatus.PAUSED -> Color(0xFFF59E0B).copy(alpha = 0.15f)
+                CardStatus.FROZEN -> Color(0xFF06B6D4).copy(alpha = 0.15f)
+                CardStatus.DISCARDED -> Color(0xFF94A3B8).copy(alpha = 0.15f)
+            }
+            val statusIcon = when (currentStatus) {
+                CardStatus.IN_USE -> Icons.Default.CheckCircle
+                CardStatus.PAUSED -> Icons.Default.PauseCircle
+                CardStatus.FROZEN -> Icons.Default.AcUnit
+                CardStatus.DISCARDED -> Icons.Default.Block
+            }
+            val statusLabel = currentStatus.label
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = statusBg,
+                border = BorderStroke(1.dp, statusColor.copy(alpha = 0.4f)),
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(14.dp))
+                    Text(
+                        text = statusLabel,
+                        color = statusColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
-        // Title: ANZ •••• 9602
-        Text(
-            text = "ANZ •••• 9602",
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            color = MaterialTheme.colorScheme.onSurface
-        )
+        // Card Title
+        Column {
+            Text(
+                text = card.title,
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (activePayment?.cardholderName != null) {
+                Text(
+                    text = activePayment.cardholderName.uppercase(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 1.sp
+                )
+            }
+        }
 
-        // Expandable: Virtual account numbers
+        // Card Account Identifier & Details
         Surface(
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(14.dp),
             color = if (isDark) Color(0xFF242528) else Color(0xFFF8F9FA),
             border = BorderStroke(1.dp, if (isDark) Color(0xFF333539) else Color(0xFFE2E4E8)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Virtual account numbers",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
-                    Text(
-                        text = "Visa •••• 4321\neftpos •••• 5678",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Card number",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = card.accountIdentifier ?: "•••• ••••",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
+
+                if (activePayment != null && activePayment.expiryMonth.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Expires",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${activePayment.expiryMonth} / ${activePayment.expiryYear}",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
             }
         }
 
-        // Card Operations List
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            WalletOptionRow(icon = Icons.Default.ReceiptLong, title = "Activity")
-            WalletOptionRow(icon = Icons.Default.Wifi, title = "Default for contactless")
-            WalletOptionRow(icon = Icons.Default.Edit, title = "Add a nickname")
-            WalletOptionRow(icon = Icons.Default.Lightbulb, title = "Learn how to pay")
-        }
-
-        // "Payment network for next transaction only" Segmented Button
+        // Section: Card Status Controls (In Use, Paused, Frozen, Discarded)
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CreditCard,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    text = "Payment network for next transaction only",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
+            Text(
+                text = "CARD STATUS CONTROLS",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                color = MaterialTheme.colorScheme.primary
+            )
 
-            // Segmented pill buttons: [✓ Auto | Visa | eftpos]
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(1.dp, if (isDark) Color(0xFF3F4248) else Color(0xFFCBD5E1)),
-                color = Color.Transparent,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    listOf("Auto", "Visa", "eftpos").forEachIndexed { index, option ->
-                        val isSelected = paymentNetworkSelection == option
-                        Box(
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        CardStatus.IN_USE to ("In Use" to Icons.Default.CheckCircle),
+                        CardStatus.PAUSED to ("Pause" to Icons.Default.PauseCircle),
+                        CardStatus.FROZEN to ("Freeze" to Icons.Default.AcUnit),
+                        CardStatus.DISCARDED to ("Discard" to Icons.Default.Block)
+                    ).forEach { (statusOption, meta) ->
+                        val isSelected = currentStatus == statusOption
+                        val activeColor = when (statusOption) {
+                            CardStatus.IN_USE -> Color(0xFF10B981)
+                            CardStatus.PAUSED -> Color(0xFFF59E0B)
+                            CardStatus.FROZEN -> Color(0xFF06B6D4)
+                            CardStatus.DISCARDED -> Color(0xFF94A3B8)
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) activeColor.copy(alpha = 0.18f) else Color.Transparent,
+                            border = if (isSelected) BorderStroke(1.dp, activeColor) else null,
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxSize()
-                                .background(if (isSelected) Color(0xFFD3E3FD) else Color.Transparent)
-                                .clickable { paymentNetworkSelection = option },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = Color(0xFF041E49),
-                                        modifier = Modifier.size(14.dp)
-                                    )
+                                .clickable {
+                                    viewModel.updateCardStatus(card.id, statusOption)
                                 }
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 2.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = meta.second,
+                                    contentDescription = null,
+                                    tint = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = option,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) Color(0xFF041E49) else MaterialTheme.colorScheme.onSurface
+                                    text = meta.first,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        }
-                        if (index < 2) {
-                            VerticalDivider(color = if (isDark) Color(0xFF3F4248) else Color(0xFFCBD5E1))
                         }
                     }
                 }
             }
         }
 
-        // Support & Legal Links
+        // Section: Payment History & Receipts Upload
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            WalletOptionRow(icon = Icons.Default.Phone, title = "Call ANZ")
-            WalletOptionRow(icon = Icons.Default.Description, title = "ANZ terms and conditions")
-            WalletOptionRow(icon = Icons.Default.Security, title = "ANZ privacy policy")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PAYMENT HISTORY & RECEIPTS",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    modifier = Modifier.clickable { receiptPickerLauncher.launch("image/*") }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                        Text(
+                            text = "Upload Receipt",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            if (receipts.isEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ReceiptLong,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Text(
+                            text = "No receipts or transactions yet",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Upload payment receipts or attach invoices to keep track of spending.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        receipts.forEachIndexed { idx, item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(item.merchant, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(item.date, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (item.amount.isNotBlank()) {
+                                        Text(item.amount, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            val updated = receipts.filter { it.id != item.id }
+                                            receipts = updated
+                                            saveCardReceipts(context, card.id, updated)
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            }
+                            if (idx < receipts.size - 1) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
     }
 }
 
@@ -2202,6 +2708,157 @@ private fun WalletOptionRow(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
+    }
+}
+
+@Composable
+private fun BankingSection(
+    items: List<VaultItemHeader>,
+    onOpenItem: (VaultItemHeader) -> Unit,
+    onAddNew: () -> Unit,
+    onBackToDashboard: () -> Unit
+) {
+    val isDark = LocalPimsDarkTheme.current
+
+    val bankItems = remember(items) {
+        items.filter { it.category == VaultCategory.BANK_ACCOUNT }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(bottom = 80.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBackToDashboard) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "Banking",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        if (bankItems.isEmpty()) {
+            PersonaEmptyState(
+                icon = BankIcon,
+                title = "No bank accounts",
+                description = "Add your bank accounts, savings, and international banking details to your secure vault.",
+                actionLabel = "Add Bank Account",
+                onActionClick = onAddNew
+            )
+        } else {
+            bankItems.forEach { account ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenItem(account) },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.surface
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isDark) Color(0xFF2E2E2E) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color(0xFF6366F1).copy(alpha = 0.1f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(BankIcon, contentDescription = null, tint = Color(0xFF6366F1), modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = account.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = PimsTextPrimary
+                                    )
+                                    Text(
+                                        text = account.accountIdentifier ?: "Bank account",
+                                        fontSize = 12.sp,
+                                        color = PimsTextSecondary,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            Icon(
+                                Icons.Default.ArrowForward,
+                                contentDescription = null,
+                                tint = PimsTextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onAddNew),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Transparent,
+                border = BorderStroke(
+                    1.5.dp,
+                    Color(0xFF6366F1).copy(alpha = 0.4f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = Color(0xFF6366F1),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Add Bank Account",
+                        color = Color(0xFF6366F1),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -2257,6 +2914,7 @@ private fun VaultItemCard(
                     VaultCategory.RECOVERY_CODE -> Icons.Default.Shield
                     VaultCategory.SECURE_NOTE -> Icons.Default.Note
                     VaultCategory.PAYMENT_REFERENCE -> Icons.Default.CreditCard
+                    VaultCategory.BANK_ACCOUNT -> BankIcon
                     VaultCategory.IDENTITY_CREDENTIAL -> Icons.Default.Key
                 }
 
@@ -2264,11 +2922,11 @@ private fun VaultItemCard(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .border(1.dp, PimsBorder, RoundedCornerShape(6.dp))
-                        .background(PimsBackground),
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(imageVector = icon, contentDescription = null, tint = PimsTextPrimary, modifier = Modifier.size(18.dp))
+                    Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -2276,7 +2934,7 @@ private fun VaultItemCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = item.title,
-                        color = PimsTextPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -2285,7 +2943,7 @@ private fun VaultItemCard(
                     item.accountIdentifier?.let {
                         Text(
                             text = it,
-                            color = PimsTextSecondary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -2304,14 +2962,14 @@ private fun VaultItemCard(
 
                         Text(
                             text = formattedToken,
-                            color = PimsTextPrimary,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = "${liveToken.remainingSeconds}s",
-                            color = if (liveToken.remainingSeconds <= 5) PimsError else PimsTextSecondary,
+                            color = if (liveToken.remainingSeconds <= 5) PimsError else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -2369,13 +3027,6 @@ private fun VaultLockedStateView(
                 color = PimsTextPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Authenticate to access your passwords, cards and credentials.",
-                color = PimsTextSecondary,
-                fontSize = 12.sp,
-                lineHeight = 18.sp
             )
             Spacer(modifier = Modifier.height(20.dp))
             PimsButton(
@@ -2657,6 +3308,55 @@ private fun VaultItemDetailDialog(
                             }
                         }
                     }
+
+                    VaultCategory.BANK_ACCOUNT -> {
+                        val bank = uiState.activeDecryptedBanking
+                        if (bank != null) {
+                            DetailRow(label = "Bank", value = bank.bankName, onCopy = { viewModel.copyToClipboard(context, bank.bankName, "Bank Name", false) })
+                            Spacer(modifier = Modifier.height(6.dp))
+                            DetailRow(label = "Account Holder", value = bank.accountHolderName, onCopy = { viewModel.copyToClipboard(context, bank.accountHolderName, "Account Holder", false) })
+                            if (bank.accountNumber.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "Account Number", value = bank.accountNumber, onCopy = { viewModel.copyToClipboard(context, bank.accountNumber, "Account Number", true) })
+                            }
+                            if (bank.accountType.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "Account Type", value = bank.accountType, onCopy = null)
+                            }
+                            if (bank.branchName.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "Branch", value = bank.branchName, onCopy = null)
+                            }
+                            if (bank.sortCode.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "Sort Code", value = bank.sortCode, onCopy = { viewModel.copyToClipboard(context, bank.sortCode, "Sort Code", true) })
+                            }
+                            if (bank.routingNumber.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "Routing Number", value = bank.routingNumber, onCopy = { viewModel.copyToClipboard(context, bank.routingNumber, "Routing Number", true) })
+                            }
+                            if (bank.bsb.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "BSB", value = bank.bsb, onCopy = { viewModel.copyToClipboard(context, bank.bsb, "BSB", true) })
+                            }
+                            if (bank.swiftBic.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "SWIFT / BIC", value = bank.swiftBic, onCopy = { viewModel.copyToClipboard(context, bank.swiftBic, "SWIFT/BIC", true) })
+                            }
+                            if (bank.iban.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "IBAN", value = bank.iban, onCopy = { viewModel.copyToClipboard(context, bank.iban, "IBAN", true) })
+                            }
+                            bank.notes?.let { note ->
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "Notes", value = note, onCopy = null)
+                            }
+                            bank.linkedCardSummary?.let { cardSummary ->
+                                Spacer(modifier = Modifier.height(6.dp))
+                                DetailRow(label = "Linked Card", value = cardSummary, onCopy = null)
+                            }
+                        }
+                    }
                     else -> {}
                 }
 
@@ -2726,6 +3426,7 @@ private fun VaultEditorDialog(
                         VaultCategory.RECOVERY_CODE -> "ADD RECOVERY CODES"
                         VaultCategory.SECURE_NOTE -> "ADD SECURE NOTE"
                         VaultCategory.PAYMENT_REFERENCE -> "ADD PAYMENT REFERENCE"
+                        VaultCategory.BANK_ACCOUNT -> "ADD BANK ACCOUNT"
                         VaultCategory.IDENTITY_CREDENTIAL -> "ADD CREDENTIAL"
                     },
                     color = PimsTextPrimary,
@@ -2891,7 +3592,6 @@ private fun VaultEditorDialog(
 private fun CreateCategoryItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
-    subtitle: String,
     onClick: () -> Unit
 ) {
     Row(
@@ -2913,9 +3613,221 @@ private fun CreateCategoryItem(
             Icon(imageVector = icon, contentDescription = null, tint = PimsTextPrimary, modifier = Modifier.size(18.dp))
         }
         Spacer(modifier = Modifier.width(12.dp))
-        Column {
-            Text(text = title, color = PimsTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            Text(text = subtitle, color = PimsTextSecondary, fontSize = 11.sp)
+        Text(text = title, color = PimsTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+fun detectCardBrand(cardNumber: String): String {
+    val clean = cardNumber.filter { it.isDigit() }
+    if (clean.isEmpty()) return "Card"
+    return when {
+        clean.startsWith("4") -> "Visa"
+        clean.startsWith("5") || clean.startsWith("2") -> "Mastercard"
+        clean.startsWith("34") || clean.startsWith("37") -> "Amex"
+        clean.startsWith("6011") || clean.startsWith("65") || clean.startsWith("644") || clean.startsWith("649") -> "Discover"
+        clean.startsWith("36") || clean.startsWith("38") || clean.startsWith("300") || clean.startsWith("301") || clean.startsWith("302") || clean.startsWith("303") || clean.startsWith("304") || clean.startsWith("305") || clean.startsWith("309") -> "Diners Club"
+        clean.startsWith("3528") || clean.startsWith("3589") -> "JCB"
+        else -> "Card"
+    }
+}
+
+@Composable
+internal fun SecureNoteEditorModal(
+    initialTitle: String = "",
+    initialContent: String = "",
+    isEditingExisting: Boolean = false,
+    onSave: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var title by remember(initialTitle) { mutableStateOf(initialTitle) }
+    var content by remember(initialContent) { mutableStateOf(initialContent) }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.88f)
+                .padding(vertical = 16.dp),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+            shadowElevation = 16.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(22.dp)
+            ) {
+                // Header Bar: Title + Close Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Note,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = if (isEditingExisting) "Edit Secure Note" else "New Secure Note",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Secure Note",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Wider, Prominent Title Box with Minimal Bezel
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    placeholder = {
+                        Text(
+                            "Note title...",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Wider, Expansive Note Content Box with Minimal Bezel
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    placeholder = {
+                        Text(
+                            "Type your confidential note, recovery codes, thoughts or memo here...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                        )
+                    },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        lineHeight = 24.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.08f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Bottom Action Bar: Cancel & Save Note
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp)
+                    ) {
+                        Text(
+                            "Cancel",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            if (title.isNotBlank() || content.isNotBlank()) {
+                                onSave(title.ifBlank { "Untitled Note" }, content)
+                            }
+                        },
+                        enabled = title.isNotBlank() || content.isNotBlank(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .height(50.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Save Note",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                }
+            }
         }
     }
 }
+

@@ -5,19 +5,8 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Deep warm espresso base -->
+    <!-- Clean neutral background for adaptive icon -->
     <path
-        android:fillColor="#221C17"
+        android:fillColor="#F5F5F5"
         android:pathData="M0,0h108v108h-108z" />
-
-    <!-- Soft elevated halo disc -->
-    <path
-        android:fillColor="#2A231C"
-        android:pathData="M54,6 C80.51,6 102,27.49 102,54 C102,80.51 80.51,102 54,102 C27.49,102 6,80.51 6,54 C6,27.49 27.49,6 54,6 Z" />
-
-    <!-- Faint ambient ring for depth -->
-    <path
-        android:strokeColor="#3D3327"
-        android:strokeWidth="1.4"
-        android:pathData="M54,14 C76.09,14 94,31.91 94,54 C94,76.09 76.09,94 54,94 C31.91,94 14,76.09 14,54 C14,31.91 31.91,14 54,14 Z" />
 </vector>

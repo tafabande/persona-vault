@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -86,6 +88,7 @@ fun WallpaperOptionsSheet(
     onPickFromDevice: () -> Unit,
     onRemoveWallpaper: (WallpaperItem) -> Unit,
     onRestorePresets: () -> Unit,
+    onUpdateAlignment: ((String, Float) -> Unit)? = null,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -179,6 +182,7 @@ fun WallpaperOptionsSheet(
                                     bitmap = bitmap.asImageBitmap(),
                                     contentDescription = activeItem.title,
                                     contentScale = ContentScale.Crop,
+                                    alignment = BiasAlignment(0f, activeItem.alignmentY),
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
@@ -251,6 +255,56 @@ fun WallpaperOptionsSheet(
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
+                    }
+                }
+            }
+
+            if (activeItem != null && activeItem.type == WallpaperType.LOCAL_IMAGE) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Recenter & Vertical Position",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Reset Center",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    haptics.selection()
+                                    onUpdateAlignment?.invoke(activeItem.id, 0f)
+                                }
+                            )
+                        }
+                        Text(
+                            text = "Shift image up or down (${(activeItem.alignmentY * 100).toInt()}%)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Slider(
+                            value = activeItem.alignmentY,
+                            onValueChange = { newY ->
+                                onUpdateAlignment?.invoke(activeItem.id, newY)
+                            },
+                            valueRange = -1f..1f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }

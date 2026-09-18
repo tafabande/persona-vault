@@ -1,7 +1,13 @@
 package com.pims.vault.presentation.hub
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import com.pims.vault.presentation.ui.theme.tactilePress
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,20 +47,35 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import com.pims.vault.presentation.ui.components.DefaultAvatar
 import com.pims.vault.presentation.ui.components.ContactChip
+import com.pims.vault.presentation.avatar.PersonaAvatarManager
+import com.pims.vault.presentation.ui.theme.tactilePress
+import java.io.File
 import com.pims.vault.presentation.ui.components.ContextualExplanation
 import com.pims.vault.presentation.ui.components.FacetSummaryRow
-import com.pims.vault.presentation.ui.components.PersonaAvatar
 import com.pims.vault.presentation.ui.components.SocialProfileItem
 import com.pims.vault.presentation.ui.components.SocialProfilesSection
 import com.pims.vault.presentation.ui.components.StatusPill
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun MeView(
     personName: String,
@@ -73,8 +94,6 @@ fun MeView(
     socialAccounts: List<SocialProfileItem> = emptyList(),
     syncStatusText: String = "✓ Synced",
     syncIsGood: Boolean = true,
-    avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
-    onOpenAvatarEditor: () -> Unit = {},
     onSyncClick: () -> Unit = {},
     onShareProfileClick: () -> Unit,
     onEditProfileClick: () -> Unit,
@@ -95,6 +114,27 @@ fun MeView(
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPimsHaptics()
+    val context = LocalContext.current
+    val avatarManager = remember { PersonaAvatarManager(context) }
+    var customPhotoPath by remember {
+        mutableStateOf(avatarManager.customAvatarPath.value)
+    }
+
+    val profilePhotoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                inputStream?.close()
+                val savedPath = avatarManager.saveCustomPhoto(bitmap)
+                if (savedPath != null) {
+                    customPhotoPath = savedPath
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -112,14 +152,80 @@ fun MeView(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                PersonaAvatar(
-                    name = personName,
-                    config = avatarConfig,
-                    size = 96.dp,
-                    avatarTextSize = 32.sp,
-                    onClick = onOpenAvatarEditor,
-                    onLongClick = onOpenAvatarEditor
-                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    val isDark = LocalPimsDarkTheme.current
+                    // Ambient radial glow behind avatar: Creates intentional framing and elevates profile presence
+                    Box(
+                        modifier = Modifier
+                            .size(152.dp)
+                            .background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.32f else 0.20f),
+                                        MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.10f else 0.05f),
+                                        Color.Transparent
+                                    ),
+                                    radius = 200f
+                                ),
+                                shape = CircleShape
+                            )
+                    )
+
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        val hasPhoto = !customPhotoPath.isNullOrBlank() && File(customPhotoPath!!).exists()
+                        val photoBitmap = remember(customPhotoPath) {
+                            if (hasPhoto) {
+                                try { BitmapFactory.decodeFile(customPhotoPath) } catch (_: Exception) { null }
+                            } else null
+                        }
+
+                        if (photoBitmap != null) {
+                            Image(
+                                bitmap = photoBitmap.asImageBitmap(),
+                                contentDescription = "Profile photo",
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .clip(CircleShape)
+                                    .combinedClickable(onClick = {}, onLongClick = {
+                                        haptics.selection()
+                                        profilePhotoPicker.launch("image/*")
+                                    })
+                            )
+                        } else {
+                            DefaultAvatar(
+                                name = personName,
+                                size = 96.dp,
+                                onLongClick = {
+                                    haptics.selection()
+                                    profilePhotoPicker.launch("image/*")
+                                }
+                            )
+                        }
+
+                        if (hasPhoto) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clickable {
+                                        haptics.selection()
+                                        profilePhotoPicker.launch("image/*")
+                                    }
+                            ) {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    "Change photo",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(14.dp).padding(4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -150,14 +256,7 @@ fun MeView(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
 
-                Box(modifier = Modifier.tactilePress(onClick = {
-                    haptics.light()
-                    onSyncClick()
-                })) {
-                    StatusPill(text = syncStatusText, isGood = syncIsGood)
-                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 

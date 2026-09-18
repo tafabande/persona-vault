@@ -65,6 +65,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.security.PinSecurityManager
+import com.pims.vault.presentation.ui.components.pimsGlassMicroBorder
+import com.pims.vault.presentation.ui.components.pimsGlassSurfaceBrush
+import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -164,14 +167,17 @@ fun SecuritySettingsScreen(
                     .padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                // Section 1: Authentication & PIN
-                SecuritySectionHeader("AUTHENTICATION METHODS")
+                // Section 1: Authentication & PIN (Consolidated Module)
+                SecuritySectionHeader("APP LOCK & AUTHENTICATION")
 
+                val isDark = LocalPimsDarkTheme.current
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
+                    color = Color.Transparent,
+                    border = pimsGlassMicroBorder(isDark = isDark),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(brush = pimsGlassSurfaceBrush(isDark = isDark), shape = RoundedCornerShape(16.dp))
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         // App PIN Row
@@ -273,17 +279,57 @@ fun SecuritySettingsScreen(
                                 colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
                             )
                         }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+
+                        // Session Timeout & Auto-Lock (Consolidated into this module)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    haptics.selection()
+                                    showTimeoutDialog = true
+                                },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Timer, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                }
+                                Column {
+                                    Text("Session Timeout & Auto-Lock", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                                    Text("Require PIN or biometrics after inactivity", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+
+                            Text(
+                                text = "$sessionTimeout min",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
 
                 // Section 2: Protection Policies
-                SecuritySectionHeader("PROTECTION POLICIES")
+                SecuritySectionHeader("DATA PROTECTION POLICIES")
 
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
+                    color = Color.Transparent,
+                    border = pimsGlassMicroBorder(isDark = isDark),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(brush = pimsGlassSurfaceBrush(isDark = isDark), shape = RoundedCornerShape(16.dp))
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         // Passwords protection
@@ -323,41 +369,6 @@ fun SecuritySettingsScreen(
                                     haptics.selection()
                                     pinSecurityManager.setRequireAuthForSensitive(it)
                                 }
-                            )
-                        }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-
-                        // Session Timeout
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showTimeoutDialog = true },
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.Timer, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                                }
-                                Column {
-                                    Text("Session Timeout", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-                                    Text("Lock app after inactivity", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-
-                            Text(
-                                text = "$sessionTimeout minutes",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }

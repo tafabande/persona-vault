@@ -10,10 +10,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -128,9 +130,9 @@ val PersonaLightColorScheme = lightColorScheme(
     surfaceContainerHigh = PersonaSurface,      // Warm cream surface (#FFFDF8) - prevents lavender dialogs
     surfaceContainerHighest = PersonaSurfaceVariant, // (#EFECE5)
     surfaceContainerLow = PersonaSurface,
-    surfaceContainerLowest = Color.White,
+    surfaceContainerLowest = PersonaSurface,
     surfaceDim = PersonaSurfaceVariant,
-    surfaceBright = Color.White,
+    surfaceBright = PersonaSurface,
     error = StateError,                         // Crimson (#A94C4C)
     onError = Color.White
 )
@@ -215,7 +217,6 @@ val PimsTypography = Typography(
 
 val LocalPimsDarkTheme = staticCompositionLocalOf { false }
 val LocalPersonaMood = staticCompositionLocalOf { PersonaMood.WARM }
-val LocalPersonaAvatarBackdrop = staticCompositionLocalOf { Color(0xFFEAD8CD) }
 val LocalPersonaBackground = staticCompositionLocalOf { Color(0xFFF7F5F0) }
 
 /**
@@ -256,83 +257,133 @@ fun createPersonaColorScheme(mood: PersonaMood = PersonaMood.WARM) = lightColorS
 )
 
 /**
- * Centrally animates all semantic color tokens on PersonaMood transitions.
- * Gives the entire application a gentle, unified atmosphere shift (Warm -> Calm, etc.)
+ * Centrally animates all semantic color tokens on PersonaMood and theme transitions.
+ * Supports both light and dark modes with smooth animated transitions.
  */
 @Composable
 fun animatedPersonaColorScheme(
     mood: PersonaMood,
+    isDark: Boolean = false,
     isReducedMotion: Boolean = false
 ): ColorScheme {
     val duration = if (isReducedMotion) 0 else 380
     val colorSpec = tween<Color>(durationMillis = duration, easing = FastOutSlowInEasing)
 
-    val primary by androidx.compose.animation.animateColorAsState(mood.accentColor, colorSpec, label = "themePrimary")
-    val primaryContainer by androidx.compose.animation.animateColorAsState(mood.softAccentColor, colorSpec, label = "themeSoftAccent")
-    val background by androidx.compose.animation.animateColorAsState(mood.backgroundColor, colorSpec, label = "themeBackground")
-    val surface by androidx.compose.animation.animateColorAsState(mood.surfaceColor, colorSpec, label = "themeSurface")
-    val surfaceVariant by androidx.compose.animation.animateColorAsState(mood.surfaceVariantColor, colorSpec, label = "themeSurfaceVariant")
-    val outline by androidx.compose.animation.animateColorAsState(mood.dividerColor, colorSpec, label = "themeOutline")
-    val avatarBackdrop by androidx.compose.animation.animateColorAsState(mood.avatarBackdropColor, colorSpec, label = "themeAvatarBackdrop")
+    val accentTarget = if (isDark) mood.darkAccentColor else mood.accentColor
+    val softAccentTarget = if (isDark) mood.darkSoftAccentColor else mood.softAccentColor
+    val backgroundTarget = if (isDark) mood.darkBackgroundColor else mood.backgroundColor
+    val surfaceTarget = if (isDark) mood.darkSurfaceColor else mood.surfaceColor
+    val surfaceVariantTarget = if (isDark) mood.darkSurfaceVariantColor else mood.surfaceVariantColor
+    val outlineTarget = if (isDark) mood.darkDividerColor else mood.dividerColor
+    val avatarBackdropTarget = if (isDark) mood.darkAvatarBackdropColor else mood.avatarBackdropColor
 
-    return lightColorScheme(
-        primary = primary,
-        onPrimary = Color.White,
-        primaryContainer = primaryContainer,
-        onPrimaryContainer = PersonaTextPrimary,
-        secondary = PersonaTextSecondary,
-        onSecondary = Color.White,
-        secondaryContainer = surfaceVariant,
-        onSecondaryContainer = PersonaTextPrimary,
-        tertiary = primary,
-        onTertiary = Color.White,
-        tertiaryContainer = avatarBackdrop,
-        onTertiaryContainer = PersonaTextPrimary,
-        background = background,
-        onBackground = PersonaTextPrimary,
-        surface = surface,
-        onSurface = PersonaTextPrimary,
-        surfaceVariant = surfaceVariant,
-        onSurfaceVariant = PersonaTextSecondary,
-        outline = outline,
-        outlineVariant = outline,
-        surfaceTint = Color.Transparent,
-        surfaceContainer = surface,
-        surfaceContainerHigh = surface,
-        surfaceContainerHighest = surfaceVariant,
-        surfaceContainerLow = surface,
-        surfaceContainerLowest = Color.White,
-        surfaceDim = surfaceVariant,
-        surfaceBright = Color.White,
-        error = StateError,
-        onError = Color.White
-    )
+    val primary by androidx.compose.animation.animateColorAsState(accentTarget, colorSpec, label = "themePrimary")
+    val primaryContainer by androidx.compose.animation.animateColorAsState(softAccentTarget, colorSpec, label = "themeSoftAccent")
+    val background by androidx.compose.animation.animateColorAsState(backgroundTarget, colorSpec, label = "themeBackground")
+    val surface by androidx.compose.animation.animateColorAsState(surfaceTarget, colorSpec, label = "themeSurface")
+    val surfaceVariant by androidx.compose.animation.animateColorAsState(surfaceVariantTarget, colorSpec, label = "themeSurfaceVariant")
+    val outline by androidx.compose.animation.animateColorAsState(outlineTarget, colorSpec, label = "themeOutline")
+    val avatarBackdrop by androidx.compose.animation.animateColorAsState(avatarBackdropTarget, colorSpec, label = "themeAvatarBackdrop")
+
+    return if (isDark) {
+        darkColorScheme(
+            primary = primary,
+            onPrimary = Color(0xFF1A1917),
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = DarkTextPrimary,
+            secondary = DarkTextSecondary,
+            onSecondary = Color(0xFF1A1917),
+            secondaryContainer = surfaceVariant,
+            onSecondaryContainer = DarkTextPrimary,
+            tertiary = primary,
+            onTertiary = Color(0xFF1A1917),
+            tertiaryContainer = avatarBackdrop,
+            onTertiaryContainer = DarkTextPrimary,
+            background = background,
+            onBackground = DarkTextPrimary,
+            surface = surface,
+            onSurface = DarkTextPrimary,
+            surfaceVariant = surfaceVariant,
+            onSurfaceVariant = DarkTextSecondary,
+            outline = outline,
+            outlineVariant = outline,
+            surfaceTint = Color.Transparent,
+            surfaceContainer = surface,
+            surfaceContainerHigh = surface,
+            surfaceContainerHighest = surfaceVariant,
+            surfaceContainerLow = surface,
+            surfaceContainerLowest = background,
+            surfaceDim = surface,
+            surfaceBright = surfaceVariant,
+            error = DarkStateError,
+            onError = Color(0xFF1A1917)
+        )
+    } else {
+        lightColorScheme(
+            primary = primary,
+            onPrimary = Color.White,
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = PersonaTextPrimary,
+            secondary = PersonaTextSecondary,
+            onSecondary = Color.White,
+            secondaryContainer = surfaceVariant,
+            onSecondaryContainer = PersonaTextPrimary,
+            tertiary = primary,
+            onTertiary = Color.White,
+            tertiaryContainer = avatarBackdrop,
+            onTertiaryContainer = PersonaTextPrimary,
+            background = background,
+            onBackground = PersonaTextPrimary,
+            surface = surface,
+            onSurface = PersonaTextPrimary,
+            surfaceVariant = surfaceVariant,
+            onSurfaceVariant = PersonaTextSecondary,
+            outline = outline,
+            outlineVariant = outline,
+            surfaceTint = Color.Transparent,
+            surfaceContainer = surface,
+            surfaceContainerHigh = surface,
+            surfaceContainerHighest = surfaceVariant,
+            surfaceContainerLow = surface,
+            surfaceContainerLowest = surface,
+            surfaceDim = surfaceVariant,
+            surfaceBright = surface,
+            error = StateError,
+            onError = Color.White
+        )
+    }
 }
 
 /**
- * PimsVaultTheme enforces LIGHT THEME ONLY across the entire application.
+ * PimsVaultTheme supports LIGHT, DARK, and SYSTEM theme modes.
  * Adapts dynamically to the selected PersonaMood with smooth animated transitions
  * and respects reduced motion.
  */
 @Composable
 fun PimsVaultTheme(
-    themeMode: ThemeMode = ThemeMode.LIGHT,
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     mood: PersonaMood = PersonaMood.WARM,
     isReducedMotion: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = animatedPersonaColorScheme(mood = mood, isReducedMotion = isReducedMotion)
+    val systemIsDark = isSystemInDarkTheme()
+    val isDark = when (themeMode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> systemIsDark
+    }
+
+    val colorScheme = animatedPersonaColorScheme(mood = mood, isDark = isDark, isReducedMotion = isReducedMotion)
 
     val duration = if (isReducedMotion) 0 else 380
     val colorSpec = tween<Color>(durationMillis = duration, easing = FastOutSlowInEasing)
-    val animatedBackdrop by androidx.compose.animation.animateColorAsState(mood.avatarBackdropColor, colorSpec, label = "localAvatarBackdrop")
-    val animatedBackground by androidx.compose.animation.animateColorAsState(mood.backgroundColor, colorSpec, label = "localBackground")
+    val bgTarget = if (isDark) mood.darkBackgroundColor else mood.backgroundColor
+    val animatedBackground by androidx.compose.animation.animateColorAsState(bgTarget, colorSpec, label = "localBackground")
 
     CompositionLocalProvider(
-        LocalPimsDarkTheme provides false,
+        LocalPimsDarkTheme provides isDark,
         LocalPersonaMood provides mood,
         LocalReducedMotion provides isReducedMotion,
-        LocalPersonaAvatarBackdrop provides animatedBackdrop,
         LocalPersonaBackground provides animatedBackground
     ) {
         MaterialTheme(

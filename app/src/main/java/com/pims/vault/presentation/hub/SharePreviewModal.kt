@@ -60,7 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.components.MinimalQrCodeCanvas
 import com.pims.vault.presentation.ui.components.PersonaShareCard
-import com.pims.vault.presentation.ui.components.PersonaAvatar
+import com.pims.vault.presentation.ui.components.DefaultAvatar
 import com.pims.vault.presentation.ui.components.PersonaShareCard
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
@@ -84,6 +84,9 @@ fun SharePreviewModal(
     occupation: String,
     country: String,
     sheetState: SheetState,
+    phone: String = "",
+    email: String = "",
+    bloodGroup: String = "",
     onDismissRequest: () -> Unit,
     onCopyShareLink: (String) -> Unit
 ) {
@@ -225,6 +228,12 @@ fun SharePreviewModal(
             PersonaShareCard(
                 personName = personName,
                 selectedPalette = currentPalette,
+                occupation = occupation,
+                country = country,
+                phone = phone,
+                email = email,
+                bloodGroup = bloodGroup,
+                presetTitle = presets[selectedPresetIndex],
                 qrSeed = "$personName;${presets[selectedPresetIndex]};name=$shareName;phone=$sharePhone;email=$shareEmail;addr=$shareAddress;med=$shareEmergencyIce;edu=$shareEducation",
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
@@ -303,22 +312,29 @@ fun SharePreviewModal(
             Spacer(modifier = Modifier.height(6.dp))
 
             PermissionToggleRow("Name & Display Photo", shareName) { shareName = it }
-            if (selectedPresetIndex != 2) {
-                PermissionToggleRow("Occupation & Profession", shareProfession) { shareProfession = it }
-            }
-            if (selectedPresetIndex == 0) {
-                PermissionToggleRow("Phone Number", sharePhone) { sharePhone = it }
-                PermissionToggleRow("Email Address", shareEmail) { shareEmail = it }
-                PermissionToggleRow("Residential Address", shareAddress) { shareAddress = it }
-            }
-            if (selectedPresetIndex == 1) {
-                PermissionToggleRow("Education & Qualifications", shareEducation) { shareEducation = it }
-                PermissionToggleRow("Projects & Portfolio links", sharePortfolio) { sharePortfolio = it }
-                PermissionToggleRow("Work Email", shareEmail) { shareEmail = it }
-            }
-            if (selectedPresetIndex == 2) {
-                PermissionToggleRow("Blood type & critical allergies", shareEmergencyIce) { shareEmergencyIce = it }
-                PermissionToggleRow("ICE Emergency phone", sharePhone) { sharePhone = it }
+
+            when (selectedPresetIndex) {
+                0 -> { // General
+                    PermissionToggleRow("Occupation & Profession", shareProfession) { shareProfession = it }
+                    PermissionToggleRow("Phone Number", sharePhone) { sharePhone = it }
+                    PermissionToggleRow("Email Address", shareEmail) { shareEmail = it }
+                    PermissionToggleRow("Residential Address", shareAddress) { shareAddress = it }
+                }
+                1 -> { // Medical ICE
+                    PermissionToggleRow("Blood type & critical allergies", shareEmergencyIce) { shareEmergencyIce = it }
+                    PermissionToggleRow("ICE Emergency phone", sharePhone) { sharePhone = it }
+                }
+                2 -> { // Professional
+                    PermissionToggleRow("Occupation & Profession", shareProfession) { shareProfession = it }
+                    PermissionToggleRow("Work Email", shareEmail) { shareEmail = it }
+                    PermissionToggleRow("Education & Qualifications", shareEducation) { shareEducation = it }
+                    PermissionToggleRow("Projects & Portfolio links", sharePortfolio) { sharePortfolio = it }
+                }
+                3 -> { // Contact Card
+                    PermissionToggleRow("Phone Number", sharePhone) { sharePhone = it }
+                    PermissionToggleRow("Email Address", shareEmail) { shareEmail = it }
+                    PermissionToggleRow("Residential Address", shareAddress) { shareAddress = it }
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -335,10 +351,10 @@ fun SharePreviewModal(
 
             LockedInfoRow("Account Passwords & Vault Credentials")
             LockedInfoRow("National Identity & Passport Documents")
-            if (selectedPresetIndex != 2) {
+            if (selectedPresetIndex != 1) {
                 LockedInfoRow("Confidential Medical Records & History")
             }
-            if (selectedPresetIndex == 1) {
+            if (selectedPresetIndex == 1 || selectedPresetIndex == 2) {
                 LockedInfoRow("Personal Residential Address")
             }
 

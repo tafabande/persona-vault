@@ -30,7 +30,8 @@ data class WallpaperItem(
     val type: WallpaperType,
     val artSeed: Int = 0,
     val localFilePath: String? = null,
-    val isBuiltIn: Boolean = true
+    val isBuiltIn: Boolean = true,
+    val alignmentY: Float = 0f
 )
 
 /**
@@ -122,7 +123,8 @@ class LocalWallpaperManager @Inject constructor(
                         type = WallpaperType.valueOf(obj.getString("type")),
                         artSeed = obj.optInt("artSeed", 0),
                         localFilePath = obj.optString("localFilePath").takeIf { it.isNotBlank() },
-                        isBuiltIn = obj.optBoolean("isBuiltIn", false)
+                        isBuiltIn = obj.optBoolean("isBuiltIn", false),
+                        alignmentY = obj.optDouble("alignmentY", 0.0).toFloat()
                     )
                 )
             }
@@ -144,11 +146,26 @@ class LocalWallpaperManager @Inject constructor(
                     put("artSeed", item.artSeed)
                     put("localFilePath", item.localFilePath ?: "")
                     put("isBuiltIn", item.isBuiltIn)
+                    put("alignmentY", item.alignmentY.toDouble())
                 }
                 array.put(obj)
             }
             storeFile.writeText(array.toString())
         } catch (_: Exception) {}
+    }
+
+    fun updateAlignment(id: String, alignmentY: Float) {
+        val current = _wallpapers.value.toMutableList()
+        val index = current.indexOfFirst { it.id == id }
+        if (index != -1) {
+            current[index] = current[index].copy(alignmentY = alignmentY.coerceIn(-1f, 1f))
+            _wallpapers.value = current
+            persistWallpapers(current)
+        }
+    }
+
+    fun updateWallpaperAlignment(id: String, alignmentY: Float) {
+        updateAlignment(id, alignmentY)
     }
 
     fun setActiveIndex(index: Int) {

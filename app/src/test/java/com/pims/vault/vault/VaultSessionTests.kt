@@ -13,11 +13,13 @@ import com.pims.vault.domain.usecase.vault.ConsumeRecoveryCodeUseCase
 import com.pims.vault.domain.usecase.vault.DeleteVaultItemUseCase
 import com.pims.vault.domain.usecase.vault.GenerateLiveTotpUseCase
 import com.pims.vault.domain.usecase.vault.GetVaultItemsUseCase
+import com.pims.vault.domain.usecase.vault.ReadBankAccountUseCase
 import com.pims.vault.domain.usecase.vault.ReadPasswordSecretUseCase
 import com.pims.vault.domain.usecase.vault.ReadPaymentReferenceUseCase
 import com.pims.vault.domain.usecase.vault.ReadRecoveryCodesUseCase
 import com.pims.vault.domain.usecase.vault.ReadSecureNoteUseCase
 import com.pims.vault.domain.usecase.vault.ReadTotpSecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveBankAccountUseCase
 import com.pims.vault.domain.usecase.vault.SavePasswordUseCase
 import com.pims.vault.domain.usecase.vault.SavePaymentReferenceUseCase
 import com.pims.vault.domain.usecase.vault.SaveRecoveryCodesUseCase
@@ -108,6 +110,8 @@ class VaultSessionTests {
             readSecureNoteUseCase = ReadSecureNoteUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             savePaymentReferenceUseCase = SavePaymentReferenceUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             readPaymentReferenceUseCase = ReadPaymentReferenceUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            saveBankAccountUseCase = SaveBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            readBankAccountUseCase = ReadBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             deleteVaultItemUseCase = DeleteVaultItemUseCase(fakeVaultDao, auditLogger),
             sessionManager = sessionManager,
             personDao = fakePersonDao

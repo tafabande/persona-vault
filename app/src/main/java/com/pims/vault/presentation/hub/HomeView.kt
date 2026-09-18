@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -51,6 +52,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -60,16 +64,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.ui.components.pimsGlassmorphism
+import com.pims.vault.presentation.ui.components.DefaultAvatar
 import com.pims.vault.presentation.ui.components.InternationalPhoneInput
 import com.pims.vault.domain.model.DocumentWithHistory
-import com.pims.vault.presentation.ui.components.PersonaAvatar
 import com.pims.vault.presentation.ui.components.PersonaTextInput
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.text.style.TextOverflow
+import com.pims.vault.presentation.ui.theme.PersonaAccent
 import com.pims.vault.presentation.ui.theme.pimsApplePress
+import com.pims.vault.presentation.ui.theme.pimsTactile
 import com.pims.vault.presentation.ui.theme.StateWarning
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
@@ -94,13 +101,12 @@ fun HomeView(
     primaryEmail: String? = null,
     primaryAddress: String? = null,
     nationalIdNumber: String? = null,
+    profilePhotoPath: String? = null,
     idPhotoPath: String? = null,
     documents: List<DocumentWithHistory> = emptyList(),
     syncStatusText: String = "✓ Up to date",
     isLocalOnly: Boolean = false,
     unreadNotificationCount: Int = 0,
-    avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
-    onOpenAvatarEditor: () -> Unit = {},
     wallpapers: List<com.pims.vault.presentation.wallpaper.WallpaperItem> = emptyList(),
     activeWallpaperIndex: Int = 0,
     onActiveWallpaperChanged: (Int) -> Unit = {},
@@ -125,21 +131,22 @@ fun HomeView(
     val effectiveIdNumber = nationalIdNumber?.takeIf { it.isNotBlank() }
         ?: documents.firstOrNull { it.document.documentType.name.contains("ID") }?.document?.id
 
-    // Non-scrollable layout filling available screen height and adjusting image length
-    Column(
+    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
+
+    // Seamless layered layout: hero section extends under the identity card
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // 1 & 2: EXTENDED HERO PHOTO AREA WITH OVERLAYING FLOATING TOP BAR
-        // Top corners are square so the artwork bleeds up under the status bar.
+        // Fills the upper section and extends down under the identity card for a seamless magazine bleed
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
-                .clip(RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 26.dp, bottomEnd = 26.dp))
+                .fillMaxHeight(0.80f)
+                .clipToBounds()
+                .align(Alignment.TopCenter)
         ) {
             // Wallpaper Background
             if (wallpapers.isNotEmpty()) {
@@ -181,9 +188,7 @@ fun HomeView(
                 }
             }
 
-            // Top Ambient Gradient Scrim & Floating Top Identity Bar.
-            // Strongest right at the status bar, dissolving softly downward so
-            // the artwork stays visible through the middle of the hero.
+            // Top Subtle Gradient Scrim & Floating Top Identity Bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -191,71 +196,107 @@ fun HomeView(
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colorStops = arrayOf(
-                                0.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                                0.55f to MaterialTheme.colorScheme.background.copy(alpha = 0.42f),
+                                0.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
+                                0.60f to MaterialTheme.colorScheme.background.copy(alpha = 0.12f),
                                 1.0f to Color.Transparent
                             )
                         )
                     )
                     .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 HomeHeaderRow(
                     displayName = displayName,
-                    avatarConfig = avatarConfig,
+                    profilePhotoPath = profilePhotoPath ?: idPhotoPath,
                     unreadNotificationCount = unreadNotificationCount,
                     onOpenProfile = onOpenProfile,
-                    onOpenAvatarEditor = onOpenAvatarEditor,
                     onNotificationClick = onNotificationClick
                 )
             }
+
+            // Deep Ambient Gradient Scrim: Bleeds out seamlessly beneath the identity card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                0.35f to MaterialTheme.colorScheme.background.copy(alpha = 0.50f),
+                                0.70f to MaterialTheme.colorScheme.background.copy(alpha = 0.90f),
+                                0.85f to MaterialTheme.colorScheme.background,
+                                1.0f to MaterialTheme.colorScheme.background
+                            )
+                        )
+                    )
+            )
+
+            // Solid base strip at hero boundary to guarantee zero sub-pixel light gap
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(MaterialTheme.colorScheme.background)
+            )
         }
 
-        // 3. IDENTITY DETAILS CARD (Displays Name, Email, Phone, ID Number, and ID Photo)
-        IdentityDetailsCard(
-            displayName = displayName,
-            primaryEmail = primaryEmail,
-            primaryPhone = primaryPhone,
-            idNumber = effectiveIdNumber,
-            idPhotoPath = idPhotoPath,
-            onEdit = {
-                haptics.light()
-                onOpenCentralizedEditor()
-            }
-        )
-
-        // 4. THREE VERTICAL CARDS SITTING SIDE BY SIDE IN THE SAME THEME ON THE BOTTOM JUST ABOVE THE NAVBAR
-        Row(
+        // Lower Content Section: Sits seamlessly over the extended hero bleed
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .align(Alignment.BottomCenter)
+                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            HomeShortcutVerticalCard(
-                icon = Icons.Default.Badge,
-                title = "View Info",
-                subtitle = "Profile",
-                accentColor = MaterialTheme.colorScheme.primary,
-                onClick = onOpenProfile,
-                modifier = Modifier.weight(1f)
+            // 3. IDENTITY DETAILS CARD (Displays Name, Email, Phone, ID Number, and ID Photo)
+            IdentityDetailsCard(
+                displayName = displayName,
+                primaryEmail = primaryEmail,
+                primaryPhone = primaryPhone,
+                idNumber = effectiveIdNumber,
+                idPhotoPath = idPhotoPath,
+                onEdit = {
+                    haptics.light()
+                    onOpenCentralizedEditor()
+                }
             )
-            HomeShortcutVerticalCard(
-                icon = Icons.Default.Lock,
-                title = "Vault",
-                subtitle = "Credentials",
-                accentColor = Color(0xFF10B981),
-                onClick = onOpenCredentials,
-                modifier = Modifier.weight(1f)
-            )
-            HomeShortcutVerticalCard(
-                icon = Icons.Default.Share,
-                title = "Share",
-                subtitle = "Pass & QR",
-                accentColor = Color(0xFF8B5CF6),
-                onClick = onOpenShare,
-                modifier = Modifier.weight(1f)
-            )
+
+            // 4. THREE VERTICAL CARDS SITTING SIDE BY SIDE IN THE SAME THEME ON THE BOTTOM JUST ABOVE THE NAVBAR
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                HomeShortcutVerticalCard(
+                    icon = Icons.Default.Badge,
+                    title = "View Info",
+                    subtitle = "Profile",
+                    accentColor = MaterialTheme.colorScheme.primary,
+                    onClick = onOpenProfile,
+                    modifier = Modifier.weight(1f)
+                )
+                HomeShortcutVerticalCard(
+                    icon = Icons.Default.Lock,
+                    title = "Vault",
+                    subtitle = "Credentials",
+                    accentColor = Color(0xFF10B981),
+                    onClick = onOpenCredentials,
+                    modifier = Modifier.weight(1f)
+                )
+                HomeShortcutVerticalCard(
+                    icon = Icons.Default.Share,
+                    title = "Share",
+                    subtitle = "Pass & QR",
+                    accentColor = Color(0xFF8B5CF6),
+                    onClick = onOpenShare,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 
@@ -282,13 +323,23 @@ fun HomeView(
 @Composable
 private fun HomeHeaderRow(
     displayName: String,
-    avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig?,
+    profilePhotoPath: String? = null,
     unreadNotificationCount: Int,
     onOpenProfile: () -> Unit,
-    onOpenAvatarEditor: () -> Unit,
     onNotificationClick: () -> Unit
 ) {
     val haptics = rememberPimsHaptics()
+
+    val hasPhoto = !profilePhotoPath.isNullOrBlank() && File(profilePhotoPath).exists()
+    val photoBitmap = remember(profilePhotoPath) {
+        if (hasPhoto) {
+            try {
+                BitmapFactory.decodeFile(profilePhotoPath)
+            } catch (_: Exception) {
+                null
+            }
+        } else null
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -299,14 +350,27 @@ private fun HomeHeaderRow(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f)
         ) {
-            PersonaAvatar(
-                name = displayName,
-                config = avatarConfig,
-                size = 46.dp,
-                avatarTextSize = 18.sp,
-                onClick = onOpenProfile,
-                onLongClick = onOpenAvatarEditor
-            )
+            if (photoBitmap != null) {
+                Image(
+                    bitmap = photoBitmap.asImageBitmap(),
+                    contentDescription = "Profile photo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), CircleShape)
+                        .pimsApplePress {
+                            haptics.selection()
+                            onOpenProfile()
+                        }
+                )
+            } else {
+                DefaultAvatar(
+                    name = displayName,
+                    size = 46.dp,
+                    onClick = onOpenProfile
+                )
+            }
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -329,8 +393,17 @@ private fun HomeHeaderRow(
         Box(
             modifier = Modifier
                 .size(42.dp)
+                .shadow(3.dp, CircleShape, ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ),
+                    shape = CircleShape
+                )
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                 .clickable {
                     haptics.selection()
                     onNotificationClick()
@@ -383,14 +456,14 @@ private fun IdentityDetailsCard(
         }
     }
 
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-        shadowElevation = 2.dp,
+    val haptics = rememberPimsHaptics()
+    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onEdit() }
+            .pimsGlassmorphism(isDark = isDark, shape = RoundedCornerShape(20.dp), elevation = 6.dp)
+            .pimsTactile { onEdit() }
     ) {
         Column(
             modifier = Modifier
@@ -747,12 +820,10 @@ private fun HomeShortcutVerticalCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-        shadowElevation = 2.dp,
+    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
+    Box(
         modifier = modifier
+            .pimsGlassmorphism(isDark = isDark, shape = RoundedCornerShape(18.dp), elevation = 4.dp)
             .pimsApplePress { onClick() }
     ) {
         Column(

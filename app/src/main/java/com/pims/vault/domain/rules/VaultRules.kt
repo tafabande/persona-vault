@@ -13,6 +13,7 @@ object VaultRules {
     const val DOMAIN_RECOVERY = "PIMS/vault/recovery/v1"
     const val DOMAIN_NOTE = "PIMS/vault/note/v1"
     const val DOMAIN_PAYMENT = "PIMS/vault/payment/v1"
+    const val DOMAIN_BANKING = "PIMS/vault/banking/v1"
 
     /**
      * Resolves the category-level domain-separated HKDF context string.
@@ -24,6 +25,7 @@ object VaultRules {
             VaultCategory.RECOVERY_CODE -> DOMAIN_RECOVERY
             VaultCategory.SECURE_NOTE -> DOMAIN_NOTE
             VaultCategory.PAYMENT_REFERENCE -> DOMAIN_PAYMENT
+            VaultCategory.BANK_ACCOUNT -> DOMAIN_BANKING
             VaultCategory.IDENTITY_CREDENTIAL -> DOMAIN_PASSWORD
         }
     }
@@ -113,6 +115,11 @@ object VaultRules {
         if (cleanYear.length !in 2..4 || !cleanYear.all { it.isDigit() }) {
             throw VaultValidationException("Invalid expiry year: '$year'. Must be YY or YYYY.")
         }
+    }
+
+    fun validateBankAccount(bankName: String, accountHolderName: String) {
+        if (bankName.isBlank()) throw VaultValidationException("Bank or institution name cannot be blank")
+        if (accountHolderName.isBlank()) throw VaultValidationException("Account holder name cannot be blank")
     }
 
     fun validatePasswordEntry(title: String, passwordPlain: String) {

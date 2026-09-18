@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components
 
+import com.pims.vault.R
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -44,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -51,10 +55,15 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.model.SecurityClassification
+import com.pims.vault.presentation.ui.theme.LocalReducedMotion
+import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import com.pims.vault.presentation.ui.theme.PersonaAccent
+import com.pims.vault.presentation.ui.theme.PersonaDivider
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.pimsTactile
 import com.pims.vault.presentation.ui.theme.tactilePress
 
 @Composable
@@ -139,7 +148,7 @@ fun PimsSkeletonAccordion(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(PimsDimensions.skeletonBorderWidth, borderColor)
+        shadowElevation = 1.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             // Accordion Header Bar
@@ -311,16 +320,28 @@ fun PimsOutlinedInput(
 @Composable
 fun PimsCard(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(8.dp),
+    shape: Shape = RoundedCornerShape(16.dp),
     content: @Composable () -> Unit
 ) {
+    val isDark = LocalPimsDarkTheme.current
     Surface(
-        modifier = modifier,
+        modifier = modifier
+            .shadow(
+                elevation = 8.dp,
+                shape = shape,
+                ambientColor = if (isDark) Color.Black.copy(alpha = 0.35f) else PersonaAccent.copy(alpha = 0.04f),
+                spotColor = if (isDark) Color.Black.copy(alpha = 0.40f) else PersonaAccent.copy(alpha = 0.08f)
+            ),
         shape = shape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        content = content
-    )
+        color = Color.Transparent,
+        border = pimsGlassMicroBorder(isDark = isDark)
+    ) {
+        Box(
+            modifier = Modifier.background(brush = pimsGlassSurfaceBrush(isDark = isDark))
+        ) {
+            content()
+        }
+    }
 }
 
 @Composable
@@ -332,18 +353,40 @@ fun PimsButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier
+            .shadow(
+                elevation = 6.dp,
+                shape = RoundedCornerShape(14.dp),
+                spotColor = PersonaAccent.copy(alpha = 0.25f)
+            ),
         enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary
-        )
+        ),
+        contentPadding = ButtonDefaults.ContentPadding
     ) {
-        Text(
-            text = text,
-            fontWeight = FontWeight.Bold
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
+                        )
+                    )
+                )
+                .padding(ButtonDefaults.ContentPadding),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.3.sp
+            )
+        }
     }
 }
 
@@ -374,34 +417,6 @@ fun PimsOutlinedTextField(
 // Warm Minimalist Core Components
 // "My life, organised around me"
 // =========================================================================
-
-/**
- * Persona Avatar: Central visual anchor.
- * Seamlessly renders custom vector avatar with subtle expressions,
- * deterministic contact avatars, and tactile spring responsiveness.
- */
-@Composable
-fun PersonaAvatar(
-    name: String = "",
-    modifier: Modifier = Modifier,
-    config: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
-    expression: com.pims.vault.presentation.avatar.AvatarExpression? = null,
-    size: androidx.compose.ui.unit.Dp = 84.dp,
-    avatarTextSize: androidx.compose.ui.unit.TextUnit = 28.sp,
-    onClick: (() -> Unit)? = null,
-    onLongClick: (() -> Unit)? = null
-) {
-    com.pims.vault.presentation.avatar.PersonaAvatar(
-        name = name,
-        modifier = modifier,
-        config = config,
-        expression = expression,
-        size = size,
-        avatarTextSize = avatarTextSize,
-        onClick = onClick,
-        onLongClick = onLongClick
-    )
-}
 
 /**
  * Status Pill: Calm, understated profile status indicator.
@@ -461,80 +476,114 @@ fun FacetSummaryRow(
     isSensitive: Boolean = false,
     onClick: () -> Unit
 ) {
+    val isReduced = LocalReducedMotion.current
+    val isDark = LocalPimsDarkTheme.current
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            .shadow(
+                elevation = 4.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = if (isDark) Color.Black.copy(alpha = 0.35f) else PersonaAccent.copy(alpha = 0.04f),
+                spotColor = if (isDark) Color.Black.copy(alpha = 0.35f) else (if (isSensitive) Color.Black.copy(alpha = 0.06f) else PersonaAccent.copy(alpha = 0.05f))
+            )
+            .pimsTactile(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.Transparent,
+        border = pimsGlassMicroBorder(isDark = isDark)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        Box(
+            modifier = Modifier.background(brush = pimsGlassSurfaceBrush(isDark = isDark))
         ) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Subtle tinted icon pill
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .background(
-                            color = if (isSensitive) MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                                     else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(10.dp)
-                        ),
-                    contentAlignment = Alignment.Center
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = if (isSensitive) MaterialTheme.colorScheme.onSurfaceVariant
-                               else MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (!subtitle.isNullOrBlank()) {
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .shadow(
+                                elevation = 2.dp,
+                                shape = RoundedCornerShape(12.dp),
+                                spotColor = if (isSensitive) Color.Black.copy(alpha = 0.08f) else PersonaAccent.copy(alpha = 0.12f)
+                            )
+                            .background(
+                                brush = Brush.linearGradient(
+                                    colors = if (isSensitive) listOf(
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                                    ) else listOf(
+                                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.75f)
+                                    )
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = if (isSensitive) MaterialTheme.colorScheme.onSurfaceVariant
+                                   else MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                }
-            }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (trailingBadge != null) {
-                    Text(
-                        text = trailingBadge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        fontWeight = FontWeight.Bold
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.1.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (!subtitle.isNullOrBlank()) {
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (trailingBadge != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = trailingBadge,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.2.sp
+                                ),
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
@@ -550,27 +599,40 @@ fun ContactChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalPimsDarkTheme.current
     Surface(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(12.dp),
+                ambientColor = if (isDark) Color.Black.copy(alpha = 0.35f) else PersonaAccent.copy(alpha = 0.04f),
+                spotColor = if (isDark) Color.Black.copy(alpha = 0.30f) else PersonaAccent.copy(alpha = 0.06f)
+            )
+            .pimsTactile(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        color = Color.Transparent,
+        border = pimsGlassMicroBorder(isDark = isDark)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Box(
+            modifier = Modifier.background(brush = pimsGlassSurfaceBrush(isDark = isDark))
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }
@@ -625,4 +687,39 @@ fun RecentActivityItem(
             )
         }
     }
+}
+
+/**
+ * Default Avatar: Simple WhatsApp-style profile icon
+ * Shows male or female silhouette based on gender hint or name hash
+ */
+@Composable
+fun DefaultAvatar(
+    name: String,
+    isFemale: Boolean? = null,
+    size: androidx.compose.ui.unit.Dp = 48.dp,
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val drawableRes = if (isFemale != null) {
+        if (isFemale) R.drawable.ic_default_avatar_female else R.drawable.ic_default_avatar_male
+    } else {
+        val hash = name.hashCode()
+        if (hash % 2 == 0) R.drawable.ic_default_avatar_male else R.drawable.ic_default_avatar_female
+    }
+
+    val interactionModifier = if (onClick != null || onLongClick != null) {
+        Modifier.pimsTactile { onClick?.invoke() }
+    } else {
+        Modifier
+    }
+
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(id = drawableRes),
+        contentDescription = "$name profile",
+        modifier = modifier
+            .size(size)
+            .then(interactionModifier)
+    )
 }

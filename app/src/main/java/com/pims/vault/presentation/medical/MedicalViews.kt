@@ -159,11 +159,6 @@ fun MedicalDossierView(
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = "Clinical records, prescriptions & emergency baseline",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
             if (onDismiss != null) {
                 IconButton(onClick = onDismiss) {
@@ -225,21 +220,15 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Allergies & Sensitivities (${hubData?.allergies?.size ?: 0})",
                     icon = Icons.Default.MedicalServices,
-                    subtitle = "Severe reactions and pharmaceutical sensitivities",
                     classification = SecurityClassification.ZONE_3_SENSITIVE,
                     initiallyExpanded = true
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Registered Allergies",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
                             OutlinedButton(
                                 onClick = { onEvent(MedicalEvent.OpenAddAllergyDialog) },
                                 shape = RoundedCornerShape(20.dp),
@@ -274,21 +263,15 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Conditions & Medical History (${hubData?.conditions?.size ?: 0})",
                     icon = Icons.Default.PersonalInjury,
-                    subtitle = "Chronic, ongoing, or past diagnosed health conditions",
                     classification = SecurityClassification.ZONE_3_SENSITIVE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Documented Conditions",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
                             OutlinedButton(
                                 onClick = { onEvent(MedicalEvent.OpenAddConditionDialog) },
                                 shape = RoundedCornerShape(20.dp),
@@ -326,22 +309,16 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Medications & Prescriptions (${(hubData?.medications?.size ?: 0) + (hubData?.prescriptions?.size ?: 0)})",
                     icon = Icons.Default.Medication,
-                    subtitle = "Active pharmaceutical dosages, courses, and Rx records",
                     classification = SecurityClassification.ZONE_3_SENSITIVE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // Medications sub-header
+                        // Medications action row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Active Medications",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 OutlinedButton(
                                     onClick = { onEvent(MedicalEvent.OpenAddMedicationDialog) },
@@ -408,21 +385,15 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Doctors & Facilities (${(hubData?.doctors?.size ?: 0) + (hubData?.facilities?.size ?: 0)})",
                     icon = Icons.Default.LocalHospital,
-                    subtitle = "Treating clinicians, specialists, and hospital patient numbers",
                     classification = SecurityClassification.ZONE_2_PRIVATE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Healthcare Providers",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 OutlinedButton(
                                     onClick = { onEvent(MedicalEvent.OpenAddDoctorDialog) },
@@ -479,21 +450,15 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Medical Aid & Insurance (${hubData?.coverages?.size ?: 0})",
                     icon = Icons.Default.Shield,
-                    subtitle = "Health plans, membership numbers, and dental coverage",
                     classification = SecurityClassification.ZONE_2_PRIVATE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Coverage Plans",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
                             OutlinedButton(
                                 onClick = { onEvent(MedicalEvent.OpenAddCoverageDialog) },
                                 shape = RoundedCornerShape(20.dp),
@@ -531,21 +496,15 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Medical Visits Timeline (${hubData?.visits?.size ?: 0})",
                     icon = Icons.Default.CalendarToday,
-                    subtitle = "Consultations, clinical notes, and follow-up schedules",
                     classification = SecurityClassification.ZONE_3_SENSITIVE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "History Timeline",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
                             OutlinedButton(
                                 onClick = { onEvent(MedicalEvent.OpenAddVisitDialog) },
                                 shape = RoundedCornerShape(20.dp),
@@ -686,11 +645,6 @@ private fun MedicalPrivacyGateBanner(
         shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
         color = if (isUnlocked) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
         else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-        border = BorderStroke(
-            1.dp,
-            if (isUnlocked) MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-            else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-        ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -758,7 +712,6 @@ private fun MedicalQuickStatsCard(
     Surface(
         shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -832,7 +785,6 @@ private fun StatPill(
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
         modifier = modifier
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
@@ -860,8 +812,7 @@ private fun AllergyCard(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -923,8 +874,7 @@ private fun ConditionCard(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1003,8 +953,7 @@ private fun MedicationCard(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1065,8 +1014,7 @@ private fun PrescriptionCard(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1117,8 +1065,7 @@ private fun DoctorCard(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1167,8 +1114,7 @@ private fun FacilityCard(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1220,8 +1166,7 @@ private fun CoverageCard(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1290,8 +1235,7 @@ private fun VisitCard(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1352,7 +1296,6 @@ fun EmergencyCardBanner(
     Surface(
         shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
         color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, StateWarning.copy(alpha = 0.6f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -1460,7 +1403,7 @@ fun EditMedicalProfileDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1592,7 +1535,7 @@ fun AddAllergyDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1661,7 +1604,7 @@ fun AddConditionDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1782,7 +1725,7 @@ fun AddMedicationDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1896,7 +1839,7 @@ fun AddPrescriptionDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1988,7 +1931,7 @@ fun AddDoctorDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -2079,7 +2022,7 @@ fun AddFacilityDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -2159,7 +2102,7 @@ fun AddCoverageDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -2263,7 +2206,7 @@ fun AddVisitDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -2370,7 +2313,7 @@ fun EmergencyCardConfigDialog(
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(

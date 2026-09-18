@@ -252,7 +252,7 @@ fun MinimalProfileSetupScreen(
                                         err = true
                                     }
                                     if (password.isBlank()) {
-                                        passwordError = "Please create a master password"
+                                        passwordError = "Please enter an account password"
                                         err = true
                                     }
                                 }
@@ -418,7 +418,7 @@ private fun Step1NameContent(
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "Master Password",
+                        text = "Account Password",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -860,7 +860,7 @@ private fun SignInStepContent(
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "Master Password",
+                    text = "Account Password",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onBackground
                 )

@@ -113,6 +113,7 @@ enum class VaultCategory {
     RECOVERY_CODE,
     SECURE_NOTE,
     PAYMENT_REFERENCE,
+    BANK_ACCOUNT,
     IDENTITY_CREDENTIAL
 }
 
@@ -130,3 +131,16 @@ enum class AuditEventType {
     SYNC_COMPLETED,
     INTEGRITY_CHECK_FAILED
 }
+
+enum class CardStatus(val label: String) {
+    IN_USE("In Use"),
+    PAUSED("Paused"),
+    FROZEN("Frozen"),
+    DISCARDED("Discarded");
+
+    companion object {
+        fun fromString(value: String?): CardStatus =
+            entries.find { it.name.equals(value, ignoreCase = true) || it.label.equals(value, ignoreCase = true) } ?: IN_USE
+    }
+}
+

@@ -126,12 +126,13 @@ fun AddPasswordScreen(
     var genIncludeDigits by remember { mutableStateOf(true) }
     var genIncludeUpper by remember { mutableStateOf(true) }
 
-    // Background & Surface colors
-    val bgColor = if (isDark) Color(0xFF10131A) else Color(0xFFF8FAFC)
-    val cardBg = if (isDark) Color(0xFF1E232F) else Color.White
-    val borderColor = if (isDark) Color(0xFF2E384D) else Color(0xFFE2E8F0)
-    val textPrimary = if (isDark) Color(0xFFF1F5F9) else Color(0xFF0F172A)
-    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+    // Background & Surface colors respecting centralized PersonaTheme
+    val bgColor = MaterialTheme.colorScheme.background
+    val cardBg = MaterialTheme.colorScheme.surface
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val textPrimary = MaterialTheme.colorScheme.onSurface
+    val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val accent = MaterialTheme.colorScheme.primary
 
     // Password strength metrics
     val strength = remember(password) { calculatePasswordStrength(password) }
@@ -148,13 +149,13 @@ fun AddPasswordScreen(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF3B82F6).copy(alpha = 0.15f)),
+                                .background(accent.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Key,
                                 contentDescription = null,
-                                tint = Color(0xFF3B82F6),
+                                tint = accent,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -220,15 +221,15 @@ fun AddPasswordScreen(
                             onClick = { selectedCategory = cat },
                             label = { Text(cat, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0xFF3B82F6).copy(alpha = 0.15f),
-                                selectedLabelColor = Color(0xFF3B82F6),
+                                selectedContainerColor = accent.copy(alpha = 0.15f),
+                                selectedLabelColor = accent,
                                 containerColor = cardBg,
                                 labelColor = textSecondary
                             ),
                             border = FilterChipDefaults.filterChipBorder(
                                 enabled = true,
                                 selected = isSelected,
-                                borderColor = if (isSelected) Color(0xFF3B82F6) else borderColor
+                                borderColor = if (isSelected) accent else borderColor
                             )
                         )
                     }
@@ -304,7 +305,7 @@ fun AddPasswordScreen(
                                     Icon(
                                         imageVector = Icons.Default.AutoFixHigh,
                                         contentDescription = "Generator",
-                                        tint = if (showGenerator) Color(0xFF3B82F6) else textSecondary,
+                                        tint = if (showGenerator) accent else textSecondary,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -333,7 +334,7 @@ fun AddPasswordScreen(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
                                 color = strength.color,
-                                trackColor = if (isDark) Color(0xFF263044) else Color(0xFFE2E8F0)
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
@@ -351,7 +352,7 @@ fun AddPasswordScreen(
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = cardBg,
-                        border = BorderStroke(1.dp, Color(0xFF3B82F6).copy(alpha = 0.35f)),
+                        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -369,7 +370,7 @@ fun AddPasswordScreen(
                                     Icon(
                                         imageVector = Icons.Default.AutoFixHigh,
                                         contentDescription = null,
-                                        tint = Color(0xFF3B82F6),
+                                        tint = accent,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -381,39 +382,24 @@ fun AddPasswordScreen(
                                     )
                                 }
 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = {
-                                            password = generateSecurePassword(
-                                                length = genLength.toInt(),
-                                                includeUppercase = genIncludeUpper,
-                                                includeLowercase = true,
-                                                includeDigits = genIncludeDigits,
-                                                includeSymbols = genIncludeSymbols
-                                            )
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Regenerate",
-                                            tint = Color(0xFF3B82F6),
-                                            modifier = Modifier.size(20.dp)
+                                IconButton(
+                                    onClick = {
+                                        password = generateSecurePassword(
+                                            length = genLength.toInt(),
+                                            includeUppercase = genIncludeUpper,
+                                            includeLowercase = true,
+                                            includeDigits = genIncludeDigits,
+                                            includeSymbols = genIncludeSymbols
                                         )
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            clipboardManager.setText(AnnotatedString(password))
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ContentCopy,
-                                            contentDescription = "Copy",
-                                            tint = textSecondary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Regenerate",
+                                        tint = accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                             }
 
@@ -441,8 +427,8 @@ fun AddPasswordScreen(
                                     valueRange = 8f..32f,
                                     steps = 23,
                                     colors = SliderDefaults.colors(
-                                        thumbColor = Color(0xFF3B82F6),
-                                        activeTrackColor = Color(0xFF3B82F6)
+                                        thumbColor = accent,
+                                        activeTrackColor = accent
                                     )
                                 )
                             }
@@ -466,7 +452,7 @@ fun AddPasswordScreen(
                                             includeSymbols = it
                                         )
                                     },
-                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF3B82F6))
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = accent)
                                 )
                             }
 
@@ -488,7 +474,7 @@ fun AddPasswordScreen(
                                             includeSymbols = genIncludeSymbols
                                         )
                                     },
-                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF3B82F6))
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = accent)
                                 )
                             }
                         }
@@ -499,8 +485,8 @@ fun AddPasswordScreen(
                 CleanPasswordTextField(
                     value = websiteUrl,
                     onValueChange = { websiteUrl = it },
-                    label = "Website URL (Optional)",
-                    placeholder = "https://example.com/login",
+                    label = "Website URL (optional)",
+                    placeholder = "https://example.com",
                     leadingIcon = Icons.Default.Language,
                     isDark = isDark,
                     keyboardOptions = KeyboardOptions(
@@ -514,30 +500,28 @@ fun AddPasswordScreen(
                 CleanPasswordTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = "Notes (Optional)",
-                    placeholder = "Add recovery codes, security questions, or pin...",
+                    label = "Notes (optional)",
+                    placeholder = "Recovery phrases, security questions, notes...",
                     leadingIcon = Icons.Default.Notes,
-                    isDark = isDark,
                     singleLine = false,
                     maxLines = 4,
+                    isDark = isDark,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences,
                         imeAction = ImeAction.Done
                     ),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // 9. Bottom Primary Save Button
+            // 9. Bottom Save Action Button
             Button(
                 onClick = {
-                    onSavePassword(
-                        title.trim(),
-                        username.trim(),
-                        password,
-                        websiteUrl.trim().ifBlank { null },
-                        notes.trim().ifBlank { null }
-                    )
+                    val cleanUrl = websiteUrl.trim().ifEmpty { null }
+                    val cleanNotes = notes.trim().ifEmpty { null }
+                    onSavePassword(title.trim(), username.trim(), password, cleanUrl, cleanNotes)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -545,8 +529,8 @@ fun AddPasswordScreen(
                     .height(52.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF0F172A),
-                    contentColor = Color.White
+                    containerColor = accent,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 enabled = title.isNotBlank() && password.isNotBlank()
             ) {
@@ -631,7 +615,7 @@ private fun PasswordLivePreviewCard(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = if (websiteUrl.isNotBlank()) websiteUrl.replace("https://", "").replace("http://", "").take(25) else "Persona Encrypted Vault",
+                            text = if (websiteUrl.isNotBlank()) websiteUrl.replace("https://", "").replace("http://", "").take(25) else "Persona Vault",
                             color = Color.White.copy(alpha = 0.7f),
                             fontSize = 11.sp,
                             maxLines = 1,
@@ -713,10 +697,11 @@ private fun CleanPasswordTextField(
     isDark: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val cardBg = if (isDark) Color(0xFF1E232F) else Color.White
-    val borderColor = if (isDark) Color(0xFF2E384D) else Color(0xFFE2E8F0)
-    val textPrimary = if (isDark) Color(0xFFF1F5F9) else Color(0xFF0F172A)
-    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+    val cardBg = MaterialTheme.colorScheme.surface
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val textPrimary = MaterialTheme.colorScheme.onSurface
+    val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val accent = MaterialTheme.colorScheme.primary
 
     OutlinedTextField(
         value = value,
@@ -743,11 +728,11 @@ private fun CleanPasswordTextField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = cardBg,
             unfocusedContainerColor = cardBg,
-            focusedBorderColor = Color(0xFF3B82F6),
+            focusedBorderColor = accent,
             unfocusedBorderColor = borderColor,
             focusedTextColor = textPrimary,
             unfocusedTextColor = textPrimary,
-            focusedLabelColor = Color(0xFF3B82F6),
+            focusedLabelColor = accent,
             unfocusedLabelColor = textSecondary
         ),
         modifier = modifier.fillMaxWidth()

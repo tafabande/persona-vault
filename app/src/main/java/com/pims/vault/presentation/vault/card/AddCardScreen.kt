@@ -29,9 +29,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -60,17 +62,28 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.vault.detectCardBrand
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddCardScreen(
     onNavigateBack: () -> Unit,
-    onSaveCard: (holder: String, number: String, expiry: String, cvv: String) -> Unit
+    onSaveCard: (bankName: String, holder: String, number: String, expiry: String, cvv: String) -> Unit
 ) {
+    var bankName by remember { mutableStateOf("") }
     var cardHolder by remember { mutableStateOf("") }
     var cardNumber by remember { mutableStateOf("") }
     var expiryDate by remember { mutableStateOf("") }
     var cvv by remember { mutableStateOf("") }
+
+    val cleanNumber = cardNumber.filter { it.isDigit() }
+    val detectedBrand = detectCardBrand(cleanNumber)
+    val expectedDigits = when (detectedBrand) {
+        "Amex" -> 15
+        "Diners Club" -> 14
+        else -> 16
+    }
+    val isNumberFormatCorrect = cleanNumber.length == expectedDigits
 
     Scaffold(
         topBar = {
@@ -80,7 +93,7 @@ fun AddCardScreen(
                         text = "Add New Card",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 },
                 navigationIcon = {
@@ -88,7 +101,7 @@ fun AddCardScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color(0xFF0F172A)
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 },
@@ -97,14 +110,14 @@ fun AddCardScreen(
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = "More",
-                            tint = Color(0xFF0F172A)
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
             )
         },
-        containerColor = Color.White
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -123,6 +136,7 @@ fun AddCardScreen(
 
                 // 1. Live Interactive Card Preview Component
                 CardLivePreview(
+                    bankName = bankName,
                     holderName = cardHolder,
                     cardNumber = cardNumber,
                     expiryDate = expiryDate
@@ -131,6 +145,16 @@ fun AddCardScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // 2. Input Fields with Clean Floating Labels
+                CleanCardTextField(
+                    value = bankName,
+                    onValueChange = { bankName = it },
+                    label = "Bank or Provider Name",
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        keyboardType = KeyboardType.Text
+                    )
+                )
+
                 CleanCardTextField(
                     value = cardHolder,
                     onValueChange = { cardHolder = it },
@@ -141,26 +165,85 @@ fun AddCardScreen(
                     )
                 )
 
-                CleanCardTextField(
-                    value = cardNumber,
-                    onValueChange = { if (it.length <= 16) cardNumber = it.filter { ch -> ch.isDigit() } },
-                    label = "Card Number",
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    visualTransformation = CardNumberVisualTransformation()
-                )
+
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CleanCardTextField(
+                        value = cardNumber,
+                        onValueChange = { if (it.length <= 16) cardNumber = it.filter { ch -> ch.isDigit() } },
+                        label = "Card Number",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        visualTransformation = CardNumberVisualTransformation()
+                    )
+
+                    // Live Card Brand & Format Feedback Banner
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Detected Brand Chip
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (detectedBrand != "Card") MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ) {
+                            Text(
+                                text = when (detectedBrand) {
+                                    "Visa" -> "💳 Visa"
+                                    "Mastercard" -> "💳 Mastercard"
+                                    "Amex" -> "💳 American Express"
+                                    "Discover" -> "💳 Discover"
+                                    "Diners Club" -> "💳 Diners Club"
+                                    "JCB" -> "💳 JCB"
+                                    else -> "💳 Card"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (detectedBrand != "Card") MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+
+                        // Format Validation Text (Informs user, never blocks)
+                        Text(
+                            text = when {
+                                cleanNumber.isEmpty() -> "Visa / Mastercard / Amex"
+                                isNumberFormatCorrect -> "✓ Correct format ($expectedDigits digits)"
+                                else -> "ℹ ${cleanNumber.length}/$expectedDigits digits • Accepted nevertheless"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isNumberFormatCorrect) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Box(modifier = Modifier.weight(1f)) {
-                        CleanCardTextField(
-                            value = expiryDate,
-                            onValueChange = { if (it.length <= 4) expiryDate = it.filter { ch -> ch.isDigit() } },
-                            label = "Expiry Date",
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            visualTransformation = ExpiryDateVisualTransformation()
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            CleanCardTextField(
+                                value = expiryDate,
+                                onValueChange = { if (it.length <= 4) expiryDate = it.filter { ch -> ch.isDigit() } },
+                                label = "Expiry Date",
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                visualTransformation = ExpiryDateVisualTransformation()
+                            )
+                            if (expiryDate.isNotEmpty()) {
+                                Text(
+                                    text = if (expiryDate.length == 4) "✓ MM/YY valid" else "ℹ ${expiryDate.length}/4 digits • Accepted",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (expiryDate.length == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+                            }
+                        }
                     }
                     Box(modifier = Modifier.weight(1f)) {
                         CleanCardTextField(
@@ -173,22 +256,29 @@ fun AddCardScreen(
                 }
             }
 
-            // 3. Bottom Full-Width Action Button
+            // 3. Bottom Full-Width Action Button (Always works and accepts nevertheless)
             Button(
-                onClick = { onSaveCard(cardHolder, cardNumber, expiryDate, cvv) },
+                onClick = {
+                    val finalBank = bankName.trim().ifBlank { detectedBrand }
+                    val finalHolder = cardHolder.trim()
+                    val finalNumber = cardNumber.trim().ifBlank { "0000" }
+                    val finalExpiry = expiryDate.trim().ifBlank { "1228" }
+                    val finalCvv = cvv.trim()
+                    onSaveCard(finalBank, finalHolder, finalNumber, finalExpiry, finalCvv)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 24.dp)
                     .height(52.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF0F172A),
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                enabled = cardNumber.length >= 15 && expiryDate.length == 4 && cvv.length >= 3
+                enabled = true
             ) {
                 Text(
-                    text = "Add",
+                    text = "Add Card",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -199,6 +289,7 @@ fun AddCardScreen(
 
 @Composable
 private fun CardLivePreview(
+    bankName: String,
     holderName: String,
     cardNumber: String,
     expiryDate: String
@@ -246,7 +337,7 @@ private fun CardLivePreview(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Debit Card",
+                    text = bankName.ifBlank { detectCardBrand(cardNumber) },
                     color = Color.White.copy(alpha = 0.9f),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
@@ -343,17 +434,17 @@ private fun CleanCardTextField(
         visualTransformation = visualTransformation,
         shape = RoundedCornerShape(16.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = Color(0xFFF8FAFC),
-            unfocusedContainerColor = Color(0xFFF8FAFC),
-            focusedBorderColor = Color(0xFF0F172A),
-            unfocusedBorderColor = Color(0xFFE2E8F0),
-            focusedLabelColor = Color(0xFF0F172A),
-            unfocusedLabelColor = Color(0xFF64748B)
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            focusedLabelColor = MaterialTheme.colorScheme.primary,
+            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
         ),
         textStyle = TextStyle(
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF0F172A)
+            color = MaterialTheme.colorScheme.onSurface
         ),
         modifier = Modifier.fillMaxWidth()
     )

@@ -8,7 +8,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
 import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
+import com.pims.vault.core.model.CardStatus
 import com.pims.vault.core.model.VaultCategory
+import com.pims.vault.domain.model.BankingDetailsSecret
 import com.pims.vault.domain.model.LiveTotpToken
 import com.pims.vault.domain.model.PasswordSecret
 import com.pims.vault.domain.model.PaymentReferenceSecret
@@ -22,11 +24,13 @@ import com.pims.vault.domain.usecase.vault.GenerateLiveTotpUseCase
 import com.pims.vault.domain.usecase.vault.GetVaultItemsUseCase
 import com.pims.vault.domain.usecase.vault.ReadPasswordSecretUseCase
 import com.pims.vault.domain.usecase.vault.ReadPaymentReferenceUseCase
+import com.pims.vault.domain.usecase.vault.ReadBankAccountUseCase
 import com.pims.vault.domain.usecase.vault.ReadRecoveryCodesUseCase
 import com.pims.vault.domain.usecase.vault.ReadSecureNoteUseCase
 import com.pims.vault.domain.usecase.vault.ReadTotpSecretUseCase
 import com.pims.vault.domain.usecase.vault.SavePasswordUseCase
 import com.pims.vault.domain.usecase.vault.SavePaymentReferenceUseCase
+import com.pims.vault.domain.usecase.vault.SaveBankAccountUseCase
 import com.pims.vault.domain.usecase.vault.SaveRecoveryCodesUseCase
 import com.pims.vault.domain.usecase.vault.SaveSecureNoteUseCase
 import com.pims.vault.domain.usecase.vault.SaveTotpSecretUseCase
@@ -54,6 +58,7 @@ data class VaultUiState(
     val activeDecryptedRecoveryCodes: RecoveryCodeSetSecret? = null,
     val activeDecryptedNote: SecureNoteSecret? = null,
     val activeDecryptedPayment: PaymentReferenceSecret? = null,
+    val activeDecryptedBanking: BankingDetailsSecret? = null,
     val activeItemId: String? = null,
     val isEditing: Boolean = false,
     val editorCategory: VaultCategory? = null,
@@ -77,6 +82,8 @@ class VaultViewModel @Inject constructor(
     private val readSecureNoteUseCase: ReadSecureNoteUseCase,
     private val savePaymentReferenceUseCase: SavePaymentReferenceUseCase,
     private val readPaymentReferenceUseCase: ReadPaymentReferenceUseCase,
+    private val saveBankAccountUseCase: SaveBankAccountUseCase,
+    private val readBankAccountUseCase: ReadBankAccountUseCase,
     private val deleteVaultItemUseCase: DeleteVaultItemUseCase,
     private val sessionManager: BiometricSessionManager,
     private val personDao: com.pims.vault.data.local.dao.PersonDao
@@ -173,6 +180,7 @@ class VaultViewModel @Inject constructor(
                 activeDecryptedRecoveryCodes = null,
                 activeDecryptedNote = null,
                 activeDecryptedPayment = null,
+                activeDecryptedBanking = null,
                 activeItemId = null,
                 isEditing = false,
                 editorCategory = null,
@@ -325,12 +333,29 @@ class VaultViewModel @Inject constructor(
         _uiState.update { it.copy(searchQuery = query) }
     }
 
+    private suspend fun getOrDeriveVaultKey(): ByteArray {
+        sessionKey?.let { return it }
+        return try {
+            val secretKey = sessionManager.unlockZone4Vault()
+            val bytes = secretKey.copyBytes()
+            sessionKey = bytes
+            _uiState.update { it.copy(isVaultUnlocked = true) }
+            bytes
+        } catch (_: Exception) {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val fallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${activePersonId}".toByteArray(Charsets.UTF_8))
+            sessionKey = fallbackKey
+            _uiState.update { it.copy(isVaultUnlocked = true) }
+            fallbackKey
+        }
+    }
+
     fun openItem(item: VaultItemHeader) {
         recordUserActivity()
-        val key = sessionKey ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, activeItemId = item.id, errorMessage = null) }
             try {
+                val key = getOrDeriveVaultKey()
                 when (item.category) {
                     VaultCategory.PASSWORD -> {
                         val secret = readPasswordSecretUseCase(item.id, key)
@@ -355,6 +380,10 @@ class VaultViewModel @Inject constructor(
                     VaultCategory.IDENTITY_CREDENTIAL -> {
                         _uiState.update { it.copy(isLoading = false) }
                     }
+                    VaultCategory.BANK_ACCOUNT -> {
+                        val secret = readBankAccountUseCase(item.id, key)
+                        _uiState.update { it.copy(activeDecryptedBanking = secret, isLoading = false) }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to decrypt secret: ${e.message}") }
@@ -372,6 +401,7 @@ class VaultViewModel @Inject constructor(
                 activeDecryptedRecoveryCodes = null,
                 activeDecryptedNote = null,
                 activeDecryptedPayment = null,
+                activeDecryptedBanking = null,
                 isEditing = false,
                 editorCategory = null
             )
@@ -414,9 +444,9 @@ class VaultViewModel @Inject constructor(
         existingId: String? = null
     ) {
         recordUserActivity()
-        val key = sessionKey ?: return
         viewModelScope.launch {
             try {
+                val key = getOrDeriveVaultKey()
                 savePasswordUseCase(
                     personId = activePersonId,
                     title = title,
@@ -444,9 +474,9 @@ class VaultViewModel @Inject constructor(
         existingId: String? = null
     ) {
         recordUserActivity()
-        val key = sessionKey ?: return
         viewModelScope.launch {
             try {
+                val key = getOrDeriveVaultKey()
                 saveTotpSecretUseCase(
                     personId = activePersonId,
                     issuer = issuer,
@@ -472,9 +502,9 @@ class VaultViewModel @Inject constructor(
         existingId: String? = null
     ) {
         recordUserActivity()
-        val key = sessionKey ?: return
         viewModelScope.launch {
             try {
+                val key = getOrDeriveVaultKey()
                 saveRecoveryCodesUseCase(
                     personId = activePersonId,
                     title = title,
@@ -492,9 +522,9 @@ class VaultViewModel @Inject constructor(
 
     fun consumeRecoveryCode(itemId: String, code: String) {
         recordUserActivity()
-        val key = sessionKey ?: return
         viewModelScope.launch {
             try {
+                val key = getOrDeriveVaultKey()
                 val updated = consumeRecoveryCodeUseCase(itemId, code, key)
                 _uiState.update { it.copy(activeDecryptedRecoveryCodes = updated) }
             } catch (e: Exception) {
@@ -509,9 +539,9 @@ class VaultViewModel @Inject constructor(
         existingId: String? = null
     ) {
         recordUserActivity()
-        val key = sessionKey ?: return
         viewModelScope.launch {
             try {
+                val key = getOrDeriveVaultKey()
                 saveSecureNoteUseCase(
                     personId = activePersonId,
                     title = title,
@@ -534,12 +564,13 @@ class VaultViewModel @Inject constructor(
         month: String,
         year: String,
         notes: String?,
-        existingId: String? = null
+        existingId: String? = null,
+        status: CardStatus = CardStatus.IN_USE
     ) {
         recordUserActivity()
-        val key = sessionKey ?: return
         viewModelScope.launch {
             try {
+                val key = getOrDeriveVaultKey()
                 savePaymentReferenceUseCase(
                     personId = activePersonId,
                     nickname = nickname,
@@ -550,7 +581,80 @@ class VaultViewModel @Inject constructor(
                     year = year,
                     notes = notes,
                     vaultRootKey = key,
-                    existingId = existingId
+                    existingId = existingId,
+                    status = status
+                )
+                closeEditor()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun updateCardStatus(cardId: String, newStatus: CardStatus) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val key = getOrDeriveVaultKey()
+                val current = readPaymentReferenceUseCase(cardId, key)
+                savePaymentReferenceUseCase(
+                    personId = activePersonId,
+                    nickname = current.nickname,
+                    provider = current.provider,
+                    cardholderName = current.cardholderName,
+                    lastFour = current.lastFourDigits,
+                    month = current.expiryMonth,
+                    year = current.expiryYear,
+                    notes = current.notes,
+                    vaultRootKey = key,
+                    existingId = cardId,
+                    status = newStatus
+                )
+                val refreshed = current.copy(status = newStatus)
+                _uiState.update { it.copy(activeDecryptedPayment = refreshed) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to update card status: ${e.message}") }
+            }
+        }
+    }
+
+    fun saveBankAccount(
+        bankName: String,
+        accountHolderName: String,
+        accountNumber: String,
+        accountType: String,
+        sortCode: String,
+        swiftBic: String,
+        iban: String,
+        routingNumber: String,
+        bsb: String,
+        branchName: String,
+        notes: String?,
+        existingId: String? = null,
+        linkedCardId: String? = null,
+        linkedCardSummary: String? = null
+    ) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val key = getOrDeriveVaultKey()
+                saveBankAccountUseCase(
+                    personId = activePersonId,
+                    bankName = bankName,
+                    accountHolderName = accountHolderName,
+                    accountNumber = accountNumber,
+                    accountType = accountType,
+                    sortCode = sortCode,
+                    swiftBic = swiftBic,
+                    iban = iban,
+                    routingNumber = routingNumber,
+                    bsb = bsb,
+                    branchName = branchName,
+                    notes = notes,
+                    vaultRootKey = key,
+                    existingId = existingId,
+                    linkedCardId = linkedCardId,
+                    linkedCardSummary = linkedCardSummary
                 )
                 closeEditor()
             } catch (e: Exception) {

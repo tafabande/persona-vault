@@ -28,7 +28,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
@@ -41,11 +45,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -149,28 +156,28 @@ fun WallpaperCarousel(
         }
     }
 
-    // Calm automatic rotation: 7-second interval (pauses when user interacts)
+    // Faster automatic rotation: 3.5-second interval (pauses when user interacts)
     val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
     LaunchedEffect(pagerState.pageCount, isDragged) {
         while (!isDragged && pagerState.pageCount > 1) {
-            delay(7000L)
+            delay(3500L)
             if (!pagerState.isScrollInProgress) {
                 val nextPage = (pagerState.currentPage + 1) % pagerState.pageCount
                 pagerState.animateScrollToPage(
                     page = nextPage,
-                    animationSpec = tween(durationMillis = 950, easing = FastOutSlowInEasing)
+                    animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
                 )
             }
         }
     }
 
-    // Subtle Ken Burns motion: gentle 1.00 -> 1.03 breathing scale over a slow 7s cycle
+    // Subtle Ken Burns motion: gentle 1.00 -> 1.03 breathing scale over a 3.5s cycle
     val infiniteTransition = rememberInfiniteTransition(label = "KenBurns")
     val kenBurnsScale by infiniteTransition.animateFloat(
         initialValue = 1.00f,
         targetValue = 1.03f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 7000, easing = LinearEasing),
+            animation = tween(durationMillis = 3500, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "kenBurnsScale"
@@ -191,7 +198,12 @@ fun WallpaperCarousel(
                         // Visual-only advance: browses the reel without
                         // touching the persisted active wallpaper.
                         val next = (pagerState.currentPage + 1) % wallpapers.size
-                        scope.launch { pagerState.animateScrollToPage(next) }
+                        scope.launch {
+                            pagerState.animateScrollToPage(
+                                page = next,
+                                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                            )
+                        }
                     }
                 },
                 onLongClick = {
@@ -206,47 +218,69 @@ fun WallpaperCarousel(
         ) { page ->
             val wallpaper = wallpapers.getOrNull(page)
             if (wallpaper != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = kenBurnsScale
-                            scaleY = kenBurnsScale
-                        }
-                ) {
-                    when (wallpaper.type) {
-                        WallpaperType.GENERATIVE_ARTWORK -> {
-                            GenerativeArtworkVisual(seed = wallpaper.artSeed)
-                        }
-                        WallpaperType.LOCAL_IMAGE -> {
-                            val bitmap = remember(wallpaper.localFilePath) {
-                                wallpaper.localFilePath?.let { BitmapFactory.decodeFile(it) }
+                Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
+                    // 1. Sharp base visual artwork with subtle Ken Burns motion
+                    WallpaperPageArtwork(
+                        wallpaper = wallpaper,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds()
+                            .graphicsLayer {
+                                scaleX = kenBurnsScale
+                                scaleY = kenBurnsScale
+                                clip = true
                             }
-                            if (bitmap != null) {
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = wallpaper.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                GenerativeArtworkVisual(seed = 2)
-                            }
-                        }
-                    }
+                    )
 
-                    // Soft vertical fade dissolving directly into warm background (#F7F5F0)
+                    // 2. Overlap Gradient Blur: Progressively blurs across the overlap area under the card
+                    WallpaperPageArtwork(
+                        wallpaper = wallpaper,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clipToBounds()
+                            .graphicsLayer {
+                                scaleX = kenBurnsScale
+                                scaleY = kenBurnsScale
+                                clip = true
+                                compositingStrategy = CompositingStrategy.Offscreen
+                            }
+                            .blur(radius = 28.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        0.0f to Color.Transparent,
+                                        0.60f to Color.Transparent,
+                                        0.85f to Color.Black,
+                                        1.0f to Color.Black
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                            }
+                    )
+
+                    // 3. Overlap Gradient Fade: Soft ambient fade that deepens into the theme background
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(
                                 brush = Brush.verticalGradient(
                                     0.0f to Color.Transparent,
-                                    0.55f to Color.Transparent,
-                                    0.82f to backgroundColor.copy(alpha = 0.75f),
+                                    0.45f to Color.Transparent,
+                                    0.68f to backgroundColor.copy(alpha = 0.60f),
+                                    0.84f to backgroundColor,
                                     1.0f to backgroundColor
                                 )
                             )
+                    )
+
+                    // Solid base strip to guarantee zero sub-pixel photo edge peek
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .align(Alignment.BottomCenter)
+                            .background(backgroundColor)
                     )
                 }
             }
@@ -275,6 +309,56 @@ fun WallpaperCarousel(
                         ),
                         color = MaterialTheme.colorScheme.onBackground
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WallpaperPageArtwork(
+    wallpaper: WallpaperItem,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        when (wallpaper.type) {
+            WallpaperType.GENERATIVE_ARTWORK -> {
+                GenerativeArtworkVisual(seed = wallpaper.artSeed)
+            }
+            WallpaperType.LOCAL_IMAGE -> {
+                val bitmap = remember(wallpaper.localFilePath) {
+                    wallpaper.localFilePath?.let { path ->
+                        try {
+                            val srcBitmap = BitmapFactory.decodeFile(path)
+                            if (srcBitmap != null) {
+                                val exif = android.media.ExifInterface(path)
+                                val orientation = exif.getAttributeInt(
+                                    android.media.ExifInterface.TAG_ORIENTATION,
+                                    android.media.ExifInterface.ORIENTATION_NORMAL
+                                )
+                                val matrix = android.graphics.Matrix()
+                                when (orientation) {
+                                    android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                                    android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                                    android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                                }
+                                android.graphics.Bitmap.createBitmap(srcBitmap, 0, 0, srcBitmap.width, srcBitmap.height, matrix, true)
+                            } else null
+                        } catch (_: Exception) {
+                            BitmapFactory.decodeFile(path)
+                        }
+                    }
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = wallpaper.title,
+                        contentScale = ContentScale.Crop,
+                        alignment = BiasAlignment(0f, wallpaper.alignmentY),
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    GenerativeArtworkVisual(seed = 2)
                 }
             }
         }

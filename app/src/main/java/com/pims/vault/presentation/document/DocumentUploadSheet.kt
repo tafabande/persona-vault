@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Lock
@@ -70,14 +71,14 @@ fun DocumentUploadSheet(
     onTitleChange: (String) -> Unit,
     documentType: DocumentType,
     onDocumentTypeChange: (DocumentType) -> Unit,
-    docNumber: String,
-    onDocNumberChange: (String) -> Unit,
-    authority: String,
-    onAuthorityChange: (String) -> Unit,
-    expiryDate: String,
-    onExpiryDateChange: (String) -> Unit,
-    classification: SecurityClassification,
-    onClassificationChange: (SecurityClassification) -> Unit,
+    docNumber: String = "",
+    onDocNumberChange: (String) -> Unit = {},
+    authority: String = "",
+    onAuthorityChange: (String) -> Unit = {},
+    expiryDate: String = "",
+    onExpiryDateChange: (String) -> Unit = {},
+    classification: SecurityClassification = SecurityClassification.ZONE_2_PRIVATE,
+    onClassificationChange: (SecurityClassification) -> Unit = {},
     isProcessing: Boolean,
     onChangeFileClick: () -> Unit,
     onDismissRequest: () -> Unit,
@@ -156,11 +157,6 @@ fun DocumentUploadSheet(
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Text(
-                        text = "Zero-knowledge encrypted on device",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
 
                 IconButton(
@@ -225,37 +221,12 @@ fun DocumentUploadSheet(
                             maxLines = 1
                         )
                         Spacer(modifier = Modifier.height(3.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = formatFileSize(fileSizeBytes),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp
-                            )
-                            Text(
-                                text = "•",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Shield,
-                                    contentDescription = null,
-                                    tint = Color(0xFF10B981),
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "AES-256-GCM encrypted locally",
-                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                                    color = Color(0xFF059669),
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
+                        Text(
+                            text = formatFileSize(fileSizeBytes),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
                     }
 
                     // Change file button
@@ -276,9 +247,9 @@ fun DocumentUploadSheet(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 2. Classification Section
+            // 2. Category Section
             Text(
-                text = "Classification",
+                text = "Category",
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -334,18 +305,18 @@ fun DocumentUploadSheet(
 
             // 3. Details Section
             Text(
-                text = "Details",
+                text = "Name",
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Title (Required)
+            // Title / Name (Required)
             OutlinedTextField(
                 value = title,
                 onValueChange = onTitleChange,
-                label = { Text("Title *") },
-                placeholder = { Text("e.g. National ID, Passport 2026") },
+                label = { Text("Document Name *") },
+                placeholder = { Text("e.g. Passport, National ID, Degree") },
                 singleLine = true,
                 enabled = !isProcessing,
                 modifier = Modifier.fillMaxWidth(),
@@ -355,165 +326,10 @@ fun DocumentUploadSheet(
                     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
                 )
             )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Document number (Optional)
-            OutlinedTextField(
-                value = docNumber,
-                onValueChange = onDocNumberChange,
-                label = { Text("Document number") },
-                placeholder = { Text("Optional reference number") },
-                singleLine = true,
-                enabled = !isProcessing,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Issuing authority (Optional)
-            OutlinedTextField(
-                value = authority,
-                onValueChange = onAuthorityChange,
-                label = { Text("Issuing authority") },
-                placeholder = { Text("Optional (e.g. Registrar, University)") },
-                singleLine = true,
-                enabled = !isProcessing,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Expiry date (Optional)
-            OutlinedTextField(
-                value = expiryDate,
-                onValueChange = onExpiryDateChange,
-                label = { Text("Expiry date") },
-                placeholder = { Text("Optional (YYYY-MM-DD)") },
-                singleLine = true,
-                enabled = !isProcessing,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // 4. Vault Tier (Segmented Control)
-            Text(
-                text = "Vault",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            val isStandard = classification == SecurityClassification.ZONE_1_PERSONAL ||
-                    classification == SecurityClassification.ZONE_2_PRIVATE
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Standard Vault
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(enabled = !isProcessing) {
-                            onClassificationChange(SecurityClassification.ZONE_2_PRIVATE)
-                        },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isStandard) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    border = BorderStroke(
-                        width = if (isStandard) 1.5.dp else 1.dp,
-                        color = if (isStandard) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = if (isStandard) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Standard",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = if (isStandard) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = "Instant access in wallet",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-
-                // Sensitive Vault
-                val isSensitive = !isStandard
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(enabled = !isProcessing) {
-                            onClassificationChange(SecurityClassification.ZONE_3_SENSITIVE)
-                        },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isSensitive) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    border = BorderStroke(
-                        width = if (isSensitive) 1.5.dp else 1.dp,
-                        color = if (isSensitive) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Shield,
-                                contentDescription = null,
-                                tint = if (isSensitive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Sensitive",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = if (isSensitive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = "PIN/Biometric protected",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 5. Action Button: Encrypt & Save
+            // Action Button: Save
             Button(
                 onClick = onConfirmSave,
                 enabled = title.isNotBlank() && !isProcessing,
@@ -538,7 +354,7 @@ fun DocumentUploadSheet(
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
-                        Text("Encrypting & Saving…", fontWeight = FontWeight.SemiBold)
+                        Text("Saving…", fontWeight = FontWeight.SemiBold)
                     }
                 } else {
                     Row(
@@ -546,12 +362,12 @@ fun DocumentUploadSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Lock,
+                            imageVector = Icons.Default.Check,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "Encrypt & Save",
+                            text = "Save Document",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
