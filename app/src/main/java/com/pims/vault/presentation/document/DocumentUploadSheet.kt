@@ -114,13 +114,7 @@ fun DocumentUploadSheet(
     val isSpreadsheet = fileName.endsWith(".xls", ignoreCase = true) || fileName.endsWith(".xlsx", ignoreCase = true) ||
             fileName.endsWith(".csv", ignoreCase = true)
 
-    val fileBadgeColor = when {
-        isPdf -> Color(0xFFEF4444)
-        isImg -> Color(0xFF10B981)
-        isDoc -> Color(0xFF3B82F6)
-        isSpreadsheet -> Color(0xFF10B981)
-        else -> MaterialTheme.colorScheme.primary
-    }
+    val fileBadgeColor = MaterialTheme.colorScheme.primary
 
     val fileTypeTag = when {
         isPdf -> "PDF"

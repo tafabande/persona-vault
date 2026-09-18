@@ -331,8 +331,6 @@ fun DocumentsWalletSheet(
         }
     }
 
-    val totalCount = documents.size
-
     BackHandler(enabled = true) {
         if (searchQuery.isNotBlank()) {
             searchQuery = ""
@@ -364,27 +362,11 @@ fun DocumentsWalletSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "Document Wallet",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                    ) {
-                        Text(
-                            text = "$totalCount items",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = "Document Wallet",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -509,19 +491,11 @@ fun DocumentsWalletSheet(
                                 modifier = Modifier.size(22.dp)
                             )
                         }
-                        Column {
-                            Text(
-                                text = "Add Document to Wallet",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "PDF, Images, Word, Sheets, CSV & Text",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
-                            )
-                        }
+                        Text(
+                            text = "Add Document to Wallet",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
 
                     Surface(
@@ -565,21 +539,7 @@ fun DocumentsWalletSheet(
                 }
             } else {
                 filteredDocuments.forEach { doc ->
-                    val isSensitive = doc.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE ||
-                            doc.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL
-                    val isPdf = doc.currentVersion?.mimeType?.contains("pdf", ignoreCase = true) == true
-                    val isImg = doc.currentVersion?.mimeType?.contains("image", ignoreCase = true) == true
-                    val isOffice = doc.currentVersion?.mimeType?.contains("word", ignoreCase = true) == true ||
-                            doc.currentVersion?.mimeType?.contains("excel", ignoreCase = true) == true ||
-                            doc.currentVersion?.mimeType?.contains("sheet", ignoreCase = true) == true
-
-                    val typeColor = when {
-                        isPdf -> Color(0xFFEF4444)
-                        isImg -> Color(0xFF10B981)
-                        isOffice -> Color(0xFF3B82F6)
-                        doc.document.documentType == DocumentType.NATIONAL_ID || doc.document.documentType == DocumentType.PASSPORT -> Color(0xFFF59E0B)
-                        else -> MaterialTheme.colorScheme.primary
-                    }
+                    val typeColor = MaterialTheme.colorScheme.primary
 
                     val typeLabel = when (doc.document.documentType) {
                         DocumentType.NATIONAL_ID -> "National ID"
@@ -686,31 +646,7 @@ fun DocumentsWalletSheet(
                                     }
                                 }
 
-                                // Vault Classification Pill
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = if (isSensitive) Color(0xFFF59E0B).copy(alpha = 0.15f)
-                                    else Color(0xFF10B981).copy(alpha = 0.15f)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isSensitive) Icons.Default.Shield else Icons.Default.Lock,
-                                            contentDescription = null,
-                                            tint = if (isSensitive) Color(0xFFD97706) else Color(0xFF059669),
-                                            modifier = Modifier.size(11.dp)
-                                        )
-                                        Text(
-                                            text = if (isSensitive) "Sensitive" else "Standard",
-                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                            color = if (isSensitive) Color(0xFFD97706) else Color(0xFF059669),
-                                            fontSize = 10.sp
-                                        )
-                                    }
-                                }
+
                             }
 
                             // Optional Document Number & Expiry

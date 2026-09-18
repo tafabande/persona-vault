@@ -229,12 +229,12 @@ fun VaultDashboardView(
         modifier = modifier
             .fillMaxSize()
             .background(vaultBg)
+            .statusBarsPadding()
     ) {
         if (!uiState.isVaultUnlocked) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 Row(
@@ -280,7 +280,6 @@ fun VaultDashboardView(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 // Header with Back Navigation & Session Timeout Status
@@ -1179,114 +1178,6 @@ private fun GooglePasswordsSection(
             )
         }
 
-        var showPasswordCheckupDialog by remember { mutableStateOf(false) }
-        var showPasskeyDialog by remember { mutableStateOf(false) }
-
-        // Card 1: Password Checkup
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = cardBg,
-            border = BorderStroke(1.dp, borderCol),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showPasswordCheckupDialog = true }
-                    .padding(18.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AssignmentTurnedIn,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Password Checkup",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        // Card 2: Simplify your sign-in (Passkeys)
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = cardBg,
-            border = BorderStroke(1.dp, borderCol),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showPasskeyDialog = true }
-                    .padding(18.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PersonSearch,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Simplify your sign-in",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        if (showPasswordCheckupDialog) {
-            PasswordCheckupModal(
-                passwordCount = passwordItems.size,
-                onAddNew = {
-                    showPasswordCheckupDialog = false
-                    onAddNew()
-                },
-                onDismiss = { showPasswordCheckupDialog = false }
-            )
-        }
-
-        if (showPasskeyDialog) {
-            PasskeyInfoModal(onDismiss = { showPasskeyDialog = false })
-        }
-
         // Search Bar with integrated `+` button
         Surface(
             shape = RoundedCornerShape(14.dp),
@@ -1828,7 +1719,6 @@ internal fun GoogleWalletMainScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .padding(bottom = 88.dp),
@@ -2285,7 +2175,6 @@ private fun GoogleWalletCardDetailScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .padding(bottom = 80.dp),
@@ -2343,17 +2232,12 @@ private fun GoogleWalletCardDetailScreen(
 
             // Current Status Indicator Pill
             val statusColor = when (currentStatus) {
-                CardStatus.IN_USE -> Color(0xFF10B981)
-                CardStatus.PAUSED -> Color(0xFFF59E0B)
-                CardStatus.FROZEN -> Color(0xFF06B6D4)
-                CardStatus.DISCARDED -> Color(0xFF94A3B8)
+                CardStatus.IN_USE -> MaterialTheme.colorScheme.primary
+                CardStatus.PAUSED -> MaterialTheme.colorScheme.tertiary
+                CardStatus.FROZEN -> MaterialTheme.colorScheme.secondary
+                CardStatus.DISCARDED -> MaterialTheme.colorScheme.onSurfaceVariant
             }
-            val statusBg = when (currentStatus) {
-                CardStatus.IN_USE -> Color(0xFF10B981).copy(alpha = 0.12f)
-                CardStatus.PAUSED -> Color(0xFFF59E0B).copy(alpha = 0.15f)
-                CardStatus.FROZEN -> Color(0xFF06B6D4).copy(alpha = 0.15f)
-                CardStatus.DISCARDED -> Color(0xFF94A3B8).copy(alpha = 0.15f)
-            }
+            val statusBg = statusColor.copy(alpha = 0.15f)
             val statusIcon = when (currentStatus) {
                 CardStatus.IN_USE -> Icons.Default.CheckCircle
                 CardStatus.PAUSED -> Icons.Default.PauseCircle
@@ -2488,10 +2372,10 @@ private fun GoogleWalletCardDetailScreen(
                     ).forEach { (statusOption, meta) ->
                         val isSelected = currentStatus == statusOption
                         val activeColor = when (statusOption) {
-                            CardStatus.IN_USE -> Color(0xFF10B981)
-                            CardStatus.PAUSED -> Color(0xFFF59E0B)
-                            CardStatus.FROZEN -> Color(0xFF06B6D4)
-                            CardStatus.DISCARDED -> Color(0xFF94A3B8)
+                            CardStatus.IN_USE -> MaterialTheme.colorScheme.primary
+                            CardStatus.PAUSED -> MaterialTheme.colorScheme.tertiary
+                            CardStatus.FROZEN -> MaterialTheme.colorScheme.secondary
+                            CardStatus.DISCARDED -> MaterialTheme.colorScheme.onSurfaceVariant
                         }
 
                         Surface(
@@ -2703,7 +2587,6 @@ private fun BankingSection(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .padding(bottom = 80.dp),
@@ -3567,9 +3450,7 @@ private fun VaultEditorDialog(
 private data class VaultSecretCategoryOption(
     val category: VaultCategory,
     val title: String,
-    val subtitle: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val accentColor: Color
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -3586,44 +3467,22 @@ private fun VaultCreateSecretSheet(
             VaultSecretCategoryOption(
                 category = VaultCategory.PASSWORD,
                 title = "Password",
-                subtitle = "Web credentials & logins",
-                icon = Icons.Default.Key,
-                accentColor = Color(0xFF3B82F6)
-            ),
-            VaultSecretCategoryOption(
-                category = VaultCategory.TOTP_2FA,
-                title = "Authenticator",
-                subtitle = "Time-based 2FA codes",
-                icon = Icons.Default.Timer,
-                accentColor = Color(0xFF8B5CF6)
+                icon = Icons.Default.Key
             ),
             VaultSecretCategoryOption(
                 category = VaultCategory.SECURE_NOTE,
                 title = "Secure Note",
-                subtitle = "Confidential memos & keys",
-                icon = Icons.Default.Note,
-                accentColor = Color(0xFFF59E0B)
+                icon = Icons.Default.Note
             ),
             VaultSecretCategoryOption(
                 category = VaultCategory.PAYMENT_REFERENCE,
                 title = "Payment Card",
-                subtitle = "Credit, debit & passes",
-                icon = Icons.Default.CreditCard,
-                accentColor = Color(0xFF10B981)
+                icon = Icons.Default.CreditCard
             ),
             VaultSecretCategoryOption(
                 category = VaultCategory.BANK_ACCOUNT,
                 title = "Bank Account",
-                subtitle = "IBAN, swift & account info",
-                icon = BankIcon,
-                accentColor = Color(0xFF06B6D4)
-            ),
-            VaultSecretCategoryOption(
-                category = VaultCategory.RECOVERY_CODE,
-                title = "Recovery Codes",
-                subtitle = "Emergency access keys",
-                icon = Icons.Default.Shield,
-                accentColor = Color(0xFFF43F5E)
+                icon = BankIcon
             )
         )
     }
@@ -3658,22 +3517,14 @@ private fun VaultCreateSecretSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "New Secret",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 22.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Select a secret type to safeguard in your vault",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = "New Secret",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
 
                 IconButton(
                     onClick = onDismissRequest,
@@ -3690,7 +3541,7 @@ private fun VaultCreateSecretSheet(
                 }
             }
 
-            // 2-Column Grid of 6 Secret Types (Bento-styled Cards)
+            // 2-Column Grid of 4 Core Secret Types (Bento-styled Cards)
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -3711,97 +3562,54 @@ private fun VaultCreateSecretSheet(
                                 },
                                 border = BorderStroke(
                                     width = 1.dp,
-                                    color = item.accentColor.copy(alpha = if (isDark) 0.28f else 0.22f)
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.35f else 0.5f)
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
                                     .tactilePress()
                             ) {
-                                Column(
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(38.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(item.accentColor.copy(alpha = 0.15f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = item.icon,
-                                                contentDescription = null,
-                                                tint = item.accentColor,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-
                                         Icon(
-                                            imageVector = Icons.Default.ChevronRight,
+                                            imageVector = item.icon,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                            modifier = Modifier.size(16.dp)
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
 
-                                    Column {
-                                        Text(
-                                            text = item.title,
-                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = item.subtitle,
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                fontSize = 11.sp,
-                                                lineHeight = 14.sp
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 2
-                                        )
-                                    }
+                                    Text(
+                                        text = item.title,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
                                 }
                             }
                         }
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Footer Schematic / Hardware Isolation Badge
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = "Hardware-isolated and protected locally on device",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }

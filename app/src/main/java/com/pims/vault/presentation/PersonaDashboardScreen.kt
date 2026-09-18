@@ -266,6 +266,68 @@ object DateHelper {
         }
     }
 
+    fun formatDobOnly(dob: String): String {
+        if (dob.isBlank()) return ""
+        return try {
+            val parts = if (dob.contains("-")) dob.split("-") else dob.split("/")
+            if (parts.size != 3) return dob
+            val (year, month, day) = if (parts[0].length == 4) {
+                Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
+            } else {
+                Triple(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
+            }
+            val today = Calendar.getInstance()
+            val birthCal = Calendar.getInstance().apply {
+                set(year, month - 1, day)
+            }
+            var age = today.get(Calendar.YEAR) - year
+            if (today.get(Calendar.DAY_OF_YEAR) < birthCal.get(Calendar.DAY_OF_YEAR)) {
+                age--
+            }
+            val dayStr = day.toString().padStart(2, '0')
+            val monthStr = month.toString().padStart(2, '0')
+            "$dayStr/$monthStr/$year ($age yrs old)"
+        } catch (e: Exception) {
+            dob
+        }
+    }
+
+    fun formatBirthdayCountdown(dob: String): String {
+        if (dob.isBlank()) return ""
+        return try {
+            val parts = if (dob.contains("-")) dob.split("-") else dob.split("/")
+            if (parts.size != 3) return ""
+            val (year, month, day) = if (parts[0].length == 4) {
+                Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
+            } else {
+                Triple(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
+            }
+            val today = Calendar.getInstance()
+            val monthNames = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+            val monthName = monthNames.getOrElse(month - 1) { "$month" }
+
+            val nextBirthday = Calendar.getInstance().apply {
+                set(Calendar.MONTH, month - 1)
+                set(Calendar.DAY_OF_MONTH, day)
+                if (before(today)) {
+                    add(Calendar.YEAR, 1)
+                }
+            }
+            val diffMillis = nextBirthday.timeInMillis - today.timeInMillis
+            val diffDays = (diffMillis / (1000 * 60 * 60 * 24)).toInt()
+
+            val countdown = when {
+                diffDays == 0 -> "Today! 🎉"
+                diffDays == 1 -> "Tomorrow"
+                diffDays < 30 -> "in $diffDays days"
+                else -> "in ${diffDays / 30} months"
+            }
+            "$monthName $day ($countdown)"
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     fun formatAnniversaryInfo(anniversary: String): String {
         if (anniversary.isBlank()) return ""
         return try {
@@ -1109,6 +1171,17 @@ fun PersonaDashboardScreen(
                 }
                 return
             }
+            "HEALTH" -> {
+                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenEnterRise()) {
+                    MedicalDossierView(
+                        uiState = medicalState,
+                        onEvent = medicalViewModel::onEvent,
+                        onDismiss = { fullScreenOverlay = null },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                return
+            }
             "INFORMATION_LIBRARY" -> {
                 val libraryItems = remember(profileState, documentState, vaultState, medicalState) {
                     val list = mutableListOf<LibraryItem>()
@@ -1616,7 +1689,7 @@ fun PersonaDashboardScreen(
                                 "Emergency Medical",
                                 "Confirm identity to access health information"
                             ) {
-                                showSheet("health")
+                                fullScreenOverlay = "HEALTH"
                             }
                         },
                         onOpenCredentials = {
@@ -1669,7 +1742,7 @@ fun PersonaDashboardScreen(
                                 "Health & Medical",
                                 "Confirm identity to access medical records"
                             ) {
-                                showSheet("health")
+                                fullScreenOverlay = "HEALTH"
                             }
                         },
                         onVaultClick = {
@@ -1755,7 +1828,7 @@ fun PersonaDashboardScreen(
                                 "Emergency Medical",
                                 "Confirm identity to access emergency card"
                             ) {
-                                showSheet("health")
+                                fullScreenOverlay = "HEALTH"
                             }
                         },
                         onDeleteAccountClicked = { showDialog("deleteAccount") },
@@ -1989,23 +2062,10 @@ fun PersonaDashboardScreen(
         )
     }
 
-    // 4. HEALTH FACET SHEET (Full Medical Dossier)
+    // 4. HEALTH FULL SCREEN (Full Medical Dossier)
     if (sheetStates.value["health"] == true) {
-        ModalBottomSheet(
-            onDismissRequest = { hideSheet("health") },
-            sheetState = healthSheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-        ) {
-            MedicalDossierView(
-                uiState = medicalState,
-                onEvent = medicalViewModel::onEvent,
-                onDismiss = { hideSheet("health") },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+        hideSheet("health")
+        fullScreenOverlay = "HEALTH"
     }
 
     // 5. DOCUMENTS WALLET SHEET
@@ -2564,7 +2624,7 @@ fun PersonaDashboardScreen(
                     "Health & Medical",
                     "Confirm identity to access health details"
                 ) {
-                    showSheet("health")
+                    fullScreenOverlay = "HEALTH"
                 }
             },
             onOpenVault = {

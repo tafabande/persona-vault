@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.window.Dialog
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.RelationshipNote
@@ -466,7 +468,10 @@ fun AddOrEditRelationshipNoteDialog(
     onSave: (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean) -> Unit
 ) {
     var topic by remember { mutableStateOf(initialNote?.topic?.takeIf { it != "Note" } ?: "") }
-    var content by remember { mutableStateOf(initialNote?.content ?: "") }
+    var contentValue by remember {
+        val initialText = initialNote?.content ?: ""
+        mutableStateOf(TextFieldValue(initialText, TextRange(initialText.length)))
+    }
     var format by remember { mutableStateOf(initialNote?.format ?: NoteFormat.PLAIN) }
     var isPrivate by remember { mutableStateOf(initialNote?.isPrivate ?: false) }
 
@@ -504,16 +509,57 @@ fun AddOrEditRelationshipNoteDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // Note Content Header with Inline Bullet insertion action
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Note Content",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            val sel = contentValue.selection
+                            val currentText = contentValue.text
+                            val insertBullet = if (sel.start > 0 && currentText.getOrNull(sel.start - 1) != '\n') "\n• " else "• "
+                            val updatedText = currentText.substring(0, sel.start) + insertBullet + currentText.substring(sel.end)
+                            val newCursor = sel.start + insertBullet.length
+                            contentValue = TextFieldValue(
+                                text = updatedText,
+                                selection = TextRange(newCursor)
+                            )
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FormatListBulleted,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "+ Add Bullet",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
                 // Note Content
                 OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    label = { Text("Note") },
+                    value = contentValue,
+                    onValueChange = { contentValue = it },
                     placeholder = {
                         Text(
                             if (format == NoteFormat.BULLETS)
                                 "• Item 1\n• Item 2\n• Item 3"
-                            else "Write details here..."
+                            else "Write details here... tap '+ Add Bullet' anywhere to insert bullets."
                         )
                     },
                     minLines = 4,
@@ -620,11 +666,13 @@ fun AddOrEditRelationshipNoteDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Button(
                         onClick = {
-                            if (content.isNotBlank()) {
-                                onSave(topic.takeIf { it.isNotBlank() }, content, format, isPrivate)
+                            val finalContent = contentValue.text.trim()
+                            if (finalContent.isNotBlank()) {
+                                val resolvedFormat = if (finalContent.contains("•")) NoteFormat.BULLETS else format
+                                onSave(topic.takeIf { it.isNotBlank() }, finalContent, resolvedFormat, isPrivate)
                             }
                         },
-                        enabled = content.isNotBlank()
+                        enabled = contentValue.text.isNotBlank()
                     ) {
                         Text("Save")
                     }

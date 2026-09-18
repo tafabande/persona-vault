@@ -41,6 +41,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cake
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -638,8 +639,14 @@ fun PersonDetailSheet(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     if (person.dateOfBirth.isNotBlank()) {
-                        val bdayInfo = DateHelper.formatBirthdayInfo(person.dateOfBirth)
-                        DetailActionRow(icon = Icons.Default.Cake, title = bdayInfo, subtitle = "Birthday", onClick = {})
+                        val dobDisplay = DateHelper.formatDobOnly(person.dateOfBirth)
+                        DetailActionRow(icon = Icons.Default.DateRange, title = dobDisplay, subtitle = "Date of Birth (DOB)", onClick = {})
+
+                        val bdayCountdown = DateHelper.formatBirthdayCountdown(person.dateOfBirth)
+                        if (bdayCountdown.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            DetailActionRow(icon = Icons.Default.Cake, title = bdayCountdown, subtitle = "Birthday", onClick = {})
+                        }
                     }
 
                     if (showAnniversary) {

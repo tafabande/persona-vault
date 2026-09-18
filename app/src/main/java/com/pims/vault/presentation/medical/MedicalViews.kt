@@ -179,26 +179,15 @@ fun MedicalDossierView(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
         // ==========================================
-        // 1. Emergency Card Projection (ICE Safe View)
+        // 2. Medical Privacy Gate Banner (only when locked)
         // ==========================================
-        item {
-            emergencyCard?.let { card ->
-                EmergencyCardBanner(
-                    projection = card,
-                    onConfigureClicked = { onEvent(MedicalEvent.OpenEmergencyConfigDialog) },
-                    onRefreshClicked = { onEvent(MedicalEvent.RefreshEmergencyCard) }
+        if (!isUnlocked) {
+            item {
+                MedicalPrivacyGateBanner(
+                    isUnlocked = false,
+                    onUnlockClick = { onEvent(MedicalEvent.UnlockMedicalGate) }
                 )
             }
-        }
-
-        // ==========================================
-        // 2. Medical Privacy Gate Banner
-        // ==========================================
-        item {
-            MedicalPrivacyGateBanner(
-                isUnlocked = isUnlocked,
-                onUnlockClick = { onEvent(MedicalEvent.UnlockMedicalGate) }
-            )
         }
 
         // ==========================================
@@ -220,7 +209,6 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Allergies & Sensitivities (${hubData?.allergies?.size ?: 0})",
                     icon = Icons.Default.MedicalServices,
-                    classification = SecurityClassification.ZONE_3_SENSITIVE,
                     initiallyExpanded = true
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -263,7 +251,6 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Conditions & Medical History (${hubData?.conditions?.size ?: 0})",
                     icon = Icons.Default.PersonalInjury,
-                    classification = SecurityClassification.ZONE_3_SENSITIVE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -309,7 +296,6 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Medications & Prescriptions (${(hubData?.medications?.size ?: 0) + (hubData?.prescriptions?.size ?: 0)})",
                     icon = Icons.Default.Medication,
-                    classification = SecurityClassification.ZONE_3_SENSITIVE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -385,7 +371,6 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Doctors & Facilities (${(hubData?.doctors?.size ?: 0) + (hubData?.facilities?.size ?: 0)})",
                     icon = Icons.Default.LocalHospital,
-                    classification = SecurityClassification.ZONE_2_PRIVATE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -450,7 +435,6 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Medical Aid & Insurance (${hubData?.coverages?.size ?: 0})",
                     icon = Icons.Default.Shield,
-                    classification = SecurityClassification.ZONE_2_PRIVATE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -496,7 +480,6 @@ fun MedicalDossierView(
                 PimsSkeletonAccordion(
                     title = "Medical Visits Timeline (${hubData?.visits?.size ?: 0})",
                     icon = Icons.Default.CalendarToday,
-                    classification = SecurityClassification.ZONE_3_SENSITIVE,
                     initiallyExpanded = false
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -641,6 +624,7 @@ private fun MedicalPrivacyGateBanner(
     isUnlocked: Boolean,
     onUnlockClick: () -> Unit
 ) {
+    if (isUnlocked) return
     Surface(
         shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
         color = if (isUnlocked) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
@@ -823,29 +807,11 @@ private fun AllergyCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = allergy.allergen,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (allergy.severity == MedicalSeverity.CRITICAL) StateError.copy(alpha = 0.15f)
-                        else StateWarning.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = allergy.severity.displayLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (allergy.severity == MedicalSeverity.CRITICAL) StateError else StateWarning,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                            fontSize = 10.sp
-                        )
-                    }
-                }
+                Text(
+                    text = allergy.allergen,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
                 allergy.reaction?.let {
                     Text(
                         text = "Reaction: $it",
@@ -885,36 +851,11 @@ private fun ConditionCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = condition.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = when (condition.status) {
-                            ConditionState.ACTIVE -> StateWarning.copy(alpha = 0.15f)
-                            ConditionState.RESOLVED -> StateSuccess.copy(alpha = 0.15f)
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ) {
-                        Text(
-                            text = condition.status.name,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = when (condition.status) {
-                                ConditionState.ACTIVE -> StateWarning
-                                ConditionState.RESOLVED -> StateSuccess
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                            fontSize = 10.sp
-                        )
-                    }
-                }
+                Text(
+                    text = condition.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
 
                 condition.diagnosedDate?.let {
                     Text(
