@@ -72,7 +72,8 @@ data class BankingFormResult(
 fun AddBankAccountScreen(
     availableCards: List<VaultItemHeader> = emptyList(),
     onNavigateBack: () -> Unit,
-    onSaveAccount: (BankingFormResult) -> Unit
+    onSaveAccount: (BankingFormResult) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var bankName by remember { mutableStateOf("") }
     var accountHolder by remember { mutableStateOf("") }
@@ -89,6 +90,7 @@ fun AddBankAccountScreen(
     var selectedLinkedCardSummary by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = {

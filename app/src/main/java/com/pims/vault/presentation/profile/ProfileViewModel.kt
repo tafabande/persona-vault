@@ -989,3 +989,11 @@ class ProfileViewModel @Inject constructor(
         return obj.toString()
     }
 }
+
+data class FullProfileBundle(
+    val fullProfile: com.pims.vault.data.local.relation.PersonWithFullProfile,
+    val relList: List<com.pims.vault.data.local.relation.RelationshipWithPerson>,
+    val socials: List<com.pims.vault.data.local.entity.SocialAccountEntity>,
+    val medRecords: List<com.pims.vault.data.local.entity.MedicalRecordEntity>
+)
+

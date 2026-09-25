@@ -68,7 +68,8 @@ import com.pims.vault.presentation.vault.detectCardBrand
 @Composable
 fun AddCardScreen(
     onNavigateBack: () -> Unit,
-    onSaveCard: (bankName: String, holder: String, number: String, expiry: String, cvv: String) -> Unit
+    onSaveCard: (bankName: String, holder: String, number: String, expiry: String, cvv: String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var bankName by remember { mutableStateOf("") }
     var cardHolder by remember { mutableStateOf("") }
@@ -86,6 +87,7 @@ fun AddCardScreen(
     val isNumberFormatCorrect = cleanNumber.length == expectedDigits
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = {

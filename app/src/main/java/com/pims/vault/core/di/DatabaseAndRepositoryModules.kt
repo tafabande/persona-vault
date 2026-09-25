@@ -74,6 +74,7 @@ object DatabaseModule {
     @Provides fun provideSyncQueueDao(db: PimsDatabase): com.pims.vault.data.local.dao.SyncQueueDao = db.syncQueueDao()
     @Provides fun provideSyncConflictDao(db: PimsDatabase): com.pims.vault.data.local.dao.SyncConflictDao = db.syncConflictDao()
     @Provides fun provideSharingProfileDao(db: PimsDatabase): com.pims.vault.data.local.entity.SharingProfileDao = db.sharingProfileDao()
+    @Provides fun providePlainNoteDao(db: PimsDatabase): com.pims.vault.data.local.dao.PlainNoteDao = db.plainNoteDao()
 }
 
 @Module
@@ -84,6 +85,12 @@ object RepositoryModule {
     @Singleton
     fun providePermissionEngine(): com.pims.vault.core.sharing.PermissionEngine =
         com.pims.vault.core.sharing.PermissionEngine()
+
+    @Provides
+    @Singleton
+    fun providePlainNotesRepository(
+        impl: com.pims.vault.data.repository.PlainNotesRepositoryImpl
+    ): com.pims.vault.domain.repository.PlainNotesRepository = impl
 
     @Provides
     @Singleton

@@ -17,6 +17,7 @@ import com.pims.vault.data.local.dao.PersonDao
 import com.pims.vault.data.local.dao.RelationshipDao
 import com.pims.vault.data.local.dao.RelationshipNoteDao
 import com.pims.vault.data.local.dao.SocialAccountDao
+import com.pims.vault.data.local.dao.PlainNoteDao
 import com.pims.vault.data.local.dao.VaultDao
 import com.pims.vault.data.local.dao.SyncConflictDao
 import com.pims.vault.data.local.dao.SyncQueueDao
@@ -30,6 +31,8 @@ import com.pims.vault.data.local.entity.EmploymentRecordEntity
 import com.pims.vault.data.local.entity.MedicalProfileEntity
 import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.data.local.entity.PersonEntity
+import com.pims.vault.data.local.entity.PlainNoteEntity
+import com.pims.vault.data.local.entity.PlainNoteAttachmentEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
 import com.pims.vault.data.local.entity.RelationshipNoteEntity
 import com.pims.vault.data.local.entity.SocialAccountEntity
@@ -57,9 +60,11 @@ import com.pims.vault.data.local.entity.VaultItemEntity
         AuditEventEntity::class,
         SyncQueueEntity::class,
         SyncConflictEntity::class,
-        SharingProfileEntity::class
+        SharingProfileEntity::class,
+        PlainNoteEntity::class,
+        PlainNoteAttachmentEntity::class
     ],
-    version = 5,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(RoomConverters::class)
@@ -70,6 +75,7 @@ abstract class PimsDatabase : RoomDatabase() {
     abstract fun addressDao(): AddressDao
     abstract fun relationshipDao(): RelationshipDao
     abstract fun relationshipNoteDao(): RelationshipNoteDao
+    abstract fun plainNoteDao(): PlainNoteDao
     abstract fun documentDao(): DocumentDao
     abstract fun medicalDao(): MedicalDao
     abstract fun educationDao(): EducationDao
@@ -233,6 +239,56 @@ abstract class PimsDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `plain_notes` (
+                        `id` TEXT NOT NULL, 
+                        `owner_person_id` TEXT NOT NULL, 
+                        `title` TEXT NOT NULL, 
+                        `content` TEXT NOT NULL, 
+                        `created_at` INTEGER NOT NULL, 
+                        `updated_at` INTEGER NOT NULL, 
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_plain_notes_owner_person_id` ON `plain_notes` (`owner_person_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_plain_notes_updated_at` ON `plain_notes` (`updated_at`)")
+            }
+        }
+
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `plain_notes` ADD COLUMN `format` TEXT NOT NULL DEFAULT 'PLAIN'")
+            }
+        }
+
+        val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `plain_note_attachments` (
+                        `id` TEXT NOT NULL, 
+                        `note_id` TEXT NOT NULL, 
+                        `storage_path` TEXT NOT NULL, 
+                        `mime_type` TEXT NOT NULL, 
+                        `file_size_bytes` INTEGER NOT NULL, 
+                        `sha256_hash` TEXT NOT NULL, 
+                        `caption` TEXT, 
+                        `created_at` INTEGER NOT NULL, 
+                        PRIMARY KEY(`id`), 
+                        FOREIGN KEY(`note_id`) REFERENCES `plain_notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE 
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_plain_note_attachments_note_id` ON `plain_note_attachments` (`note_id`)")
+            }
+        }
+
+        val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `sync_queue` ADD COLUMN `payload_hmac` TEXT DEFAULT NULL")
+            }
+        }
+
         /**
          * Builder helper for instantiating the database.
          * The open helper factory can be plugged in later for SQLCipher / encryption
@@ -251,7 +307,11 @@ abstract class PimsDatabase : RoomDatabase() {
                 MIGRATION_1_2,
                 MIGRATION_2_3,
                 MIGRATION_3_4,
-                MIGRATION_4_5
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7,
+                MIGRATION_7_8,
+                MIGRATION_8_9
             )
 
             if (openHelperFactory != null) {

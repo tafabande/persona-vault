@@ -68,6 +68,9 @@ data class SyncQueueEntity(
     @ColumnInfo(name = "error_message")
     val errorMessage: String? = null,
 
+    @ColumnInfo(name = "payload_hmac")
+    val payloadHmac: String? = null,
+
     @ColumnInfo(name = "created_at")
     val createdAt: Long = System.currentTimeMillis(),
 
