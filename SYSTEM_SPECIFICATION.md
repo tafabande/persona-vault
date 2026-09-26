@@ -1,9 +1,11 @@
 # System Architecture & Technical Specification
 ## Personal Information Management System (PIMS) & Identity Vault
 
-**Document Version:** 1.0.0  
+**Document Version:** 1.1.0  
 **Target Platform:** Android 13+ (API 33+)  
 **Primary Language & Stack:** Kotlin, Jetpack Compose, Room (SQLCipher / Encrypted SQLite), Android Keystore, Tink / Jetpack Security Crypto, KotlinX Coroutines & Flow, WorkManager, BiometricPrompt.
+
+> **Agent & Planning Docs:** See [AGENTS.md](./AGENTS.md) (project-wide), [app/AGENTS.md](./app/AGENTS.md) (app module), and [docs/planning/](./docs/planning/) (roadmap, phases, workflow, ADRs). App mirrors planning in `core/model/PlanningPhase.kt`.
 
 ---
 
@@ -301,13 +303,17 @@ flowchart TD
 
 ---
 
-## 7. Immediate Implementation Roadmap
+## 7. Implementation Roadmap (see docs/planning/ROADMAP.md for live status)
 
 | Phase | Milestone | Deliverables |
 | :--- | :--- | :--- |
+| **Phase 0** | **Planning System** | AGENTS.md (root + app), docs/planning/ (ROADMAP, PHASES, WORKFLOW, ADRs), PlanningPhase.kt + feature flags, CI sync check. |
 | **Phase 1** | **Core Foundation & Security** | Gradle build config with Kotlin 2.0+, SQLCipher Room setup, Android Keystore manager, Biometric unlock flow. |
 | **Phase 2** | **Domain Entities & Storage** | Room DAOs, Encrypted file manager for document versions, SHA-256 integrity verifier, Audit log system. |
 | **Phase 3** | **UI Design System & Core Features** | Material3 Jetpack Compose UI, Dynamic Form builder with placeholder guidance, Profile & Timeline views. |
 | **Phase 4** | **Relationship Graph & Medical Dossier** | Kinship linker, Interactive Graph view, Emergency Medical Card (lockscreen/quick-access export). |
 | **Phase 5** | **Security Vault (Zone 4)** | Re-auth gated vault screen, TOTP generator (RFC 6238), Tokenized payment cards, Encrypted notes. |
 | **Phase 6** | **Selective Sharing & Pairing** | Dynamic field selector, Compact QR code engine (ZXing / CameraX), Offline P2P import & audit confirmation. |
+| **Phase 7** | **Hardening & Release** | Adversarial tests, R8, SBOM, staged rollout per docs/release/RELEASE_CHECKLIST.md. |
+
+> **Planning is the source of truth:** `docs/planning/ROADMAP.md` tracks status, `docs/planning/PHASES.md` defines DoD, `docs/planning/WORKFLOW.md` defines branch→PR→CI→merge. App gates unfinished phases via `core/model/PlanningPhase.kt`.
