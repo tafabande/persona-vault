@@ -57,6 +57,7 @@ class VaultSessionTests {
             return 1L
         }
         override suspend fun getVaultItemById(id: String): VaultItemEntity? = items[id]
+        override suspend fun getAllVaultItems(): List<VaultItemEntity> = items.values.toList()
         override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> =
             flowOf(items.values.filter { it.personId == personId })
         override fun getVaultItemsByCategoryFlow(personId: String, category: VaultCategory): Flow<List<VaultItemEntity>> =
@@ -78,6 +79,7 @@ class VaultSessionTests {
         override fun getPersonByIdFlow(id: String): Flow<com.pims.vault.data.local.entity.PersonEntity?> = flowOf(null)
         override suspend fun getPersonById(id: String): com.pims.vault.data.local.entity.PersonEntity? = null
         override fun getAllPersonsFlow(): Flow<List<com.pims.vault.data.local.entity.PersonEntity>> = flowOf(emptyList())
+        override suspend fun getAllPersons(): List<com.pims.vault.data.local.entity.PersonEntity> = emptyList()
         override fun getPersonWithFullProfileFlow(id: String): Flow<com.pims.vault.data.local.relation.PersonWithFullProfile?> = flowOf(null)
         override fun getPrimaryOwnerWithFullProfileFlow(): Flow<com.pims.vault.data.local.relation.PersonWithFullProfile?> = flowOf(null)
         override suspend fun insert(person: com.pims.vault.data.local.entity.PersonEntity): Long = 1L

@@ -31,7 +31,7 @@ class SyncQueueManager @Inject constructor(
     private val networkMonitor: NetworkStateMonitor,
     private val auditLogger: HardenedAuditLogger,
     private val remoteSyncGateway: RemoteSyncGateway,
-    private val firestoreSyncService: FirestoreSyncService
+    private val firestoreSyncService: FirestoreSyncService? = null
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -194,8 +194,8 @@ class SyncQueueManager @Inject constructor(
             }
 
             // Sync all active data (notes, profile, contacts) straight into Cloud Firestore
-            val firestoreResult = firestoreSyncService.syncAllData(userId)
-            val totalProcessed = processed + if (firestoreResult.success) firestoreResult.processedCount else 0
+            val firestoreResult = firestoreSyncService?.syncAllData(userId)
+            val totalProcessed = processed + if (firestoreResult?.success == true) firestoreResult.processedCount else 0
 
             return SyncResult(
                 success = true,

@@ -24,6 +24,7 @@ import com.pims.vault.data.local.entity.AuditLogEntity
 import com.pims.vault.data.local.entity.ContactMethodEntity
 import com.pims.vault.data.local.entity.DocumentEntity
 import com.pims.vault.data.local.entity.DocumentVersionEntity
+import com.pims.vault.data.local.entity.MedicalProfileEntity
 import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.data.local.entity.PersonEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
@@ -115,6 +116,7 @@ class FullLifecycleE2ETests {
             return 1L
         }
         override suspend fun getVaultItemById(id: String): VaultItemEntity? = inMemoryVault[id]
+        override suspend fun getAllVaultItems(): List<VaultItemEntity> = inMemoryVault.values.toList()
         override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> =
             flowOf(inMemoryVault.values.filter { it.personId == personId })
         override fun getVaultItemsByCategoryFlow(personId: String, category: VaultCategory): Flow<List<VaultItemEntity>> =
@@ -125,7 +127,7 @@ class FullLifecycleE2ETests {
     private val fakeMedicalDao = object : MedicalDao {
         override fun getMedicalProfileFlow(personId: String) = flowOf(null)
         override suspend fun getMedicalProfile(personId: String) = null
-        override suspend fun insertOrUpdateProfile(profile: com.pims.vault.data.local.entity.MedicalProfileEntity): Long = 1L
+        override suspend fun insertOrUpdateProfile(profile: MedicalProfileEntity): Long = 1L
         override fun getMedicalRecordsFlow(personId: String): Flow<List<MedicalRecordEntity>> =
             flowOf(inMemoryMedical.values.filter { it.personId == personId })
         override fun getRecordsByTypeFlow(personId: String, type: MedicalRecordType): Flow<List<MedicalRecordEntity>> =
@@ -135,6 +137,8 @@ class FullLifecycleE2ETests {
         override suspend fun getEmergencyCardRecords(personId: String): List<MedicalRecordEntity> =
             inMemoryMedical.values.filter { it.personId == personId && it.isEmergencyCardVisible }
         override suspend fun getRecordById(id: String): MedicalRecordEntity? = inMemoryMedical[id]
+        override suspend fun getAllProfiles(): List<MedicalProfileEntity> = emptyList()
+        override suspend fun getAllRecords(): List<MedicalRecordEntity> = inMemoryMedical.values.toList()
         override suspend fun insertOrUpdate(record: MedicalRecordEntity): Long {
             inMemoryMedical[record.id] = record
             return 1L
@@ -145,6 +149,7 @@ class FullLifecycleE2ETests {
     private val fakeRelationshipDao = object : RelationshipDao {
         override fun getOutgoingRelationshipsFlow(personId: String): Flow<List<RelationshipEntity>> =
             flowOf(inMemoryRelations.values.filter { it.sourcePersonId == personId })
+        override suspend fun getAllRelationships(): List<RelationshipEntity> = inMemoryRelations.values.toList()
         override fun getRelationshipsWithPersonsFlow(personId: String) = flowOf(emptyList<com.pims.vault.data.local.relation.RelationshipWithTargetPerson>())
         override fun getPersonRelationshipGraphFlow(personId: String) = flowOf(null)
         suspend fun getAllRelationshipsForPerson(personId: String): List<RelationshipEntity> =

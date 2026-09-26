@@ -6,46 +6,74 @@ object VaultLogger {
     const val DEFAULT_TAG = "Vault"
 
     fun d(tag: String = DEFAULT_TAG, message: String) {
-        Log.d(tag, message)
+        try {
+            Log.d(tag, message)
+        } catch (_: Throwable) {
+            println("[$tag] DEBUG: $message")
+        }
     }
 
     fun i(tag: String = DEFAULT_TAG, message: String) {
-        Log.i(tag, message)
+        try {
+            Log.i(tag, message)
+        } catch (_: Throwable) {
+            println("[$tag] INFO: $message")
+        }
     }
 
     fun w(tag: String = DEFAULT_TAG, message: String, tr: Throwable? = null) {
-        if (tr != null) {
-            Log.w(tag, message, tr)
-        } else {
-            Log.w(tag, message)
+        try {
+            if (tr != null) {
+                Log.w(tag, message, tr)
+            } else {
+                Log.w(tag, message)
+            }
+        } catch (_: Throwable) {
+            println("[$tag] WARN: $message")
+            tr?.printStackTrace()
         }
     }
 
     fun e(tag: String = DEFAULT_TAG, message: String, tr: Throwable? = null) {
-        if (tr != null) {
-            Log.e(tag, message, tr)
-        } else {
-            Log.e(tag, message)
+        try {
+            if (tr != null) {
+                Log.e(tag, message, tr)
+            } else {
+                Log.e(tag, message)
+            }
+        } catch (_: Throwable) {
+            System.err.println("[$tag] ERROR: $message")
+            tr?.printStackTrace()
         }
     }
 
     fun setUserId(userId: String) {
-        Log.d(DEFAULT_TAG, "User ID set: $userId")
+        try {
+            Log.d(DEFAULT_TAG, "User ID set: $userId")
+        } catch (_: Throwable) {}
     }
 
     fun clearUserId() {
-        Log.d(DEFAULT_TAG, "User ID cleared")
+        try {
+            Log.d(DEFAULT_TAG, "User ID cleared")
+        } catch (_: Throwable) {}
     }
 
     fun setCustomKey(key: String, value: String) {
-        Log.d(DEFAULT_TAG, "Custom key $key=$value")
+        try {
+            Log.d(DEFAULT_TAG, "Custom key $key=$value")
+        } catch (_: Throwable) {}
     }
 
     fun setCustomKey(key: String, value: Int) {
-        Log.d(DEFAULT_TAG, "Custom key $key=$value")
+        try {
+            Log.d(DEFAULT_TAG, "Custom key $key=$value")
+        } catch (_: Throwable) {}
     }
 
     fun setCustomKey(key: String, value: Boolean) {
-        Log.d(DEFAULT_TAG, "Custom key $key=$value")
+        try {
+            Log.d(DEFAULT_TAG, "Custom key $key=$value")
+        } catch (_: Throwable) {}
     }
 }

@@ -50,6 +50,8 @@ class VaultSecurityTests {
 
         override suspend fun getVaultItemById(id: String): VaultItemEntity? = inMemoryItems[id]
 
+        override suspend fun getAllVaultItems(): List<VaultItemEntity> = inMemoryItems.values.toList()
+
         override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> =
             flowOf(inMemoryItems.values.filter { it.personId == personId })
 

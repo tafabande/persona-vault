@@ -51,6 +51,7 @@ class VaultAdversarialAttackTests {
             return 1L
         }
         override suspend fun getVaultItemById(id: String): VaultItemEntity? = inMemoryItems[id]
+        override suspend fun getAllVaultItems(): List<VaultItemEntity> = inMemoryItems.values.toList()
         override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> =
             flowOf(inMemoryItems.values.filter { it.personId == personId })
         override fun getVaultItemsByCategoryFlow(personId: String, category: VaultCategory): Flow<List<VaultItemEntity>> =

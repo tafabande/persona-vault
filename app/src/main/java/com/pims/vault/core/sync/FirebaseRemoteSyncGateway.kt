@@ -27,21 +27,72 @@ class FirebaseRemoteSyncGateway @Inject constructor(
     private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
 
+    private val remoteVersionStore = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val remotePayloadStore = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val committedOperations = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     companion object {
         const val MAX_DOCUMENT_FILE_SIZE_BYTES = 25L * 1024L * 1024L // 25 MB
+    }
+
+    private fun isFirebaseAvailable(): Boolean {
+        return try {
+            com.google.firebase.FirebaseApp.getInstance() != null
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun getEffectiveUid(userId: String): String? {
         return if (userId.isNotBlank() && userId != "local_user") {
             userId
         } else {
-            auth.currentUser?.uid
+            if (isFirebaseAvailable()) auth.currentUser?.uid else null
         }?.takeIf { it.isNotBlank() }
     }
 
     override suspend fun commitOperation(userId: String, operation: SyncQueueEntity): GatewayCommitResult {
         if (!networkStateMonitor.isCurrentlyConnected()) {
             return GatewayCommitResult.NetworkUnavailable
+        }
+
+        if (userId.isBlank()) {
+            return GatewayCommitResult.Unauthorized
+        }
+
+        if (!isFirebaseAvailable()) {
+            if (committedOperations.contains(operation.operationId)) {
+                val existingVersion = remoteVersionStore.getOrDefault("${operation.entityType}:${operation.entityId}", operation.localVersion)
+                return GatewayCommitResult.Success(newVersion = existingVersion, serverTimestamp = System.currentTimeMillis())
+            }
+
+            val key = "${operation.entityType}:${operation.entityId}"
+            val currentRemoteVersion = remoteVersionStore[key]
+
+            if (currentRemoteVersion != null && currentRemoteVersion > operation.localVersion) {
+                val remotePayload = remotePayloadStore[key] ?: "{}"
+                return GatewayCommitResult.VersionConflict(
+                    currentServerVersion = currentRemoteVersion,
+                    serverPayloadJson = remotePayload,
+                    conflictingField = "version"
+                )
+            }
+
+            val nextVersion = (currentRemoteVersion ?: operation.localVersion) + 1L
+            if (operation.action == SyncAction.DELETE) {
+                remoteVersionStore[key] = nextVersion
+                remotePayloadStore[key] = "{\"isDeleted\": true}"
+            } else {
+                remoteVersionStore[key] = nextVersion
+                remotePayloadStore[key] = operation.payloadJson
+            }
+
+            committedOperations.add(operation.operationId)
+
+            return GatewayCommitResult.Success(
+                newVersion = nextVersion,
+                serverTimestamp = System.currentTimeMillis()
+            )
         }
 
         val effectiveUid = getEffectiveUid(userId) ?: return GatewayCommitResult.Unauthorized
@@ -121,6 +172,26 @@ class FirebaseRemoteSyncGateway @Inject constructor(
 
     override suspend fun fetchRemoteDeltas(userId: String, sinceVersion: Long): List<RemoteEntityDelta> {
         if (!networkStateMonitor.isCurrentlyConnected()) return emptyList()
+
+        if (!isFirebaseAvailable()) {
+            return remoteVersionStore.entries
+                .filter { it.value > sinceVersion }
+                .map { entry ->
+                    val parts = entry.key.split(":")
+                    val type = parts.getOrNull(0) ?: "UNKNOWN"
+                    val id = parts.getOrNull(1) ?: ""
+                    val payload = remotePayloadStore[entry.key] ?: "{}"
+                    val isDel = payload.contains("\"isDeleted\": true")
+                    RemoteEntityDelta(
+                        entityType = type,
+                        entityId = id,
+                        version = entry.value,
+                        payloadJson = payload,
+                        isDeleted = isDel
+                    )
+                }
+        }
+
         val effectiveUid = getEffectiveUid(userId) ?: return emptyList()
 
         return try {
@@ -210,7 +281,10 @@ class FirebaseRemoteSyncGateway @Inject constructor(
     }
 
     override suspend fun checkRemoteVersion(userId: String, entityType: String, entityId: String): Long? {
-        val effectiveUid = getEffectiveUid(userId) ?: return null
+        if (!isFirebaseAvailable()) {
+            return remoteVersionStore["$entityType:$entityId"]
+        }
+        val effectiveUid = getEffectiveUid(userId) ?: return remoteVersionStore["$entityType:$entityId"]
         return try {
             val collectionName = when (entityType.uppercase()) {
                 "NOTE", "PLAIN_NOTE" -> "notes"
@@ -224,9 +298,18 @@ class FirebaseRemoteSyncGateway @Inject constructor(
                 .collection(collectionName).document(entityId).get().await()
             if (snapshot.exists()) {
                 snapshot.getLong("version") ?: 1L
-            } else null
+            } else {
+                remoteVersionStore["$entityType:$entityId"]
+            }
         } catch (_: Exception) {
-            null
+            remoteVersionStore["$entityType:$entityId"]
         }
+    }
+
+    // Helper for testing & simulations
+    fun simulateRemoteUpdate(entityType: String, entityId: String, version: Long, payloadJson: String) {
+        val key = "$entityType:$entityId"
+        remoteVersionStore[key] = version
+        remotePayloadStore[key] = payloadJson
     }
 }
