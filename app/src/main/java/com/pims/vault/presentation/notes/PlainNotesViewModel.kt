@@ -12,10 +12,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 data class PlainNotesUiState(
     val notes: List<PlainNote> = emptyList(),
+    val isSaving: Boolean = false,
     val error: String? = null
 )
 
@@ -26,6 +28,8 @@ class PlainNotesViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(PlainNotesUiState())
     val uiState: StateFlow<PlainNotesUiState> = _uiState.asStateFlow()
+
+    private val isSavingInProgress = AtomicBoolean(false)
 
     init {
         // Observe notes for primary user
@@ -43,6 +47,11 @@ class PlainNotesViewModel @Inject constructor(
         content: String,
         onComplete: () -> Unit = {}
     ) {
+        if (!isSavingInProgress.compareAndSet(false, true)) {
+            android.util.Log.w("PlainNotesViewModel", "Save already in progress; dropping duplicate request")
+            return
+        }
+        _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
             try {
                 repository.save(
@@ -58,6 +67,9 @@ class PlainNotesViewModel @Inject constructor(
             } catch (e: Exception) {
                 android.util.Log.e("PlainNotesViewModel", "Failed to save note", e)
                 _uiState.update { it.copy(error = e.localizedMessage ?: "Failed to save note") }
+            } finally {
+                isSavingInProgress.set(false)
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -72,6 +84,11 @@ class PlainNotesViewModel @Inject constructor(
         mimeType: String = "image/jpeg",
         onComplete: () -> Unit = {}
     ) {
+        if (!isSavingInProgress.compareAndSet(false, true)) {
+            android.util.Log.w("PlainNotesViewModel", "Saving")
+            return
+        }
+        _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
             try {
                 val saved = repository.save(
@@ -95,6 +112,9 @@ class PlainNotesViewModel @Inject constructor(
             } catch (e: Exception) {
                 android.util.Log.e("PlainNotesViewModel", "Failed to save note with attachment", e)
                 _uiState.update { it.copy(error = e.localizedMessage ?: "Failed to save note") }
+            } finally {
+                isSavingInProgress.set(false)
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }

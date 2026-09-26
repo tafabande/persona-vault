@@ -474,8 +474,9 @@ fun AddOrEditRelationshipNoteDialog(
     }
     var format by remember { mutableStateOf(initialNote?.format ?: NoteFormat.PLAIN) }
     var isPrivate by remember { mutableStateOf(initialNote?.isPrivate ?: false) }
+    var isSaving by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = { if (!isSaving) onDismiss() }) {
         Surface(
             shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
             color = MaterialTheme.colorScheme.surface,
@@ -660,19 +661,24 @@ fun AddOrEditRelationshipNoteDialog(
                         .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    OutlinedButton(onClick = onDismiss) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        enabled = !isSaving
+                    ) {
                         Text("Cancel")
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Button(
                         onClick = {
+                            if (isSaving) return@Button
+                            isSaving = true
                             val finalContent = contentValue.text.trim()
                             if (finalContent.isNotBlank()) {
                                 val resolvedFormat = if (finalContent.contains("•")) NoteFormat.BULLETS else format
                                 onSave(topic.takeIf { it.isNotBlank() }, finalContent, resolvedFormat, isPrivate)
                             }
                         },
-                        enabled = contentValue.text.isNotBlank()
+                        enabled = !isSaving && contentValue.text.isNotBlank()
                     ) {
                         Text("Save")
                     }

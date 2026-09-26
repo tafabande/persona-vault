@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -330,7 +331,12 @@ fun PlainNoteEditorScreen(
         state.notes.find { it.id == noteId }
     }
 
-    BackHandler(onBack = onBack)
+    // Stable ID for the note during this editor session (prevents duplicate creations on repeated clicks)
+    var currentNoteId by remember(noteId) { mutableStateOf(noteId) }
+    var localIsSaving by remember { mutableStateOf(false) }
+    val isBusy = state.isSaving || localIsSaving
+
+    BackHandler(enabled = !isBusy, onBack = onBack)
 
     var title by remember { mutableStateOf(existingNote?.title ?: "") }
     var contentValue by remember {
@@ -347,6 +353,7 @@ fun PlainNoteEditorScreen(
     val context = LocalContext.current
     LaunchedEffect(state.error) {
         state.error?.let {
+            localIsSaving = false
             android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
             viewModel.clearError()
         }
@@ -528,11 +535,12 @@ fun PlainNoteEditorScreen(
                     ) {
                         TextButton(
                             onClick = onBack,
+                            enabled = !isBusy,
                             modifier = Modifier.tactilePress()
                         ) {
                             Text(
                                 text = "Cancel",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (isBusy) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp
                             )
@@ -540,11 +548,14 @@ fun PlainNoteEditorScreen(
 
                         Button(
                             onClick = {
+                                if (isBusy) return@Button
+                                localIsSaving = true
+                                val targetId = currentNoteId ?: java.util.UUID.randomUUID().toString().also { currentNoteId = it }
                                 haptics.success()
                                 feedback.success()
                                 if (pendingAttachmentBytes != null) {
                                     viewModel.saveWithAttachment(
-                                        id = noteId,
+                                        id = targetId,
                                         title = title,
                                         format = format,
                                         content = contentValue.text,
@@ -554,7 +565,7 @@ fun PlainNoteEditorScreen(
                                     )
                                 } else {
                                     viewModel.save(
-                                        id = noteId,
+                                        id = targetId,
                                         title = title,
                                         format = format,
                                         content = contentValue.text,
@@ -562,10 +573,13 @@ fun PlainNoteEditorScreen(
                                     )
                                 }
                             },
+                            enabled = !isBusy,
                             shape = RoundedCornerShape(18.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                             ),
                             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
                             modifier = Modifier.tactilePress()
@@ -574,16 +588,29 @@ fun PlainNoteEditorScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "Save",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
+                                if (isBusy) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Text(
+                                        text = "Saving...",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Save",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                }
                             }
                         }
                     }

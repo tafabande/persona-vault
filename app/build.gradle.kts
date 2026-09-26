@@ -116,7 +116,6 @@ ksp {
     // Room schema export for migration verification and release auditing
     arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.incremental", "false")
-    arg("room.expandProjection", "true")
 }
 
 dependencies {

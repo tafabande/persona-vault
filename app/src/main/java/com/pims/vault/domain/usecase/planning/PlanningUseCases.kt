@@ -20,7 +20,7 @@ class IsFeatureEnabledUseCase @Inject constructor() {
         PlanningRegistry.isFeatureEnabled(phase)
 
     fun requireEnabled(phase: PlanningPhase) {
-        if (!isFeatureEnabled(phase)) {
+        if (!invoke(phase)) {
             throw IllegalStateException("Feature ${phase.displayName} (${phase.milestone}) is not yet enabled. See docs/planning/ROADMAP.md.")
         }
     }
