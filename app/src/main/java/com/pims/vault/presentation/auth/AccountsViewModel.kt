@@ -47,6 +47,7 @@ class AccountsViewModel @Inject constructor(
     private val accountSecurityManager: AccountSecurityManager,
     private val rememberedAccountManager: RememberedAccountManager,
     private val personRepository: PersonRepository,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -131,10 +132,13 @@ class AccountsViewModel @Inject constructor(
                     }
                 }
                 is GoogleIdTokenResult.Failure -> {
-                    if (tokenResult.error is AuthFailure.Cancelled) {
-                        _uiState.update { it.copy(isBusy = false, error = null) }
-                        return@launch
+                    val errorMsg = if (tokenResult.error is AuthFailure.Cancelled) {
+                        "Google Sign-In was cancelled or rejected by Google Play Services. Ensure SHA-1 fingerprint (70:9F:16:9C:4A:EF:D9:A5:A2:14:44:A5:84:4B:4D:CF:0B:24:C0:06) is registered in Firebase Console."
+                    } else {
+                        tokenResult.error.userMessage
                     }
+                    _uiState.update { it.copy(isBusy = false, error = errorMsg) }
+                    return@launch
                 }
             }
 
@@ -307,6 +311,16 @@ class AccountsViewModel @Inject constructor(
                                     } catch (_: Exception) {}
                                 }
                             } catch (_: Exception) {}
+                        }
+                    }
+
+                    // Sync full profile and existing notes to Cloud Firestore
+                    viewModelScope.launch(Dispatchers.IO) {
+                        try {
+                            firestoreSyncService.syncAccount(user.uid, user.email, user.displayName)
+                            firestoreSyncService.syncAllData(user.uid)
+                        } catch (e: Exception) {
+                            com.pims.vault.core.logging.VaultLogger.e("AccountsViewModel", "Post-login sync error: ${e.message}", e)
                         }
                     }
 

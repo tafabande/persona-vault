@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,7 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.pims.vault.presentation.ui.components.PersonaShareCard
-import com.pims.vault.presentation.ui.components.ShareCardPalette
+import com.pims.vault.presentation.ui.components.PersonaVCardHelper
+import com.pims.vault.presentation.ui.components.QrCodeGenerator
 import com.pims.vault.presentation.ui.theme.tactilePress
 import java.io.File
 import java.io.FileOutputStream
@@ -62,7 +64,16 @@ fun SharePreviewModal(
     onCopyShareLink: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val cleanSeed = "$personName;$phone;$email;$occupation;$linkedIn"
+    val cleanSeed = remember(personName, phone, email, occupation, linkedIn, country) {
+        PersonaVCardHelper.formatVCard(
+            fullName = personName,
+            phone = phone,
+            email = email,
+            occupation = occupation,
+            linkedIn = linkedIn,
+            country = country
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -86,7 +97,7 @@ fun SharePreviewModal(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Personal QR Card",
+                    text = "Share Contact Card",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -101,10 +112,9 @@ fun SharePreviewModal(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Pristine Luxury Digital Share Card
+            // Pristine Luxury Digital Share Card (Monochrome Matte)
             PersonaShareCard(
                 personName = personName,
-                selectedPalette = ShareCardPalette.OBSIDIAN,
                 occupation = occupation,
                 country = country,
                 phone = phone,
@@ -146,9 +156,6 @@ fun SharePreviewModal(
                             val imageFile = generateCardBitmap(
                                 context = context,
                                 personName = personName,
-                                occupation = occupation,
-                                phone = phone,
-                                email = email,
                                 qrSeed = cleanSeed
                             )
                             val uri = FileProvider.getUriForFile(
@@ -159,10 +166,10 @@ fun SharePreviewModal(
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "image/png"
                                 putExtra(Intent.EXTRA_STREAM, uri)
-                                putExtra(Intent.EXTRA_SUBJECT, "$personName's Digital Card")
+                                putExtra(Intent.EXTRA_SUBJECT, "$personName's Contact Card")
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Digital Card"))
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Contact Card"))
                             onDismissRequest()
                         } catch (_: Exception) {
                             val shareUrl = "https://persona.vault/p/${personName.lowercase().replace(" ", "")}"
@@ -191,9 +198,6 @@ fun SharePreviewModal(
 private fun generateCardBitmap(
     context: Context,
     personName: String,
-    occupation: String,
-    phone: String,
-    email: String,
     qrSeed: String
 ): File {
     val width = 1200
@@ -201,44 +205,48 @@ private fun generateCardBitmap(
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
+    // Dark matte finish background
     val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.parseColor("#0F172A")
+        color = android.graphics.Color.parseColor("#121316")
     }
     val cardRect = RectF(0f, 0f, width.toFloat(), height.toFloat())
     canvas.drawRoundRect(cardRect, 48f, 48f, cardPaint)
 
-    // Name
+    // Border
+    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.parseColor("#2C2E35")
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+    canvas.drawRoundRect(cardRect, 48f, 48f, borderPaint)
+
+    // Name on the left (vertically centered)
     val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
-        textSize = 64f
+        textSize = 62f
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
-    canvas.drawText(personName.ifBlank { "Personal Persona" }, 80f, 220f, namePaint)
+    canvas.drawText(personName.ifBlank { "Personal Contact" }, 88f, (height / 2f) + 20f, namePaint)
 
-    // Title / Occupation
-    val occPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.parseColor("#94A3B8")
-        textSize = 40f
-    }
-    canvas.drawText(occupation.ifBlank { "Professional" }, 80f, 290f, occPaint)
+    // QR Code on the right side
+    val qrSize = 340
+    val qrLeft = width - qrSize - 88f
+    val qrTop = (height - qrSize) / 2f
+    val qrBgRect = RectF(qrLeft - 16f, qrTop - 16f, qrLeft + qrSize + 16f, qrTop + qrSize + 16f)
 
-    // Phone & Email
-    val detailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.parseColor("#CBD5E1")
-        textSize = 34f
+    val qrBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
     }
-    var yPos = 380f
-    if (phone.isNotBlank()) {
-        canvas.drawText(phone, 80f, yPos, detailPaint)
-        yPos += 54f
-    }
-    if (email.isNotBlank()) {
-        canvas.drawText(email, 80f, yPos, detailPaint)
+    canvas.drawRoundRect(qrBgRect, 28f, 28f, qrBgPaint)
+
+    val qrBitmap = QrCodeGenerator.generateQrBitmap(qrSeed, qrSize)
+    if (qrBitmap != null) {
+        canvas.drawBitmap(qrBitmap, qrLeft, qrTop, null)
     }
 
-    // Save
+    // Save to cache
     val cacheDir = File(context.cacheDir, "shares").apply { if (!exists()) mkdirs() }
-    val file = File(cacheDir, "persona_share_${System.currentTimeMillis()}.png")
+    val file = File(cacheDir, "persona_card_${System.currentTimeMillis()}.png")
     FileOutputStream(file).use { out ->
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
     }

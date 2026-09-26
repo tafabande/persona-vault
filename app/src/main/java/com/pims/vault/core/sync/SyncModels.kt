@@ -53,3 +53,12 @@ enum class ConflictResolutionChoice {
     USE_REMOTE,
     MERGED
 }
+
+/**
+ * Result data class for sync execution cycles.
+ */
+data class SyncResult(
+    val success: Boolean,
+    val processedCount: Int,
+    val message: String
+)

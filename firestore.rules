@@ -138,6 +138,33 @@ service cloud.firestore {
         allow update: if false; // Tombstones are immutable deletion markers
         allow delete: if false; // Purged only by server deletion horizon
       }
+
+      // Plain Notes & Rich Journal
+      match /notes/{noteId} {
+        allow read, write: if isAccountOwner(accountId);
+
+        match /attachments/{attachmentId} {
+          allow read, write: if isAccountOwner(accountId);
+        }
+      }
+
+      // Fortress Vault (Credentials, Logins, Secure Items)
+      match /vault/{itemId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
+      // Social & Online Accounts
+      match /socialAccounts/{socialId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
+      // Kinship & Relationships
+      match /relationships/{relId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+      match /relationshipNotes/{relNoteId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
     }
 
     // =========================================================================

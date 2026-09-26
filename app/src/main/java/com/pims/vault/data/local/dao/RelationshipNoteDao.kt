@@ -23,6 +23,9 @@ interface RelationshipNoteDao {
     @Query("SELECT * FROM relationship_notes WHERE id = :id LIMIT 1")
     suspend fun getNoteById(id: String): RelationshipNoteEntity?
 
+    @Query("SELECT * FROM relationship_notes ORDER BY created_at ASC")
+    suspend fun getAllNotes(): List<RelationshipNoteEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(note: RelationshipNoteEntity): Long
 

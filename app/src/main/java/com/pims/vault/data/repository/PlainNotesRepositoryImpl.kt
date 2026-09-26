@@ -18,7 +18,8 @@ import javax.inject.Singleton
 @Singleton
 class PlainNotesRepositoryImpl @Inject constructor(
     private val dao: PlainNoteDao,
-    private val fileStorage: FileStorageService
+    private val fileStorage: FileStorageService,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
 ) : PlainNotesRepository {
 
     override fun observe(ownerPersonId: String): Flow<List<PlainNote>> {
@@ -54,12 +55,18 @@ class PlainNotesRepositoryImpl @Inject constructor(
             updatedAt = now
         )
         dao.upsert(entity)
+        try {
+            firestoreSyncService?.syncNote(null, entity, isDeleted = false)
+        } catch (_: Exception) {}
         val attachments = dao.getAttachments(noteId).map { toDomain(it) }
         return toDomain(entity, attachments)
     }
 
     override suspend fun delete(id: String) {
         dao.deleteById(id)
+        try {
+            firestoreSyncService?.deleteNote(null, id)
+        } catch (_: Exception) {}
     }
 
     override suspend fun addAttachment(
@@ -91,6 +98,9 @@ class PlainNotesRepositoryImpl @Inject constructor(
             createdAt = metadata.timestamp
         )
         dao.upsertAttachment(entity)
+        try {
+            firestoreSyncService?.syncNoteAttachment(null, noteId, entity)
+        } catch (_: Exception) {}
         return toDomain(entity)
     }
 

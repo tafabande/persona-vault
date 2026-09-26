@@ -47,7 +47,8 @@ class PersonRepositoryImpl(
     private val personDao: PersonDao,
     private val contactDao: ContactDao,
     private val addressDao: AddressDao,
-    private val auditLogger: HardenedAuditLogger
+    private val auditLogger: HardenedAuditLogger,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
 ) : PersonRepository {
     override fun getPrimaryOwnerFlow(): Flow<PersonEntity?> = personDao.getPrimaryOwnerFlow()
     override suspend fun getPrimaryOwner(): PersonEntity? = personDao.getPrimaryOwner()
@@ -60,6 +61,9 @@ class PersonRepositoryImpl(
 
     override suspend fun savePerson(person: PersonEntity) {
         personDao.insertOrUpdate(person)
+        try {
+            firestoreSyncService?.syncPerson(null, person)
+        } catch (_: Exception) {}
         auditLogger.recordEvent(
             eventType = AuditEventType.UPDATE,
             entityType = "Person",
@@ -80,17 +84,24 @@ class PersonRepositoryImpl(
 
     override suspend fun addContactMethod(contact: ContactMethodEntity) {
         contactDao.insertOrUpdate(contact)
+        try {
+            firestoreSyncService?.syncContact(null, contact)
+        } catch (_: Exception) {}
     }
     override suspend fun deleteContactMethod(contactId: String) = contactDao.deleteById(contactId)
     override suspend fun addAddress(address: AddressEntity) {
         addressDao.insertOrUpdate(address)
+        try {
+            firestoreSyncService?.syncAddress(null, address)
+        } catch (_: Exception) {}
     }
     override suspend fun deleteAddress(addressId: String) = addressDao.deleteById(addressId)
 }
 
 class RelationshipRepositoryImpl(
     private val relationshipDao: RelationshipDao,
-    private val auditLogger: HardenedAuditLogger
+    private val auditLogger: HardenedAuditLogger,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
 ) : RelationshipRepository {
     override fun getRelationshipsForPersonFlow(personId: String): Flow<List<RelationshipWithTargetPerson>> =
         relationshipDao.getRelationshipsWithPersonsFlow(personId)
@@ -114,6 +125,9 @@ class RelationshipRepositoryImpl(
             customLabel = customLabel
         )
         relationshipDao.insertOrUpdate(forwardRel)
+        try {
+            firestoreSyncService?.syncRelationship(null, forwardRel)
+        } catch (_: Exception) {}
 
         if (createInverse) {
             val inverseType = try {
@@ -129,6 +143,9 @@ class RelationshipRepositoryImpl(
                 customLabel = customLabel
             )
             relationshipDao.insertOrUpdate(inverseRel)
+            try {
+                firestoreSyncService?.syncRelationship(null, inverseRel)
+            } catch (_: Exception) {}
         }
 
         auditLogger.recordEvent(
@@ -146,7 +163,8 @@ class RelationshipRepositoryImpl(
 class DocumentRepositoryImpl(
     private val documentDao: DocumentDao,
     private val fileStorage: FileStorageService,
-    private val auditLogger: HardenedAuditLogger
+    private val auditLogger: HardenedAuditLogger,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
 ) : DocumentRepository {
     override fun getDocumentsForPersonFlow(personId: String): Flow<List<DocumentWithVersions>> =
         documentDao.getDocumentsForPersonFlow(personId)
@@ -182,6 +200,10 @@ class DocumentRepositoryImpl(
             notes = notes
         )
         documentDao.insertVersion(initialVersion)
+        try {
+            firestoreSyncService?.syncDocument(null, document)
+            firestoreSyncService?.syncDocumentVersion(null, document.id, initialVersion)
+        } catch (_: Exception) {}
 
         auditLogger.recordEvent(
             eventType = AuditEventType.CREATE,
@@ -322,7 +344,8 @@ class VaultRepositoryImpl(
     private val vaultDao: VaultDao,
     private val cryptoEngine: CryptoEngine,
     private val sessionManager: BiometricSessionManager,
-    private val auditLogger: HardenedAuditLogger
+    private val auditLogger: HardenedAuditLogger,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
 ) : VaultRepository {
     override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> =
         vaultDao.getVaultItemsFlow(personId)
@@ -358,6 +381,9 @@ class VaultRepositoryImpl(
             notes = notes
         )
         vaultDao.insertOrUpdate(entity)
+        try {
+            firestoreSyncService?.syncVaultItem(null, entity)
+        } catch (_: Exception) {}
 
         auditLogger.recordEvent(
             eventType = AuditEventType.CREATE,
@@ -396,6 +422,9 @@ class VaultRepositoryImpl(
 
     override suspend fun deleteVaultItem(itemId: String) {
         vaultDao.deleteById(itemId)
+        try {
+            firestoreSyncService?.deleteVaultItem(null, itemId)
+        } catch (_: Exception) {}
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,
             entityType = "VaultItem",

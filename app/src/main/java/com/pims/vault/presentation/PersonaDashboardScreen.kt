@@ -207,6 +207,7 @@ import com.pims.vault.presentation.hub.NotificationCenterSheet
 import com.pims.vault.presentation.hub.PersonaNotificationItem
 import com.pims.vault.presentation.hub.SessionManagementSheet
 import com.pims.vault.presentation.hub.SyncConflictSheet
+import com.pims.vault.presentation.hub.SharePreviewModal
 import com.pims.vault.presentation.sync.SyncViewModel
 import com.pims.vault.presentation.ui.state.AlertLevel
 import com.pims.vault.core.security.SecurityTier
@@ -1772,6 +1773,18 @@ fun PersonaDashboardScreen(
                         },
                         documents = documentState.documents,
                         syncStatusText = syncStatusText,
+                        syncIsGood = syncIsGood,
+                        onSyncClick = {
+                            soundManager.navigation()
+                            if (conflicts.isNotEmpty()) {
+                                showSheet("conflict")
+                            } else {
+                                syncViewModel.processSyncNow()
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(if (isLocalOnly) "Operating in local storage mode" else "Vault sync initiated")
+                                }
+                            }
+                        },
                         isLocalOnly = isLocalOnly,
                         unreadNotificationCount = notifications.count { !it.isRead },
                         wallpapers = wallpapers,
@@ -1799,7 +1812,7 @@ fun PersonaDashboardScreen(
                         },
                         onOpenShare = {
                             soundManager.navigation()
-                            selectedTab = 2
+                            showSheet("share")
                         },
                         onOpenEmergency = {
                             soundManager.navigation()
@@ -1856,17 +1869,20 @@ fun PersonaDashboardScreen(
                         },
                         syncStatusText = syncStatusText,
                         syncIsGood = syncIsGood,
-                        onSyncClick = { showSheet("conflict") },
+                        onSyncClick = {
+                            soundManager.navigation()
+                            if (conflicts.isNotEmpty()) {
+                                showSheet("conflict")
+                            } else {
+                                syncViewModel.processSyncNow()
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(if (isLocalOnly) "Operating in local storage mode" else "Vault sync initiated")
+                                }
+                            }
+                        },
                         onShareProfileClick = {
                             soundManager.navigation()
-                            val shareUrl = "https://persona.vault/p/${fullName.lowercase().replace(" ", "")}"
-                            val sendIntent = android.content.Intent().apply {
-                                action = android.content.Intent.ACTION_SEND
-                                putExtra(android.content.Intent.EXTRA_TEXT, "Connect with $fullName: $shareUrl")
-                                type = "text/plain"
-                            }
-                            val shareIntent = android.content.Intent.createChooser(sendIntent, "Share Profile")
-                            context.startActivity(shareIntent)
+                            showSheet("share")
                         },
                         onEditProfileClick = { showDialog("editProfile") },
                         onViewPublicDossier = { showPublicResumeModal = true },
@@ -2183,6 +2199,27 @@ fun PersonaDashboardScreen(
                 avatarManager.saveConfig(newConfig)
                 hideSheet("avatarEditor")
                 toastController.showSuccess("Avatar updated")
+            }
+        )
+    }
+
+    // 2. SHARE IDENTITY & VCARD QR SHEET
+    if (sheetStates.value["share"] == true) {
+        SharePreviewModal(
+            personName = fullName,
+            occupation = occupation,
+            country = country,
+            sheetState = shareModalState,
+            phone = primaryPhone ?: "",
+            email = primaryEmail ?: "",
+            bloodGroup = bloodGroup,
+            linkedIn = profileState.socialAccounts.firstOrNull { it.platform.equals("LinkedIn", ignoreCase = true) }?.let { it.username ?: it.url } ?: "",
+            profilePhotoPath = customAvatarPath,
+            onDismissRequest = { hideSheet("share") },
+            onCopyShareLink = { link ->
+                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(link))
+                haptics.selection()
+                scope.launch { snackbarHostState.showSnackbar("Copied: $link") }
             }
         )
     }

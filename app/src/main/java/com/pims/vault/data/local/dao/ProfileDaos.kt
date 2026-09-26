@@ -33,6 +33,9 @@ interface PersonDao {
     @Query("SELECT * FROM persons ORDER BY is_primary_owner DESC, last_name ASC, first_name ASC")
     fun getAllPersonsFlow(): Flow<List<PersonEntity>>
 
+    @Query("SELECT * FROM persons ORDER BY is_primary_owner DESC, last_name ASC, first_name ASC")
+    suspend fun getAllPersons(): List<PersonEntity>
+
     @Transaction
     @Query("SELECT * FROM persons WHERE id = :id")
     fun getPersonWithFullProfileFlow(id: String): Flow<PersonWithFullProfile?>
@@ -70,6 +73,12 @@ interface ContactDao {
     @Query("SELECT * FROM contact_methods WHERE person_id = :personId ORDER BY is_primary DESC, created_at ASC")
     fun getContactsForPersonFlow(personId: String): Flow<List<ContactMethodEntity>>
 
+    @Query("SELECT * FROM contact_methods WHERE person_id = :personId ORDER BY is_primary DESC, created_at ASC")
+    suspend fun getContactsForPerson(personId: String): List<ContactMethodEntity>
+
+    @Query("SELECT * FROM contact_methods ORDER BY is_primary DESC, created_at ASC")
+    suspend fun getAllContacts(): List<ContactMethodEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(contact: ContactMethodEntity): Long
 
@@ -87,6 +96,12 @@ interface AddressDao {
     @Query("SELECT * FROM addresses WHERE person_id = :personId ORDER BY is_current DESC, created_at DESC")
     fun getAddressesForPersonFlow(personId: String): Flow<List<AddressEntity>>
 
+    @Query("SELECT * FROM addresses WHERE person_id = :personId ORDER BY is_current DESC, created_at DESC")
+    suspend fun getAddressesForPerson(personId: String): List<AddressEntity>
+
+    @Query("SELECT * FROM addresses ORDER BY is_current DESC, created_at DESC")
+    suspend fun getAllAddresses(): List<AddressEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(address: AddressEntity): Long
 
@@ -100,6 +115,9 @@ interface AddressDao {
 interface RelationshipDao {
     @Query("SELECT * FROM relationships WHERE source_person_id = :personId")
     fun getOutgoingRelationshipsFlow(personId: String): Flow<List<RelationshipEntity>>
+
+    @Query("SELECT * FROM relationships")
+    suspend fun getAllRelationships(): List<RelationshipEntity>
 
     @Transaction
     @Query("SELECT * FROM relationships WHERE source_person_id = :personId")

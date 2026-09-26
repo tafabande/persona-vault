@@ -31,6 +31,12 @@ interface DocumentDao {
     @Query("SELECT * FROM documents ORDER BY created_at DESC")
     fun getAllDocumentsFlow(): Flow<List<DocumentWithVersions>>
 
+    @Query("SELECT * FROM documents ORDER BY created_at DESC")
+    suspend fun getAllDocuments(): List<DocumentEntity>
+
+    @Query("SELECT * FROM document_versions ORDER BY version_number DESC")
+    suspend fun getAllDocumentVersions(): List<DocumentVersionEntity>
+
     @Transaction
     @Query("SELECT * FROM documents WHERE person_id = :personId AND document_type = :type ORDER BY created_at DESC")
     fun getDocumentsByTypeFlow(personId: String, type: DocumentType): Flow<List<DocumentWithVersions>>
@@ -102,6 +108,12 @@ interface MedicalDao {
     @Query("SELECT * FROM medical_records WHERE id = :id LIMIT 1")
     suspend fun getRecordById(id: String): MedicalRecordEntity?
 
+    @Query("SELECT * FROM medical_profiles")
+    suspend fun getAllProfiles(): List<MedicalProfileEntity>
+
+    @Query("SELECT * FROM medical_records ORDER BY created_at DESC")
+    suspend fun getAllRecords(): List<MedicalRecordEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(record: MedicalRecordEntity): Long
 
@@ -115,6 +127,9 @@ interface MedicalDao {
 interface EducationDao {
     @Query("SELECT * FROM education_records WHERE person_id = :personId ORDER BY start_date DESC")
     fun getEducationRecordsFlow(personId: String): Flow<List<EducationRecordEntity>>
+
+    @Query("SELECT * FROM education_records ORDER BY start_date DESC")
+    suspend fun getAllEducationRecords(): List<EducationRecordEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(record: EducationRecordEntity): Long
@@ -130,6 +145,9 @@ interface EmploymentDao {
     @Query("SELECT * FROM employment_records WHERE person_id = :personId ORDER BY is_current DESC, start_date DESC")
     fun getEmploymentRecordsFlow(personId: String): Flow<List<EmploymentRecordEntity>>
 
+    @Query("SELECT * FROM employment_records ORDER BY start_date DESC")
+    suspend fun getAllEmploymentRecords(): List<EmploymentRecordEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(record: EmploymentRecordEntity): Long
 
@@ -143,6 +161,9 @@ interface EmploymentDao {
 interface SocialAccountDao {
     @Query("SELECT * FROM social_accounts WHERE person_id = :personId ORDER BY created_at ASC")
     fun getSocialAccountsFlow(personId: String): Flow<List<SocialAccountEntity>>
+
+    @Query("SELECT * FROM social_accounts ORDER BY created_at ASC")
+    suspend fun getAllSocialAccounts(): List<SocialAccountEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(account: SocialAccountEntity): Long
@@ -163,6 +184,9 @@ interface VaultDao {
 
     @Query("SELECT * FROM vault_items WHERE id = :id")
     suspend fun getVaultItemById(id: String): VaultItemEntity?
+
+    @Query("SELECT * FROM vault_items ORDER BY category ASC, title ASC")
+    suspend fun getAllVaultItems(): List<VaultItemEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(item: VaultItemEntity): Long

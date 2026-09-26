@@ -56,48 +56,32 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Curated matte card palettes matching luxury executive finishes and user theme moods.
+ * Executive Monochrome Matte Finish for Persona Share Card.
+ * Clean, discreet, zero color distractions.
  */
-enum class ShareCardPalette(
-    val displayName: String,
-    val baseColor: Color,
-    val accentColor: Color,
-    val isLight: Boolean = false
-) {
-    OBSIDIAN("Obsidian", Color(0xFF141416), Color(0xFF26262B), isLight = false),
-    TERRACOTTA("Terracotta", Color(0xFF8B3A2B), Color(0xFFA64A38), isLight = false),
-    EMERALD("Emerald", Color(0xFF123D2A), Color(0xFF1A523A), isLight = false),
-    ROYAL_NAVY("Royal Navy", Color(0xFF122238), Color(0xFF1D3557), isLight = false),
-    TITANIUM("Titanium", Color(0xFF262A32), Color(0xFF373C47), isLight = false),
-    BURGUNDY("Burgundy", Color(0xFF4A1526), Color(0xFF641D34), isLight = false),
-    CHAMPAGNE("Champagne", Color(0xFF2F2820), Color(0xFF42392E), isLight = false),
-    FROST_WHITE("Frost White", Color(0xFFF3F4F6), Color(0xFFFFFFFF), isLight = true);
-
-    companion object {
-        fun fromIndex(index: Int): ShareCardPalette {
-            val values = entries
-            return values.getOrElse(index.coerceIn(0, values.size - 1)) { OBSIDIAN }
-        }
-    }
+object MatteCardTheme {
+    val Base = Color(0xFF121316)
+    val Surface = Color(0xFF1B1C20)
+    val Border = Color(0xFF2C2E35).copy(alpha = 0.85f)
+    val Text = Color(0xFFF9FAFB)
+    val Shadow = Color.Black.copy(alpha = 0.45f)
 }
 
 /**
  * Pristine Luxury Matte Share Card
  *
  * Requirements:
- * - Ultra-clean: Other than the name and QR code, there is NOTHING on the card.
- * - Top-left corner: Name with crisp, elegant typography.
- * - Right-middle: Quiet-zone QR code, vertically centered on the right side.
- * - Card finish: Matte surface texture.
- * - Top corner gleam: Specular light reflection radiating and sweeping across the corner.
- * - Color palettes: Multiple selectable luxury finishes.
+ * - Pure matte: Zero colors, pure executive obsidian matte.
+ * - Ultra-clean: Only the user's name and high-contrast quiet-zone QR code.
+ * - Top-left / center-left: Name with crisp typography.
+ * - Right-middle: Scannable vCard QR code.
+ * - Specular micro-sheen on top edge for subtle depth.
  */
 @Composable
 fun PersonaShareCard(
     personName: String,
     modifier: Modifier = Modifier,
     qrSeed: String = personName,
-    selectedPalette: ShareCardPalette = ShareCardPalette.OBSIDIAN,
     occupation: String = "",
     country: String = "",
     phone: String = "",
@@ -107,7 +91,7 @@ fun PersonaShareCard(
     profilePhotoPath: String? = null,
     presetTitle: String = "General"
 ) {
-    // Dynamic specular gleam animation across the top-right corner
+    // Dynamic specular gleam animation across the top edge
     val infiniteTransition = rememberInfiniteTransition(label = "cornerGleamTransition")
     val gleamPhase by infiniteTransition.animateFloat(
         initialValue = -0.3f,
@@ -119,9 +103,8 @@ fun PersonaShareCard(
         label = "gleamPhase"
     )
 
-    val isLight = selectedPalette.isLight
-    val textColor = if (isLight) Color(0xFF111827) else Color(0xFFF9FAFB)
-    val cardBorderColor = if (isLight) Color(0xFFD1D5DB).copy(alpha = 0.8f) else Color.White.copy(alpha = 0.14f)
+    val textColor = MatteCardTheme.Text
+    val cardBorderColor = MatteCardTheme.Border
 
     // Outer card with credit/business card aspect ratio (1.586f)
     Card(
@@ -129,41 +112,40 @@ fun PersonaShareCard(
             .fillMaxWidth()
             .aspectRatio(1.586f)
             .shadow(
-                elevation = 24.dp,
+                elevation = 20.dp,
                 shape = RoundedCornerShape(22.dp),
-                spotColor = if (isLight) Color.Black.copy(alpha = 0.22f) else selectedPalette.baseColor.copy(alpha = 0.75f),
-                ambientColor = Color.Black.copy(alpha = 0.28f)
+                spotColor = MatteCardTheme.Shadow,
+                ambientColor = Color.Black.copy(alpha = 0.35f)
             ),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = selectedPalette.baseColor),
+        colors = CardDefaults.cardColors(containerColor = MatteCardTheme.Base),
         border = BorderStroke(0.8.dp, cardBorderColor)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // Sophisticated matte gradient surface with depth
+                // Sophisticated executive monochrome matte surface
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            selectedPalette.accentColor.copy(alpha = 0.92f),
-                            selectedPalette.baseColor,
-                            selectedPalette.baseColor.copy(alpha = 0.96f),
-                            selectedPalette.accentColor.copy(alpha = 0.88f)
+                            MatteCardTheme.Surface,
+                            MatteCardTheme.Base,
+                            Color(0xFF0D0E10),
+                            MatteCardTheme.Surface.copy(alpha = 0.85f)
                         ),
                         start = Offset(0f, 0f),
                         end = Offset(900f, 700f)
                     )
                 )
-                // Premium matte finish with subtle texture and specular effects
+                // Premium matte finish with subtle specular reflection
                 .drawWithContent {
                     drawContent()
 
                     // 1. Soft ambient corner light (matte diffused glow)
                     val cornerGleam = Brush.radialGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = if (isLight) 0.38f else 0.24f),
-                            Color.White.copy(alpha = if (isLight) 0.16f else 0.10f),
-                            Color.White.copy(alpha = if (isLight) 0.04f else 0.02f),
+                            Color.White.copy(alpha = 0.18f),
+                            Color.White.copy(alpha = 0.07f),
                             Color.Transparent
                         ),
                         center = Offset(size.width * 0.94f, size.height * 0.06f),
@@ -171,12 +153,12 @@ fun PersonaShareCard(
                     )
                     drawRect(cornerGleam)
 
-                    // 2. Animated specular reflection sweep (elegant sheen)
+                    // 2. Animated specular reflection sweep (subtle sheen)
                     val p = gleamPhase
                     val sheenBrush = Brush.linearGradient(
                         0.0f to Color.Transparent,
                         (p - 0.18f).coerceIn(0f, 1f) to Color.Transparent,
-                        p.coerceIn(0f, 1f) to Color.White.copy(alpha = if (isLight) 0.38f else 0.22f),
+                        p.coerceIn(0f, 1f) to Color.White.copy(alpha = 0.16f),
                         (p + 0.18f).coerceIn(0f, 1f) to Color.Transparent,
                         1.0f to Color.Transparent,
                         start = Offset(size.width * 0.50f, 0f),
@@ -184,13 +166,13 @@ fun PersonaShareCard(
                     )
                     drawRect(sheenBrush)
 
-                    // 3. Refined rim highlight on top edge (3D depth)
+                    // 3. Refined rim highlight on top edge (satin depth)
                     val rimHighlight = Brush.horizontalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color.White.copy(alpha = if (isLight) 0.32f else 0.18f),
-                            Color.White.copy(alpha = if (isLight) 0.58f else 0.36f),
-                            Color.White.copy(alpha = if (isLight) 0.32f else 0.18f)
+                            Color.White.copy(alpha = 0.15f),
+                            Color.White.copy(alpha = 0.30f),
+                            Color.White.copy(alpha = 0.15f)
                         ),
                         startX = size.width * 0.55f,
                         endX = size.width
@@ -198,19 +180,8 @@ fun PersonaShareCard(
                     drawRect(
                         brush = rimHighlight,
                         topLeft = Offset(size.width * 0.55f, 0f),
-                        size = Size(size.width * 0.45f, 1.8.dp.toPx())
+                        size = Size(size.width * 0.45f, 1.6.dp.toPx())
                     )
-
-                    // 4. Subtle bottom edge shadow for depth
-                    val bottomShadow = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = if (isLight) 0.06f else 0.12f)
-                        ),
-                        startY = size.height * 0.85f,
-                        endY = size.height
-                    )
-                    drawRect(bottomShadow)
                 }
                 .padding(20.dp)
         ) {

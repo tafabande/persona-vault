@@ -98,15 +98,17 @@ object RepositoryModule {
         personDao: PersonDao,
         contactDao: ContactDao,
         addressDao: AddressDao,
-        auditLogger: HardenedAuditLogger
-    ): PersonRepository = PersonRepositoryImpl(personDao, contactDao, addressDao, auditLogger)
+        auditLogger: HardenedAuditLogger,
+        firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService
+    ): PersonRepository = PersonRepositoryImpl(personDao, contactDao, addressDao, auditLogger, firestoreSyncService)
 
     @Provides
     @Singleton
     fun provideRelationshipRepository(
         relationshipDao: RelationshipDao,
-        auditLogger: HardenedAuditLogger
-    ): RelationshipRepository = RelationshipRepositoryImpl(relationshipDao, auditLogger)
+        auditLogger: HardenedAuditLogger,
+        firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService
+    ): RelationshipRepository = RelationshipRepositoryImpl(relationshipDao, auditLogger, firestoreSyncService)
 
     @Provides
     @Singleton
@@ -119,8 +121,9 @@ object RepositoryModule {
     fun provideDocumentRepository(
         documentDao: DocumentDao,
         fileStorage: FileStorageService,
-        auditLogger: HardenedAuditLogger
-    ): DocumentRepository = DocumentRepositoryImpl(documentDao, fileStorage, auditLogger)
+        auditLogger: HardenedAuditLogger,
+        firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService
+    ): DocumentRepository = DocumentRepositoryImpl(documentDao, fileStorage, auditLogger, firestoreSyncService)
 
     @Provides
     @Singleton
@@ -135,8 +138,9 @@ object RepositoryModule {
         vaultDao: VaultDao,
         cryptoEngine: CryptoEngine,
         sessionManager: BiometricSessionManager,
-        auditLogger: HardenedAuditLogger
-    ): VaultRepository = VaultRepositoryImpl(vaultDao, cryptoEngine, sessionManager, auditLogger)
+        auditLogger: HardenedAuditLogger,
+        firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService
+    ): VaultRepository = VaultRepositoryImpl(vaultDao, cryptoEngine, sessionManager, auditLogger, firestoreSyncService)
 
     @Provides
     @Singleton

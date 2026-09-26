@@ -114,6 +114,7 @@ class CreateRelationshipUseCase @Inject constructor(
         relationshipDao = relationshipDao,
         personDao = object : PersonDao {
             override fun getAllPersonsFlow(): Flow<List<PersonEntity>> = kotlinx.coroutines.flow.flowOf(emptyList())
+            override suspend fun getAllPersons(): List<PersonEntity> = emptyList()
             override fun getPrimaryOwnerFlow(): Flow<PersonEntity?> = kotlinx.coroutines.flow.flowOf(null)
             override fun getPersonByIdFlow(id: String): Flow<PersonEntity?> = kotlinx.coroutines.flow.flowOf(null)
             override suspend fun getPersonById(id: String): PersonEntity? = null

@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import com.pims.vault.presentation.ui.components.StatusPill
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -105,6 +106,8 @@ fun HomeView(
     idPhotoPath: String? = null,
     documents: List<DocumentWithHistory> = emptyList(),
     syncStatusText: String = "✓ Up to date",
+    syncIsGood: Boolean = true,
+    onSyncClick: () -> Unit = {},
     isLocalOnly: Boolean = false,
     unreadNotificationCount: Int = 0,
     wallpapers: List<com.pims.vault.presentation.wallpaper.WallpaperItem> = emptyList(),
@@ -212,6 +215,9 @@ fun HomeView(
                     profilePhotoPath = profilePhotoPath ?: idPhotoPath,
                     avatarConfig = avatarConfig,
                     unreadNotificationCount = unreadNotificationCount,
+                    syncStatusText = syncStatusText,
+                    syncIsGood = syncIsGood,
+                    onSyncClick = onSyncClick,
                     onOpenProfile = onOpenProfile,
                     onOpenAvatarEditor = onOpenAvatarEditor,
                     onNotificationClick = onNotificationClick
@@ -330,6 +336,9 @@ private fun HomeHeaderRow(
     profilePhotoPath: String? = null,
     avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
     unreadNotificationCount: Int,
+    syncStatusText: String = "✓ Up to date",
+    syncIsGood: Boolean = true,
+    onSyncClick: () -> Unit = {},
     onOpenProfile: () -> Unit,
     onOpenAvatarEditor: () -> Unit = onOpenProfile,
     onNotificationClick: () -> Unit
@@ -396,41 +405,56 @@ private fun HomeHeaderRow(
             )
         }
 
-        // Notification Bell
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .shadow(3.dp, CircleShape, ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        )
-                    ),
-                    shape = CircleShape
-                )
-                .clip(CircleShape)
-                .clickable {
-                    haptics.selection()
-                    onNotificationClick()
-                },
-            contentAlignment = Alignment.Center
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Notifications,
-                contentDescription = "Activity Notifications",
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(20.dp)
+            // Interactive Sync Status Badge
+            StatusPill(
+                text = syncStatusText,
+                isGood = syncIsGood,
+                onClick = {
+                    haptics.selection()
+                    onSyncClick()
+                }
             )
-            if (unreadNotificationCount > 0) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(7.dp)
-                        .size(8.dp)
-                        .background(color = StateWarning, shape = CircleShape)
+
+            // Notification Bell
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .shadow(3.dp, CircleShape, ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+                    .clip(CircleShape)
+                    .clickable {
+                        haptics.selection()
+                        onNotificationClick()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Notifications,
+                    contentDescription = "Activity Notifications",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(20.dp)
                 )
+                if (unreadNotificationCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(7.dp)
+                            .size(8.dp)
+                            .background(color = StateWarning, shape = CircleShape)
+                    )
+                }
             }
         }
     }

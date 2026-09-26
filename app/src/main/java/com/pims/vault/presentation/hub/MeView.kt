@@ -73,9 +73,6 @@ import com.pims.vault.presentation.ui.components.FacetSummaryRow
 import com.pims.vault.presentation.ui.components.SocialProfileItem
 import com.pims.vault.presentation.ui.components.SocialProfilesSection
 import com.pims.vault.presentation.ui.components.StatusPill
-import com.pims.vault.presentation.ui.components.PersonaShareCard
-import com.pims.vault.presentation.ui.components.ShareCardPalette
-import com.pims.vault.presentation.ui.components.PersonaVCardHelper
 import com.pims.vault.presentation.ui.components.SocialPlatform
 import androidx.compose.foundation.border
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
@@ -261,7 +258,17 @@ fun MeView(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(10.dp))
 
+                // Prominent Interactive Sync Status Badge
+                StatusPill(
+                    text = syncStatusText,
+                    isGood = syncIsGood,
+                    onClick = {
+                        haptics.selection()
+                        onSyncClick()
+                    }
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -326,68 +333,7 @@ fun MeView(
             }
         }
 
-        // 2. Minimalist Digital Identity Share Card (Inline, No Overlay!)
-        item {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                var selectedPalette by remember { mutableStateOf(ShareCardPalette.OBSIDIAN) }
-                val cleanSeed = remember(personName, primaryPhone, primaryEmail, occupation, country, socialAccounts) {
-                    val linkedInHandle = socialAccounts.firstOrNull { it.platform == SocialPlatform.LINKEDIN }?.handleOrUrl ?: ""
-                    PersonaVCardHelper.formatVCard(
-                        fullName = personName,
-                        phone = primaryPhone ?: "",
-                        email = primaryEmail ?: "",
-                        occupation = occupation,
-                        linkedIn = linkedInHandle,
-                        country = country
-                    )
-                }
-
-                PersonaShareCard(
-                    personName = personName,
-                    selectedPalette = selectedPalette,
-                    occupation = occupation,
-                    country = country,
-                    phone = primaryPhone ?: "",
-                    email = primaryEmail ?: "",
-                    linkedIn = socialAccounts.firstOrNull { it.platform == SocialPlatform.LINKEDIN }?.handleOrUrl ?: "",
-                    qrSeed = cleanSeed,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Palette Selector dots
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                ) {
-                    ShareCardPalette.entries.forEach { palette ->
-                        val isSelected = palette == selectedPalette
-                        Box(
-                            modifier = Modifier
-                                .size(if (isSelected) 22.dp else 16.dp)
-                                .clip(CircleShape)
-                                .background(palette.baseColor)
-                                .border(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f),
-                                    shape = CircleShape
-                                )
-                                .clickable {
-                                    haptics.selection()
-                                    selectedPalette = palette
-                                }
-                        )
-                    }
-                }
-            }
-        }
-
-        // 3. Personal Quick Contacts
+        // 2. Personal Quick Contacts
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(

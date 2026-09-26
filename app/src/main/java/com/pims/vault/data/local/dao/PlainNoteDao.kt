@@ -19,6 +19,9 @@ interface PlainNoteDao {
     @Upsert
     suspend fun upsert(note: PlainNoteEntity)
 
+    @Query("SELECT * FROM plain_notes")
+    suspend fun getAllNotes(): List<PlainNoteEntity>
+
     @Query("DELETE FROM plain_notes WHERE id = :id")
     suspend fun deleteById(id: String)
 

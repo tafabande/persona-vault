@@ -89,6 +89,7 @@ class FullLifecycleE2ETests {
         override fun getPersonByIdFlow(id: String): Flow<PersonEntity?> = flowOf(inMemoryPersons[id])
         override suspend fun getPersonById(id: String): PersonEntity? = inMemoryPersons[id]
         override fun getAllPersonsFlow(): Flow<List<PersonEntity>> = flowOf(inMemoryPersons.values.toList())
+        override suspend fun getAllPersons(): List<PersonEntity> = inMemoryPersons.values.toList()
         override fun getPersonWithFullProfileFlow(id: String) = flowOf(null)
         override fun getPrimaryOwnerWithFullProfileFlow() = flowOf(null)
         override suspend fun insert(person: PersonEntity): Long {

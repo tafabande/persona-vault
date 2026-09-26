@@ -126,6 +126,7 @@ class PlainNotesAttachmentTest {
             val accountSecurityManager = mock<AccountSecurityManager>()
             val rememberedAccountManager = mock<RememberedAccountManager>()
             val personRepository = mock<PersonRepository>()
+            val firestoreSyncService = mock<com.pims.vault.core.sync.FirestoreSyncService>()
             val context = mock<android.content.Context>()
             val activity = mock<android.app.Activity>()
 
@@ -162,6 +163,7 @@ class PlainNotesAttachmentTest {
                 accountSecurityManager = accountSecurityManager,
                 rememberedAccountManager = rememberedAccountManager,
                 personRepository = personRepository,
+                firestoreSyncService = firestoreSyncService,
                 context = context
             )
 
