@@ -66,6 +66,9 @@ sealed interface AuthFailure {
     data object Unknown : AuthFailure {
         override val userMessage: String = "An unexpected error occurred"
     }
+    data class GeneralError(val detail: String) : AuthFailure {
+        override val userMessage: String = detail
+    }
     data object WeakPassword : AuthFailure {
         override val userMessage: String = "Password is too weak"
     }

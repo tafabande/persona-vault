@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.pims.vault.core.logging.VaultLogger
 
 @Singleton
 class FirebaseAuthenticationService @Inject constructor() : AuthenticationService {
@@ -80,6 +81,7 @@ class FirebaseAuthenticationService @Inject constructor() : AuthenticationServic
 
     override suspend fun signInWithGoogleProvider(activity: Activity): AuthResult {
         return try {
+            VaultLogger.i("FirebaseAuth", "Starting signInWithGoogleProvider for google.com...")
             val provider = OAuthProvider.newBuilder("google.com")
             provider.addCustomParameter("prompt", "select_account")
             val pendingTask = firebaseAuth.pendingAuthResult
@@ -89,8 +91,9 @@ class FirebaseAuthenticationService @Inject constructor() : AuthenticationServic
                 firebaseAuth.startActivityForSignInWithProvider(activity, provider.build()).await()
             }
             val user = toAuthUser(result.user)
-            if (user != null) AuthResult.Success(user) else AuthResult.Failure(AuthFailure.Unknown)
+            if (user != null) AuthResult.Success(user) else AuthResult.Failure(AuthFailure.GeneralError("Google authenticated but user profile is null"))
         } catch (e: Exception) {
+            VaultLogger.e("FirebaseAuth", "signInWithGoogleProvider error: ${e.message}", e)
             AuthResult.Failure(toAuthFailure(e))
         }
     }
@@ -189,7 +192,11 @@ class FirebaseAuthenticationService @Inject constructor() : AuthenticationServic
             is FirebaseTooManyRequestsException -> AuthFailure.TooManyRequests
             is FirebaseNetworkException -> AuthFailure.Network
             is FirebaseAuthActionCodeException -> AuthFailure.InvalidCredentials
-            else -> AuthFailure.Unknown
+            else -> {
+                val detail = throwable.localizedMessage ?: throwable.message ?: "Authentication error"
+                VaultLogger.e("FirebaseAuth", "Authentication error: $detail", throwable)
+                AuthFailure.GeneralError(detail)
+            }
         }
     }
 }
