@@ -1,3 +1,9 @@
+## Planning
+
+- Implements: `docs/planning/ROADMAP.md #<phase>` — <!-- e.g. #0 Planning System -->
+- ADR: `docs/planning/adr/NNNN-slug.md` (if applicable)
+- ROADMAP status updated: <!-- Planned → In Progress / In Review / Done -->
+
 ## Summary of Changes
 <!-- Concise explanation of what was changed and why -->
 

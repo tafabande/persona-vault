@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+ #!/usr/bin/env bash
 set -euo pipefail
 
 echo "========================================================"
@@ -44,6 +44,27 @@ if grep -E 'version(\.ref)?\s*=\s*("[^"]*(\+|\.x|latest|SNAPSHOT)[^"]*")' gradle
     exit 1
 fi
 echo "✓ All dependencies strictly pinned."
+
+# 6. Planning Phase Sync Check
+echo "[6/6] Verifying planning docs and app model are in sync..."
+for f in "AGENTS.md" "app/AGENTS.md" "docs/planning/README.md" "docs/planning/ROADMAP.md" "docs/planning/PHASES.md" "docs/planning/WORKFLOW.md" "docs/planning/TEMPLATE.md"; do
+    if [ ! -f "$f" ]; then
+        echo "CRITICAL ERROR: Required planning file missing: $f"
+        exit 1
+    fi
+done
+if [ ! -f "app/src/main/java/com/pims/vault/core/model/PlanningPhase.kt" ]; then
+    echo "CRITICAL ERROR: PlanningPhase.kt missing — app model must mirror docs/planning/ROADMAP.md"
+    exit 1
+fi
+# Count phases in ROADMAP.md (lines starting with "| 0" through "| 7") vs enum entries
+ROADMAP_PHASES=$(grep -cE '^\| [0-9]+ \|' docs/planning/ROADMAP.md || true)
+KT_PHASES=$(grep -cE '^\s*(PLANNING_SYSTEM|M[0-9]+_)' app/src/main/java/com/pims/vault/core/model/PlanningPhase.kt || true)
+if [ "$ROADMAP_PHASES" != "$KT_PHASES" ]; then
+    echo "CRITICAL ERROR: Phase count mismatch — ROADMAP.md has $ROADMAP_PHASES phases, PlanningPhase.kt has $KT_PHASES entries. Keep them in sync."
+    exit 1
+fi
+echo "✓ Planning docs and app model in sync ($ROADMAP_PHASES phases)."
 
 echo "========================================================"
 echo "✓ All Persona Machine-Enforced Security Gates PASSED."
