@@ -34,11 +34,11 @@ class ThemeManager @Inject constructor(
         }.asStateFlow()
 
     private fun loadInitialTheme(): ThemeMode {
-        val saved = prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name)
+        val saved = prefs.getString(KEY_THEME_MODE, ThemeMode.LIGHT.name)
         return try {
-            ThemeMode.valueOf(saved ?: ThemeMode.SYSTEM.name)
+            ThemeMode.valueOf(saved ?: ThemeMode.LIGHT.name)
         } catch (_: Exception) {
-            ThemeMode.SYSTEM
+            ThemeMode.LIGHT
         }
     }
 

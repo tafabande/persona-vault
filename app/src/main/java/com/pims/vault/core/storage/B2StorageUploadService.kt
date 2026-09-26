@@ -132,11 +132,11 @@ class B2StorageUploadService @Inject constructor(
         plaintext: ByteArray,
         mimeType: String
     ): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
-        val fileKey = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_DOCUMENTS)
-        val encryptedPayload = cryptoEngine.encrypt(plaintext, fileKey)
+        val fileKey = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
+        val encryptedPayload = cryptoEngine.encrypt(plaintext, fileKey.bytes)
         fileKey.close()
 
-        val sha256 = calculateSha256(encryptedPayload.ciphertext)
+        val sha256 = calculateSha256(encryptedPayload.combinedCiphertextWithTag)
         val ivHex = encryptedPayload.iv.joinToString("") { "%02x".format(it) }
 
         ensureAuthToken()
@@ -150,7 +150,7 @@ class B2StorageUploadService @Inject constructor(
                 remotePath = remotePath,
                 downloadUrl = fallbackUrl,
                 ivHex = ivHex,
-                sizeBytes = encryptedPayload.ciphertext.size.toLong(),
+                sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
                 sha256Hex = sha256
             )
         }
@@ -169,7 +169,7 @@ class B2StorageUploadService @Inject constructor(
                 remotePath = remotePath,
                 downloadUrl = fallbackUrl,
                 ivHex = ivHex,
-                sizeBytes = encryptedPayload.ciphertext.size.toLong(),
+                sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
                 sha256Hex = sha256
             )
         }
@@ -184,7 +184,7 @@ class B2StorageUploadService @Inject constructor(
                 remotePath = remotePath,
                 downloadUrl = fallbackUrl,
                 ivHex = ivHex,
-                sizeBytes = encryptedPayload.ciphertext.size.toLong(),
+                sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
                 sha256Hex = sha256
             )
         }
@@ -194,12 +194,12 @@ class B2StorageUploadService @Inject constructor(
             .header("Authorization", uploadAuthToken)
             .header("X-Bz-File-Name", remotePath)
             .header("Content-Type", "application/octet-stream")
-            .header("X-Bz-Content-Sha1", calculateSha1(encryptedPayload.ciphertext))
+            .header("X-Bz-Content-Sha1", calculateSha1(encryptedPayload.combinedCiphertextWithTag))
             .header("X-Bz-Info-originalMimeType", mimeType)
             .header("X-Bz-Info-encryptedWithCryptoEngine", "true")
             .header("X-Bz-Info-ivHex", ivHex)
             .header("X-Bz-Info-sha256Checksum", sha256)
-            .post(encryptedPayload.ciphertext.toRequestBody("application/octet-stream".toMediaTypeOrNull()))
+            .post(encryptedPayload.combinedCiphertextWithTag.toRequestBody("application/octet-stream".toMediaTypeOrNull()))
             .build()
 
         val uploadResp = httpClient.newCall(uploadReq).execute()
@@ -212,7 +212,7 @@ class B2StorageUploadService @Inject constructor(
             remotePath = remotePath,
             downloadUrl = finalDownloadUrl,
             ivHex = ivHex,
-            sizeBytes = encryptedPayload.ciphertext.size.toLong(),
+            sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
             sha256Hex = sha256
         )
     }

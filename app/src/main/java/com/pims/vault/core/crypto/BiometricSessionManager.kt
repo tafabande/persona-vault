@@ -172,17 +172,47 @@ class BiometricSessionManager(
     }
 
     fun getFileStorageKey(): ByteArray {
-        val key = fileStorageKey ?: throw SecurityException("Application session is locked. Authenticate first.")
+        if (_sessionState.value is SessionState.Locked) {
+            throw SecurityException("Application session is locked. Authenticate first.")
+        }
+        val key = fileStorageKey ?: synchronized(this) {
+            fileStorageKey ?: run {
+                val derived = keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
+                    ?: generateFallbackKey()
+                fileStorageKey = derived
+                derived
+            }
+        }
         return key.copyBytes()
     }
 
     fun getAuditKey(): ByteArray {
-        val key = auditKey ?: throw SecurityException("Application session is locked. Authenticate first.")
+        if (_sessionState.value is SessionState.Locked) {
+            throw SecurityException("Application session is locked. Authenticate first.")
+        }
+        val key = auditKey ?: synchronized(this) {
+            auditKey ?: run {
+                val derived = keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_AUDIT)
+                    ?: generateFallbackKey()
+                auditKey = derived
+                derived
+            }
+        }
         return key.copyBytes()
     }
 
     fun getDatabaseKey(): ByteArray {
-        val key = databaseKey ?: throw SecurityException("Application session is locked. Authenticate first.")
+        if (_sessionState.value is SessionState.Locked) {
+            throw SecurityException("Application session is locked. Authenticate first.")
+        }
+        val key = databaseKey ?: synchronized(this) {
+            databaseKey ?: run {
+                val derived = keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_DATABASE)
+                    ?: generateFallbackKey()
+                databaseKey = derived
+                derived
+            }
+        }
         return key.copyBytes()
     }
 
@@ -191,7 +221,12 @@ class BiometricSessionManager(
         return key.copyBytes()
     }
 
-    fun getVaultKey(): ByteArray = zone4VaultMasterKey?.copyBytes() ?: getDatabaseKey()
+    fun getVaultKey(): ByteArray {
+        if (_sessionState.value is SessionState.Locked) {
+            throw SecurityException("Application session is locked. Authenticate first.")
+        }
+        return zone4VaultMasterKey?.copyBytes() ?: getDatabaseKey()
+    }
 
     fun isZone4Unlocked(): Boolean {
         val state = _sessionState.value

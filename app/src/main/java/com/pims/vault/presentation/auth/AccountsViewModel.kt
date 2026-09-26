@@ -15,6 +15,11 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import android.content.Context
+import com.pims.vault.domain.repository.PersonRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+
 enum class AccountFormMode {
     SIGN_IN,
     CREATE_ACCOUNT
@@ -40,7 +45,9 @@ class AccountsViewModel @Inject constructor(
     private val googleIdTokenProvider: GoogleIdTokenProvider,
     private val accountModeManager: AccountModeManager,
     private val accountSecurityManager: AccountSecurityManager,
-    private val rememberedAccountManager: RememberedAccountManager
+    private val rememberedAccountManager: RememberedAccountManager,
+    private val personRepository: PersonRepository,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AccountsUiState())
@@ -114,13 +121,34 @@ class AccountsViewModel @Inject constructor(
     fun signInWithGoogle(activity: Activity) {
         viewModelScope.launch {
             _uiState.update { it.copy(isBusy = true, error = null) }
+            // 1. Try One-Tap / Credential Manager first
             when (val tokenResult = googleIdTokenProvider.requestGoogleIdToken(activity)) {
                 is GoogleIdTokenResult.Success -> {
                     val result = authenticationService.signInWithGoogle(tokenResult.idToken)
-                    complete(result, result.let { if (it is AuthResult.Success) it.user.email ?: "" else "" }, false, "GOOGLE")
+                    if (result is AuthResult.Success) {
+                        complete(result, result.user.email ?: "", false, "GOOGLE")
+                        return@launch
+                    }
                 }
                 is GoogleIdTokenResult.Failure -> {
-                    _uiState.update { it.copy(isBusy = false, error = tokenResult.error.userMessage) }
+                    if (tokenResult.error is AuthFailure.Cancelled) {
+                        _uiState.update { it.copy(isBusy = false, error = null) }
+                        return@launch
+                    }
+                }
+            }
+
+            // 2. Fall back to Firebase's official Google OAuth Web/Custom Tabs provider flow
+            when (val oauthResult = authenticationService.signInWithGoogleProvider(activity)) {
+                is AuthResult.Success -> {
+                    complete(oauthResult, oauthResult.user.email ?: "", false, "GOOGLE")
+                }
+                is AuthResult.Failure -> {
+                    if (oauthResult.error is AuthFailure.Cancelled) {
+                        _uiState.update { it.copy(isBusy = false, error = null) }
+                    } else {
+                        _uiState.update { it.copy(isBusy = false, error = oauthResult.error.userMessage) }
+                    }
                 }
             }
         }
@@ -159,11 +187,6 @@ class AccountsViewModel @Inject constructor(
         }
     }
 
-    fun signOut() {
-        authenticationService.signOut()
-        accountModeManager.setMode(AccountMode.GUEST)
-    }
-
     fun requestEmailOtp(email: String) {
         _uiState.update { it.copy(otpSent = true, otpTargetEmail = email, otpCooldownSeconds = 60) }
     }
@@ -186,7 +209,7 @@ class AccountsViewModel @Inject constructor(
     }
 
     fun evaluatePasswordStrength(password: String): PasswordStrength {
-        return accountSecurityManager.evaluatePassword(password)
+        return accountSecurityManager.evaluatePasswordStrength(password)
     }
 
     fun switchToSignIn() {
@@ -198,7 +221,7 @@ class AccountsViewModel @Inject constructor(
     }
 
     fun revisitWalkthrough() {
-        accountModeManager.setMode(AccountMode.GUEST)
+        accountModeManager.setLocalOnlyMode()
     }
 
     fun clearError() {
@@ -220,7 +243,7 @@ class AccountsViewModel @Inject constructor(
             is AuthResult.Success -> {
                 val user = result.user
                 rememberedAccountManager.rememberAccount(user, providerKind)
-                accountModeManager.setMode(AccountMode.ACCOUNT)
+                accountModeManager.upgradeToCloudAccount(user.email ?: "")
 
                 if (rememberedAccountManager.isVaultBoundToDifferentAccount(user.uid)) {
                     _uiState.update {
@@ -232,6 +255,62 @@ class AccountsViewModel @Inject constructor(
                 } else {
                     rememberedAccountManager.bindVaultToAccount(user.uid)
                     _uiState.update { it.copy(isBusy = false, user = user) }
+
+                    // Ingest profile details from Google (name, email, and pfp)
+                    if (providerKind == "GOOGLE") {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                val existingOwner = personRepository.getPrimaryOwner()
+                                val isNewProfile = existingOwner == null || (existingOwner.firstName.isBlank() && existingOwner.lastName.isBlank())
+                                if (isNewProfile) {
+                                    val parts = user.displayName?.trim()?.split(" ") ?: emptyList()
+                                    val fName = parts.firstOrNull() ?: ""
+                                    val lName = if (parts.size > 1) parts.drop(1).joinToString(" ") else ""
+                                    val owner = existingOwner?.copy(
+                                        firstName = fName,
+                                        lastName = lName
+                                    ) ?: com.pims.vault.data.local.entity.PersonEntity(
+                                        id = "primary",
+                                        isPrimaryOwner = true,
+                                        firstName = fName,
+                                        lastName = lName
+                                    )
+                                    personRepository.savePerson(owner)
+                                    if (!user.email.isNullOrBlank()) {
+                                        personRepository.addContactMethod(
+                                            com.pims.vault.data.local.entity.ContactMethodEntity(
+                                                id = java.util.UUID.randomUUID().toString(),
+                                                personId = "primary",
+                                                contactType = com.pims.vault.core.model.ContactType.EMAIL,
+                                                value = user.email,
+                                                label = "Primary"
+                                            )
+                                        )
+                                    }
+                                }
+
+                                // Avatar PFP: If new user OR existing user has no photo, fetch and store
+                                val avatarManager = com.pims.vault.presentation.avatar.PersonaAvatarManager(context)
+                                val currentPhoto = avatarManager.customAvatarPath.value
+                                val needsPfp = currentPhoto.isNullOrBlank() || !java.io.File(currentPhoto).exists()
+                                if ((isNewProfile || needsPfp) && !user.photoUrl.isNullOrBlank()) {
+                                    try {
+                                        val conn = java.net.URL(user.photoUrl).openConnection()
+                                        conn.connectTimeout = 6000
+                                        conn.readTimeout = 6000
+                                        val stream = conn.getInputStream()
+                                        val bmp = android.graphics.BitmapFactory.decodeStream(stream)
+                                        stream.close()
+                                        if (bmp != null) {
+                                            avatarManager.saveCustomPhoto(bmp)
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+
+                    accountModeManager.completeInitialProfile()
                     onSuccessAction()
                     viewModelScope.launch { _signInSuccessEvent.emit(Unit) }
                 }
@@ -252,6 +331,16 @@ class AccountsViewModel @Inject constructor(
         if (email.isBlank()) return "Email cannot be empty"
         if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) return "Invalid email address"
         return null
+    }
+
+    fun signOut() {
+        viewModelScope.launch {
+            try {
+                authenticationService.signOut()
+            } catch (_: Exception) {}
+            accountModeManager.signOut()
+            _uiState.value = AccountsUiState()
+        }
     }
 
     private fun failWith(message: String) {

@@ -1,7 +1,11 @@
 package com.pims.vault.presentation
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +14,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -19,30 +25,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathMeasure
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import com.pims.vault.presentation.ui.theme.PersonaMotion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
 fun PimsVaultSplashScreen() {
-    val scaleAnim = remember { Animatable(0.92f) }
+    val scaleAnim = remember { Animatable(0.88f) }
     val alphaAnim = remember { Animatable(0f) }
-    val drawProgress = remember { Animatable(0f) }
+    val pulseAnim = remember { Animatable(1f) }
     val textAlphaAnim = remember { Animatable(0f) }
 
+    val isDark = LocalPimsDarkTheme.current
     val bgColor = MaterialTheme.colorScheme.background
     val primaryColor = MaterialTheme.colorScheme.primary
     val textColor = MaterialTheme.colorScheme.onBackground
-    val secondaryColor = MaterialTheme.colorScheme.tertiary
+    val surfaceColor = MaterialTheme.colorScheme.surface
 
     LaunchedEffect(Unit) {
         launch {
@@ -58,17 +64,19 @@ fun PimsVaultSplashScreen() {
             )
         }
         launch {
-            delay(60)
-            drawProgress.animateTo(
+            delay(120)
+            textAlphaAnim.animateTo(
                 targetValue = 1.0f,
-                animationSpec = PersonaMotion.snappySpring(false)
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
             )
         }
         launch {
-            delay(180)
-            textAlphaAnim.animateTo(
-                targetValue = 0.95f,
-                animationSpec = PersonaMotion.smoothSpring(false)
+            pulseAnim.animateTo(
+                targetValue = 1.06f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 1400, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                )
             )
         }
     }
@@ -83,6 +91,24 @@ fun PimsVaultSplashScreen() {
                 .background(bgColor),
             contentAlignment = Alignment.Center
         ) {
+            // Subtle ambient halo behind the logo
+            Box(
+                modifier = Modifier
+                    .size(220.dp)
+                    .scale(pulseAnim.value)
+                    .alpha(alphaAnim.value * if (isDark) 0.18f else 0.25f)
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                primaryColor,
+                                primaryColor.copy(alpha = 0.4f),
+                                Color.Transparent
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+            )
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -90,105 +116,49 @@ fun PimsVaultSplashScreen() {
                     .scale(scaleAnim.value)
                     .alpha(alphaAnim.value)
             ) {
-                Canvas(modifier = Modifier.size(64.dp)) {
-                    val w = size.width
-                    val h = size.height
-                    val stroke = Stroke(
-                        width = 2.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
+                // Persona Brand Emblem
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(RoundedCornerShape(26.dp))
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    primaryColor,
+                                    primaryColor.copy(alpha = 0.85f)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "P",
+                        color = Color.White,
+                        fontSize = 42.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-1).sp
                     )
-
-                    val notePath = Path().apply {
-                        moveTo(w * 0.28f, h * 0.22f)
-                        lineTo(w * 0.28f, h * 0.78f)
-                        lineTo(w * 0.72f, h * 0.78f)
-                        lineTo(w * 0.72f, h * 0.36f)
-                        lineTo(w * 0.58f, h * 0.22f)
-                        lineTo(w * 0.28f, h * 0.22f)
-                    }
-
-                    val cornerPath = Path().apply {
-                        moveTo(w * 0.58f, h * 0.22f)
-                        lineTo(w * 0.58f, h * 0.32f)
-                        lineTo(w * 0.72f, h * 0.36f)
-                    }
-
-                    val fullPath = Path().apply {
-                        addPath(notePath)
-                        addPath(cornerPath)
-                    }
-
-                    val pathMeasure = PathMeasure()
-                    pathMeasure.setPath(fullPath, false)
-                    val totalLength = pathMeasure.length
-                    val partialPath = Path()
-                    pathMeasure.getSegment(0f, totalLength * drawProgress.value, partialPath, true)
-
-                    drawPath(
-                        path = partialPath,
-                        color = primaryColor,
-                        style = stroke
-                    )
-
-                    val lineAlpha = drawProgress.value.coerceIn(0f, 1f)
-                    val lineStroke = Stroke(
-                        width = 1.5.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-
-                    drawLine(
-                        color = primaryColor.copy(alpha = 0.5f * lineAlpha),
-                        start = androidx.compose.ui.geometry.Offset(w * 0.36f, h * 0.48f),
-                        end = androidx.compose.ui.geometry.Offset(w * 0.64f, h * 0.48f),
-                        strokeWidth = lineStroke.width
-                    )
-                    drawLine(
-                        color = primaryColor.copy(alpha = 0.5f * lineAlpha),
-                        start = androidx.compose.ui.geometry.Offset(w * 0.36f, h * 0.56f),
-                        end = androidx.compose.ui.geometry.Offset(w * 0.58f, h * 0.56f),
-                        strokeWidth = lineStroke.width
-                    )
-                    drawLine(
-                        color = primaryColor.copy(alpha = 0.5f * lineAlpha),
-                        start = androidx.compose.ui.geometry.Offset(w * 0.36f, h * 0.64f),
-                        end = androidx.compose.ui.geometry.Offset(w * 0.52f, h * 0.64f),
-                        strokeWidth = lineStroke.width
-                    )
-
-                    val penProgress = (drawProgress.value - 0.3f).coerceIn(0f, 1f)
-                    if (penProgress > 0f) {
-                        val penPath = Path().apply {
-                            moveTo(w * 0.78f, h * 0.18f)
-                            lineTo(w * 0.84f, h * 0.24f)
-                            lineTo(w * 0.60f, h * 0.56f)
-                            lineTo(w * 0.54f, h * 0.56f)
-                            lineTo(w * 0.54f, h * 0.50f)
-                            close()
-                        }
-
-                        val penMeasure = PathMeasure()
-                        penMeasure.setPath(penPath, false)
-                        val penLen = penMeasure.length
-                        val penPartial = Path()
-                        penMeasure.getSegment(0f, penLen * penProgress, penPartial, true)
-
-                        drawPath(
-                            path = penPartial,
-                            color = secondaryColor,
-                            style = stroke
-                        )
-                    }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Text(
-                    text = "Persona",
+                    text = "PERSONA",
                     color = textColor,
-                    fontSize = 19.sp,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 3.sp,
+                    modifier = Modifier.alpha(textAlphaAnim.value)
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Encrypted Personal Vault",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
-                    letterSpacing = 1.8.sp,
+                    letterSpacing = 0.5.sp,
                     modifier = Modifier.alpha(textAlphaAnim.value)
                 )
             }

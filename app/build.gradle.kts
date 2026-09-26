@@ -35,7 +35,7 @@ android {
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.pims.vault"
+        applicationId = "personal.info"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 2
@@ -66,8 +66,6 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
             buildConfigField("Boolean", "IS_DEBUG_CRYPTO_ALLOWED", "true")
             buildConfigField("Boolean", "ENABLE_STRICT_SECURITY_LOGS", "true")
         }
@@ -93,7 +91,8 @@ android {
         jvmTarget = "17"
         freeCompilerArgs += listOf(
             "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.ui.ExperimentalComposeUiApi"
         )
     }
 
@@ -154,6 +153,13 @@ dependencies {
     }
     implementation(libs.androidx.startup.runtime)
 
+    // Credentials & Identity & Network
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
+    implementation(libs.okhttp)
+    implementation(libs.zxing.core)
+
     // Room & Encrypted Database (SQLCipher)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
@@ -171,6 +177,11 @@ dependencies {
     kspDebug(libs.hilt.compiler)
     kspRelease(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
+
+    // Firebase authentication and remote storage
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.storage)
 
     // Unit & Integration Testing
     testImplementation(libs.junit)

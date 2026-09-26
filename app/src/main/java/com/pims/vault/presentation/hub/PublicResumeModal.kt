@@ -219,15 +219,13 @@ fun PublicResumeModal(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
 
-                        // 2. PROFESSIONAL PROFILE / SUMMARY
+                        // Segment content: Direct listing without 'Professional Summary' subtitle/header
                         if (!data.bioOrSummary.isNullOrBlank()) {
-                            ResumeSection(title = "Professional Summary") {
-                                Text(
-                                    text = data.bioOrSummary,
-                                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                            Text(
+                                text = data.bioOrSummary,
+                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
 
                         // 3. EXPERIENCE

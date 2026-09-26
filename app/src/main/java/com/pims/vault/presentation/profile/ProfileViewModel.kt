@@ -176,7 +176,9 @@ sealed interface ProfileEvent {
         val dob: String,
         val anniversary: String,
         val notes: String,
-        val isNextOfKin: Boolean
+        val isNextOfKin: Boolean,
+        val customPersonId: String? = null,
+        val photoPath: String? = null
     ) : ProfileEvent
     data class DeleteRelationship(val relationshipId: String, val targetPersonId: String) : ProfileEvent
 
@@ -712,10 +714,16 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.AddRelationship -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
-                        val targetId = UUID.randomUUID().toString()
+                        val targetId = event.customPersonId ?: UUID.randomUUID().toString()
                         val parts = event.fullName.trim().split(" ", limit = 2)
                         val first = parts.firstOrNull().orEmpty()
                         val last = parts.getOrNull(1).orEmpty()
+
+                        val savedNotes = if (!event.photoPath.isNullOrBlank()) {
+                            serializeNotesMeta(NotesMeta(idPhotoPath = event.photoPath, userNotes = event.notes.trim().takeIf { it.isNotBlank() }))
+                        } else {
+                            event.notes.trim().takeIf { it.isNotBlank() }
+                        }
 
                         val targetPerson = PersonEntity(
                             id = targetId,
@@ -725,7 +733,7 @@ class ProfileViewModel @Inject constructor(
                             dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
                             countryOfResidence = event.address.trim().takeIf { it.isNotBlank() },
                             occupation = event.anniversary.trim().takeIf { it.isNotBlank() },
-                            notes = event.notes.trim().takeIf { it.isNotBlank() }
+                            notes = savedNotes
                         )
                         personDao.insertOrUpdate(targetPerson)
 
@@ -992,7 +1000,7 @@ class ProfileViewModel @Inject constructor(
 
 data class FullProfileBundle(
     val fullProfile: com.pims.vault.data.local.relation.PersonWithFullProfile,
-    val relList: List<com.pims.vault.data.local.relation.RelationshipWithPerson>,
+    val relList: List<com.pims.vault.data.local.relation.RelationshipWithTargetPerson>,
     val socials: List<com.pims.vault.data.local.entity.SocialAccountEntity>,
     val medRecords: List<com.pims.vault.data.local.entity.MedicalRecordEntity>
 )

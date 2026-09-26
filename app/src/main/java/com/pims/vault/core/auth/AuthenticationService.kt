@@ -80,6 +80,7 @@ interface AuthenticationService {
     suspend fun signInWithEmail(email: String, password: String): AuthResult
     suspend fun createEmailAccount(email: String, password: String, displayName: String? = null): AuthResult
     suspend fun signInWithGoogle(idToken: String): AuthResult
+    suspend fun signInWithGoogleProvider(activity: android.app.Activity): AuthResult
     suspend fun signInWithCustomToken(token: String): AuthResult
     suspend fun sendPasswordReset(email: String): AuthResult
     suspend fun sendVerificationEmail(): AuthResult

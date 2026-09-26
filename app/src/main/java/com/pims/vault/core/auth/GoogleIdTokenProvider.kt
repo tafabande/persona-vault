@@ -2,6 +2,7 @@ package com.pims.vault.core.auth
 
 import android.app.Activity
 import android.content.Context
+import androidx.credentials.CreatePasswordRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -28,10 +29,9 @@ class GoogleIdTokenProvider @Inject constructor(
         const val DEFAULT_WEB_CLIENT_ID = "321349557206-9nkjevjc5vqplv1eoo4a7du29qqo7u9e.apps.googleusercontent.com"
     }
 
-    private val credentialManager = CredentialManager.create(context)
-
     suspend fun requestGoogleIdToken(activity: Activity): GoogleIdTokenResult {
         return try {
+            val credentialManager = CredentialManager.create(activity)
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
                 .setServerClientId(DEFAULT_WEB_CLIENT_ID)
@@ -61,7 +61,20 @@ class GoogleIdTokenProvider @Inject constructor(
         username: String,
         password: String
     ) {
-        // Optional password credential persistence
+        if (username.isBlank() || password.isBlank()) return
+        try {
+            val credentialManager = CredentialManager.create(activity)
+            val request = CreatePasswordRequest(
+                id = username.trim(),
+                password = password
+            )
+            credentialManager.createCredential(
+                context = activity,
+                request = request
+            )
+        } catch (_: Exception) {
+            // Gracefully handled if user declines save prompt or manager is unavailable
+        }
     }
 
     private fun extractIdToken(response: GetCredentialResponse): GoogleIdTokenResult {
@@ -69,7 +82,10 @@ class GoogleIdTokenProvider @Inject constructor(
         if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
             try {
                 val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                return GoogleIdTokenResult.Success(googleIdTokenCredential.idToken)
+                val idToken = googleIdTokenCredential.idToken
+                if (idToken.isNotBlank()) {
+                    return GoogleIdTokenResult.Success(idToken)
+                }
             } catch (e: Exception) {
                 return GoogleIdTokenResult.Failure(AuthFailure.GoogleTokenMissing)
             }

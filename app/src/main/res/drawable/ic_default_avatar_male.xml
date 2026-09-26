@@ -3,19 +3,18 @@
     android:height="120dp"
     android:viewportWidth="120"
     android:viewportHeight="120">
-    
-    <!-- Background circle -->
+    <!-- Soft neutral background circle -->
     <path
-        android:fillColor="#E8E5E0"
+        android:fillColor="#B0BEC5"
         android:pathData="M60,60m-60,0a60,60 0,1 1,120 0a60,60 0,1 1,-120 0" />
     
-    <!-- Head -->
+    <!-- Pure White Head -->
     <path
-        android:fillColor="#A8A298"
-        android:pathData="M60,35m-15,0a15,15 0,1 1,30 0a15,15 0,1 1,-30 0" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,40m-16,0a16,16 0,1 1,32 0a16,16 0,1 1,-32 0" />
     
-    <!-- Shoulders (wider for male) -->
+    <!-- Pure White Shoulders / Torso -->
     <path
-        android:fillColor="#A8A298"
-        android:pathData="M60,65c-18,0 -32,8 -32,18v7c0,2 2,4 4,4h56c2,0 4,-2 4,-4v-7c0,-10 -14,-18 -32,-18z" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,68c-20,0 -34,10 -34,22v12c0,3 3,6 6,6h56c3,0 6,-3 6,-6v-12c0,-12 -14,-22 -34,-22z" />
 </vector>

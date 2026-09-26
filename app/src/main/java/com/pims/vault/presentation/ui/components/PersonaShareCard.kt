@@ -6,10 +6,18 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.asImageBitmap
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import com.pims.vault.R
+import java.io.File
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,6 +103,8 @@ fun PersonaShareCard(
     phone: String = "",
     email: String = "",
     bloodGroup: String = "",
+    linkedIn: String = "",
+    profilePhotoPath: String? = null,
     presetTitle: String = "General"
 ) {
     // Dynamic specular gleam animation across the top-right corner
@@ -203,155 +214,56 @@ fun PersonaShareCard(
                 }
                 .padding(20.dp)
         ) {
-            // LEFT SIDE: Preset badge & aligned identity information
-            Column(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .fillMaxWidth(0.56f),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                // Preset badge pill
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = when {
-                        presetTitle.contains("Medical", ignoreCase = true) -> Color(0xFFDC2626).copy(alpha = 0.25f)
-                        presetTitle.contains("Professional", ignoreCase = true) -> Color(0xFF2563EB).copy(alpha = 0.25f)
-                        presetTitle.contains("Contact", ignoreCase = true) -> Color(0xFF059669).copy(alpha = 0.25f)
-                        else -> Color.White.copy(alpha = 0.15f)
-                    }
-                ) {
-                    Text(
-                        text = when {
-                            presetTitle.contains("Medical", ignoreCase = true) -> "⚕ MEDICAL ICE"
-                            presetTitle.contains("Professional", ignoreCase = true) -> "💼 PROFESSIONAL"
-                            presetTitle.contains("Contact", ignoreCase = true) -> "📇 CONTACT CARD"
-                            else -> "✦ PERSONAL ID"
-                        },
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.8.sp,
-                            fontSize = 9.sp
-                        ),
-                        color = when {
-                            presetTitle.contains("Medical", ignoreCase = true) -> Color(0xFFFCA5A5)
-                            presetTitle.contains("Professional", ignoreCase = true) -> Color(0xFF93C5FD)
-                            presetTitle.contains("Contact", ignoreCase = true) -> Color(0xFF6EE7B7)
-                            else -> textColor.copy(alpha = 0.85f)
-                        },
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            val qrPayload = remember(qrSeed, personName, phone, email, occupation, linkedIn, country) {
+                if (qrSeed.isNotBlank() && qrSeed.startsWith("BEGIN:VCARD")) {
+                    qrSeed
+                } else {
+                    PersonaVCardHelper.formatVCard(
+                        fullName = personName,
+                        phone = phone,
+                        email = email,
+                        occupation = occupation,
+                        linkedIn = linkedIn,
+                        country = country
                     )
                 }
+            }
 
+            val qrBitmap = remember(qrPayload) {
+                try {
+                    QrCodeGenerator.generateQrBitmap(qrPayload, size = 360)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+            // LEFT SIDE: Only the Person's Name - Ultra Minimalist
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(0.58f)
+                    .padding(start = 6.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
                 Text(
-                    text = personName.ifBlank { "Personal Persona" },
+                    text = personName.ifBlank { "Personal Contact" },
                     style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 19.sp,
+                        fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.4.sp
+                        letterSpacing = (-0.2).sp,
+                        lineHeight = 27.sp
                     ),
                     color = textColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                when {
-                    presetTitle.contains("Medical", ignoreCase = true) -> {
-                        if (bloodGroup.isNotBlank()) {
-                            Text(
-                                text = "Blood Type: $bloodGroup",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color(0xFFFCA5A5),
-                                maxLines = 1
-                            )
-                        }
-                        if (phone.isNotBlank()) {
-                            Text(
-                                text = "ICE: $phone",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textColor.copy(alpha = 0.75f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        } else {
-                            Text(
-                                text = "Emergency Health Record",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textColor.copy(alpha = 0.75f)
-                            )
-                        }
-                    }
-                    presetTitle.contains("Professional", ignoreCase = true) -> {
-                        if (occupation.isNotBlank()) {
-                            Text(
-                                text = occupation,
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = textColor.copy(alpha = 0.90f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        if (email.isNotBlank()) {
-                            Text(
-                                text = email,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textColor.copy(alpha = 0.70f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        } else if (country.isNotBlank()) {
-                            Text(
-                                text = country,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textColor.copy(alpha = 0.70f)
-                            )
-                        }
-                    }
-                    presetTitle.contains("Contact", ignoreCase = true) -> {
-                        if (phone.isNotBlank()) {
-                            Text(
-                                text = phone,
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = textColor.copy(alpha = 0.90f),
-                                maxLines = 1
-                            )
-                        }
-                        if (email.isNotBlank()) {
-                            Text(
-                                text = email,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textColor.copy(alpha = 0.70f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    else -> {
-                        if (occupation.isNotBlank()) {
-                            Text(
-                                text = occupation,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = textColor.copy(alpha = 0.85f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        if (country.isNotBlank()) {
-                            Text(
-                                text = country,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = textColor.copy(alpha = 0.65f),
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
             }
 
-            // RIGHT-MIDDLE: Premium Quiet-Zone QR Code
+            // RIGHT-MIDDLE: Clean Quiet-Zone Scannable QR Code
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .size(112.dp)
+                    .size(114.dp)
                     .shadow(
                         elevation = 12.dp,
                         shape = RoundedCornerShape(16.dp),
@@ -359,25 +271,23 @@ fun PersonaShareCard(
                         ambientColor = Color.Black.copy(alpha = 0.15f)
                     )
                     .clip(RoundedCornerShape(16.dp))
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFFFFFFFF),
-                                Color(0xFFFAFAFA),
-                                Color(0xFFF5F5F5)
-                            ),
-                            center = Offset(0f, 0f),
-                            radius = 200f
-                        )
-                    )
-                    .border(0.6.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
-                    .padding(9.dp),
+                    .background(Color.White)
+                    .border(0.6.dp, Color.Black.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                    .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                MinimalQrCodeCanvas(
-                    seed = qrSeed.ifBlank { personName },
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (qrBitmap != null) {
+                    Image(
+                        bitmap = qrBitmap.asImageBitmap(),
+                        contentDescription = "Scannable Contact QR Code",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    MinimalQrCodeCanvas(
+                        seed = qrPayload,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }

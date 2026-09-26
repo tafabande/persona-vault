@@ -52,8 +52,11 @@ class PlainNotesViewModel @Inject constructor(
                     format = format,
                     content = content
                 )
-                onComplete()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onComplete()
+                }
             } catch (e: Exception) {
+                android.util.Log.e("PlainNotesViewModel", "Failed to save note", e)
                 _uiState.update { it.copy(error = e.localizedMessage ?: "Failed to save note") }
             }
         }
@@ -66,6 +69,7 @@ class PlainNotesViewModel @Inject constructor(
         content: String,
         attachmentBytes: ByteArray? = null,
         displayName: String = "Attachment",
+        mimeType: String = "image/jpeg",
         onComplete: () -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -82,11 +86,14 @@ class PlainNotesViewModel @Inject constructor(
                         noteId = saved.id,
                         displayName = displayName,
                         bytes = attachmentBytes,
-                        mimeType = "application/octet-stream"
+                        mimeType = mimeType
                     )
                 }
-                onComplete()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onComplete()
+                }
             } catch (e: Exception) {
+                android.util.Log.e("PlainNotesViewModel", "Failed to save note with attachment", e)
                 _uiState.update { it.copy(error = e.localizedMessage ?: "Failed to save note") }
             }
         }

@@ -95,6 +95,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.pims.vault.presentation.hub.VaultSheet
 import com.pims.vault.core.session.AccountMode
 import com.pims.vault.core.session.AccountModeManager
 import com.pims.vault.presentation.ui.components.ContextualExplanation
@@ -164,8 +165,13 @@ import com.pims.vault.presentation.hub.StorageManagementSheet
 import com.pims.vault.presentation.hub.DataBackupHubSheet
 import com.pims.vault.presentation.hub.PeopleView
 import com.pims.vault.presentation.hub.PersonDetailSheet
-import com.pims.vault.presentation.hub.SharePreviewModal
-import com.pims.vault.presentation.hub.VaultSheet
+import com.pims.vault.presentation.hub.ConnectPersonScreen
+import com.pims.vault.presentation.notes.PlainNotesScreen
+import com.pims.vault.presentation.notes.PlainNoteEditorScreen
+import com.pims.vault.presentation.avatar.AvatarEditorSheet
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PersonAdd
 import com.pims.vault.presentation.medical.MedicalDossierView
 import com.pims.vault.presentation.medical.MedicalViewModel
 import com.pims.vault.presentation.profile.ProfileViewModel
@@ -360,6 +366,7 @@ object DateHelper {
 fun PersonaDashboardScreen(
     securityLevel: KeySecurityLevel,
     onLockClicked: () -> Unit,
+    onSignOutClicked: () -> Unit = onLockClicked,
     onRequestBiometricAuth: ((title: String, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit)? = null,
     profileViewModel: ProfileViewModel = hiltViewModel(),
     documentViewModel: DocumentViewModel = hiltViewModel(),
@@ -435,6 +442,7 @@ fun PersonaDashboardScreen(
     val pinSecurityManager = remember { PinSecurityManager(context) }
     val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager(context) }
     val customAvatarPath by avatarManager.customAvatarPath.collectAsState()
+    val avatarConfig by avatarManager.avatarConfig.collectAsState()
     var isHapticsEnabled by remember { mutableStateOf(haptics.isUserHapticsEnabled()) }
     var dismissedNotificationIds by remember { mutableStateOf(setOf<String>()) }
 
@@ -453,11 +461,12 @@ fun PersonaDashboardScreen(
         }
     }
 
-    // 4 Bottom Navigation Tabs: 0: Home, 1: Me (Centerpiece), 2: People, 3: More
+    // 5 Bottom Navigation Tabs: 0: Home, 1: Notes, 2: Me, 3: People, 4: Settings
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    // Full screen overlays (e.g. Full Vault or Backup)
+    // Full screen overlays (e.g. Full Vault, Backup, Notes Editor, Connect Person)
     var fullScreenOverlay by remember { mutableStateOf<String?>(null) }
+    var activeNoteId by remember { mutableStateOf<String?>(null) }
 
     val defaultCountry = remember { java.util.Locale.getDefault().displayCountry.ifBlank { "Country" } }
     var firstName by remember { mutableStateOf("") }
@@ -572,6 +581,7 @@ fun PersonaDashboardScreen(
     val dataBackupSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val wallpaperOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val centralizedEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val avatarEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     
     var selectedPersonForDetail by remember { mutableStateOf<KinRelationshipItem?>(null) }
     var personToEditForDialog by remember { mutableStateOf<KinRelationshipItem?>(null) }
@@ -1115,6 +1125,47 @@ fun PersonaDashboardScreen(
     // If a full-screen overlay is requested (e.g. Full Vault or Backup), render it
     if (fullScreenOverlay != null) {
         when (fullScreenOverlay) {
+            "NOTE_EDITOR" -> {
+                PlainNoteEditorScreen(
+                    noteId = activeNoteId,
+                    onBack = {
+                        activeNoteId = null
+                        fullScreenOverlay = null
+                    }
+                )
+                return
+            }
+            "CONNECT_PERSON" -> {
+                ConnectPersonScreen(
+                    onBack = { fullScreenOverlay = null },
+                    onSavePerson = { role, relName, gender, phone, email, address, dob, anniversary, notes, photoPath ->
+                        val targetId = java.util.UUID.randomUUID().toString()
+                        if (!photoPath.isNullOrBlank()) {
+                            avatarManager.setPersonPhotoPath(targetId, photoPath)
+                        }
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddRelationship(
+                                role = role,
+                                fullName = relName,
+                                phone = phone,
+                                email = email,
+                                address = address,
+                                dob = dob,
+                                anniversary = anniversary,
+                                notes = notes,
+                                isNextOfKin = false,
+                                customPersonId = targetId,
+                                photoPath = photoPath
+                            )
+                        )
+                        recentActivityManager.recordActivity("Connected $relName", "Relationship: $role")
+                        toastController.showSuccess("Connected $relName to People")
+                        soundManager.success()
+                        fullScreenOverlay = null
+                    }
+                )
+                return
+            }
             "VAULT" -> {
                 Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenEnterRise()) {
                     VaultDashboardView(
@@ -1515,7 +1566,62 @@ fun PersonaDashboardScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { PersonaToastHost(toastController) },
-        floatingActionButton = {},
+        floatingActionButton = {
+            when (selectedTab) {
+                0 -> {
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.medium()
+                            soundManager.navigation()
+                            showSheet("addAction")
+                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .padding(bottom = 68.dp)
+                            .tactilePress()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Action", modifier = Modifier.size(26.dp))
+                    }
+                }
+                1 -> {
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.medium()
+                            soundManager.navigation()
+                            activeNoteId = null
+                            fullScreenOverlay = "NOTE_EDITOR"
+                        },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .padding(bottom = 68.dp)
+                            .tactilePress()
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "New note", modifier = Modifier.size(24.dp))
+                    }
+                }
+                3 -> {
+                    FloatingActionButton(
+                        onClick = {
+                            haptics.medium()
+                            soundManager.navigation()
+                            fullScreenOverlay = "CONNECT_PERSON"
+                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .padding(bottom = 68.dp)
+                            .tactilePress()
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Connect Person", modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
+        },
         bottomBar = {
             Box(
                 modifier = Modifier
@@ -1558,8 +1664,8 @@ fun PersonaDashboardScreen(
                                     selectedTab = 1
                                 }
                             },
-                            icon = Icons.Default.Person,
-                            label = "Me"
+                            icon = Icons.Default.Description,
+                            label = "Notes"
                         )
                         FloatingDockItem(
                             selected = selectedTab == 2,
@@ -1569,8 +1675,8 @@ fun PersonaDashboardScreen(
                                     selectedTab = 2
                                 }
                             },
-                            icon = Icons.Default.People,
-                            label = "People"
+                            icon = Icons.Default.Person,
+                            label = "Me"
                         )
                         FloatingDockItem(
                             selected = selectedTab == 3,
@@ -1578,6 +1684,17 @@ fun PersonaDashboardScreen(
                                 if (selectedTab != 3) {
                                     haptics.light()
                                     selectedTab = 3
+                                }
+                            },
+                            icon = Icons.Default.People,
+                            label = "People"
+                        )
+                        FloatingDockItem(
+                            selected = selectedTab == 4,
+                            onClick = {
+                                if (selectedTab != 4) {
+                                    haptics.light()
+                                    selectedTab = 4
                                 }
                             },
                             icon = Icons.Default.Settings,
@@ -1668,19 +1785,21 @@ fun PersonaDashboardScreen(
                         },
                         onOpenProfile = {
                             soundManager.navigation()
-                            selectedTab = 1
+                            selectedTab = 2
                         },
                         onOpenPeople = {
                             soundManager.navigation()
-                            selectedTab = 2
+                            selectedTab = 3
                         },
+                        avatarConfig = avatarConfig,
+                        onOpenAvatarEditor = { showSheet("avatarEditor") },
                         onOpenDocuments = {
                             soundManager.navigation()
                             showSheet("documents")
                         },
                         onOpenShare = {
                             soundManager.navigation()
-                            showSheet("share")
+                            selectedTab = 2
                         },
                         onOpenEmergency = {
                             soundManager.navigation()
@@ -1702,8 +1821,16 @@ fun PersonaDashboardScreen(
                         }
                     )
 
-                    // TAB 1: ME CENTERPIECE PROFILE
-                    1 -> MeView(
+                    // TAB 1: NOTES HUB
+                    1 -> PlainNotesScreen(
+                        onOpenEditor = { noteId ->
+                            activeNoteId = noteId
+                            fullScreenOverlay = "NOTE_EDITOR"
+                        }
+                    )
+
+                    // TAB 2: ME CENTERPIECE PROFILE
+                    2 -> MeView(
                         personName = fullName,
                         occupation = occupation,
                         country = country,
@@ -1730,7 +1857,17 @@ fun PersonaDashboardScreen(
                         syncStatusText = syncStatusText,
                         syncIsGood = syncIsGood,
                         onSyncClick = { showSheet("conflict") },
-                        onShareProfileClick = { showSheet("share") },
+                        onShareProfileClick = {
+                            soundManager.navigation()
+                            val shareUrl = "https://persona.vault/p/${fullName.lowercase().replace(" ", "")}"
+                            val sendIntent = android.content.Intent().apply {
+                                action = android.content.Intent.ACTION_SEND
+                                putExtra(android.content.Intent.EXTRA_TEXT, "Connect with $fullName: $shareUrl")
+                                type = "text/plain"
+                            }
+                            val shareIntent = android.content.Intent.createChooser(sendIntent, "Share Profile")
+                            context.startActivity(shareIntent)
+                        },
                         onEditProfileClick = { showDialog("editProfile") },
                         onViewPublicDossier = { showPublicResumeModal = true },
                         onExportPdf = { handleExportPdf() },
@@ -1753,7 +1890,7 @@ fun PersonaDashboardScreen(
                             soundManager.navigation()
                             showSheet("documents")
                         },
-                        onPeopleClick = { selectedTab = 2 },
+                        onPeopleClick = { selectedTab = 3 },
                         onPhoneClick = { showDialog("addPhone") },
                         onEmailClick = { showDialog("addEmail") },
                         onAddressClick = { showDialog("addAddress") },
@@ -1777,18 +1914,21 @@ fun PersonaDashboardScreen(
                         onExplain = { contextualExplanation = it }
                     )
 
-                    // TAB 2: PEOPLE & CONNECTIONS
-                    2 -> PeopleView(
+                    // TAB 3: PEOPLE & CONNECTIONS
+                    3 -> PeopleView(
                         relationships = profileState.relationships,
-                        onAddPersonClick = { showDialog("addRelationship") },
+                        onAddPersonClick = { fullScreenOverlay = "CONNECT_PERSON" },
                         onSelectPerson = { person ->
                             relationshipViewModel.onEvent(RelationshipEvent.LoadNotes(person.id))
                             selectedPersonForDetail = person
                         }
                     )
 
-                    // TAB 3: MORE & SETTINGS
-                    3 -> MoreView(
+                    // TAB 4: MORE & SETTINGS
+                    4 -> MoreView(
+                        userName = fullName,
+                        userEmail = primaryEmail ?: "",
+                        userPhotoPath = customAvatarPath,
                         isLocalOnly = isLocalOnly,
                         syncStatusText = syncStatusText,
                         currentThemeMode = themeMode,
@@ -1816,6 +1956,8 @@ fun PersonaDashboardScreen(
                             haptics.selection()
                         },
                         onLockClicked = onLockClicked,
+                        onChangePasswordClicked = { showDialog("changePassword") },
+                        onSignOutClicked = onSignOutClicked,
                         onSecurityClicked = { fullScreenOverlay = "SECURITY_SETTINGS" },
                         onAppPinSecurityClicked = { fullScreenOverlay = "SECURITY_SETTINGS" },
                         onOpenInformationLibrary = { fullScreenOverlay = "INFORMATION_LIBRARY" },
@@ -1932,9 +2074,8 @@ fun PersonaDashboardScreen(
                         showDialog("addCustomField")
                     }
                     AddActionType.PERSONAL_NOTES -> {
-                        customFieldInitialLabel = "Personal Note"
-                        customFieldCategory = "Personal Notes"
-                        showDialog("addCustomField")
+                        activeNoteId = null
+                        fullScreenOverlay = "NOTE_EDITOR"
                     }
                     AddActionType.GOALS -> {
                         customFieldInitialLabel = "Personal Goal"
@@ -1964,7 +2105,9 @@ fun PersonaDashboardScreen(
                         customFieldCategory = "Custom Information"
                         showDialog("addCustomField")
                     }
-                    AddActionType.PERSON -> showDialog("addRelationship")
+                    AddActionType.PERSON -> {
+                        fullScreenOverlay = "CONNECT_PERSON"
+                    }
                     AddActionType.PASSWORD -> {
                         soundManager.navigation()
                         requestGatedAccess(
@@ -2029,21 +2172,17 @@ fun PersonaDashboardScreen(
         )
     }
 
-    // 2. DIGITAL PERSON CARD & SELECTIVE SHARING PREVIEW
-    if (sheetStates.value["share"] == true) {
-        SharePreviewModal(
-            personName = fullName,
-            occupation = occupation,
-            country = country,
-            phone = profileState.contacts.firstOrNull { it.contactType == ContactType.PHONE }?.value ?: "",
-            email = profileState.contacts.firstOrNull { it.contactType == ContactType.EMAIL }?.value ?: "",
-            bloodGroup = bloodGroup,
-            sheetState = shareModalState,
-            onDismissRequest = { hideSheet("share") },
-            onCopyShareLink = { url ->
-                clipboardManager.setText(AnnotatedString(url))
-                scope.launch { snackbarHostState.showSnackbar("Share link copied: $url") }
-                hideSheet("share")
+    // AVATAR EDITOR SHEET (WhatsApp style with zoom resizability)
+    if (sheetStates.value["avatarEditor"] == true) {
+        AvatarEditorSheet(
+            initialConfig = avatarConfig,
+            sheetState = avatarEditorSheetState,
+            avatarManager = avatarManager,
+            onDismissRequest = { hideSheet("avatarEditor") },
+            onSaveAvatar = { newConfig ->
+                avatarManager.saveConfig(newConfig)
+                hideSheet("avatarEditor")
+                toastController.showSuccess("Avatar updated")
             }
         )
     }
@@ -2829,7 +2968,7 @@ fun PersonaDashboardScreen(
                         recentActivityManager.recordActivity("Updated personal information", "Profile name & details updated")
                         haptics.success()
                         soundManager.success()
-                        android.widget.Toast.makeText(context, "Personal identity saved", android.widget.Toast.LENGTH_SHORT).show()
+                        toastController.showSuccess("Personal identity saved")
                         hideDialog("editProfile")
                     },
                     modifier = Modifier

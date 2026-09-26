@@ -41,10 +41,6 @@ class PlainNotesRepositoryImpl @Inject constructor(
     ): PlainNote {
         val noteId = id ?: UUID.randomUUID().toString()
         val cleanTitle = title.trim()
-        val cleanContent = content.trim()
-        require(cleanTitle.isNotBlank() || cleanContent.isNotBlank()) {
-            "Note title or content is required"
-        }
         val finalTitle = cleanTitle.ifBlank { "Untitled" }
         val existing = id?.let { dao.getById(it) }
         val now = System.currentTimeMillis()
@@ -73,14 +69,14 @@ class PlainNotesRepositoryImpl @Inject constructor(
         mimeType: String
     ): NoteAttachment {
         require(bytes.isNotEmpty()) { "Attachment cannot be empty" }
-        require(mimeType.startsWith("image/")) { "Only image attachments are supported" }
+        val effectiveMime = if (mimeType.isBlank() || mimeType == "application/octet-stream") "image/jpeg" else mimeType
         val note = dao.getById(noteId) ?: error("Cannot attach an image to a missing note")
 
         val attachmentId = UUID.randomUUID().toString()
         val metadata = fileStorage.storeEncryptedFile(
-            documentId = "note_${noteId}",
+            documentId = "note_${noteId}_${attachmentId}",
             versionNumber = 1,
-            mimeType = mimeType,
+            mimeType = effectiveMime,
             inputStream = java.io.ByteArrayInputStream(bytes)
         )
 
@@ -108,7 +104,8 @@ class PlainNotesRepositoryImpl @Inject constructor(
                 outputStream = baos
             )
             baos.toByteArray()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.e("PlainNotesRepository", "Failed to read attachment ${attachment.id}", e)
             null
         }
     }

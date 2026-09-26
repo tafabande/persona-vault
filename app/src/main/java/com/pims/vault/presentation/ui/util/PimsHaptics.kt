@@ -51,19 +51,34 @@ class PimsHaptics(
     /**
      * Subtle, tactile tick for navigation tabs, toggles, copy actions.
      */
+    fun tap() {
+        selection()
+    }
+
     fun light() {
         selection()
+    }
+
+    fun medium() {
+        if (!isHapticsEnabled()) return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(30L)
+            }
+        } catch (_: Exception) {}
     }
 
     fun selection() {
         if (!isHapticsEnabled()) return
         try {
-            if (view?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) == true) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(10L)
+                vibrator?.vibrate(18L)
             }
         } catch (_: Exception) {}
     }
@@ -74,12 +89,11 @@ class PimsHaptics(
     fun success() {
         if (!isHapticsEnabled()) return
         try {
-            if (view?.performHapticFeedback(HapticFeedbackConstants.CONFIRM) == true) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(20L)
+                vibrator?.vibrate(40L)
             }
         } catch (_: Exception) {}
     }
@@ -90,21 +104,24 @@ class PimsHaptics(
     fun warning() {
         if (!isHapticsEnabled()) return
         try {
-            if (view?.performHapticFeedback(HapticFeedbackConstants.REJECT) == true) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(35L)
+                vibrator?.vibrate(60L)
             }
         } catch (_: Exception) {}
+    }
+
+    fun heavy() {
+        warning()
     }
 
     /**
      * Light tactile response for button press.
      */
     fun buttonPress() {
-        light()
+        medium()
     }
 
     /**
@@ -120,12 +137,11 @@ class PimsHaptics(
     fun snap() {
         if (!isHapticsEnabled()) return
         try {
-            if (view?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) == true) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(6L)
+                vibrator?.vibrate(12L)
             }
         } catch (_: Exception) {}
     }
@@ -136,12 +152,11 @@ class PimsHaptics(
     fun longPressPulse() {
         if (!isHapticsEnabled()) return
         try {
-            if (view?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) == true) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 vibrator?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator?.vibrate(25L)
+                vibrator?.vibrate(45L)
             }
         } catch (_: Exception) {}
     }

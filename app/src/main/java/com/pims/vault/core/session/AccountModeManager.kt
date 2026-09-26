@@ -83,6 +83,17 @@ class AccountModeManager @Inject constructor(
         _hasCompletedInitialProfile.value = true
     }
 
+    fun signOut() {
+        prefs.edit()
+            .remove(KEY_MODE)
+            .remove("account_email")
+            .remove(KEY_PROFILE_SETUP_COMPLETED)
+            .apply()
+        _accountEmail.value = null
+        _hasCompletedInitialProfile.value = false
+        _accountMode.value = AccountMode.UNSET
+    }
+
     fun isLocalOnly(): Boolean = _accountMode.value == AccountMode.LOCAL_ONLY
 
     fun isCloudSynced(): Boolean = _accountMode.value == AccountMode.CLOUD_SYNCED

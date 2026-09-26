@@ -1,6 +1,9 @@
 # Built files & compiler outputs
 *.iml
 .gradle/
+.gradle*/
+.tmp-gradle/
+.android-user-home/
 build/
 */build/
 /build
@@ -39,10 +42,15 @@ google-services.json
 *~
 .navigation/
 
-# OS generated files
+# OS generated files & installers
 .DS_Store
 Thumbs.db
 ehthumbs.db
+Desktop.ini
+*.exe
+*.msi
+*.dmg
+*.pkg
 
 # Development screenshots, captures & temporary test artifacts
 /*.png
@@ -64,5 +72,14 @@ ui-debug.log*
 hs_err_pid*.log
 replay_pid*.log
 *.hprof
-# Scratch directory
+*.lck
+
+# Scratch directory & Python artifacts
 scratch/
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/

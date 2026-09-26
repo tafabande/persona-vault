@@ -47,7 +47,7 @@ class FirebaseStorageUploadService @Inject constructor(
         uploadEncrypted(remotePath, plaintextBytes, mimeType)
     }
 
-    override suspend fun delete(remotePath: String) = withContext(Dispatchers.IO) {
+    override suspend fun delete(remotePath: String): Unit = withContext(Dispatchers.IO) {
         try {
             storage.reference.child(remotePath).delete().await()
         } catch (_: Exception) {}
@@ -58,12 +58,12 @@ class FirebaseStorageUploadService @Inject constructor(
         plaintext: ByteArray,
         mimeType: String
     ): StorageUploadService.UploadResult {
-        val fileKey = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_DOCUMENTS)
-        val encryptedPayload = cryptoEngine.encrypt(plaintext, fileKey)
+        val fileKey = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
+        val encryptedPayload = cryptoEngine.encrypt(plaintext, fileKey.bytes)
         fileKey.close()
 
         val sha256 = MessageDigest.getInstance("SHA-256")
-            .digest(encryptedPayload.ciphertext)
+            .digest(encryptedPayload.combinedCiphertextWithTag)
             .joinToString("") { "%02x".format(it) }
 
         val ivHex = encryptedPayload.iv.joinToString("") { "%02x".format(it) }
@@ -76,14 +76,14 @@ class FirebaseStorageUploadService @Inject constructor(
             .setCustomMetadata("x-sha256", sha256)
             .build()
 
-        ref.putBytes(encryptedPayload.ciphertext, metadata).await()
+        ref.putBytes(encryptedPayload.combinedCiphertextWithTag, metadata).await()
         val downloadUrl = ref.downloadUrl.await().toString()
 
         return StorageUploadService.UploadResult(
             remotePath = remotePath,
             downloadUrl = downloadUrl,
             ivHex = ivHex,
-            sizeBytes = encryptedPayload.ciphertext.size.toLong(),
+            sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
             sha256Hex = sha256
         )
     }

@@ -361,7 +361,7 @@ fun animatedPersonaColorScheme(
  */
 @Composable
 fun PimsVaultTheme(
-    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    themeMode: ThemeMode = ThemeMode.LIGHT,
     mood: PersonaMood = PersonaMood.WARM,
     isReducedMotion: Boolean = false,
     content: @Composable () -> Unit

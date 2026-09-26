@@ -31,6 +31,7 @@ coroutines = "1.8.1"
 # Dependency Injection (Hilt)
 hilt = "2.51.1"
 hiltNavigationCompose = "1.2.0"
+firebaseBom = "33.7.0"
 
 # Testing
 junit = "4.13.2"
@@ -44,6 +45,12 @@ turbine = "1.1.0"
 # Animation
 riveAndroid = "11.12.0"
 startupRuntime = "1.1.1"
+
+# Network & Auth
+okhttp = "4.12.0"
+credentials = "1.3.0"
+googleid = "1.1.1"
+zxing = "3.5.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -83,6 +90,11 @@ hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
 
+# Firebase
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth-ktx" }
+firebase-storage = { group = "com.google.firebase", name = "firebase-storage-ktx" }
+
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitExt" }
@@ -97,6 +109,13 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 # Rive & Runtime
 rive-android = { group = "app.rive", name = "rive-android", version.ref = "riveAndroid" }
 androidx-startup-runtime = { group = "androidx.startup", name = "startup-runtime", version.ref = "startupRuntime" }
+
+# Network & Auth
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
+androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
+googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

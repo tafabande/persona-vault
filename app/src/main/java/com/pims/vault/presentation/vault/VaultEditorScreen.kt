@@ -45,12 +45,11 @@ fun VaultEditorScreen(
                 initialPassword = "",
                 initialWebsite = "",
                 initialNotes = "",
-                onBackClick = onNavigateBack,
-                onSaveClick = { title, username, password, website, notes ->
+                onNavigateBack = onNavigateBack,
+                onSavePassword = { title, username, password, website, notes ->
                     viewModel.savePassword(title, username, password, website, notes, itemId)
                     onNavigateBack()
-                },
-                modifier = Modifier.fillMaxSize()
+                }
             )
         }
         VaultCategory.PAYMENT_REFERENCE -> {
@@ -123,7 +122,7 @@ fun VaultEditorScreen(
                 content = uiState.activeDecryptedNote?.noteContent.orEmpty(),
                 onDismiss = onNavigateBack,
                 onSave = { title, content, format ->
-                    viewModel.saveSecureNote(title, content, format, itemId)
+                    viewModel.saveSecureNote(title, content, itemId)
                     onNavigateBack()
                 }
             )
@@ -146,7 +145,7 @@ fun SecureNoteEditorScreen(
         initialContent = content,
         isEditingExisting = title.isNotBlank() || content.isNotBlank(),
         onSave = { savedTitle, savedContent ->
-            onSave(savedTitle, savedContent, NoteFormat.PLAIN_TEXT)
+            onSave(savedTitle, savedContent, NoteFormat.PLAIN)
         },
         onDismiss = onDismiss
     )

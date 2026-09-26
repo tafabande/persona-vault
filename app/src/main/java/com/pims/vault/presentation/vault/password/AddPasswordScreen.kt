@@ -88,6 +88,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import androidx.compose.ui.autofill.AutofillType
+import com.pims.vault.presentation.ui.util.googleAutofill
 import java.security.SecureRandom
 
 /**
@@ -96,7 +98,7 @@ import java.security.SecureRandom
  * real-time entropy password strength evaluation, and an integrated
  * cryptographic password generator.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun AddPasswordScreen(
     initialTitle: String = "",
@@ -264,6 +266,7 @@ fun AddPasswordScreen(
                         { IconButton(onClick = { username = "" }) { Icon(Icons.Default.Clear, contentDescription = "Clear", tint = textSecondary, modifier = Modifier.size(18.dp)) } }
                     } else null,
                     isDark = isDark,
+                    modifier = Modifier.googleAutofill(listOf(AutofillType.Username, AutofillType.EmailAddress)) { username = it },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Email,
                         imeAction = ImeAction.Next
@@ -280,6 +283,7 @@ fun AddPasswordScreen(
                         placeholder = "Enter or generate password",
                         leadingIcon = Icons.Default.Lock,
                         visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        modifier = Modifier.googleAutofill(listOf(AutofillType.Password)) { password = it },
                         trailingIcon = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {

@@ -97,7 +97,8 @@ class EncryptedFileStorageImpl(
             throw java.io.FileNotFoundException("Encrypted document not found at $relativePath")
         }
 
-        val pathSegments = relativePath.split("/")
+        val normalizedPath = relativePath.replace('\\', '/')
+        val pathSegments = normalizedPath.split("/")
         val documentId = if (pathSegments.size >= 2) pathSegments[pathSegments.size - 2] else ""
         val fileKey = keyProvider()
 

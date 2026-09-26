@@ -3,19 +3,23 @@
     android:height="120dp"
     android:viewportWidth="120"
     android:viewportHeight="120">
-    
-    <!-- Background circle -->
+    <!-- Soft neutral background circle -->
     <path
-        android:fillColor="#E8E5E0"
+        android:fillColor="#B0BEC5"
         android:pathData="M60,60m-60,0a60,60 0,1 1,120 0a60,60 0,1 1,-120 0" />
-    
-    <!-- Head -->
+
+    <!-- Pure White Long Hair framing sides & back -->
     <path
-        android:fillColor="#A8A298"
-        android:pathData="M60,35m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0" />
-    
-    <!-- Shoulders (narrower, more curved for female) -->
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,22c-15,0 -24,10 -24,24c0,16 4,32 7,42c1,3 4,4 7,4c3,0 5,-3 5,-7c0,-6 -1,-14 -1,-20c2,2 4,3 7,3s5,-1 7,-3c0,6 -1,14 -1,20c0,4 2,7 5,7c3,0 6,-1 7,-4c3,-10 7,-26 7,-42c0,-14 -9,-24 -24,-24z" />
+
+    <!-- Pure White Head / Face -->
     <path
-        android:fillColor="#A8A298"
-        android:pathData="M60,65c-15,0 -26,7 -26,16v8c0,2 2,4 4,4h44c2,0 4,-2 4,-4v-8c0,-9 -11,-16 -26,-16z" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,40m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0" />
+
+    <!-- Pure White Shoulders / Torso -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,68c-18,0 -30,8 -30,19v15c0,3 3,6 6,6h48c3,0 6,-3 6,-6v-15c0,-11 -12,-19 -30,-19z" />
 </vector>

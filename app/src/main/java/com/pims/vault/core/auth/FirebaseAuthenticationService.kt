@@ -1,5 +1,6 @@
 package com.pims.vault.core.auth
 
+import android.app.Activity
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.AuthCredential
@@ -13,6 +14,7 @@ import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.OAuthProvider
 import com.google.firebase.auth.UserProfileChangeRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -74,6 +76,23 @@ class FirebaseAuthenticationService @Inject constructor() : AuthenticationServic
     override suspend fun signInWithGoogle(idToken: String): AuthResult {
         val credential = GoogleAuthProvider.getCredential(idToken, null)
         return exchangeCredential(credential)
+    }
+
+    override suspend fun signInWithGoogleProvider(activity: Activity): AuthResult {
+        return try {
+            val provider = OAuthProvider.newBuilder("google.com")
+            provider.addCustomParameter("prompt", "select_account")
+            val pendingTask = firebaseAuth.pendingAuthResult
+            val result = if (pendingTask != null) {
+                pendingTask.await()
+            } else {
+                firebaseAuth.startActivityForSignInWithProvider(activity, provider.build()).await()
+            }
+            val user = toAuthUser(result.user)
+            if (user != null) AuthResult.Success(user) else AuthResult.Failure(AuthFailure.Unknown)
+        } catch (e: Exception) {
+            AuthResult.Failure(toAuthFailure(e))
+        }
     }
 
     override suspend fun signInWithCustomToken(token: String): AuthResult {
@@ -154,6 +173,12 @@ class FirebaseAuthenticationService @Inject constructor() : AuthenticationServic
     }
 
     private fun toAuthFailure(throwable: Throwable): AuthFailure {
+        val msg = throwable.message.orEmpty()
+        if (msg.contains("WEB_CONTEXT_CANCELED", ignoreCase = true) ||
+            msg.contains("canceled", ignoreCase = true) ||
+            msg.contains("cancelled", ignoreCase = true)) {
+            return AuthFailure.Cancelled
+        }
         return when (throwable) {
             is FirebaseAuthInvalidUserException -> AuthFailure.InvalidCredentials
             is FirebaseAuthInvalidCredentialsException -> AuthFailure.InvalidCredentials

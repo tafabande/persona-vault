@@ -120,6 +120,8 @@ fun HomeView(
     onOpenCredentials: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
     onOpenCentralizedEditor: () -> Unit = {},
+    onOpenAvatarEditor: () -> Unit = {},
+    avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
     onSaveIdentityDetails: ((name: String, email: String, phone: String, idNumber: String, idPhotoUri: Uri?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -208,8 +210,10 @@ fun HomeView(
                 HomeHeaderRow(
                     displayName = displayName,
                     profilePhotoPath = profilePhotoPath ?: idPhotoPath,
+                    avatarConfig = avatarConfig,
                     unreadNotificationCount = unreadNotificationCount,
                     onOpenProfile = onOpenProfile,
+                    onOpenAvatarEditor = onOpenAvatarEditor,
                     onNotificationClick = onNotificationClick
                 )
             }
@@ -324,8 +328,10 @@ fun HomeView(
 private fun HomeHeaderRow(
     displayName: String,
     profilePhotoPath: String? = null,
+    avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
     unreadNotificationCount: Int,
     onOpenProfile: () -> Unit,
+    onOpenAvatarEditor: () -> Unit = onOpenProfile,
     onNotificationClick: () -> Unit
 ) {
     val haptics = rememberPimsHaptics()
@@ -361,14 +367,15 @@ private fun HomeHeaderRow(
                         .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), CircleShape)
                         .pimsApplePress {
                             haptics.selection()
-                            onOpenProfile()
+                            onOpenAvatarEditor()
                         }
                 )
             } else {
-                DefaultAvatar(
+                com.pims.vault.presentation.avatar.PersonaAvatar(
                     name = displayName,
+                    config = avatarConfig,
                     size = 46.dp,
-                    onClick = onOpenProfile
+                    onClick = onOpenAvatarEditor
                 )
             }
 

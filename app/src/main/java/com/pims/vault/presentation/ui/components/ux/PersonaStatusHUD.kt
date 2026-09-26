@@ -8,9 +8,12 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.offset
+import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +27,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -183,11 +193,14 @@ private fun PersonaToastPill(
     isDark: Boolean,
     onDismiss: () -> Unit
 ) {
+    val haptics = rememberPimsHaptics()
+    val scope = rememberCoroutineScope()
+    val colorScheme = MaterialTheme.colorScheme
     val (accentColor, icon: ImageVector) = when (toast.type) {
-        ToastType.SUCCESS -> Color(0xFF10B981) to Icons.Default.CheckCircle
-        ToastType.ERROR -> Color(0xFFEF4444) to Icons.Default.Error
-        ToastType.WARNING -> Color(0xFFF59E0B) to Icons.Default.Warning
-        ToastType.INFO -> Color(0xFF3B82F6) to Icons.Default.Info
+        ToastType.SUCCESS -> colorScheme.primary to Icons.Default.CheckCircle
+        ToastType.ERROR -> colorScheme.error to Icons.Default.Error
+        ToastType.WARNING -> colorScheme.tertiary to Icons.Default.Warning
+        ToastType.INFO -> colorScheme.primary to Icons.Default.Info
     }
 
     val iconBounce = remember { Animatable(0.7f) }
@@ -198,9 +211,12 @@ private fun PersonaToastPill(
         )
     }
 
-    val pillBg = if (isDark) Color(0xFF1E1E22).copy(alpha = 0.95f) else Color(0xFFFFFFFF).copy(alpha = 0.96f)
-    val pillBorder = if (isDark) Color(0xFF333338) else Color(0xFFE2E8F0)
-    val textColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)
+    // Horizontal swipe-to-dismiss offset with spring physics
+    val offsetX = remember { Animatable(0f) }
+
+    val pillBg = colorScheme.surface.copy(alpha = 0.97f)
+    val pillBorder = colorScheme.outlineVariant.copy(alpha = 0.8f)
+    val textColor = colorScheme.onSurface
 
     Surface(
         shape = RoundedCornerShape(24.dp),
@@ -208,9 +224,37 @@ private fun PersonaToastPill(
         border = BorderStroke(1.dp, pillBorder),
         shadowElevation = 10.dp,
         modifier = Modifier
+            .offset { IntOffset(offsetX.value.roundToInt(), 0) }
             .widthIn(min = 180.dp, max = 380.dp)
             .heightIn(min = 44.dp)
             .pimsShake(isShaking = toast.type == ToastType.ERROR)
+            .pointerInput(toast.id) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        scope.launch {
+                            if (abs(offsetX.value) > 130f) {
+                                haptics.selection()
+                                offsetX.animateTo(
+                                    targetValue = if (offsetX.value > 0) 1000f else -1000f,
+                                    animationSpec = tween(150)
+                                )
+                                onDismiss()
+                            } else {
+                                offsetX.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
+                                )
+                            }
+                        }
+                    },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        scope.launch {
+                            offsetX.snapTo(offsetX.value + dragAmount)
+                        }
+                    }
+                )
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

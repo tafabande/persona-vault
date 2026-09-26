@@ -40,3 +40,10 @@ fun Modifier.googleAutofill(
             }
         }
 }
+
+
+@OptIn(ExperimentalComposeUiApi::class)
+fun Modifier.autofill(
+    autofillTypes: List<AutofillType>,
+    onFill: (String) -> Unit
+): Modifier = googleAutofill(autofillTypes, onFill)

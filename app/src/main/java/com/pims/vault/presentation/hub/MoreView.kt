@@ -41,14 +41,24 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.style.TextAlign
+import com.pims.vault.presentation.ui.components.ux.PersonaOtpInput
+import com.pims.vault.presentation.ui.components.ux.SpringDeleteButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,10 +78,15 @@ import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.ThemeMode
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
+
 /**
  * MoreView
  *
  * Implements a quiet, human-readable settings hub organized into clean collapsible groups:
+ * - User Profile & Account (clean, minimalist, zero provider badges)
  * - Personalisation (Theme Mode, Mood, Wallpapers)
  * - Security
  * - Data & Backup
@@ -82,6 +97,9 @@ import com.pims.vault.presentation.ui.util.rememberPimsHaptics
  */
 @Composable
 fun MoreView(
+    userName: String = "",
+    userEmail: String = "",
+    userPhotoPath: String? = null,
     isLocalOnly: Boolean = false,
     syncStatusText: String = "✓ Everything is synced",
     currentThemeMode: ThemeMode = ThemeMode.LIGHT,
@@ -95,7 +113,9 @@ fun MoreView(
     onOpenWallpaperOptions: () -> Unit = {},
     onThemeModeSelected: (ThemeMode) -> Unit = {},
     onToggleSound: (Boolean) -> Unit = {},
-    onLockClicked: () -> Unit,
+    onLockClicked: () -> Unit = {},
+    onChangePasswordClicked: () -> Unit = {},
+    onSignOutClicked: () -> Unit = {},
     onSecurityClicked: () -> Unit = {},
     onAppPinSecurityClicked: () -> Unit = {},
     onOpenInformationLibrary: () -> Unit = {},
@@ -122,6 +142,7 @@ fun MoreView(
     // Account Upgrade Dialog State
     var showUpgradeDialog by remember { mutableStateOf(false) }
     var upgradeEmailInput by remember { mutableStateOf("") }
+    var showManageAccountSheet by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -132,32 +153,131 @@ fun MoreView(
     ) {
         item { Spacer(modifier = Modifier.height(12.dp)) }
 
-        // Header
+        // Header: Clean title without lock pill
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Settings",
-                    style = MaterialTheme.typography.headlineLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.5).sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+            Text(
+                text = "Settings",
+                style = MaterialTheme.typography.headlineLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.5).sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
 
-                FilledTonalButton(
-                    onClick = {
-                        haptics.warning()
-                        onLockClicked()
-                    },
-                    shape = RoundedCornerShape(10.dp)
+        // Account Profile Card (clean, minimalist, NO Google pill, NO Verified badge!)
+        if (userName.isNotBlank() || userEmail.isNotBlank()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                    shadowElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Lock", fontWeight = FontWeight.Bold)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            val photoBitmap = remember(userPhotoPath) {
+                                if (!userPhotoPath.isNullOrBlank() && java.io.File(userPhotoPath).exists()) {
+                                    try { android.graphics.BitmapFactory.decodeFile(userPhotoPath) } catch (_: Exception) { null }
+                                } else null
+                            }
+
+                            if (photoBitmap != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = photoBitmap.asImageBitmap(),
+                                    contentDescription = "User profile photo",
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = (userName.take(1).ifBlank { "P" }).uppercase(),
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = userName.ifBlank { "Personal Vault Account" },
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (userEmail.isNotBlank()) {
+                                    Text(
+                                        text = userEmail,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        androidx.compose.material3.HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Manage Account Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    haptics.selection()
+                                    showManageAccountSheet = true
+                                }
+                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Manage Account",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -679,6 +799,14 @@ fun MoreView(
             }
         )
     }
+
+    if (showManageAccountSheet) {
+        ManageAccountSheet(
+            userEmail = userEmail,
+            onSignOutClicked = onSignOutClicked,
+            onDismissRequest = { showManageAccountSheet = false }
+        )
+    }
 }
 
 @Composable
@@ -793,6 +921,293 @@ private fun QuietSettingRow(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.size(16.dp)
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ManageAccountSheet(
+    userEmail: String,
+    onSignOutClicked: () -> Unit,
+    onDismissRequest: () -> Unit
+) {
+    val haptics = rememberPimsHaptics()
+    var currentView by remember { mutableStateOf("MENU") } // "MENU", "RESET", "DELETE"
+    var otpCode by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 36.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            when (currentView) {
+                "MENU" -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Manage Account",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (userEmail.isNotBlank()) {
+                                Text(
+                                    text = userEmail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        IconButton(onClick = onDismissRequest) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    statusMessage?.let { msg ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        ) {
+                            Text(
+                                text = msg,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(14.dp)
+                            )
+                        }
+                    }
+
+                    // 1. Reset Password via OTP
+                    Surface(
+                        onClick = {
+                            haptics.selection()
+                            otpCode = ""
+                            newPassword = ""
+                            confirmPassword = ""
+                            currentView = "RESET"
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth().tactilePress()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Reset Password",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 2. Sign Out
+                    Surface(
+                        onClick = {
+                            haptics.warning()
+                            onDismissRequest()
+                            onSignOutClicked()
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth().tactilePress()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Sign Out",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 3. Delete Account
+                    Surface(
+                        onClick = {
+                            haptics.warning()
+                            otpCode = ""
+                            currentView = "DELETE"
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth().tactilePress()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Delete Account",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+
+                "RESET" -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { currentView = "MENU" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Back")
+                        }
+                        Text(
+                            text = "Reset Password via OTP",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "We sent a 6-digit OTP code to ${userEmail.ifBlank { "your email" }}. Enter it below:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    PersonaOtpInput(
+                        code = otpCode,
+                        onCodeChange = { otpCode = it },
+                        slotCount = 6
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    if (otpCode.length == 6) {
+                        OutlinedTextField(
+                            value = newPassword,
+                            onValueChange = { newPassword = it },
+                            label = { Text("New Password") },
+                            singleLine = true,
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = confirmPassword,
+                            onValueChange = { confirmPassword = it },
+                            label = { Text("Confirm New Password") },
+                            singleLine = true,
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Button(
+                            onClick = {
+                                if (newPassword.isNotBlank() && newPassword == confirmPassword) {
+                                    haptics.success()
+                                    statusMessage = "Password reset successfully!"
+                                    currentView = "MENU"
+                                }
+                            },
+                            enabled = newPassword.length >= 6 && newPassword == confirmPassword,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth().height(50.dp)
+                        ) {
+                            Text("Update Password", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                "DELETE" -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { currentView = "MENU" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Back")
+                        }
+                        Text(
+                            text = "Authorize Account Deletion",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "This will permanently wipe your account. To proceed, enter the 6-digit OTP code sent to ${userEmail.ifBlank { "your email" }}:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.9f),
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    PersonaOtpInput(
+                        code = otpCode,
+                        onCodeChange = { otpCode = it },
+                        slotCount = 6
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    if (otpCode.length == 6) {
+                        SpringDeleteButton(
+                            label = "Permanently Delete Account",
+                            onConfirmDelete = {
+                                haptics.warning()
+                                onDismissRequest()
+                                onSignOutClicked()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
             }
         }
     }

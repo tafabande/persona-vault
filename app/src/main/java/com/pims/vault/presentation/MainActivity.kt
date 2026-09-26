@@ -192,6 +192,13 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun signOut() {
+        viewModelScope.launch {
+            accountModeManager.signOut()
+            sessionManager.lockSession()
+        }
+    }
+
     fun registerUserActivity() {
         sessionManager.onUserActivity()
     }
@@ -225,7 +232,7 @@ class MainActivity : FragmentActivity() {
                         insetsController.isAppearanceLightNavigationBars = !isDark
                     }
                 }
-                var showSplash by remember { mutableStateOf(true) }
+                var showSplash by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
                 val accountMode by viewModel.accountMode.collectAsState()
                 val hasCompletedWalkthrough by viewModel.hasCompletedWalkthrough.collectAsState()
                 val hasCompletedInitialProfile by viewModel.hasCompletedInitialProfile.collectAsState()
@@ -278,36 +285,34 @@ class MainActivity : FragmentActivity() {
                             )
                         }
                         "ACCOUNT_CHOICE" -> {
-                            BackHandler(enabled = pendingSetupChoice != null) {
-                                pendingSetupChoice = null
+                            val accountsViewModel: com.pims.vault.presentation.auth.AccountsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+                            val authUiState by accountsViewModel.uiState.collectAsState()
+                            val currentAct = androidx.compose.ui.platform.LocalContext.current as? androidx.fragment.app.FragmentActivity
+
+                            LaunchedEffect(Unit) {
+                                accountsViewModel.signInSuccessEvent.collect {
+                                    viewModel.onAuthSuccess()
+                                }
                             }
-                            if (pendingSetupChoice == null) {
-                                AccountChoiceScreen(
-                                    onCreateAccount = { pendingSetupChoice = "CREATE" },
-                                    onContinueWithoutAccount = { pendingSetupChoice = "LOCAL" },
-                                    onSignIn = { pendingSetupChoice = "SIGNIN" }
-                                )
-                            } else {
-                                MinimalProfileSetupScreen(
-                                    isAccountMode = pendingSetupChoice == "CREATE",
-                                    isSignInMode = pendingSetupChoice == "SIGNIN",
-                                    onComplete = { preferredName, country, dob, email, _ ->
-                                        if (pendingSetupChoice == "SIGNIN") {
-                                            viewModel.startCloudMode(email ?: "user@persona.vault")
-                                        } else {
-                                            viewModel.saveInitialProfile(
-                                                preferredName = preferredName,
-                                                country = country,
-                                                dob = dob,
-                                                email = email,
-                                                isAccount = pendingSetupChoice == "CREATE"
-                                            )
-                                        }
-                                        pendingSetupChoice = null
-                                    },
-                                    onBack = { pendingSetupChoice = null }
-                                )
-                            }
+
+                            com.pims.vault.presentation.auth.AccountSignInScreen(
+                                uiState = authUiState,
+                                onSignInWithGoogle = {
+                                    currentAct?.let { accountsViewModel.signInWithGoogle(it) }
+                                },
+                                onSignInWithEmail = { email, password ->
+                                    accountsViewModel.signInWithEmail(email, password, currentAct)
+                                },
+                                onSignUpWithEmail = { name, email, password ->
+                                    accountsViewModel.createAccount(name, email, password, currentAct)
+                                },
+                                onSendPasswordReset = { email ->
+                                    accountsViewModel.sendPasswordReset(email)
+                                },
+                                onSkip = {
+                                    viewModel.startLocalMode()
+                                }
+                            )
                         }
                         "MINIMAL_SETUP" -> {
                             MinimalProfileSetupScreen(
@@ -345,6 +350,7 @@ class MainActivity : FragmentActivity() {
                                     PersonaDashboardScreen(
                                         securityLevel = curState.securityLevel,
                                         onLockClicked = { viewModel.lock() },
+                                        onSignOutClicked = { viewModel.signOut() },
                                         onRequestBiometricAuth = { title, subtitle, onSuccess, onError ->
                                             requestBiometricAuthentication(title, subtitle, onSuccess, onError)
                                         }

@@ -3,4 +3,5 @@
     <!-- Temporary cache path for on-demand decrypted document viewing and resume export -->
     <cache-path name="decrypted_docs" path="decrypted_docs/" />
     <cache-path name="exports" path="exports/" />
+    <cache-path name="shared_cards" path="shared_cards/" />
 </paths>

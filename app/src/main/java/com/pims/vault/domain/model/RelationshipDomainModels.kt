@@ -96,10 +96,7 @@ data class IdentityGraph(
         get() = familyConnections.size + personalConnections.size + professionalConnections.size + careConnections.size
 }
 
-enum class NoteFormat {
-    PLAIN,
-    BULLETS
-}
+// NoteFormat defined in NoteFormat.kt
 
 data class RelationshipNote(
     val id: String,
