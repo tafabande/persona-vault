@@ -33,6 +33,9 @@ sealed interface AuthFailure {
     data class GooglePlayServicesRejected(val detail: String) : AuthFailure {
         override val userMessage: String = "Google Play Services error: $detail"
     }
+    data class NoCredentialsAvailable(val detail: String) : AuthFailure {
+        override val userMessage: String = "No Google account found on device. Trying browser sign-in..."
+    }
     data object GoogleTokenMissing : AuthFailure {
         override val userMessage: String = "Google ID token was missing"
     }

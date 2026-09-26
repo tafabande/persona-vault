@@ -126,19 +126,34 @@ class AccountsViewModel @Inject constructor(
             when (val tokenResult = googleIdTokenProvider.requestGoogleIdToken(activity)) {
                 is GoogleIdTokenResult.Success -> {
                     val result = authenticationService.signInWithGoogle(tokenResult.idToken)
-                    if (result is AuthResult.Success) {
-                        complete(result, result.user.email ?: "", false, "GOOGLE")
-                        return@launch
+                    when (result) {
+                        is AuthResult.Success -> {
+                            complete(result, result.user.email ?: "", false, "GOOGLE")
+                            return@launch
+                        }
+                        is AuthResult.Failure -> {
+                            // Token exchange failed — fall through to OAuth provider fallback
+                            com.pims.vault.core.logging.VaultLogger.w("AccountsViewModel", "Google ID token exchange failed: ${result.error.userMessage}")
+                        }
                     }
                 }
                 is GoogleIdTokenResult.Failure -> {
-                    val errorMsg = if (tokenResult.error is AuthFailure.Cancelled) {
-                        "Google Sign-In was cancelled or rejected by Google Play Services. Ensure SHA-1 fingerprint (70:9F:16:9C:4A:EF:D9:A5:A2:14:44:A5:84:4B:4D:CF:0B:24:C0:06) is registered in Firebase Console."
-                    } else {
-                        tokenResult.error.userMessage
+                    when (tokenResult.error) {
+                        is AuthFailure.Cancelled -> {
+                            _uiState.update { it.copy(isBusy = false, error = null) }
+                            return@launch
+                        }
+                        is AuthFailure.NoCredentialsAvailable,
+                        is AuthFailure.GooglePlayServicesRejected,
+                        is AuthFailure.GoogleTokenMissing -> {
+                            // Recoverable — fall through to OAuth browser flow
+                            com.pims.vault.core.logging.VaultLogger.w("AccountsViewModel", "Credential Manager unavailable (${tokenResult.error.userMessage}), falling back to OAuth")
+                        }
+                        else -> {
+                            _uiState.update { it.copy(isBusy = false, error = tokenResult.error.userMessage) }
+                            return@launch
+                        }
                     }
-                    _uiState.update { it.copy(isBusy = false, error = errorMsg) }
-                    return@launch
                 }
             }
 

@@ -10,6 +10,7 @@ import androidx.credentials.GetCredentialResponse
 import androidx.credentials.PasswordCredential
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -49,6 +50,8 @@ class GoogleIdTokenProvider @Inject constructor(
             extractIdToken(response)
         } catch (e: GetCredentialCancellationException) {
             GoogleIdTokenResult.Failure(AuthFailure.Cancelled)
+        } catch (e: NoCredentialException) {
+            GoogleIdTokenResult.Failure(AuthFailure.NoCredentialsAvailable(e.localizedMessage ?: "No credentials available"))
         } catch (e: GetCredentialException) {
             GoogleIdTokenResult.Failure(AuthFailure.GooglePlayServicesRejected(e.localizedMessage ?: "Credential retrieval failed"))
         } catch (e: Exception) {
