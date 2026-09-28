@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,7 +55,7 @@ fun PersonaEmptyState(
     onActionClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
     val iconBg = if (isDark) Color(0xFF26262B) else Color(0xFFF1F5F9)
     val iconColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 
@@ -130,7 +129,7 @@ fun PersonaErrorState(
     onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
     val errorBg = if (isDark) Color(0xFF331919) else Color(0xFFFEF2F2)
     val errorColor = Color(0xFFEF4444)
 

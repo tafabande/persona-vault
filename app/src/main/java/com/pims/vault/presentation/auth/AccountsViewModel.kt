@@ -275,65 +275,61 @@ class AccountsViewModel @Inject constructor(
                     rememberedAccountManager.bindVaultToAccount(user.uid)
                     _uiState.update { it.copy(isBusy = false, user = user) }
 
-                    // Ingest profile details from Google (name, email, and pfp)
-                    if (providerKind == "GOOGLE") {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try {
-                                val existingOwner = personRepository.getPrimaryOwner()
-                                val isNewProfile = existingOwner == null || (existingOwner.firstName.isBlank() && existingOwner.lastName.isBlank())
-                                if (isNewProfile) {
-                                    val parts = user.displayName?.trim()?.split(" ") ?: emptyList()
-                                    val fName = parts.firstOrNull() ?: ""
-                                    val lName = if (parts.size > 1) parts.drop(1).joinToString(" ") else ""
-                                    val owner = existingOwner?.copy(
-                                        firstName = fName,
-                                        lastName = lName
-                                    ) ?: com.pims.vault.data.local.entity.PersonEntity(
-                                        id = "primary",
-                                        isPrimaryOwner = true,
-                                        firstName = fName,
-                                        lastName = lName
-                                    )
-                                    personRepository.savePerson(owner)
-                                    if (!user.email.isNullOrBlank()) {
-                                        personRepository.addContactMethod(
-                                            com.pims.vault.data.local.entity.ContactMethodEntity(
-                                                id = java.util.UUID.randomUUID().toString(),
-                                                personId = "primary",
-                                                contactType = com.pims.vault.core.model.ContactType.EMAIL,
-                                                value = user.email,
-                                                label = "Primary"
-                                            )
-                                        )
-                                    }
-                                }
-
-                                // Avatar PFP: If new user OR existing user has no photo, fetch and store
-                                val avatarManager = com.pims.vault.presentation.avatar.PersonaAvatarManager(context)
-                                val currentPhoto = avatarManager.customAvatarPath.value
-                                val needsPfp = currentPhoto.isNullOrBlank() || !java.io.File(currentPhoto).exists()
-                                if ((isNewProfile || needsPfp) && !user.photoUrl.isNullOrBlank()) {
-                                    try {
-                                        val conn = java.net.URL(user.photoUrl).openConnection()
-                                        conn.connectTimeout = 6000
-                                        conn.readTimeout = 6000
-                                        val stream = conn.getInputStream()
-                                        val bmp = android.graphics.BitmapFactory.decodeStream(stream)
-                                        stream.close()
-                                        if (bmp != null) {
-                                            avatarManager.saveCustomPhoto(bmp)
-                                        }
-                                    } catch (_: Exception) {}
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-
-                    // Sync full profile and existing notes to Cloud Firestore
+                    // Ingest profile details from Auth (name, email, and photo)
                     viewModelScope.launch(Dispatchers.IO) {
                         try {
+                            val existingOwner = personRepository.getPrimaryOwner()
+                            val isNewProfile = existingOwner == null || (existingOwner.firstName.isBlank() && existingOwner.lastName.isBlank())
+                            if (isNewProfile && (!user.displayName.isNullOrBlank() || !user.email.isNullOrBlank())) {
+                                val parts = user.displayName?.trim()?.split(" ") ?: emptyList()
+                                val fName = parts.firstOrNull() ?: ""
+                                val lName = if (parts.size > 1) parts.drop(1).joinToString(" ") else ""
+                                val owner = existingOwner?.copy(
+                                    firstName = fName,
+                                    lastName = lName
+                                ) ?: com.pims.vault.data.local.entity.PersonEntity(
+                                    id = com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID,
+                                    isPrimaryOwner = true,
+                                    firstName = fName,
+                                    lastName = lName
+                                )
+                                personRepository.savePerson(owner)
+                                if (!user.email.isNullOrBlank()) {
+                                    personRepository.addContactMethod(
+                                        com.pims.vault.data.local.entity.ContactMethodEntity(
+                                            id = java.util.UUID.randomUUID().toString(),
+                                            personId = com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID,
+                                            contactType = com.pims.vault.core.model.ContactType.EMAIL,
+                                            value = user.email,
+                                            label = "Primary"
+                                        )
+                                    )
+                                }
+                            }
+
+                            // Avatar PFP: If user has no photo and photoUrl is available, fetch and store
+                            val avatarManager = com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context)
+                            val currentPhoto = avatarManager.customAvatarPath.value
+                            val needsPfp = currentPhoto.isNullOrBlank() || !java.io.File(currentPhoto).exists()
+                            if (needsPfp && !user.photoUrl.isNullOrBlank()) {
+                                try {
+                                    val conn = java.net.URL(user.photoUrl).openConnection()
+                                    conn.connectTimeout = 6000
+                                    conn.readTimeout = 6000
+                                    val stream = conn.getInputStream()
+                                    val bmp = android.graphics.BitmapFactory.decodeStream(stream)
+                                    stream.close()
+                                    if (bmp != null) {
+                                        avatarManager.saveCustomPhoto(bmp)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        } catch (_: Exception) {}
+
+                        // Bidirectional synchronization: Pull remote records first, then push local
+                        try {
                             firestoreSyncService.syncAccount(user.uid, user.email, user.displayName)
-                            firestoreSyncService.syncAllData(user.uid)
+                            firestoreSyncService.syncBidirectional(user.uid)
                         } catch (e: Exception) {
                             com.pims.vault.core.logging.VaultLogger.e("AccountsViewModel", "Post-login sync error: ${e.message}", e)
                         }

@@ -98,6 +98,7 @@ class PlainNotesRepositoryImpl @Inject constructor(
             createdAt = metadata.timestamp
         )
         dao.upsertAttachment(entity)
+        dao.touch(noteId, System.currentTimeMillis())
         try {
             firestoreSyncService?.syncNoteAttachment(null, noteId, entity)
         } catch (_: Exception) {}
@@ -127,6 +128,7 @@ class PlainNotesRepositoryImpl @Inject constructor(
                 fileStorage.deleteFile(existing.storagePath)
             } catch (_: Exception) {}
             dao.deleteAttachment(attachmentId)
+            dao.touch(existing.noteId, System.currentTimeMillis())
         }
     }
 

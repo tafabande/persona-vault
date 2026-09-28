@@ -51,6 +51,13 @@ class LocalWallpaperManager @Inject constructor(
 
     val defaultPresets = listOf(
         WallpaperItem(
+            id = "preset_grad",
+            title = "Serene Landscape",
+            type = WallpaperType.GENERATIVE_ARTWORK,
+            artSeed = 3,
+            isBuiltIn = true
+        ),
+        WallpaperItem(
             id = "preset_amber",
             title = "Terracotta Dunes",
             type = WallpaperType.GENERATIVE_ARTWORK,
@@ -62,13 +69,6 @@ class LocalWallpaperManager @Inject constructor(
             title = "Lake Kariba",
             type = WallpaperType.GENERATIVE_ARTWORK,
             artSeed = 1,
-            isBuiltIn = true
-        ),
-        WallpaperItem(
-            id = "preset_grad",
-            title = "Graduation Day",
-            type = WallpaperType.GENERATIVE_ARTWORK,
-            artSeed = 3,
             isBuiltIn = true
         )
     )

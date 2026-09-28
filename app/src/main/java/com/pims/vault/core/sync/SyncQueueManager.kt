@@ -193,8 +193,8 @@ class SyncQueueManager @Inject constructor(
                 }
             }
 
-            // Sync all active data (notes, profile, contacts) straight into Cloud Firestore
-            val firestoreResult = firestoreSyncService?.syncAllData(userId)
+            // Bidirectional sync: Pull remote changes down into Room, and push local data up to Firestore
+            val firestoreResult = firestoreSyncService?.syncBidirectional(userId)
             val totalProcessed = processed + if (firestoreResult?.success == true) firestoreResult.processedCount else 0
 
             return SyncResult(

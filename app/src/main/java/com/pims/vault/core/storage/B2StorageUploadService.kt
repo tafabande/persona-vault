@@ -26,10 +26,12 @@ class B2StorageUploadService @Inject constructor(
     companion object {
         const val TAG = "B2StorageUpload"
         const val B2_API_BASE = "https://api.backblazeb2.com/b2api/v2"
-        const val B2_KEY_ID = "00620a1fa98dceb0000000003"
-        const val B2_APP_KEY = "K006UJEOQtJHE6Ez/lsU1j4WJRtv9vU"
-        const val B2_BUCKET_ID = "02908a915faac958ad0c0e1b"
-        const val B2_BUCKET_NAME = "TafadzwaBandeat0"
+        // Credentials are injected via BuildConfig (resolveSecret: env > secrets.properties).
+        // Rotate the previously hardcoded key in the B2 console — it must be treated as compromised.
+        val B2_KEY_ID: String get() = com.pims.vault.BuildConfig.B2_KEY_ID
+        val B2_APP_KEY: String get() = com.pims.vault.BuildConfig.B2_APP_KEY
+        val B2_BUCKET_ID: String get() = com.pims.vault.BuildConfig.B2_BUCKET_ID
+        val B2_BUCKET_NAME: String get() = com.pims.vault.BuildConfig.B2_BUCKET_NAME
         const val MAX_UPLOAD_BYTES = 26214400L // 25 MB
     }
 
@@ -219,6 +221,11 @@ class B2StorageUploadService @Inject constructor(
 
     private fun ensureAuthToken() {
         if (cachedAuthToken != null && System.currentTimeMillis() < tokenExpiry) {
+            return
+        }
+
+        if (B2_KEY_ID.isBlank() || B2_APP_KEY.isBlank()) {
+            Log.w(TAG, "B2 credentials not configured (B2_KEY_ID/B2_APP_KEY missing). Rotate key and populate secrets.properties.")
             return
         }
 

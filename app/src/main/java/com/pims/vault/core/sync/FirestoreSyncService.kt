@@ -7,7 +7,6 @@ import com.google.firebase.firestore.SetOptions
 import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.storage.B2StorageUploadService
 import com.pims.vault.core.storage.FileStorageService
-import com.pims.vault.core.storage.FirebaseStorageUploadService
 import com.pims.vault.data.local.dao.AddressDao
 import com.pims.vault.data.local.dao.ContactDao
 import com.pims.vault.data.local.dao.DocumentDao
@@ -22,6 +21,14 @@ import com.pims.vault.data.local.dao.SocialAccountDao
 import com.pims.vault.data.local.dao.VaultDao
 import com.pims.vault.data.local.entity.AddressEntity
 import com.pims.vault.data.local.entity.ContactMethodEntity
+import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
+import com.pims.vault.core.model.AddressLabel
+import com.pims.vault.core.model.ContactType
+import com.pims.vault.core.model.DocumentType
+import com.pims.vault.core.model.MedicalRecordType
+import com.pims.vault.core.model.RelationshipType
+import com.pims.vault.core.model.VaultCategory
+import com.pims.vault.core.storage.StoredFileMetadata
 import com.pims.vault.data.local.entity.DocumentEntity
 import com.pims.vault.data.local.entity.DocumentVersionEntity
 import com.pims.vault.data.local.entity.EducationRecordEntity
@@ -57,7 +64,6 @@ class FirestoreSyncService @Inject constructor(
     private val educationDao: EducationDao,
     private val employmentDao: EmploymentDao,
     private val b2StorageUploadService: B2StorageUploadService,
-    private val firebaseStorageUploadService: FirebaseStorageUploadService,
     private val fileStorage: FileStorageService,
     private val networkMonitor: NetworkStateMonitor
 ) {
@@ -134,6 +140,18 @@ class FirestoreSyncService @Inject constructor(
             VaultLogger.i("FirestoreSync", "Contact ${contact.id} synced to Firestore")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync contact: ${e.message}", e)
+        }
+    }
+
+    suspend fun deleteRemoteContact(contactId: String) = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(null) ?: return@withContext
+        try {
+            firestore.collection("accounts").document(uid)
+                .collection("contacts").document(contactId)
+                .delete().await()
+            VaultLogger.i("FirestoreSync", "Contact $contactId deleted from Firestore")
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Failed to delete remote contact: ${e.message}")
         }
     }
 
@@ -320,8 +338,11 @@ class FirestoreSyncService @Inject constructor(
         try {
             var b2DownloadUrl = ""
             var b2RemotePath = ""
+            var binaryMissing = false
 
-            // Read file bytes from local encrypted storage and back up to Backblaze B2 & Firebase Storage
+            // Storage architecture: Firestore = structured data + metadata.
+            // Backblaze B2 = authoritative object store for user-uploaded binaries.
+            // Read file bytes from local encrypted storage and back up to Backblaze B2 only.
             try {
                 val baos = ByteArrayOutputStream()
                 fileStorage.readDecryptedFile(
@@ -340,27 +361,25 @@ class FirestoreSyncService @Inject constructor(
                     )
                     b2DownloadUrl = b2Result.downloadUrl
                     b2RemotePath = b2Result.remotePath
-
-                    // Secondary backup to Firebase Storage
-                    try {
-                        firebaseStorageUploadService.uploadNoteAttachment(
-                            ownerPersonId = uid,
-                            noteId = noteId,
-                            mimeType = attachment.mimeType,
-                            plaintextBytes = bytes
-                        )
-                    } catch (_: Exception) {}
+                } else {
+                    // Local binary exists but is empty — flag so remote devices don't create dead records.
+                    binaryMissing = true
                 }
             } catch (e: Exception) {
                 VaultLogger.w("FirestoreSync", "Attachment binary upload skipped: ${e.message}")
+                // Local binary unreadable/missing — mark the record so pullers skip download attempts.
+                binaryMissing = true
             }
 
             val attachmentData = hashMapOf(
                 "id" to attachment.id,
                 "noteId" to noteId,
                 "storagePath" to attachment.storagePath,
+                "storageProvider" to "b2",
+                "objectKey" to b2RemotePath,
                 "b2RemotePath" to b2RemotePath,
                 "b2DownloadUrl" to b2DownloadUrl,
+                "binaryMissing" to binaryMissing,
                 "mimeType" to attachment.mimeType,
                 "fileSizeBytes" to attachment.fileSizeBytes,
                 "sha256Hash" to attachment.sha256Hash,
@@ -415,6 +434,7 @@ class FirestoreSyncService @Inject constructor(
         try {
             var b2DownloadUrl = ""
             var b2RemotePath = ""
+            var binaryMissing = false
 
             // Read file bytes from local encrypted storage and back up to Backblaze B2
             try {
@@ -435,9 +455,12 @@ class FirestoreSyncService @Inject constructor(
                     )
                     b2DownloadUrl = b2Result.downloadUrl
                     b2RemotePath = b2Result.remotePath
+                } else {
+                    binaryMissing = true
                 }
             } catch (e: Exception) {
                 VaultLogger.w("FirestoreSync", "Document version binary upload skipped: ${e.message}")
+                binaryMissing = true
             }
 
             val versionData = hashMapOf(
@@ -445,8 +468,11 @@ class FirestoreSyncService @Inject constructor(
                 "documentId" to documentId,
                 "versionNumber" to version.versionNumber,
                 "fileStoragePath" to version.fileStoragePath,
+                "storageProvider" to "b2",
+                "objectKey" to b2RemotePath,
                 "b2RemotePath" to b2RemotePath,
                 "b2DownloadUrl" to b2DownloadUrl,
+                "binaryMissing" to binaryMissing,
                 "fileSizeBytes" to version.fileSizeBytes,
                 "mimeType" to version.mimeType,
                 "sha256Hash" to version.sha256Hash,
@@ -684,4 +710,634 @@ class FirestoreSyncService @Inject constructor(
             SyncResult(false, count, "Firestore & Backblaze sync error: ${e.localizedMessage}")
         }
     }
+
+    private suspend fun downloadAndStoreAttachment(
+        noteId: String,
+        attachmentId: String,
+        downloadUrl: String,
+        mimeType: String
+    ): StoredFileMetadata? = withContext(Dispatchers.IO) {
+        try {
+            val url = java.net.URL(downloadUrl)
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 20000
+            conn.requestMethod = "GET"
+            if (conn.responseCode in 200..299) {
+                conn.inputStream.use { stream ->
+                    fileStorage.storePreEncryptedFile(
+                        documentId = "note_${noteId}_${attachmentId}",
+                        versionNumber = 1,
+                        mimeType = mimeType,
+                        inputStream = stream
+                    )
+                }
+            } else {
+                VaultLogger.w("FirestoreSync", "Attachment download HTTP ${conn.responseCode} for $downloadUrl")
+                null
+            }
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Failed to download remote attachment: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun downloadAndStoreDocumentVersion(
+        docId: String,
+        versionId: String,
+        versionNum: Int,
+        downloadUrl: String,
+        mimeType: String
+    ): StoredFileMetadata? = withContext(Dispatchers.IO) {
+        try {
+            val url = java.net.URL(downloadUrl)
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10000
+            conn.readTimeout = 20000
+            conn.requestMethod = "GET"
+            if (conn.responseCode in 200..299) {
+                conn.inputStream.use { stream ->
+                    fileStorage.storePreEncryptedFile(
+                        documentId = "doc_${docId}_${versionId}",
+                        versionNumber = versionNum,
+                        mimeType = mimeType,
+                        inputStream = stream
+                    )
+                }
+            } else {
+                VaultLogger.w("FirestoreSync", "Doc version download HTTP ${conn.responseCode} for $downloadUrl")
+                null
+            }
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Failed to download remote document version: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Executes remote-to-local synchronization:
+     * Pulls all entity collections from Cloud Firestore (/accounts/{uid}/...)
+     * and reconciles them into local Room tables.
+     * When new notes, profiles, contacts, or media arrive, Room Flow observers
+     * automatically update the UI across all connected screens.
+     */
+    suspend fun pullRemoteChanges(userId: String?): SyncResult = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId)
+            ?: return@withContext SyncResult(false, 0, "No authenticated Firebase user")
+
+        if (!networkMonitor.isCurrentlyConnected()) {
+            return@withContext SyncResult(false, 0, "Device is offline")
+        }
+
+        var count = 0
+        try {
+            VaultLogger.i("FirestoreSync", "Starting remote-to-local synchronization for uid $uid")
+            val accountDocRef = firestore.collection("accounts").document(uid)
+
+            val personIdMap = mutableMapOf<String, String>()
+            personIdMap["primary"] = CANONICAL_PRIMARY_OWNER_ID
+            personIdMap["primary_owner"] = CANONICAL_PRIMARY_OWNER_ID
+
+            // 1. People / Identities (MUST be processed first to satisfy foreign keys)
+            try {
+                val peopleSnap = accountDocRef.collection("people").get().await()
+                for (doc in peopleSnap.documents) {
+                    val rawId = doc.id
+                    val isPrimaryOwner = doc.getBoolean("isPrimaryOwner") == true ||
+                            rawId == "primary_owner" || rawId == "primary"
+                    val localId = if (isPrimaryOwner) CANONICAL_PRIMARY_OWNER_ID else rawId
+                    personIdMap[rawId] = localId
+
+                    val existingPerson = if (isPrimaryOwner) {
+                        personDao.getPrimaryOwner()
+                    } else {
+                        personDao.getPersonById(localId)
+                    }
+
+                    val remoteUpdated = doc.getLong("updatedAt") ?: 0L
+                    if (existingPerson != null && existingPerson.updatedAt >= remoteUpdated) {
+                        VaultLogger.d("FirestoreSync", "Local person $localId is newer than or equal to remote (${existingPerson.updatedAt} >= $remoteUpdated). Skipping pull overwrite.")
+                        continue
+                    }
+
+                    val firstName = doc.getString("firstName") ?: existingPerson?.firstName ?: ""
+                    val lastName = doc.getString("lastName") ?: existingPerson?.lastName ?: ""
+                    val middleName = doc.getString("middleName")?.takeIf { it.isNotBlank() } ?: existingPerson?.middleName
+                    val preferredName = doc.getString("preferredName")?.takeIf { it.isNotBlank() } ?: existingPerson?.preferredName
+                    val dob = doc.getString("dateOfBirth")?.takeIf { it.isNotBlank() } ?: existingPerson?.dateOfBirth
+                    val gender = doc.getString("gender")?.takeIf { it.isNotBlank() } ?: existingPerson?.gender
+                    val nationality = doc.getString("nationality")?.takeIf { it.isNotBlank() } ?: existingPerson?.nationality
+                    val country = (doc.getString("country") ?: doc.getString("countryOfResidence"))?.takeIf { it.isNotBlank() }
+                        ?: existingPerson?.countryOfResidence
+                    val religion = doc.getString("religion")?.takeIf { it.isNotBlank() } ?: existingPerson?.religion
+                    val occupation = doc.getString("occupation")?.takeIf { it.isNotBlank() } ?: existingPerson?.occupation
+
+                    val personEntity = PersonEntity(
+                        id = localId,
+                        isPrimaryOwner = isPrimaryOwner,
+                        firstName = firstName,
+                        middleName = middleName,
+                        lastName = lastName,
+                        preferredName = preferredName,
+                        dateOfBirth = dob,
+                        gender = gender,
+                        nationality = nationality,
+                        countryOfResidence = country,
+                        religion = religion,
+                        occupation = occupation,
+                        accountUid = uid,
+                        updatedAt = remoteUpdated
+                    )
+                    personDao.insertOrUpdate(personEntity)
+                    count++
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling people: ${e.message}", e)
+            }
+
+            // Cleanup any stale person record with id == 'primary'
+            try {
+                if (personDao.getPersonById("primary") != null && personDao.getPrimaryOwner() != null) {
+                    personDao.deleteById("primary")
+                }
+            } catch (_: Exception) {}
+
+            // 2. Contacts (with automatic remote deduplication)
+            try {
+                val contactsSnap = accountDocRef.collection("contacts").get().await()
+                val seenContactKeys = mutableSetOf<String>()
+                for (doc in contactsSnap.documents) {
+                    val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                    val valStr = doc.getString("value")?.trim() ?: ""
+                    if (valStr.isNotBlank()) {
+                        val contactTypeStr = doc.getString("contactType") ?: "EMAIL"
+                        val contactType = try { ContactType.valueOf(contactTypeStr) } catch (_: Exception) { ContactType.EMAIL }
+                        val dedupKey = "$targetPersonId:$contactType:${if (contactType == ContactType.PHONE) valStr.filter { it.isDigit() }.ifBlank { valStr } else valStr.lowercase()}"
+                        if (dedupKey in seenContactKeys) {
+                            try { doc.reference.delete() } catch (_: Exception) {}
+                            continue
+                        }
+                        seenContactKeys.add(dedupKey)
+
+                        val contact = ContactMethodEntity(
+                            id = doc.id,
+                            personId = targetPersonId,
+                            contactType = contactType,
+                            label = doc.getString("label") ?: "Primary",
+                            value = valStr,
+                            isPrimary = doc.getBoolean("isPrimary") ?: false
+                        )
+                        contactDao.insertOrUpdate(contact)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling contacts: ${e.message}", e)
+            }
+
+            // 3. Addresses
+            try {
+                val addressesSnap = accountDocRef.collection("addresses").get().await()
+                for (doc in addressesSnap.documents) {
+                    val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                    val street1 = doc.getString("streetLine1") ?: doc.getString("street") ?: ""
+                    val city = doc.getString("city") ?: ""
+                    val country = doc.getString("country") ?: ""
+                    if (street1.isNotBlank() || city.isNotBlank() || country.isNotBlank()) {
+                        val labelStr = doc.getString("label") ?: "HOME"
+                        val label = try { AddressLabel.valueOf(labelStr) } catch (_: Exception) { AddressLabel.HOME }
+                        val address = AddressEntity(
+                            id = doc.id,
+                            personId = targetPersonId,
+                            label = label,
+                            streetLine1 = street1,
+                            streetLine2 = doc.getString("streetLine2")?.takeIf { it.isNotBlank() },
+                            city = city,
+                            stateProvince = (doc.getString("stateProvince") ?: doc.getString("state"))?.takeIf { it.isNotBlank() },
+                            postalCode = doc.getString("postalCode")?.takeIf { it.isNotBlank() },
+                            country = country,
+                            isCurrent = doc.getBoolean("isCurrent") ?: true
+                        )
+                        addressDao.insertOrUpdate(address)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling addresses: ${e.message}", e)
+            }
+
+            // 4. Social Accounts
+            try {
+                val socialSnap = accountDocRef.collection("socialAccounts").get().await()
+                for (doc in socialSnap.documents) {
+                    val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                    val url = doc.getString("url") ?: doc.getString("profileUrl") ?: ""
+                    val username = (doc.getString("username") ?: doc.getString("handle"))?.takeIf { it.isNotBlank() }
+                    if (url.isNotBlank() || username != null) {
+                        val social = SocialAccountEntity(
+                            id = doc.id,
+                            personId = targetPersonId,
+                            platform = doc.getString("platform") ?: "Social",
+                            username = username,
+                            url = url,
+                            displayName = doc.getString("displayName")?.takeIf { it.isNotBlank() }
+                        )
+                        socialAccountDao.insertOrUpdate(social)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling social accounts: ${e.message}", e)
+            }
+
+            // 5. Relationships
+            try {
+                val relSnap = accountDocRef.collection("relationships").get().await()
+                for (doc in relSnap.documents) {
+                    val rawSourceId = doc.getString("sourcePersonId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val rawTargetId = doc.getString("targetPersonId") ?: ""
+                    val sourceId = personIdMap[rawSourceId] ?: rawSourceId
+                    val targetId = personIdMap[rawTargetId] ?: rawTargetId
+                    if (targetId.isNotBlank()) {
+                        val relTypeStr = doc.getString("relationshipType") ?: "FRIEND"
+                        val relType = try { RelationshipType.valueOf(relTypeStr) } catch (_: Exception) { RelationshipType.FRIEND }
+                        val rel = RelationshipEntity(
+                            id = doc.id,
+                            sourcePersonId = sourceId,
+                            targetPersonId = targetId,
+                            relationshipType = relType,
+                            customLabel = doc.getString("customLabel")?.takeIf { it.isNotBlank() },
+                            status = doc.getString("status") ?: "ACTIVE"
+                        )
+                        relationshipDao.insertOrUpdate(rel)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling relationships: ${e.message}", e)
+            }
+
+            // 6. Relationship Notes
+            try {
+                val relNotesSnap = accountDocRef.collection("relationshipNotes").get().await()
+                for (doc in relNotesSnap.documents) {
+                    val relId = doc.getString("relationshipId") ?: ""
+                    if (relId.isNotBlank()) {
+                        val note = RelationshipNoteEntity(
+                            id = doc.id,
+                            relationshipId = relId,
+                            topic = doc.getString("topic")?.takeIf { it.isNotBlank() },
+                            contentPlaintext = doc.getString("content") ?: "",
+                            isPrivate = doc.getBoolean("isPrivate") ?: false,
+                            createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
+                            updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+                        )
+                        relationshipNoteDao.insertOrUpdate(note)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling relationship notes: ${e.message}", e)
+            }
+
+            // 7. Fortress Vault Items
+            try {
+                val vaultSnap = accountDocRef.collection("vault").get().await()
+                for (doc in vaultSnap.documents) {
+                    val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                    val payloadBase64 = doc.getString("encryptedPayload")
+                    val payloadBytes = if (payloadBase64 != null) {
+                        try { Base64.decode(payloadBase64, Base64.NO_WRAP) } catch (_: Exception) { ByteArray(0) }
+                    } else ByteArray(0)
+
+                    if (payloadBytes.isNotEmpty()) {
+                        val catStr = doc.getString("category") ?: "PASSWORD"
+                        val category = try { VaultCategory.valueOf(catStr) } catch (_: Exception) { VaultCategory.PASSWORD }
+                        val item = VaultItemEntity(
+                            id = doc.id,
+                            personId = targetPersonId,
+                            category = category,
+                            title = doc.getString("title") ?: "Untitled Item",
+                            accountIdentifier = doc.getString("accountIdentifier")?.takeIf { it.isNotBlank() },
+                            encryptedPayload = payloadBytes,
+                            encryptionIv = doc.getString("encryptionIv") ?: "",
+                            notes = doc.getString("notes")?.takeIf { it.isNotBlank() },
+                            updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+                        )
+                        vaultDao.insertOrUpdate(item)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling vault items: ${e.message}", e)
+            }
+
+            // 8. Plain Notes & Attachments
+            try {
+                val notesSnap = accountDocRef.collection("notes").get().await()
+                for (doc in notesSnap.documents) {
+                    val noteId = doc.id
+                    val isDeleted = doc.getBoolean("isDeleted") ?: false
+                    if (isDeleted) {
+                        plainNoteDao.deleteById(noteId)
+                        count++
+                        continue
+                    }
+
+                    val rawOwner = doc.getString("ownerPersonId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val targetOwner = personIdMap[rawOwner] ?: rawOwner
+                    val title = doc.getString("title") ?: "Untitled Note"
+                    val content = doc.getString("content") ?: ""
+                    val format = doc.getString("format") ?: "PLAIN"
+                    val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                    val updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+
+                    val existingNote = plainNoteDao.getById(noteId)
+                    val noteEntity = PlainNoteEntity(
+                        id = noteId,
+                        ownerPersonId = targetOwner,
+                        title = title,
+                        content = content,
+                        format = format,
+                        createdAt = existingNote?.createdAt ?: createdAt,
+                        updatedAt = updatedAt
+                    )
+                    plainNoteDao.upsert(noteEntity)
+                    count++
+
+                    // Reconcile attachments
+                    try {
+                        val attSnap = doc.reference.collection("attachments").get().await()
+                        for (attDoc in attSnap.documents) {
+                            val attId = attDoc.id
+                            var storagePath = attDoc.getString("storagePath") ?: ""
+                            val mimeType = attDoc.getString("mimeType") ?: "image/jpeg"
+                            var fileSizeBytes = attDoc.getLong("fileSizeBytes") ?: 0L
+                            var sha256Hash = attDoc.getString("sha256Hash") ?: ""
+                            val caption = attDoc.getString("caption")
+                            val attCreatedAt = attDoc.getLong("createdAt") ?: System.currentTimeMillis()
+                            val b2DownloadUrl = attDoc.getString("b2DownloadUrl")
+                            val binaryMissing = attDoc.getBoolean("binaryMissing") ?: false
+
+                            var fileExistsLocally = false
+                            if (storagePath.isNotBlank()) {
+                                try {
+                                    val f = java.io.File(storagePath)
+                                    if (f.exists() && f.length() > 0) fileExistsLocally = true
+                                } catch (_: Exception) {}
+                            }
+
+                            // Skip download when the uploader flagged the binary as missing —
+                            // avoids creating dead local records from empty remote metadata.
+                            if (!binaryMissing && !fileExistsLocally && !b2DownloadUrl.isNullOrBlank()) {
+                                val stored = downloadAndStoreAttachment(noteId, attId, b2DownloadUrl, mimeType)
+                                if (stored != null) {
+                                    storagePath = stored.relativePath
+                                    fileSizeBytes = stored.sizeBytes
+                                    sha256Hash = stored.sha256Hex
+                                    fileExistsLocally = true
+                                }
+                            }
+
+                            // Don't create a dead local record when the binary is missing
+                            // and no local file exists — remote devices would hit
+                            // FileNotFoundException on read (see PlainNotesRepository logs).
+                            if ((binaryMissing || b2DownloadUrl.isNullOrBlank()) && !fileExistsLocally) {
+                                VaultLogger.w(
+                                    "FirestoreSync",
+                                    "Skipping dead attachment $attId for note $noteId (binaryMissing=$binaryMissing)"
+                                )
+                                continue
+                            }
+
+                            val attEntity = PlainNoteAttachmentEntity(
+                                id = attId,
+                                noteId = noteId,
+                                storagePath = storagePath,
+                                mimeType = mimeType,
+                                fileSizeBytes = fileSizeBytes,
+                                sha256Hash = sha256Hash,
+                                caption = caption,
+                                createdAt = attCreatedAt
+                            )
+                            plainNoteDao.upsertAttachment(attEntity)
+                            count++
+                        }
+                    } catch (e: Exception) {
+                        VaultLogger.w("FirestoreSync", "Attachment sync error for note $noteId: ${e.message}")
+                    }
+
+                    // Invalidate Room Flow collectors so the note list refreshes instantly
+                    plainNoteDao.touch(noteId, updatedAt)
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling notes: ${e.message}", e)
+            }
+
+            // 9. Documents & Versions
+            try {
+                val docSnap = accountDocRef.collection("documents").get().await()
+                for (doc in docSnap.documents) {
+                    val docId = doc.id
+                    val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                    val docTypeStr = doc.getString("documentType") ?: "OTHER"
+                    val docType = try { DocumentType.valueOf(docTypeStr) } catch (_: Exception) { DocumentType.OTHER }
+
+                    val docEntity = DocumentEntity(
+                        id = docId,
+                        personId = targetPersonId,
+                        documentType = docType,
+                        title = doc.getString("title") ?: "Document",
+                        issuingAuthority = doc.getString("issuingAuthority")?.takeIf { it.isNotBlank() },
+                        expirationDate = doc.getString("expirationDate")?.takeIf { it.isNotBlank() }
+                    )
+                    documentDao.insertDocument(docEntity)
+                    count++
+
+                    try {
+                        val verSnap = doc.reference.collection("versions").get().await()
+                        for (vDoc in verSnap.documents) {
+                            val vId = vDoc.id
+                            val vNum = (vDoc.getLong("versionNumber") ?: 1L).toInt()
+                            var storagePath = vDoc.getString("fileStoragePath") ?: ""
+                            var fileSizeBytes = vDoc.getLong("fileSizeBytes") ?: 0L
+                            val mimeType = vDoc.getString("mimeType") ?: "application/pdf"
+                            var sha256Hash = vDoc.getString("sha256Hash") ?: ""
+                            val encryptionIv = vDoc.getString("encryptionIv") ?: ""
+                            val notes = vDoc.getString("notes")
+                            val vCreatedAt = vDoc.getLong("createdAt") ?: System.currentTimeMillis()
+                            val b2DownloadUrl = vDoc.getString("b2DownloadUrl")
+                            val binaryMissing = vDoc.getBoolean("binaryMissing") ?: false
+
+                            var fileExistsLocally = false
+                            if (storagePath.isNotBlank()) {
+                                try {
+                                    val f = java.io.File(storagePath)
+                                    if (f.exists() && f.length() > 0) fileExistsLocally = true
+                                } catch (_: Exception) {}
+                            }
+
+                            if (!binaryMissing && !fileExistsLocally && !b2DownloadUrl.isNullOrBlank()) {
+                                val stored = downloadAndStoreDocumentVersion(docId, vId, vNum, b2DownloadUrl, mimeType)
+                                if (stored != null) {
+                                    storagePath = stored.relativePath
+                                    fileSizeBytes = stored.sizeBytes
+                                    sha256Hash = stored.sha256Hex
+                                    fileExistsLocally = true
+                                }
+                            }
+
+                            // Don't create a dead local record when the binary is missing.
+                            if ((binaryMissing || b2DownloadUrl.isNullOrBlank()) && !fileExistsLocally) {
+                                VaultLogger.w(
+                                    "FirestoreSync",
+                                    "Skipping dead document version $vId for doc $docId (binaryMissing=$binaryMissing)"
+                                )
+                                continue
+                            }
+
+                            val vEntity = DocumentVersionEntity(
+                                id = vId,
+                                documentId = docId,
+                                versionNumber = vNum,
+                                fileStoragePath = storagePath,
+                                fileSizeBytes = fileSizeBytes,
+                                mimeType = mimeType,
+                                sha256Hash = sha256Hash,
+                                encryptionIv = encryptionIv,
+                                notes = notes,
+                                createdAt = vCreatedAt
+                            )
+                            documentDao.insertVersion(vEntity)
+                            count++
+                        }
+                    } catch (e: Exception) {
+                        VaultLogger.w("FirestoreSync", "Document version sync error for $docId: ${e.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling documents: ${e.message}", e)
+            }
+
+            // 10. Education
+            try {
+                val eduSnap = accountDocRef.collection("education").get().await()
+                for (doc in eduSnap.documents) {
+                    val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                    val inst = doc.getString("institution") ?: ""
+                    val qual = doc.getString("qualification") ?: doc.getString("degree") ?: ""
+                    if (inst.isNotBlank() || qual.isNotBlank()) {
+                        val edu = EducationRecordEntity(
+                            id = doc.id,
+                            personId = targetPersonId,
+                            institution = inst,
+                            qualification = qual,
+                            fieldOfStudy = doc.getString("fieldOfStudy")?.takeIf { it.isNotBlank() },
+                            startDate = doc.getString("startDate")?.takeIf { it.isNotBlank() },
+                            endDate = doc.getString("endDate")?.takeIf { it.isNotBlank() }
+                        )
+                        educationDao.insertOrUpdate(edu)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling education: ${e.message}", e)
+            }
+
+            // 11. Employment
+            try {
+                val workSnap = accountDocRef.collection("employment").get().await()
+                for (doc in workSnap.documents) {
+                    val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
+                    val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                    val comp = doc.getString("company") ?: doc.getString("organization") ?: ""
+                    val pos = doc.getString("position") ?: doc.getString("title") ?: ""
+                    if (comp.isNotBlank() || pos.isNotBlank()) {
+                        val work = EmploymentRecordEntity(
+                            id = doc.id,
+                            personId = targetPersonId,
+                            company = comp,
+                            position = pos,
+                            department = doc.getString("department")?.takeIf { it.isNotBlank() },
+                            startDate = doc.getString("startDate")?.takeIf { it.isNotBlank() },
+                            endDate = doc.getString("endDate")?.takeIf { it.isNotBlank() },
+                            isCurrent = doc.getBoolean("isCurrent") ?: false
+                        )
+                        employmentDao.insertOrUpdate(work)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling employment: ${e.message}", e)
+            }
+
+            // 12. Health Records
+            try {
+                val medSnap = accountDocRef.collection("healthRecords").get().await()
+                for (doc in medSnap.documents) {
+                    val docId = doc.id
+                    if (docId.startsWith("profile_") || doc.contains("bloodType")) {
+                        val rawPersonId = doc.getString("personId") ?: docId.removePrefix("profile_")
+                        val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                        val medProfile = MedicalProfileEntity(
+                            personId = targetPersonId,
+                            bloodType = doc.getString("bloodType")?.takeIf { it.isNotBlank() },
+                            emergencyContactName = doc.getString("emergencyContactName")?.takeIf { it.isNotBlank() },
+                            emergencyContactPhone = doc.getString("emergencyContactPhone")?.takeIf { it.isNotBlank() }
+                        )
+                        medicalDao.insertOrUpdateProfile(medProfile)
+                        count++
+                    } else {
+                        val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
+                        val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                        val recTypeStr = doc.getString("recordType") ?: "CONDITION"
+                        val recType = try { MedicalRecordType.valueOf(recTypeStr) } catch (_: Exception) { MedicalRecordType.CONDITION }
+                        val record = MedicalRecordEntity(
+                            id = docId,
+                            personId = targetPersonId,
+                            title = doc.getString("title") ?: "Health Record",
+                            recordType = recType
+                        )
+                        medicalDao.insertOrUpdate(record)
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                VaultLogger.e("FirestoreSync", "Error pulling health records: ${e.message}", e)
+            }
+
+            VaultLogger.i("FirestoreSync", "Remote-to-local sync complete: $count records synchronized from Firestore into Room")
+            SyncResult(true, count, "Successfully synchronized $count items from Cloud Firestore")
+        } catch (e: Exception) {
+            VaultLogger.e("FirestoreSync", "Remote-to-local pull error: ${e.message}", e)
+            SyncResult(false, count, "Firestore pull error: ${e.localizedMessage}")
+        }
+    }
+
+    /**
+     * Executes a comprehensive bidirectional sync:
+     * 1. Pulls down latest remote state from Cloud Firestore into local Room tables.
+     * 2. Pushes up local items and media back to Cloud Firestore & Backblaze B2.
+     */
+    suspend fun syncBidirectional(userId: String?): SyncResult = withContext(Dispatchers.IO) {
+        val pushResult = syncAllData(userId)
+        val pullResult = pullRemoteChanges(userId)
+        val totalCount = pullResult.processedCount + pushResult.processedCount
+        val overallSuccess = pullResult.success || pushResult.success
+        val msg = "Bidirectional sync: ${pullResult.processedCount} pulled, ${pushResult.processedCount} pushed"
+        VaultLogger.i("FirestoreSync", msg)
+        SyncResult(overallSuccess, totalCount, msg)
+    }
+
+    /**
+     * Alias for pullRemoteChanges to conform with remote synchronization requirements.
+     */
+    suspend fun syncAllFromRemote(userId: String?): SyncResult = pullRemoteChanges(userId)
 }
+

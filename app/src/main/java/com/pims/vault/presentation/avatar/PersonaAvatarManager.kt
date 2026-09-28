@@ -41,6 +41,9 @@ class PersonaAvatarManager @Inject constructor(
     private val _customAvatarPath = MutableStateFlow(_avatarConfig.value.customAvatarPath)
     val customAvatarPath: StateFlow<String?> = _customAvatarPath.asStateFlow()
 
+    private val _personPhotosVersion = MutableStateFlow(System.currentTimeMillis())
+    val personPhotosVersion: StateFlow<Long> = _personPhotosVersion.asStateFlow()
+
     private fun loadBehaviorMode(): AvatarBehaviorMode {
         val modeStr = prefs.getString(KEY_BEHAVIOR, null) ?: return AvatarBehaviorMode.ALIVE
         return try {
@@ -286,6 +289,7 @@ class PersonaAvatarManager @Inject constructor(
         } else {
             prefs.edit().putString("person_photo_$personId", path).apply()
         }
+        _personPhotosVersion.value = System.currentTimeMillis()
     }
 
     fun saveRelationshipPhotoFromBitmap(personId: String, bitmap: Bitmap): String? {
@@ -305,5 +309,14 @@ class PersonaAvatarManager @Inject constructor(
     companion object {
         private const val KEY_CONFIG = "user_persona_avatar_config"
         private const val KEY_BEHAVIOR = "user_persona_avatar_behavior"
+
+        @Volatile
+        private var instance: PersonaAvatarManager? = null
+
+        fun getInstance(context: Context): PersonaAvatarManager {
+            return instance ?: synchronized(this) {
+                instance ?: PersonaAvatarManager(context.applicationContext).also { instance = it }
+            }
+        }
     }
 }

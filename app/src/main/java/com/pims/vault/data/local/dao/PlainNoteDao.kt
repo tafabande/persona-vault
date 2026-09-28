@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PlainNoteDao {
 
-    @Query("SELECT * FROM plain_notes WHERE owner_person_id = :ownerPersonId ORDER BY updated_at DESC")
+    @Query("SELECT * FROM plain_notes WHERE owner_person_id = :ownerPersonId OR (:ownerPersonId = 'primary_owner' AND owner_person_id = 'primary') OR (:ownerPersonId = 'primary' AND owner_person_id = 'primary_owner') ORDER BY updated_at DESC")
     fun observeForOwner(ownerPersonId: String): Flow<List<PlainNoteEntity>>
 
     @Query("SELECT * FROM plain_notes WHERE id = :id LIMIT 1")
@@ -39,4 +39,7 @@ interface PlainNoteDao {
 
     @Query("DELETE FROM plain_note_attachments WHERE id = :id")
     suspend fun deleteAttachment(id: String)
+
+    @Query("UPDATE plain_notes SET updated_at = :timestamp WHERE id = :noteId")
+    suspend fun touch(noteId: String, timestamp: Long)
 }

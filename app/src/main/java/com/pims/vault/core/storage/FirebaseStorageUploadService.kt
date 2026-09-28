@@ -33,7 +33,9 @@ class FirebaseStorageUploadService @Inject constructor(
         mimeType: String,
         plaintextBytes: ByteArray
     ): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
-        val remotePath = "documents/$personId/$documentId/${UUID.randomUUID()}"
+        // Canonical path: users/{uid}/documents/{docId}/{uuid} — must match storage.rules.
+        // Callers pass the Firebase uid as personId (see FirestoreSyncService).
+        val remotePath = "users/$personId/documents/$documentId/${UUID.randomUUID()}"
         uploadEncrypted(remotePath, plaintextBytes, mimeType)
     }
 
@@ -43,7 +45,8 @@ class FirebaseStorageUploadService @Inject constructor(
         mimeType: String,
         plaintextBytes: ByteArray
     ): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
-        val remotePath = "notes/$ownerPersonId/$noteId/${UUID.randomUUID()}"
+        // Canonical path: users/{uid}/notes/{noteId}/{uuid} — must match storage.rules.
+        val remotePath = "users/$ownerPersonId/notes/$noteId/${UUID.randomUUID()}"
         uploadEncrypted(remotePath, plaintextBytes, mimeType)
     }
 

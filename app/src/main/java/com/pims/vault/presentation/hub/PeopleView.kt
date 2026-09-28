@@ -76,6 +76,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -113,7 +114,8 @@ fun PeopleView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val avatarManager = remember { PersonaAvatarManager(context) }
+    val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
+    val photosVersion by avatarManager.personPhotosVersion.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(PeopleCategory.ALL) }
 
@@ -221,6 +223,7 @@ fun PeopleView(
             items(filteredList, key = { it.id }) { person ->
                 PersonListItem(
                     person = person,
+                    photosVersion = photosVersion,
                     onClick = { onSelectPerson(person) }
                 )
             }
@@ -311,6 +314,7 @@ fun PeopleView(
 @Composable
 private fun PersonListItem(
     person: KinRelationshipItem,
+    photosVersion: Long = 0L,
     onClick: () -> Unit
 ) {
     Box(
@@ -329,8 +333,8 @@ private fun PersonListItem(
             .tactilePress(onClick = onClick)
     ) {
         val context = LocalContext.current
-        val avatarManager = remember { PersonaAvatarManager(context) }
-        val contactPhoto = remember(person.id) { avatarManager.getPersonPhotoPath(person.id) }
+        val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
+        val contactPhoto = remember(person.id, photosVersion) { avatarManager.getPersonPhotoPath(person.id) }
         val contactBitmap = remember(contactPhoto) {
             contactPhoto?.let { path ->
                 try {
@@ -411,7 +415,7 @@ fun PersonDetailSheet(
     onUnlockVaultSession: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val avatarManager = remember { PersonaAvatarManager(context) }
+    val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
     var contactPhotoPath by remember(person.id) {
         mutableStateOf(avatarManager.getPersonPhotoPath(person.id))
     }

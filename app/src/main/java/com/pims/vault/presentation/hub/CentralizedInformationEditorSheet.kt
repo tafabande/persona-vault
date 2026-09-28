@@ -335,11 +335,11 @@ fun CentralizedInformationEditorSheet(
                                 placeholder = "e.g. Architect",
                                 modifier = Modifier.weight(1f)
                             )
-                            PersonaTextInput(
+                            com.pims.vault.presentation.ui.components.CountrySuggestionField(
                                 value = countryVal,
                                 onValueChange = { countryVal = it },
                                 label = "Country / Region",
-                                placeholder = "e.g. South Africa",
+                                placeholder = "Type country...",
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -407,16 +407,14 @@ fun CentralizedInformationEditorSheet(
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.primary
                                         )
-                                        if (phones.size > 1) {
-                                            IconButton(
-                                                onClick = {
-                                                    haptics.light()
-                                                    phones.removeAt(index)
-                                                },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                                            }
+                                        IconButton(
+                                            onClick = {
+                                                haptics.light()
+                                                phones.removeAt(index)
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                         }
                                     }
 
@@ -511,16 +509,14 @@ fun CentralizedInformationEditorSheet(
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.primary
                                         )
-                                        if (emails.size > 1) {
-                                            IconButton(
-                                                onClick = {
-                                                    haptics.light()
-                                                    emails.removeAt(index)
-                                                },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                                            }
+                                        IconButton(
+                                            onClick = {
+                                                haptics.light()
+                                                emails.removeAt(index)
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                         }
                                     }
 
@@ -616,16 +612,14 @@ fun CentralizedInformationEditorSheet(
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.primary
                                         )
-                                        if (addresses.size > 1) {
-                                            IconButton(
-                                                onClick = {
-                                                    haptics.light()
-                                                    addresses.removeAt(index)
-                                                },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                                            }
+                                        IconButton(
+                                            onClick = {
+                                                haptics.light()
+                                                addresses.removeAt(index)
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                         }
                                     }
 

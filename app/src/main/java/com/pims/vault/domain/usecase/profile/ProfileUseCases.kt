@@ -1,6 +1,7 @@
 package com.pims.vault.domain.usecase.profile
 
 import com.pims.vault.core.model.AddressLabel
+import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.core.model.ContactType
 import com.pims.vault.core.model.DocumentType
 import com.pims.vault.core.model.SecurityClassification
@@ -33,7 +34,7 @@ class GetPersonProfileUseCase @Inject constructor(
         }
 
         return fullProfileFlow.combine(
-            documentRepository.getDocumentsByTypeFlow(personId ?: "primary", DocumentType.PASSPORT_PHOTO)
+            documentRepository.getDocumentsByTypeFlow(personId ?: CANONICAL_PRIMARY_OWNER_ID, DocumentType.PASSPORT_PHOTO)
         ) { fullProfile, photoDocs ->
             if (fullProfile == null) return@combine null
 

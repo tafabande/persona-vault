@@ -2,8 +2,20 @@ package com.pims.vault.presentation
 
 import android.app.Activity
 import android.app.DatePickerDialog
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.pims.vault.presentation.ui.util.PimsHaptics
+import com.pims.vault.presentation.ui.util.PimsSoundManager
+import com.pims.vault.presentation.profile.ProfileUiState
+import com.pims.vault.presentation.hub.EditableAddress
+import com.pims.vault.presentation.hub.EditableAllergy
+import com.pims.vault.presentation.hub.EditableCondition
+import com.pims.vault.presentation.hub.EditableMedication
+import com.pims.vault.presentation.hub.EditableEducation
+import com.pims.vault.presentation.hub.EditableWork
+import com.pims.vault.presentation.hub.EditableSocial
+import com.pims.vault.presentation.hub.EditableCustomField
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,6 +59,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.Icons
@@ -58,6 +71,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.People
@@ -68,6 +82,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -105,6 +124,7 @@ import com.pims.vault.presentation.ui.components.PersonaDropdownSelector
 import com.pims.vault.presentation.ui.components.PersonaSearchableCombobox
 import com.pims.vault.presentation.ui.components.PersonaFormSection
 import com.pims.vault.presentation.ui.components.PersonaTextInput
+import com.pims.vault.presentation.ui.components.CountrySuggestionField
 import com.pims.vault.presentation.ui.components.PersonaToggleRow
 import com.pims.vault.presentation.ui.components.ux.PersonaToastController
 import com.pims.vault.presentation.ui.components.ux.PersonaToastHost
@@ -154,6 +174,9 @@ import com.pims.vault.presentation.document.DocumentUploadSheet
 import com.pims.vault.core.model.ContactType
 import com.pims.vault.presentation.hub.AddActionBottomSheet
 import com.pims.vault.presentation.hub.AddActionType
+import com.pims.vault.presentation.hub.EditPersonalIdentitySheet
+import com.pims.vault.presentation.hub.EditManagedPersonSheet
+import com.pims.vault.presentation.hub.PersonaDashboardDialogs
 import com.pims.vault.presentation.hub.DocumentsWalletSheet
 import com.pims.vault.presentation.hub.EducationPortfolioSheet
 import com.pims.vault.presentation.hub.HealthSheet
@@ -215,152 +238,6 @@ import com.pims.vault.presentation.security.BiometricReauthPrompt
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-fun isRomanticOrMaritalRelationship(role: String): Boolean {
-    val clean = role.trim().lowercase()
-    return clean in setOf(
-        "wife", "husband", "spouse", "partner",
-        "fiancé", "fiancée", "fiance", "fiancee",
-        "lover", "married partner", "romantic partner"
-    )
-}
-
-object DateHelper {
-    fun formatBirthdayInfo(dob: String): String {
-        if (dob.isBlank()) return ""
-        return try {
-            val parts = if (dob.contains("-")) dob.split("-") else dob.split("/")
-            if (parts.size != 3) return "🎂 DOB: $dob"
-            val (year, month, day) = if (parts[0].length == 4) {
-                Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
-            } else {
-                Triple(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
-            }
-
-            val today = Calendar.getInstance()
-            val birthCal = Calendar.getInstance().apply {
-                set(year, month - 1, day)
-            }
-            var age = today.get(Calendar.YEAR) - year
-            if (today.get(Calendar.DAY_OF_YEAR) < birthCal.get(Calendar.DAY_OF_YEAR)) {
-                age--
-            }
-
-            val monthNames = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-            val monthName = monthNames.getOrElse(month - 1) { "$month" }
-
-            val nextBirthday = Calendar.getInstance().apply {
-                set(Calendar.MONTH, month - 1)
-                set(Calendar.DAY_OF_MONTH, day)
-                if (before(today)) {
-                    add(Calendar.YEAR, 1)
-                }
-            }
-            val diffMillis = nextBirthday.timeInMillis - today.timeInMillis
-            val diffDays = (diffMillis / (1000 * 60 * 60 * 24)).toInt()
-
-            val countdown = when {
-                diffDays == 0 -> "Today! 🎉"
-                diffDays == 1 -> "Tomorrow"
-                diffDays < 30 -> "in $diffDays days"
-                else -> "in ${diffDays / 30} months"
-            }
-
-            val dayStr = day.toString().padStart(2, '0')
-            val monthStr = month.toString().padStart(2, '0')
-            "🎂 $dayStr/$monthStr/$year ($monthName $day) • $age yrs old ($countdown)"
-        } catch (e: Exception) {
-            "🎂 DOB: $dob"
-        }
-    }
-
-    fun formatDobOnly(dob: String): String {
-        if (dob.isBlank()) return ""
-        return try {
-            val parts = if (dob.contains("-")) dob.split("-") else dob.split("/")
-            if (parts.size != 3) return dob
-            val (year, month, day) = if (parts[0].length == 4) {
-                Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
-            } else {
-                Triple(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
-            }
-            val today = Calendar.getInstance()
-            val birthCal = Calendar.getInstance().apply {
-                set(year, month - 1, day)
-            }
-            var age = today.get(Calendar.YEAR) - year
-            if (today.get(Calendar.DAY_OF_YEAR) < birthCal.get(Calendar.DAY_OF_YEAR)) {
-                age--
-            }
-            val dayStr = day.toString().padStart(2, '0')
-            val monthStr = month.toString().padStart(2, '0')
-            "$dayStr/$monthStr/$year ($age yrs old)"
-        } catch (e: Exception) {
-            dob
-        }
-    }
-
-    fun formatBirthdayCountdown(dob: String): String {
-        if (dob.isBlank()) return ""
-        return try {
-            val parts = if (dob.contains("-")) dob.split("-") else dob.split("/")
-            if (parts.size != 3) return ""
-            val (year, month, day) = if (parts[0].length == 4) {
-                Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
-            } else {
-                Triple(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
-            }
-            val today = Calendar.getInstance()
-            val monthNames = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-            val monthName = monthNames.getOrElse(month - 1) { "$month" }
-
-            val nextBirthday = Calendar.getInstance().apply {
-                set(Calendar.MONTH, month - 1)
-                set(Calendar.DAY_OF_MONTH, day)
-                if (before(today)) {
-                    add(Calendar.YEAR, 1)
-                }
-            }
-            val diffMillis = nextBirthday.timeInMillis - today.timeInMillis
-            val diffDays = (diffMillis / (1000 * 60 * 60 * 24)).toInt()
-
-            val countdown = when {
-                diffDays == 0 -> "Today! 🎉"
-                diffDays == 1 -> "Tomorrow"
-                diffDays < 30 -> "in $diffDays days"
-                else -> "in ${diffDays / 30} months"
-            }
-            "$monthName $day ($countdown)"
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    fun formatAnniversaryInfo(anniversary: String): String {
-        if (anniversary.isBlank()) return ""
-        return try {
-            val parts = if (anniversary.contains("-")) anniversary.split("-") else anniversary.split("/")
-            if (parts.size != 3) return "💍 Anniversary: $anniversary"
-            val (year, month, day) = if (parts[0].length == 4) {
-                Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
-            } else {
-                Triple(parts[2].toInt(), parts[1].toInt(), parts[0].toInt())
-            }
-            val today = Calendar.getInstance()
-            val years = today.get(Calendar.YEAR) - year
-            val monthNames = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-            val monthName = monthNames.getOrElse(month - 1) { "$month" }
-            val dayStr = day.toString().padStart(2, '0')
-            val monthStr = month.toString().padStart(2, '0')
-            if (years > 0) {
-                "💍 $dayStr/$monthStr/$year ($years yrs married)"
-            } else {
-                "💍 $dayStr/$monthStr/$year"
-            }
-        } catch (e: Exception) {
-            "💍 Anniversary: $anniversary"
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -368,16 +245,16 @@ fun PersonaDashboardScreen(
     securityLevel: KeySecurityLevel,
     onLockClicked: () -> Unit,
     onSignOutClicked: () -> Unit = onLockClicked,
-    onRequestBiometricAuth: ((title: String, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit)? = null,
-    profileViewModel: ProfileViewModel = hiltViewModel(),
-    documentViewModel: DocumentViewModel = hiltViewModel(),
-    sharingViewModel: SharingViewModel = hiltViewModel(),
-    vaultViewModel: VaultViewModel = hiltViewModel(),
-    medicalViewModel: MedicalViewModel = hiltViewModel(),
-    backupViewModel: BackupViewModel = hiltViewModel(),
-    syncViewModel: SyncViewModel = hiltViewModel(),
-    relationshipViewModel: RelationshipViewModel = hiltViewModel()
+    onRequestBiometricAuth: ((title: String, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit)? = null
 ) {
+    val profileViewModel: ProfileViewModel = hiltViewModel()
+    val documentViewModel: DocumentViewModel = hiltViewModel()
+    val sharingViewModel: SharingViewModel = hiltViewModel()
+    val vaultViewModel: VaultViewModel = hiltViewModel()
+    val medicalViewModel: MedicalViewModel = hiltViewModel()
+    val backupViewModel: BackupViewModel = hiltViewModel()
+    val syncViewModel: SyncViewModel = hiltViewModel()
+    val relationshipViewModel: RelationshipViewModel = hiltViewModel()
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -419,9 +296,15 @@ fun PersonaDashboardScreen(
     val haptics = rememberPimsHaptics()
     val accountModeManager = remember { AccountModeManager(context) }
     val accountMode by accountModeManager.accountMode.collectAsState()
-    val isLocalOnly = accountMode == AccountMode.LOCAL_ONLY
-    val effectiveSyncStatusText = if (isLocalOnly) "Local only" else if (syncState is SyncState.Idle) "✓ Synced" else syncState.label
-    val effectiveSyncIsGood = if (isLocalOnly) true else (syncState is SyncState.Idle || syncState is SyncState.Syncing)
+    val authUser = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser }
+    val isLocalOnly = accountMode == AccountMode.LOCAL_ONLY && authUser == null
+    val effectiveSyncStatusText = when {
+        syncState is SyncState.Syncing -> "Syncing..."
+        isLocalOnly -> "Please sync"
+        syncState is SyncState.Idle -> "Synced"
+        else -> "Please sync"
+    }
+    val effectiveSyncIsGood = !isLocalOnly && (syncState is SyncState.Idle || syncState is SyncState.Syncing)
 
     var contextualExplanation by remember { mutableStateOf<ContextualExplanation?>(null) }
 
@@ -441,7 +324,7 @@ fun PersonaDashboardScreen(
     val isReducedMotion by motionManager.isReducedMotionPreferred.collectAsState()
     val recentActivityManager = remember { RecentActivityManager(context) }
     val pinSecurityManager = remember { PinSecurityManager(context) }
-    val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager(context) }
+    val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context) }
     val customAvatarPath by avatarManager.customAvatarPath.collectAsState()
     val avatarConfig by avatarManager.avatarConfig.collectAsState()
     var isHapticsEnabled by remember { mutableStateOf(haptics.isUserHapticsEnabled()) }
@@ -469,16 +352,21 @@ fun PersonaDashboardScreen(
     var fullScreenOverlay by remember { mutableStateOf<String?>(null) }
     var activeNoteId by remember { mutableStateOf<String?>(null) }
 
-    val defaultCountry = remember { java.util.Locale.getDefault().displayCountry.ifBlank { "Country" } }
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
     var dob by remember { mutableStateOf("") }
     var nationality by remember { mutableStateOf("") }
-    var country by remember { mutableStateOf(defaultCountry) }
+    var country by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("") }
     var sexuality by remember { mutableStateOf("") }
     var bloodGroup by remember { mutableStateOf("") }
     var occupation by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        if (!isLocalOnly) {
+            syncViewModel.processSyncNow()
+        }
+    }
 
     LaunchedEffect(profileState.person) {
         profileState.person?.let { p ->
@@ -486,7 +374,7 @@ fun PersonaDashboardScreen(
             lastName = p.lastName
             dob = p.dateOfBirth ?: ""
             nationality = p.nationality ?: ""
-            country = p.countryOfResidence ?: defaultCountry
+            country = p.countryOfResidence ?: ""
             gender = p.gender ?: ""
             p.occupation?.let { if (it.isNotBlank()) occupation = it }
         }
@@ -1236,273 +1124,12 @@ fun PersonaDashboardScreen(
             }
             "INFORMATION_LIBRARY" -> {
                 val libraryItems = remember(profileState, documentState, vaultState, medicalState) {
-                    val list = mutableListOf<LibraryItem>()
-
-                    // 1. Personal Identity & Profile attributes
-                    profileState.person?.let { p ->
-                        val pFullName = listOf(p.firstName, p.lastName).filter { it.isNotBlank() }.joinToString(" ")
-                        if (pFullName.isNotBlank()) {
-                            list.add(
-                                LibraryItem(
-                                    id = "personal_name_${p.id}",
-                                    title = "Legal Name",
-                                    subtitle = pFullName,
-                                    category = InformationCategory.PERSONAL,
-                                    sensitivity = InformationSensitivity.NORMAL,
-                                    personName = "Me",
-                                    updatedAt = p.updatedAt
-                                )
-                            )
-                        }
-                        p.dateOfBirth?.takeIf { it.isNotBlank() }?.let { bday ->
-                            list.add(
-                                LibraryItem(
-                                    id = "personal_dob_${p.id}",
-                                    title = "Date of Birth",
-                                    subtitle = bday,
-                                    category = InformationCategory.PERSONAL,
-                                    sensitivity = InformationSensitivity.PRIVATE,
-                                    personName = "Me",
-                                    updatedAt = p.updatedAt
-                                )
-                            )
-                        }
-                        p.nationality?.takeIf { it.isNotBlank() }?.let { nat ->
-                            list.add(
-                                LibraryItem(
-                                    id = "personal_nat_${p.id}",
-                                    title = "Nationality",
-                                    subtitle = nat,
-                                    category = InformationCategory.PERSONAL,
-                                    sensitivity = InformationSensitivity.NORMAL,
-                                    personName = "Me",
-                                    updatedAt = p.updatedAt
-                                )
-                            )
-                        }
-                        p.countryOfResidence?.takeIf { it.isNotBlank() }?.let { res ->
-                            list.add(
-                                LibraryItem(
-                                    id = "personal_res_${p.id}",
-                                    title = "Country of Residence",
-                                    subtitle = res,
-                                    category = InformationCategory.PERSONAL,
-                                    sensitivity = InformationSensitivity.NORMAL,
-                                    personName = "Me",
-                                    updatedAt = p.updatedAt
-                                )
-                            )
-                        }
-                        p.gender?.takeIf { it.isNotBlank() }?.let { gen ->
-                            list.add(
-                                LibraryItem(
-                                    id = "personal_gen_${p.id}",
-                                    title = "Gender",
-                                    subtitle = gen,
-                                    category = InformationCategory.PERSONAL,
-                                    sensitivity = InformationSensitivity.NORMAL,
-                                    personName = "Me",
-                                    updatedAt = p.updatedAt
-                                )
-                            )
-                        }
-                        p.occupation?.takeIf { it.isNotBlank() }?.let { occ ->
-                            list.add(
-                                LibraryItem(
-                                    id = "personal_occ_${p.id}",
-                                    title = "Occupation",
-                                    subtitle = occ,
-                                    category = InformationCategory.EMPLOYMENT,
-                                    sensitivity = InformationSensitivity.NORMAL,
-                                    personName = "Me",
-                                    updatedAt = p.updatedAt
-                                )
-                            )
-                        }
-                    }
-
-                    // 2. Contact details
-                    profileState.contacts.forEach { c ->
-                        val isPhone = c.contactType == ContactType.PHONE
-                        list.add(
-                            LibraryItem(
-                                id = c.id,
-                                title = if (isPhone) "Phone (${c.label})" else "Email (${c.label})",
-                                subtitle = c.value,
-                                category = InformationCategory.CONTACT,
-                                sensitivity = InformationSensitivity.PRIVATE,
-                                personName = "Me"
-                            )
-                        )
-                    }
-
-                    // 3. Addresses
-                    profileState.addresses.forEach { a ->
-                        val fullAddr = listOf(a.streetLine1, a.streetLine2, a.city, a.stateProvince, a.postalCode, a.country).filter { !it.isNullOrBlank() }.joinToString(", ")
-                        list.add(
-                            LibraryItem(
-                                id = a.id,
-                                title = "Address (${a.label.name.lowercase().replaceFirstChar { it.uppercase() }})",
-                                subtitle = fullAddr,
-                                category = InformationCategory.ADDRESS,
-                                sensitivity = InformationSensitivity.PRIVATE,
-                                personName = "Me"
-                            )
-                        )
-                    }
-
-                    // 4. Custom fields
-                    profileState.customFields.forEach { cf ->
-                        list.add(
-                            LibraryItem(
-                                id = cf.id,
-                                title = cf.label,
-                                subtitle = cf.value,
-                                category = cf.category,
-                                sensitivity = cf.sensitivity,
-                                personName = "Me"
-                            )
-                        )
-                    }
-
-                    // 5. Documents
-                    documentState.documents.forEach { d ->
-                        list.add(
-                            LibraryItem(
-                                id = d.document.id,
-                                title = d.document.title,
-                                subtitle = d.document.documentType.name.replace('_', ' '),
-                                category = InformationCategory.DOCUMENT,
-                                sensitivity = InformationSensitivity.PROTECTED,
-                                personName = "Me",
-                                updatedAt = d.document.updatedAt
-                            )
-                        )
-                    }
-
-                    // 6. Passwords & Cards from Vault
-                    vaultState.vaultItems.forEach { v ->
-                        val isCard = v.category.name.contains("CARD", ignoreCase = true) || v.category.name.contains("PAYMENT", ignoreCase = true) || v.category.name.contains("BANK", ignoreCase = true)
-                        list.add(
-                            LibraryItem(
-                                id = v.id,
-                                title = v.title,
-                                subtitle = v.accountIdentifier ?: if (isCard) "Payment Card" else "Vault Record",
-                                category = if (isCard) InformationCategory.FINANCIAL else InformationCategory.PASSWORD,
-                                sensitivity = InformationSensitivity.HIGHLY_PROTECTED,
-                                personName = "Me",
-                                secretValue = null,
-                                updatedAt = v.updatedAt
-                            )
-                        )
-                    }
-
-                    // 7. Education & Certificates
-                    profileState.educationRecords.forEach { edu ->
-                        list.add(
-                            LibraryItem(
-                                id = edu.id,
-                                title = edu.institution,
-                                subtitle = "${edu.qualification} • ${edu.fieldOfStudy ?: "Graduated"}",
-                                category = InformationCategory.EDUCATION,
-                                sensitivity = InformationSensitivity.NORMAL,
-                                personName = "Me"
-                            )
-                        )
-                    }
-                    profileState.certificates.forEach { cert ->
-                        list.add(
-                            LibraryItem(
-                                id = cert.id,
-                                title = cert.qualification,
-                                subtitle = "${cert.institution} • ${cert.fieldOfStudy ?: "Certified"}",
-                                category = InformationCategory.EDUCATION,
-                                sensitivity = InformationSensitivity.NORMAL,
-                                personName = "Me"
-                            )
-                        )
-                    }
-
-                    // 8. Employment records
-                    profileState.employmentRecords.forEach { emp ->
-                        list.add(
-                            LibraryItem(
-                                id = emp.id,
-                                title = emp.company,
-                                subtitle = "${emp.position} • ${emp.startDate} - ${emp.endDate ?: "Present"}",
-                                category = InformationCategory.EMPLOYMENT,
-                                sensitivity = InformationSensitivity.NORMAL,
-                                personName = "Me"
-                            )
-                        )
-                    }
-
-                    // 9. Social Accounts
-                    profileState.socialAccounts.forEach { s ->
-                        list.add(
-                            LibraryItem(
-                                id = s.id,
-                                title = s.platform,
-                                subtitle = s.username ?: s.url,
-                                category = InformationCategory.SOCIAL,
-                                sensitivity = InformationSensitivity.NORMAL,
-                                personName = "Me"
-                            )
-                        )
-                    }
-
-                    // 10. Medical Records
-                    medicalState.dossier?.conditions?.forEach { cond ->
-                        list.add(
-                            LibraryItem(
-                                id = cond.id,
-                                title = "Condition: ${cond.name}",
-                                subtitle = "Diagnosed: ${cond.diagnosedDate ?: "Recorded"} • Severity: ${cond.severity.displayLabel}",
-                                category = InformationCategory.MEDICAL,
-                                sensitivity = InformationSensitivity.PROTECTED,
-                                personName = "Me"
-                            )
-                        )
-                    }
-                    medicalState.dossier?.allergies?.forEach { a ->
-                        list.add(
-                            LibraryItem(
-                                id = a.id,
-                                title = "Allergy: ${a.allergen}",
-                                subtitle = "Severity: ${a.severity.displayLabel} • Reaction: ${a.reaction ?: "Recorded"}",
-                                category = InformationCategory.MEDICAL,
-                                sensitivity = InformationSensitivity.PROTECTED,
-                                personName = "Me"
-                            )
-                        )
-                    }
-                    medicalState.dossier?.medications?.forEach { m ->
-                        list.add(
-                            LibraryItem(
-                                id = m.id,
-                                title = "Medication: ${m.name}",
-                                subtitle = "Dosage: ${m.dosage} • Frequency: ${m.frequency}",
-                                category = InformationCategory.MEDICAL,
-                                sensitivity = InformationSensitivity.PROTECTED,
-                                personName = "Me"
-                            )
-                        )
-                    }
-
-                    // 11. Relationships
-                    profileState.relationships.forEach { rel ->
-                        list.add(
-                            LibraryItem(
-                                id = rel.id,
-                                title = rel.fullName,
-                                subtitle = rel.relationRole,
-                                category = InformationCategory.RELATIONSHIP,
-                                sensitivity = InformationSensitivity.PRIVATE,
-                                personName = rel.fullName
-                            )
-                        )
-                    }
-                    list
+                    com.pims.vault.presentation.library.LibraryItemBuilder.build(
+                        profileState,
+                        documentState,
+                        vaultState,
+                        medicalState
+                    )
                 }
 
                 Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
@@ -1569,23 +1196,6 @@ fun PersonaDashboardScreen(
         snackbarHost = { PersonaToastHost(toastController) },
         floatingActionButton = {
             when (selectedTab) {
-                0 -> {
-                    FloatingActionButton(
-                        onClick = {
-                            haptics.medium()
-                            soundManager.navigation()
-                            showSheet("addAction")
-                        },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        shape = RoundedCornerShape(18.dp),
-                        modifier = Modifier
-                            .padding(bottom = 68.dp)
-                            .tactilePress()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Action", modifier = Modifier.size(26.dp))
-                    }
-                }
                 1 -> {
                     FloatingActionButton(
                         onClick = {
@@ -1624,97 +1234,22 @@ fun PersonaDashboardScreen(
             }
         },
         bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(start = 24.dp, end = 24.dp, bottom = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(26.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)),
-                    shadowElevation = 6.dp,
-                    tonalElevation = 2.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        FloatingDockItem(
-                            selected = selectedTab == 0,
-                            onClick = {
-                                if (selectedTab != 0) {
-                                    haptics.light()
-                                    selectedTab = 0
-                                }
-                            },
-                            icon = Icons.Default.Home,
-                            label = "Home"
-                        )
-                        FloatingDockItem(
-                            selected = selectedTab == 1,
-                            onClick = {
-                                if (selectedTab != 1) {
-                                    haptics.light()
-                                    selectedTab = 1
-                                }
-                            },
-                            icon = Icons.Default.Description,
-                            label = "Notes"
-                        )
-                        FloatingDockItem(
-                            selected = selectedTab == 2,
-                            onClick = {
-                                if (selectedTab != 2) {
-                                    haptics.light()
-                                    selectedTab = 2
-                                }
-                            },
-                            icon = Icons.Default.Person,
-                            label = "Me"
-                        )
-                        FloatingDockItem(
-                            selected = selectedTab == 3,
-                            onClick = {
-                                if (selectedTab != 3) {
-                                    haptics.light()
-                                    selectedTab = 3
-                                }
-                            },
-                            icon = Icons.Default.People,
-                            label = "People"
-                        )
-                        FloatingDockItem(
-                            selected = selectedTab == 4,
-                            onClick = {
-                                if (selectedTab != 4) {
-                                    haptics.light()
-                                    selectedTab = 4
-                                }
-                            },
-                            icon = Icons.Default.Settings,
-                            label = "Settings"
-                        )
-                    }
-                }
-            }
+            PersonaDashboardBottomBar(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it }
+            )
         }
     ) { innerPadding ->
         // Top inset is applied per-tab (Home bleeds wallpaper under the status
-        // bar; the other tabs pad themselves below it).
+        // bar; the other tabs pad themselves below it). Bottom inset is handled
+        // by PersonaDashboardBottomBar's own navigationBarsPadding() — consuming
+        // it here too would double-pad and leave a gap under the nav dock.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
                     start = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
-                    end = innerPadding.calculateEndPadding(LocalLayoutDirection.current),
-                    bottom = innerPadding.calculateBottomPadding()
+                    end = innerPadding.calculateEndPadding(LocalLayoutDirection.current)
                 )
         ) {
             val reducedMotion = LocalReducedMotion.current
@@ -1746,42 +1281,25 @@ fun PersonaDashboardScreen(
                         profilePhotoPath = customAvatarPath ?: profileState.idPhotoPath,
                         idPhotoPath = profileState.idPhotoPath,
                         onSaveIdentityDetails = { name, email, phone, idNum, idPhotoUri ->
-                            val localPhotoPath = idPhotoUri?.let { uri ->
-                                try {
-                                    val destFile = java.io.File(context.filesDir, "identity_id_photo_${System.currentTimeMillis()}.jpg")
-                                    context.contentResolver.openInputStream(uri)?.use { input ->
-                                        destFile.outputStream().use { output ->
-                                            input.copyTo(output)
-                                        }
-                                    }
-                                    destFile.absolutePath
-                                } catch (_: Exception) {
-                                    null
-                                }
-                            }
-                            profileViewModel.onEvent(
-                                ProfileEvent.SaveIdentityDetails(
-                                    fullName = name,
-                                    email = email,
-                                    phone = phone,
-                                    nationalId = idNum,
-                                    idPhotoPath = localPhotoPath
-                                )
-                            )
-                            haptics.success()
-                            soundManager.success()
+                            saveIdentityDetailsHelper(context, profileViewModel, haptics, soundManager, name, email, phone, idNum, idPhotoUri)
                         },
                         documents = documentState.documents,
                         syncStatusText = syncStatusText,
                         syncIsGood = syncIsGood,
                         onSyncClick = {
+                            haptics.selection()
                             soundManager.navigation()
                             if (conflicts.isNotEmpty()) {
                                 showSheet("conflict")
                             } else {
                                 syncViewModel.processSyncNow()
                                 scope.launch {
-                                    snackbarHostState.showSnackbar(if (isLocalOnly) "Operating in local storage mode" else "Vault sync initiated")
+                                    val currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                                    if (currentUid != null) {
+                                        snackbarHostState.showSnackbar("Syncing Persona Vault...")
+                                    } else {
+                                        snackbarHostState.showSnackbar("Vault sync initiated")
+                                    }
                                 }
                             }
                         },
@@ -1870,13 +1388,19 @@ fun PersonaDashboardScreen(
                         syncStatusText = syncStatusText,
                         syncIsGood = syncIsGood,
                         onSyncClick = {
+                            haptics.selection()
                             soundManager.navigation()
                             if (conflicts.isNotEmpty()) {
                                 showSheet("conflict")
                             } else {
                                 syncViewModel.processSyncNow()
                                 scope.launch {
-                                    snackbarHostState.showSnackbar(if (isLocalOnly) "Operating in local storage mode" else "Vault sync initiated")
+                                    val currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                                    if (currentUid != null) {
+                                        snackbarHostState.showSnackbar("Syncing Persona Vault...")
+                                    } else {
+                                        snackbarHostState.showSnackbar("Vault sync initiated")
+                                    }
                                 }
                             }
                         },
@@ -1885,6 +1409,7 @@ fun PersonaDashboardScreen(
                             showSheet("share")
                         },
                         onEditProfileClick = { showDialog("editProfile") },
+                        onOpenAvatarEditor = { showSheet("avatarEditor") },
                         onViewPublicDossier = { showPublicResumeModal = true },
                         onExportPdf = { handleExportPdf() },
                         onDeleteCustomField = { label -> profileViewModel.onEvent(ProfileEvent.DeleteCustomField(label)) },
@@ -2473,7 +1998,8 @@ fun PersonaDashboardScreen(
     if (sheetStates.value["centralizedEditor"] == true) {
         val currentPhones = remember(profileState.contacts) {
             profileState.contacts
-                .filter { it.contactType == ContactType.PHONE }
+                .filter { it.contactType == ContactType.PHONE && it.value.isNotBlank() }
+                .distinctBy { it.value.filter { c -> c.isDigit() }.ifBlank { it.value.trim() } }
                 .map {
                     com.pims.vault.presentation.hub.EditablePhone(
                         id = it.id,
@@ -2485,7 +2011,8 @@ fun PersonaDashboardScreen(
         }
         val currentEmails = remember(profileState.contacts) {
             profileState.contacts
-                .filter { it.contactType == ContactType.EMAIL }
+                .filter { it.contactType == ContactType.EMAIL && it.value.isNotBlank() }
+                .distinctBy { it.value.trim().lowercase() }
                 .map {
                     com.pims.vault.presentation.hub.EditableEmail(
                         id = it.id,
@@ -2496,18 +2023,20 @@ fun PersonaDashboardScreen(
                 }
         }
         val currentAddresses = remember(profileState.addresses) {
-            profileState.addresses.map {
-                com.pims.vault.presentation.hub.EditableAddress(
-                    id = it.id,
-                    street1 = it.streetLine1,
-                    street2 = it.streetLine2 ?: "",
-                    city = it.city,
-                    state = it.stateProvince ?: "",
-                    postalCode = it.postalCode ?: "",
-                    country = it.country,
-                    label = it.label.name
-                )
-            }
+            profileState.addresses
+                .distinctBy { "${it.streetLine1}:${it.city}:${it.country}".lowercase() }
+                .map {
+                    com.pims.vault.presentation.hub.EditableAddress(
+                        id = it.id,
+                        street1 = it.streetLine1,
+                        street2 = it.streetLine2 ?: "",
+                        city = it.city,
+                        state = it.stateProvince ?: "",
+                        postalCode = it.postalCode ?: "",
+                        country = it.country,
+                        label = it.label.name
+                    )
+                }
         }
 
         com.pims.vault.presentation.hub.CentralizedInformationEditorSheet(
@@ -2522,187 +2051,46 @@ fun PersonaDashboardScreen(
             initialAddresses = currentAddresses,
             onDismissRequest = { hideSheet("centralizedEditor") },
             onSaveAll = { name, occ, ctry, natId, photoUri, phonesList, emailsList, addrsList, allergiesList, conditionsList, medsList, edusList, worksList, socialsList, customList ->
-                val localPhotoPath = photoUri?.let { uri ->
-                    try {
-                        val destFile = java.io.File(context.filesDir, "identity_id_photo_${System.currentTimeMillis()}.jpg")
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            destFile.outputStream().use { output ->
-                                input.copyTo(output)
-                            }
+                handleCentralizedInfoSave(
+                    context = context,
+                    profileViewModel = profileViewModel,
+                    profileState = profileState,
+                    name = name,
+                    occ = occ,
+                    ctry = ctry,
+                    natId = natId,
+                    photoUri = photoUri,
+                    phonesList = phonesList,
+                    emailsList = emailsList,
+                    addrsList = addrsList,
+                    allergiesList = allergiesList,
+                    conditionsList = conditionsList,
+                    medsList = medsList,
+                    edusList = edusList,
+                    worksList = worksList,
+                    socialsList = socialsList,
+                    customList = customList,
+                    currentDob = dob,
+                    currentNationality = nationality,
+                    currentGender = gender,
+                    currentSexuality = sexuality,
+                    currentBloodGroup = bloodGroup,
+                    onNameUpdated = { f, l ->
+                        firstName = f
+                        lastName = l
+                    },
+                    onOccUpdated = { occupation = it },
+                    onCtryUpdated = { country = it },
+                    onComplete = {
+                        recentActivityManager.recordActivity("Profile Updated", "Centralized profile & records updated")
+                        soundManager.success()
+                        haptics.success()
+                        scope.launch {
+                            snackbarHostState.showSnackbar("✓ Personal information updated successfully")
                         }
-                        destFile.absolutePath
-                    } catch (_: Exception) {
-                        null
+                        hideSheet("centralizedEditor")
                     }
-                } ?: profileState.idPhotoPath
-
-                val primaryPhoneVal = phonesList.firstOrNull { it.isPrimary }?.number
-                    ?: phonesList.firstOrNull()?.number ?: ""
-                val primaryEmailVal = emailsList.firstOrNull { it.isPrimary }?.address
-                    ?: emailsList.firstOrNull()?.address ?: ""
-
-                profileViewModel.onEvent(
-                    ProfileEvent.SaveIdentityDetails(
-                        fullName = name,
-                        email = primaryEmailVal,
-                        phone = primaryPhoneVal,
-                        nationalId = natId,
-                        idPhotoPath = localPhotoPath
-                    )
                 )
-
-                if (name.isNotBlank()) {
-                    firstName = name.substringBefore(" ")
-                    lastName = name.substringAfter(" ", "")
-                }
-                if (occ.isNotBlank()) occupation = occ
-                if (ctry.isNotBlank()) country = ctry
-
-                profileViewModel.onEvent(
-                    ProfileEvent.SavePersonalDetails(
-                        firstName = firstName,
-                        lastName = lastName,
-                        dob = dob,
-                        nationality = nationality,
-                        country = country,
-                        gender = gender,
-                        sexuality = sexuality,
-                        bloodGroup = bloodGroup
-                    )
-                )
-
-                phonesList.drop(1).forEach { p ->
-                    if (p.number.isNotBlank()) {
-                        profileViewModel.onEvent(ProfileEvent.AddPhone(p.number.trim(), p.label, p.isPrimary))
-                    }
-                }
-
-                emailsList.drop(1).forEach { e ->
-                    if (e.address.isNotBlank()) {
-                        profileViewModel.onEvent(ProfileEvent.AddEmail(e.address.trim(), e.label, e.isPrimary))
-                    }
-                }
-
-                addrsList.forEach { a ->
-                    if (a.street1.isNotBlank()) {
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddAddress(
-                                street1 = a.street1.trim(),
-                                street2 = a.street2.trim().ifBlank { null },
-                                city = a.city.trim(),
-                                stateProvince = a.state.trim().ifBlank { null },
-                                postalCode = a.postalCode.trim().ifBlank { null },
-                                country = a.country.trim().ifBlank { country }
-                            )
-                        )
-                    }
-                }
-
-                allergiesList.forEach { al ->
-                    if (al.allergen.isNotBlank()) {
-                        val sev = try {
-                            AllergySeverity.valueOf(al.severity.uppercase())
-                        } catch (_: Exception) {
-                            AllergySeverity.MODERATE
-                        }
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddAllergy(
-                                allergen = al.allergen.trim(),
-                                severity = sev,
-                                reaction = al.reaction.trim().ifBlank { null }
-                            )
-                        )
-                    }
-                }
-
-                conditionsList.forEach { cd ->
-                    if (cd.name.isNotBlank()) {
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddMedicalCondition(
-                                condition = cd.name.trim(),
-                                status = try { ConditionStatus.valueOf(cd.status.uppercase()) } catch (_: Exception) { ConditionStatus.ACTIVE },
-                                notes = cd.diagnosedDate.trim().ifBlank { null }
-                            )
-                        )
-                    }
-                }
-
-                medsList.forEach { md ->
-                    if (md.name.isNotBlank()) {
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddMedication(
-                                name = md.name.trim(),
-                                dosage = md.dosage.trim(),
-                                frequency = md.frequency.trim(),
-                                notes = null
-                            )
-                        )
-                    }
-                }
-
-                edusList.forEach { ed ->
-                    if (ed.institution.isNotBlank() || ed.qualification.isNotBlank()) {
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddQualification(
-                                institution = ed.institution.trim(),
-                                qualification = ed.qualification.trim(),
-                                fieldOfStudy = ed.fieldOfStudy.trim().ifBlank { null },
-                                startDate = ed.year.trim().ifBlank { null },
-                                endDate = null,
-                                grade = null,
-                                description = null
-                            )
-                        )
-                    }
-                }
-
-                worksList.forEach { wk ->
-                    if (wk.company.isNotBlank() || wk.position.isNotBlank()) {
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddWorkHistory(
-                                company = wk.company.trim(),
-                                position = wk.position.trim(),
-                                department = null,
-                                location = null,
-                                startDate = wk.startDate.trim().ifBlank { null },
-                                endDate = wk.endDate.trim().ifBlank { null },
-                                isCurrent = wk.isCurrent,
-                                responsibilities = null
-                            )
-                        )
-                    }
-                }
-
-                socialsList.forEach { sc ->
-                    if (sc.usernameOrUrl.isNotBlank()) {
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddSocialAccount(
-                                platform = sc.platform.trim(),
-                                username = sc.usernameOrUrl.trim(),
-                                url = sc.usernameOrUrl.trim()
-                            )
-                        )
-                    }
-                }
-
-                customList.forEach { cf ->
-                    if (cf.label.isNotBlank() && cf.value.isNotBlank()) {
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddCustomField(
-                                label = cf.label.trim(),
-                                value = cf.value.trim()
-                            )
-                        )
-                    }
-                }
-
-                recentActivityManager.recordActivity("Profile Updated", "Centralized profile & records updated")
-                soundManager.success()
-                haptics.success()
-                scope.launch {
-                    snackbarHostState.showSnackbar("✓ Personal information updated successfully")
-                }
-                hideSheet("centralizedEditor")
             }
         )
     }
@@ -2843,1051 +2231,96 @@ fun PersonaDashboardScreen(
     }
 
     // =========================================================================
-    // EDIT PERSONAL IDENTITY BOTTOM SHEET
+    // EDIT PERSONAL IDENTITY BOTTOM SHEET (extracted to EditPersonalIdentitySheet)
     // =========================================================================
-    if (dialogStates.value["editProfile"] == true) {
-        var editFirst by remember { mutableStateOf(firstName) }
-        var editLast by remember { mutableStateOf(lastName) }
-        var editPhone by remember(primaryPhone) { mutableStateOf(primaryPhone ?: "") }
-        var editEmail by remember(primaryEmail) { mutableStateOf(primaryEmail ?: "") }
-        var editDob by remember { mutableStateOf(dob) }
-        var editNationality by remember { mutableStateOf(nationality) }
-        var editCountry by remember { mutableStateOf(country) }
-        var editGender by remember { mutableStateOf(gender) }
-        var editOcc by remember { mutableStateOf(occupation) }
-        val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-        ModalBottomSheet(
-            onDismissRequest = { hideDialog("editProfile") },
-            sheetState = editSheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 24.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Edit personal identity",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.3).sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    IconButton(onClick = { hideDialog("editProfile") }) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                // Preferred / Legal Names
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    PersonaTextInput(
-                        value = editFirst,
-                        onValueChange = { editFirst = it },
-                        label = "Legal first name",
-                        placeholder = "First name",
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    PersonaTextInput(
-                        value = editLast,
-                        onValueChange = { editLast = it },
-                        label = "Last name",
-                        placeholder = "Last name",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                // Phone Number
-                InternationalPhoneInput(
-                    value = editPhone,
-                    onValueChange = { editPhone = it },
-                    label = "Phone number"
+    EditPersonalIdentitySheet(
+        isVisible = dialogStates.value["editProfile"] == true,
+        firstName = firstName,
+        lastName = lastName,
+        primaryPhone = primaryPhone,
+        primaryEmail = primaryEmail,
+        dob = dob,
+        nationality = nationality,
+        country = country,
+        gender = gender,
+        occupation = occupation,
+        sexuality = sexuality,
+        bloodGroup = bloodGroup,
+        profileViewModel = profileViewModel,
+        recentActivityManager = recentActivityManager,
+        haptics = haptics,
+        soundManager = soundManager,
+        toastController = toastController,
+        onSaved = { first, last, dobVal, occ, countryVal, genderVal, nat ->
+            firstName = first
+            lastName = last
+            dob = dobVal
+            occupation = occ
+            country = countryVal
+            gender = genderVal
+            nationality = nat
+            profileViewModel.onEvent(
+                ProfileEvent.SavePersonalDetails(
+                    firstName = first, lastName = last, dob = dobVal,
+                    nationality = nat, country = countryVal, gender = genderVal,
+                    sexuality = sexuality, bloodGroup = bloodGroup
                 )
-
-                // Email Address
-                PersonaTextInput(
-                    value = editEmail,
-                    onValueChange = { editEmail = it },
-                    label = "Email address",
-                    placeholder = "name@example.com",
-                    keyboardType = KeyboardType.Email
-                )
-
-                // Date of Birth
-                com.pims.vault.presentation.ui.components.StandardDateInput(
-                    isoDate = editDob,
-                    onDateChange = { editDob = it },
-                    label = "Date of birth"
-                )
-
-                // Nationality
-                PersonaTextInput(
-                    value = editNationality,
-                    onValueChange = { editNationality = it },
-                    label = "Nationality",
-                    placeholder = "e.g. Nationality"
-                )
-
-                // Country of residence
-                PersonaTextInput(
-                    value = editCountry,
-                    onValueChange = { editCountry = it },
-                    label = "Country of residence",
-                    placeholder = "e.g. Country"
-                )
-
-                // Occupation
-                PersonaTextInput(
-                    value = editOcc,
-                    onValueChange = { editOcc = it },
-                    label = "Occupation",
-                    placeholder = "e.g. Occupation / Profession"
-                )
-
-                // Gender
-                PersonaTextInput(
-                    value = editGender,
-                    onValueChange = { editGender = it },
-                    label = "Gender",
-                    placeholder = "e.g. Female, Male, Non-binary"
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Actions: Save changes & Cancel
-                Button(
-                    onClick = {
-                        firstName = editFirst
-                        lastName = editLast
-                        dob = editDob
-                        occupation = editOcc
-                        country = editCountry
-                        gender = editGender
-                        nationality = editNationality
-
-                        profileViewModel.onEvent(
-                            ProfileEvent.SavePersonalDetails(
-                                firstName = editFirst,
-                                lastName = editLast,
-                                dob = editDob,
-                                nationality = editNationality,
-                                country = editCountry,
-                                gender = editGender,
-                                sexuality = sexuality,
-                                bloodGroup = bloodGroup
-                            )
-                        )
-                        profileViewModel.savePrimaryPhone(editPhone)
-                        profileViewModel.savePrimaryEmail(editEmail)
-                        recentActivityManager.recordActivity("Updated personal information", "Profile name & details updated")
-                        haptics.success()
-                        soundManager.success()
-                        toastController.showSuccess("Personal identity saved")
-                        hideDialog("editProfile")
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .tactilePress(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                ) {
-                    Text(
-                        text = "Save changes",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
-
-                TextButton(
-                    onClick = { hideDialog("editProfile") },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Cancel",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-        }
-    }
-
-    // Edit Managed Person Dialog
-    personToEditForDialog?.let { person ->
-        var editFirstName by remember(person) { mutableStateOf(person.fullName.substringBefore(" ")) }
-        var editLastName by remember(person) { mutableStateOf(person.fullName.substringAfter(" ", "")) }
-        var editRole by remember(person) { mutableStateOf(person.relationRole) }
-        var editPhones by remember(person) {
-            mutableStateOf(
-                person.phone.split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-                    .ifEmpty { listOf("") }
             )
-        }
-        var editEmails by remember(person) {
-            mutableStateOf(
-                person.email.split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-                    .ifEmpty { listOf("") }
-            )
-        }
-        var editAddress by remember(person) { mutableStateOf(person.address) }
-        var editDob by remember(person) { mutableStateOf(person.dateOfBirth) }
-        var editAnniversary by remember(person) { mutableStateOf(person.anniversary) }
-        var editNotesList by remember(person) {
-            val existingNotes = person.notes.split("\n\n")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-            val resolvedNotes = if (existingNotes.isNotEmpty()) {
-                existingNotes
-            } else {
-                relationshipState.relationshipNotes
-                    .map { it.content.trim() }
-                    .filter { it.isNotEmpty() }
-            }
-            mutableStateOf(resolvedNotes.ifEmpty { listOf("") })
-        }
-        val editManagedPersonSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            profileViewModel.savePrimaryPhone(primaryPhone ?: "")
+            profileViewModel.savePrimaryEmail(primaryEmail ?: "")
+            recentActivityManager.recordActivity("Updated personal information", "Profile name & details updated")
+            haptics.success()
+            soundManager.success()
+            toastController.showSuccess("Personal identity saved")
+            hideDialog("editProfile")
+        },
+        onDismissRequest = { hideDialog("editProfile") }
+    )
 
-        ModalBottomSheet(
-            onDismissRequest = { personToEditForDialog = null },
-            sheetState = editManagedPersonSheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 28.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Header with Breadcrumb
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "PEOPLE → EDIT MANAGED PROFILE",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                        Text(
-                            text = "Edit ${person.fullName}",
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    IconButton(onClick = { personToEditForDialog = null }) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    PersonaTextInput(
-                        value = editFirstName,
-                        onValueChange = { editFirstName = it },
-                        label = "First name",
-                        modifier = Modifier.weight(1f)
-                    )
-                    PersonaTextInput(
-                        value = editLastName,
-                        onValueChange = { editLastName = it },
-                        label = "Last name",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                PersonaSearchableCombobox(
-                    value = editRole,
-                    onValueChange = { editRole = it },
-                    options = listOf("Mother", "Father", "Sister", "Brother", "Spouse", "Wife", "Husband", "Partner", "Daughter", "Son", "Child", "Uncle", "Aunt", "Cousin", "Grandmother", "Grandfather", "Grandchild", "In-law", "Friend", "Next of Kin", "Mentor", "Colleague"),
-                    label = "Relationship (e.g. Sibling, Mother, Friend)",
-                    placeholder = "Type or select relationship...",
-                    allowCustom = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Phone Numbers
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Phone Numbers", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                        TextButton(onClick = { editPhones = editPhones + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add Phone", fontSize = 12.sp)
-                        }
-                    }
-                    editPhones.forEachIndexed { idx, phone ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                InternationalPhoneInput(
-                                    value = phone,
-                                    onValueChange = { newVal ->
-                                        editPhones = editPhones.toMutableList().also { it[idx] = newVal }
-                                    },
-                                    label = if (idx == 0) "Primary Phone" else "Phone ${idx + 1}"
-                                )
-                            }
-                            if (editPhones.size > 1) {
-                                IconButton(
-                                    onClick = {
-                                        editPhones = editPhones.toMutableList().also { it.removeAt(idx) }
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Email Addresses
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Email Addresses", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                        TextButton(onClick = { editEmails = editEmails + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add Email", fontSize = 12.sp)
-                        }
-                    }
-                    editEmails.forEachIndexed { idx, email ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                PersonaTextInput(
-                                    value = email,
-                                    onValueChange = { newVal ->
-                                        editEmails = editEmails.toMutableList().also { it[idx] = newVal }
-                                    },
-                                    label = if (idx == 0) "Primary Email" else "Email ${idx + 1}",
-                                    placeholder = "name@example.com",
-                                    keyboardType = KeyboardType.Email
-                                )
-                            }
-                            if (editEmails.size > 1) {
-                                IconButton(
-                                    onClick = {
-                                        editEmails = editEmails.toMutableList().also { it.removeAt(idx) }
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                PersonaTextInput(
-                    value = editAddress,
-                    onValueChange = { editAddress = it },
-                    label = "Location / Address",
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                com.pims.vault.presentation.ui.components.StandardDateInput(
-                    isoDate = editDob,
-                    onDateChange = { editDob = it },
-                    label = "Date of Birth"
-                )
-
-                AnimatedVisibility(visible = isRomanticOrMaritalRelationship(editRole)) {
-                    com.pims.vault.presentation.ui.components.StandardDateInput(
-                        isoDate = editAnniversary,
-                        onDateChange = { editAnniversary = it },
-                        label = "Anniversary"
-                    )
-                }
-
-                // Private Memory Notes
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Private Memory Notes", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                        TextButton(onClick = { editNotesList = editNotesList + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add Note", fontSize = 12.sp)
-                        }
-                    }
-                    editNotesList.forEachIndexed { idx, noteItem ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                PersonaTextInput(
-                                    value = noteItem,
-                                    onValueChange = { newVal ->
-                                        editNotesList = editNotesList.toMutableList().also { it[idx] = newVal }
-                                    },
-                                    label = if (idx == 0) "Note" else "Note ${idx + 1}",
-                                    singleLine = false
-                                )
-                            }
-                            if (editNotesList.size > 1) {
-                                IconButton(
-                                    onClick = {
-                                        editNotesList = editNotesList.toMutableList().also { it.removeAt(idx) }
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Button(
-                    onClick = {
-                        val savedPhone = editPhones.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
-                        val savedEmail = editEmails.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
-                        val enteredNotes = editNotesList.map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n\n")
-                        val savedNotes = enteredNotes.ifBlank { person.notes.trim() }
-
-                        profileViewModel.onEvent(
-                            ProfileEvent.UpdatePersonDetails(
-                                personId = person.targetPersonId,
-                                firstName = editFirstName.ifBlank { person.fullName },
-                                lastName = editLastName,
-                                relationRole = editRole.ifBlank { person.relationRole },
-                                phone = savedPhone,
-                                email = savedEmail,
-                                address = editAddress,
-                                dob = editDob,
-                                anniversary = editAnniversary,
-                                notes = savedNotes
-                            )
-                        )
-                        recentActivityManager.recordActivity("Updated ${person.fullName}'s profile")
-                        soundManager.success()
-                        haptics.selection()
-                        scope.launch {
-                            snackbarHostState.showSnackbar("✓ Updated ${person.fullName}'s details")
-                        }
-                        personToEditForDialog = null
-                    },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Save Changes", fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                    onClick = { personToEditForDialog = null },
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Cancel")
-                }
-            }
-        }
-    }
+    // Edit Managed Person Dialog (extracted to EditManagedPersonSheet)
+    EditManagedPersonSheet(
+        person = personToEditForDialog,
+        relationshipState = relationshipState,
+        profileViewModel = profileViewModel,
+        recentActivityManager = recentActivityManager,
+        soundManager = soundManager,
+        haptics = haptics,
+        toastController = toastController,
+        onDismissRequest = { personToEditForDialog = null }
+    )
 
     // =========================================================================
-    // CRUD DIALOGS FOR PERSONAL ITEMS
+    // CRUD DIALOGS FOR PERSONAL ITEMS (extracted to PersonaDashboardDialogs)
     // =========================================================================
+    PersonaDashboardDialogs(
+        dialogStates = dialogStates.value,
+        onHideDialog = { hideDialog(it) },
+        country = country,
+        customFieldInitialLabel = customFieldInitialLabel,
+        customFieldCategory = customFieldCategory,
+        profileState = profileState,
+        profileViewModel = profileViewModel,
+        documentViewModel = documentViewModel,
+        relationshipToDelete = relationshipToDelete,
+        onDismissRelationshipToDelete = { relationshipToDelete = null },
+        onConfirmDeleteRelationship = { rel ->
+            profileViewModel.onEvent(ProfileEvent.DeleteRelationship(rel.id, rel.targetPersonId))
+            recentActivityManager.recordActivity("Removed person from People", "Disconnected ${rel.fullName}")
+            relationshipToDelete = null
+            selectedPersonForDetail = null
+        },
+        documentToDelete = documentToDelete,
+        onDismissDocumentToDelete = { documentToDelete = null },
+        onConfirmDeleteDocument = { doc ->
+            documentViewModel.onEvent(DocumentEvent.DeleteDocument(doc.document.id))
+            recentActivityManager.recordActivity("Removed document from wallet", doc.document.title)
+            documentToDelete = null
+        },
+        recentActivityManager = recentActivityManager,
+        soundManager = soundManager,
+        haptics = haptics
+    )
 
-    // 1. Add Phone Dialog
-    if (dialogStates.value["addPhone"] == true) {
-        var newPhone by remember { mutableStateOf("") }
-        var phoneLabel by remember { mutableStateOf("Personal") }
-        var isPrimary by remember { mutableStateOf(true) }
-
-        val phoneTypes = listOf("Personal", "Work", "Home", "School", "Other")
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addPhone") },
-            title = "Add Phone Number",
-            confirmText = "Save Phone",
-            confirmEnabled = newPhone.isNotBlank(),
-            onConfirm = {
-                if (newPhone.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddPhone(newPhone.trim(), phoneLabel, isPrimary))
-                }
-                hideDialog("addPhone")
-            }
-        ) {
-            InternationalPhoneInput(
-                value = newPhone,
-                onValueChange = { newPhone = it },
-                label = "Phone number"
-            )
-
-            PersonaDropdownSelector(
-                selectedOption = phoneLabel,
-                options = phoneTypes,
-                onOptionSelected = { phoneLabel = it },
-                label = "Type"
-            )
-
-            PersonaToggleRow(
-                title = "Set as primary phone",
-                checked = isPrimary,
-                onCheckedChange = { isPrimary = it }
-            )
-        }
-    }
-
-    // 2. Add Email Dialog
-    if (dialogStates.value["addEmail"] == true) {
-        var newEmail by remember { mutableStateOf("") }
-        var emailLabel by remember { mutableStateOf("Personal") }
-        var isPrimary by remember { mutableStateOf(false) }
-
-        val emailTypes = listOf("Personal", "Work", "School", "Other")
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addEmail") },
-            title = "Add Email Address",
-            confirmText = "Save Email",
-            confirmEnabled = newEmail.isNotBlank(),
-            onConfirm = {
-                if (newEmail.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddEmail(newEmail.trim(), emailLabel, isPrimary))
-                }
-                hideDialog("addEmail")
-            }
-        ) {
-            PersonaTextInput(
-                value = newEmail,
-                onValueChange = { newEmail = it },
-                label = "Email address",
-                placeholder = "name@example.com",
-                keyboardType = KeyboardType.Email
-            )
-
-            PersonaDropdownSelector(
-                selectedOption = emailLabel,
-                options = emailTypes,
-                onOptionSelected = { emailLabel = it },
-                label = "Type"
-            )
-
-            PersonaToggleRow(
-                title = "Set as primary email",
-                checked = isPrimary,
-                onCheckedChange = { isPrimary = it }
-            )
-        }
-    }
-
-    // 3. Add Address Dialog
-    if (dialogStates.value["addAddress"] == true) {
-        var st1 by remember { mutableStateOf("") }
-        var st2 by remember { mutableStateOf("") }
-        var cityVal by remember { mutableStateOf("") }
-        var stateVal by remember { mutableStateOf("") }
-        var zipVal by remember { mutableStateOf("") }
-        var countryVal by remember { mutableStateOf(country) }
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addAddress") },
-            title = "Add Physical Address",
-            confirmText = "Save Address",
-            confirmEnabled = st1.isNotBlank(),
-            onConfirm = {
-                if (st1.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddAddress(st1.trim(), st2.trim(), cityVal.trim(), stateVal.trim(), zipVal.trim(), countryVal.trim()))
-                }
-                hideDialog("addAddress")
-            }
-        ) {
-            PersonaTextInput(value = st1, onValueChange = { st1 = it }, label = "Street address", placeholder = "Street address / Suburb")
-            PersonaTextInput(value = st2, onValueChange = { st2 = it }, label = "Directions / Line 2 (Optional)", placeholder = "Apt, Suite, Unit, etc.")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PersonaTextInput(value = cityVal, onValueChange = { cityVal = it }, label = "City / Town", modifier = Modifier.weight(1f))
-                PersonaTextInput(value = stateVal, onValueChange = { stateVal = it }, label = "Province / State", modifier = Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PersonaTextInput(value = zipVal, onValueChange = { zipVal = it }, label = "Postal code", modifier = Modifier.weight(1f))
-                PersonaTextInput(value = countryVal, onValueChange = { countryVal = it }, label = "Country", modifier = Modifier.weight(1f))
-            }
-        }
-    }
-
-    // 4. Add Work Experience Dialog
-    if (dialogStates.value["addWork"] == true) {
-        var company by remember { mutableStateOf("") }
-        var position by remember { mutableStateOf("") }
-        var startYear by remember { mutableStateOf("") }
-        var endYear by remember { mutableStateOf("") }
-        var isCurrent by remember { mutableStateOf(false) }
-        var responsibilities by remember { mutableStateOf("") }
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addWork") },
-            title = "Add Experience / Project",
-            confirmText = "Save",
-            confirmEnabled = company.isNotBlank() && position.isNotBlank(),
-            onConfirm = {
-                if (company.isNotBlank() && position.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddWorkHistory(company.trim(), position.trim(), null, null, startYear.trim(), endYear.trim(), isCurrent, responsibilities.trim()))
-                }
-                hideDialog("addWork")
-            }
-        ) {
-            PersonaTextInput(value = company, onValueChange = { company = it }, label = "Company or organisation", placeholder = "e.g. Acme Corp")
-            PersonaTextInput(value = position, onValueChange = { position = it }, label = "Role / project title", placeholder = "e.g. Lead Designer")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PersonaTextInput(value = startYear, onValueChange = { startYear = it }, label = "Start year", placeholder = "e.g. 2022", modifier = Modifier.weight(1f))
-                PersonaTextInput(value = endYear, onValueChange = { endYear = it }, label = "End year", placeholder = if (isCurrent) "Present" else "e.g. 2026", modifier = Modifier.weight(1f), readOnly = isCurrent)
-            }
-            PersonaToggleRow(
-                title = "Current role / Active project",
-                checked = isCurrent,
-                onCheckedChange = { isCurrent = it }
-            )
-            PersonaTextInput(value = responsibilities, onValueChange = { responsibilities = it }, label = "Description", placeholder = "Technologies used, key responsibilities", singleLine = false)
-        }
-    }
-
-    // 5. Add Qualification Dialog
-    if (dialogStates.value["addEdu"] == true) {
-        var institution by remember { mutableStateOf("") }
-        var qualification by remember { mutableStateOf("") }
-        var field by remember { mutableStateOf("") }
-        var year by remember { mutableStateOf("") }
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addEdu") },
-            title = "Add Qualification",
-            confirmText = "Save",
-            confirmEnabled = institution.isNotBlank() && qualification.isNotBlank(),
-            onConfirm = {
-                if (institution.isNotBlank() && qualification.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddQualification(institution.trim(), qualification.trim(), field.trim(), null, year.trim(), null, null))
-                }
-                hideDialog("addEdu")
-            }
-        ) {
-            PersonaTextInput(value = institution, onValueChange = { institution = it }, label = "Institution / University", placeholder = "e.g. Oxford University")
-            PersonaTextInput(value = qualification, onValueChange = { qualification = it }, label = "Degree / Qualification", placeholder = "e.g. BSc")
-            PersonaTextInput(value = field, onValueChange = { field = it }, label = "Field of study", placeholder = "e.g. Computer Science")
-            PersonaTextInput(value = year, onValueChange = { year = it }, label = "Year completed / expected", placeholder = "e.g. 2024")
-        }
-    }
-
-    // 6. Add Certificate Dialog
-    if (dialogStates.value["addCert"] == true) {
-        var certTitle by remember { mutableStateOf("") }
-        var issuer by remember { mutableStateOf("") }
-        var dateVal by remember { mutableStateOf("") }
-        var credId by remember { mutableStateOf("") }
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addCert") },
-            title = "Add Certificate",
-            confirmText = "Save",
-            confirmEnabled = certTitle.isNotBlank() && issuer.isNotBlank(),
-            onConfirm = {
-                if (certTitle.isNotBlank() && issuer.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddCertificate(certTitle.trim(), issuer.trim(), dateVal.trim(), null, credId.trim(), null))
-                }
-                hideDialog("addCert")
-            }
-        ) {
-            PersonaTextInput(value = certTitle, onValueChange = { certTitle = it }, label = "Certificate name", placeholder = "e.g. CCNA")
-            PersonaTextInput(value = issuer, onValueChange = { issuer = it }, label = "Issuing body", placeholder = "e.g. Cisco")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PersonaTextInput(value = dateVal, onValueChange = { dateVal = it }, label = "Date", placeholder = "YYYY-MM", modifier = Modifier.weight(1f))
-                PersonaTextInput(value = credId, onValueChange = { credId = it }, label = "Credential ID", placeholder = "ID (optional)", modifier = Modifier.weight(1f))
-            }
-        }
-    }
-
-    // 7. Add Allergy Dialog
-    if (dialogStates.value["addAllergy"] == true) {
-        var allergen by remember { mutableStateOf("") }
-        var reaction by remember { mutableStateOf("") }
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addAllergy") },
-            title = "Add Allergy",
-            confirmText = "Save",
-            confirmEnabled = allergen.isNotBlank(),
-            onConfirm = {
-                if (allergen.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddAllergy(allergen.trim(), AllergySeverity.MODERATE, reaction.trim()))
-                }
-                hideDialog("addAllergy")
-            }
-        ) {
-            PersonaTextInput(value = allergen, onValueChange = { allergen = it }, label = "Allergen", placeholder = "e.g. Penicillin")
-            PersonaTextInput(value = reaction, onValueChange = { reaction = it }, label = "Reaction / notes", placeholder = "e.g. Mild rash")
-        }
-    }
-
-    // 8. Add Relationship / Relative Dialog
-    if (dialogStates.value["addRelationship"] == true) {
-        val userGenderStr = profileState.person?.gender?.uppercase() ?: "MALE"
-        val oppositeIsFemale = !(userGenderStr.startsWith("F") || userGenderStr.contains("FEMALE"))
-
-        var relRole by remember { mutableStateOf("Mother") }
-        var personIsFemale by remember { mutableStateOf(true) }
-        var relName by remember { mutableStateOf("") }
-        var relPhones by remember { mutableStateOf(listOf("")) }
-        var relEmails by remember { mutableStateOf(listOf("")) }
-        var relAddress by remember { mutableStateOf("") }
-        var relDob by remember { mutableStateOf("") }
-        var relAnniversary by remember { mutableStateOf("") }
-        var relNotesList by remember { mutableStateOf(listOf("")) }
-        var isNok by remember { mutableStateOf(false) }
-
-        val relRoles = listOf(
-            "Mother", "Father", "Sister", "Brother", "Spouse", "Wife", "Husband", "Partner",
-            "Daughter", "Son", "Child", "Uncle", "Aunt", "Cousin", "Grandmother", "Grandfather",
-            "Grandchild", "In-law", "Friend", "Next of Kin", "Mentor", "Colleague", "Neighbor",
-            "Guardian", "Doctor", "Lawyer"
-        )
-
-        // Function to update role and pre-set inferenced gender
-        fun onRoleSelected(role: String) {
-            relRole = role
-            when (role.trim().lowercase()) {
-                "mother", "sister", "aunt", "wife", "daughter", "grandmother", "niece" -> {
-                    personIsFemale = true
-                }
-                "father", "brother", "uncle", "husband", "son", "grandfather", "nephew" -> {
-                    personIsFemale = false
-                }
-                "spouse", "partner" -> {
-                    personIsFemale = oppositeIsFemale
-                }
-                else -> {}
-            }
-        }
-
-        val effectiveRole = relRole.trim().ifBlank { "Connected Person" }
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addRelationship") },
-            title = "Connect Person",
-            confirmText = "Save Person",
-            confirmEnabled = relName.isNotBlank() && relRole.isNotBlank(),
-            onConfirm = {
-                if (relName.isNotBlank()) {
-                    val savedPhone = relPhones.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
-                    val savedEmail = relEmails.map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
-                    val savedNotes = relNotesList.map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n\n")
-
-                    profileViewModel.onEvent(
-                        ProfileEvent.AddRelationship(
-                            role = effectiveRole,
-                            fullName = relName.trim(),
-                            phone = savedPhone,
-                            email = savedEmail,
-                            address = relAddress.trim(),
-                            dob = relDob.trim(),
-                            anniversary = relAnniversary.trim(),
-                            notes = savedNotes,
-                            isNextOfKin = isNok
-                        )
-                    )
-                    recentActivityManager.recordActivity("Added ${relName.trim()} to People", "Connected as $effectiveRole")
-                }
-                hideDialog("addRelationship")
-            }
-        ) {
-            // Section 1: Relationship & Identity
-            PersonaFormSection(
-                title = "Relationship & Identity",
-                icon = Icons.Default.Person
-            ) {
-                PersonaSearchableCombobox(
-                    label = "How are you connected?",
-                    value = relRole,
-                    options = relRoles,
-                    onValueChange = { onRoleSelected(it) },
-                    placeholder = "Search or type relation (e.g. Mother, Godmother)...",
-                    allowCustom = true
-                )
-
-                PersonaDropdownSelector(
-                    label = "Person's Gender",
-                    selectedOption = if (personIsFemale) "Female" else "Male",
-                    options = listOf("Female", "Male"),
-                    onOptionSelected = { label ->
-                        personIsFemale = label == "Female"
-                    }
-                )
-
-                PersonaTextInput(
-                    value = relName,
-                    onValueChange = { relName = it },
-                    label = "Full name *",
-                    placeholder = "Full name"
-                )
-            }
-
-            // Section 2: Contact Details
-            PersonaFormSection(
-                title = "Contact Information",
-                icon = Icons.Default.Phone
-            ) {
-                // Phone Numbers
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Phone Numbers", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                        TextButton(onClick = { relPhones = relPhones + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add Phone", fontSize = 12.sp)
-                        }
-                    }
-                    relPhones.forEachIndexed { idx, phone ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                InternationalPhoneInput(
-                                    value = phone,
-                                    onValueChange = { newVal ->
-                                        relPhones = relPhones.toMutableList().also { it[idx] = newVal }
-                                    },
-                                    label = if (idx == 0) "Primary Phone" else "Phone ${idx + 1}"
-                                )
-                            }
-                            if (relPhones.size > 1) {
-                                IconButton(
-                                    onClick = {
-                                        relPhones = relPhones.toMutableList().also { it.removeAt(idx) }
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Email Addresses
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Email Addresses", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                        TextButton(onClick = { relEmails = relEmails + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add Email", fontSize = 12.sp)
-                        }
-                    }
-                    relEmails.forEachIndexed { idx, email ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                PersonaTextInput(
-                                    value = email,
-                                    onValueChange = { newVal ->
-                                        relEmails = relEmails.toMutableList().also { it[idx] = newVal }
-                                    },
-                                    label = if (idx == 0) "Primary Email" else "Email ${idx + 1}",
-                                    placeholder = "name@example.com",
-                                    keyboardType = KeyboardType.Email
-                                )
-                            }
-                            if (relEmails.size > 1) {
-                                IconButton(
-                                    onClick = {
-                                        relEmails = relEmails.toMutableList().also { it.removeAt(idx) }
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                PersonaTextInput(
-                    value = relAddress,
-                    onValueChange = { relAddress = it },
-                    label = "Address",
-                    placeholder = "Physical address"
-                )
-            }
-
-            // Section 3: Important Dates & Notes
-            PersonaFormSection(
-                title = "Dates & Notes",
-                icon = Icons.Default.CalendarToday
-            ) {
-                com.pims.vault.presentation.ui.components.StandardDateInput(
-                    isoDate = relDob,
-                    onDateChange = { relDob = it },
-                    label = "Birthday"
-                )
-                AnimatedVisibility(visible = isRomanticOrMaritalRelationship(relRole) || isRomanticOrMaritalRelationship(effectiveRole)) {
-                    com.pims.vault.presentation.ui.components.StandardDateInput(
-                        isoDate = relAnniversary,
-                        onDateChange = { relAnniversary = it },
-                        label = "Anniversary"
-                    )
-                }
-                // Private notes
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Private Notes", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                        TextButton(onClick = { relNotesList = relNotesList + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add Note", fontSize = 12.sp)
-                        }
-                    }
-                    relNotesList.forEachIndexed { idx, noteItem ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                PersonaTextInput(
-                                    value = noteItem,
-                                    onValueChange = { newVal ->
-                                        relNotesList = relNotesList.toMutableList().also { it[idx] = newVal }
-                                    },
-                                    label = if (idx == 0) "Private notes" else "Note ${idx + 1}",
-                                    placeholder = "e.g. Likes gardening, allergies, memories",
-                                    singleLine = false
-                                )
-                            }
-                            if (relNotesList.size > 1) {
-                                IconButton(
-                                    onClick = {
-                                        relNotesList = relNotesList.toMutableList().also { it.removeAt(idx) }
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-                PersonaToggleRow(
-                    title = "Mark as Next of Kin / ICE",
-                    checked = isNok,
-                    onCheckedChange = { isNok = it }
-                )
-            }
-        }
-    }
-
-    // 9. Delete Relationship Dialog
-    relationshipToDelete?.let { rel ->
-        PersonaDialog(
-            onDismissRequest = { relationshipToDelete = null },
-            title = "Disconnect Person",
-            confirmText = "Disconnect",
-            isDestructive = true,
-            onConfirm = {
-                profileViewModel.onEvent(ProfileEvent.DeleteRelationship(rel.id, rel.targetPersonId))
-                recentActivityManager.recordActivity("Removed person from People", "Disconnected ${rel.fullName}")
-                relationshipToDelete = null
-                selectedPersonForDetail = null
-            }
-        ) {
-            Text("Are you sure you want to remove ${rel.relationRole} (${rel.fullName})? Notes will be deleted.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-
-    // 10. Document Delete Confirmation Dialog
-    documentToDelete?.let { doc ->
-        PersonaDialog(
-            onDismissRequest = { documentToDelete = null },
-            title = "Delete Document",
-            confirmText = "Delete",
-            isDestructive = true,
-            onConfirm = {
-                documentViewModel.onEvent(DocumentEvent.DeleteDocument(doc.document.id))
-                recentActivityManager.recordActivity("Removed document from wallet", doc.document.title)
-                documentToDelete = null
-            }
-        ) {
-            Text("Permanently remove \"${doc.document.title}\" from encrypted storage?", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
 
     // 11. Document Upload Bottom Sheet (Section 11)
     if (sheetStates.value["uploadDoc"] == true && pendingUploadUri != null && pendingUploadBytes != null) {
@@ -4230,82 +2663,8 @@ fun PersonaDashboardScreen(
             onDismissRequest = { showPublicResumeModal = false },
             onExportPdf = { handleExportPdf() },
             onEditProfile = {
-                showPublicResumeModal = false
                 showSheet("centralizedEditor")
             }
         )
     }
 }
-
-/**
- * Floating dock bottom navigation item:
- * Capsule indicator with terracotta accent for selected state and muted secondary for unselected.
- */
-@Composable
-private fun FloatingDockItem(
-    selected: Boolean,
-    onClick: () -> Unit,
-    icon: ImageVector,
-    label: String
-) {
-    val feedback = rememberPimsFeedback()
-    val isReducedMotion = com.pims.vault.presentation.ui.theme.LocalReducedMotion.current
-    val activeBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-    val activeColor = MaterialTheme.colorScheme.primary
-    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
-
-    val animatedBg by androidx.compose.animation.animateColorAsState(
-        targetValue = if (selected) activeBg else Color.Transparent,
-        animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.smoothSpring(isReducedMotion),
-        label = "dockItemBg"
-    )
-    val iconTint by androidx.compose.animation.animateColorAsState(
-        targetValue = if (selected) activeColor else inactiveColor,
-        animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.smoothSpring(isReducedMotion),
-        label = "dockIconTint"
-    )
-    val iconScale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (selected) 1.06f else 1.0f,
-        animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.snappySpring(isReducedMotion),
-        label = "dockIconScale"
-    )
-
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = animatedBg,
-        modifier = Modifier
-            .tactilePress(targetScale = 0.94f) {
-                feedback.tap()
-                onClick()
-            }
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = iconTint,
-                modifier = Modifier
-                    .size(20.dp)
-                    .scale(iconScale)
-            )
-            androidx.compose.animation.AnimatedVisibility(
-                visible = selected,
-                enter = androidx.compose.animation.fadeIn() +
-                        androidx.compose.animation.expandHorizontally(androidx.compose.animation.core.spring()),
-                exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(100)) +
-                        androidx.compose.animation.shrinkHorizontally(androidx.compose.animation.core.tween(100))
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = activeColor
-                )
-            }
-        }
-    }
-}
-

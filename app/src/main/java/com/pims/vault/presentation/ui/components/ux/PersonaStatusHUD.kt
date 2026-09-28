@@ -15,7 +15,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.offset
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -38,10 +37,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Warning
+import com.pims.vault.presentation.ui.theme.PersonaIcons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -140,7 +136,7 @@ fun PersonaToastHost(
 ) {
     val toast = controller.currentToast
     val feedback = rememberPimsFeedback()
-    val isDark = isSystemInDarkTheme()
+    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
 
     // Sound and haptic cues triggered on each new toast
     LaunchedEffect(toast?.id) {
@@ -161,8 +157,7 @@ fun PersonaToastHost(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .padding(top = 48.dp, start = 16.dp, end = 16.dp),
+            .padding(top = 12.dp, start = 16.dp, end = 16.dp),
         contentAlignment = Alignment.TopCenter
     ) {
         AnimatedVisibility(
@@ -197,10 +192,10 @@ private fun PersonaToastPill(
     val scope = rememberCoroutineScope()
     val colorScheme = MaterialTheme.colorScheme
     val (accentColor, icon: ImageVector) = when (toast.type) {
-        ToastType.SUCCESS -> colorScheme.primary to Icons.Default.CheckCircle
-        ToastType.ERROR -> colorScheme.error to Icons.Default.Error
-        ToastType.WARNING -> colorScheme.tertiary to Icons.Default.Warning
-        ToastType.INFO -> colorScheme.primary to Icons.Default.Info
+        ToastType.SUCCESS -> colorScheme.primary to PersonaIcons.Success
+        ToastType.ERROR -> colorScheme.error to PersonaIcons.Danger
+        ToastType.WARNING -> colorScheme.tertiary to PersonaIcons.Warning
+        ToastType.INFO -> colorScheme.primary to PersonaIcons.Info
     }
 
     val iconBounce = remember { Animatable(0.7f) }

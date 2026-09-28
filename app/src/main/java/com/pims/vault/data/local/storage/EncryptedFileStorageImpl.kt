@@ -146,6 +146,45 @@ class EncryptedFileStorageImpl(
         }
     }
 
+    override suspend fun storePreEncryptedFile(
+        documentId: String,
+        versionNumber: Int,
+        mimeType: String,
+        inputStream: InputStream
+    ): StoredFileMetadata = withContext(Dispatchers.IO) {
+        val docFolder = File(baseDir, documentId).apply {
+            if (!exists()) mkdirs()
+        }
+        val targetFile = File(docFolder, "v_${versionNumber}.penc")
+        val relativePath = "$baseDirectoryName/$documentId/v_${versionNumber}.penc"
+
+        ensureSafePath(targetFile)
+
+        val sha256Digest = MessageDigest.getInstance("SHA-256")
+        var totalBytes = 0L
+
+        FileOutputStream(targetFile).use { fos ->
+            val buffer = ByteArray(64 * 1024)
+            var read: Int
+            while (inputStream.read(buffer).also { read = it } != -1) {
+                sha256Digest.update(buffer, 0, read)
+                fos.write(buffer, 0, read)
+                totalBytes += read
+            }
+        }
+
+        val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
+
+        StoredFileMetadata(
+            relativePath = relativePath,
+            sizeBytes = totalBytes,
+            mimeType = mimeType,
+            sha256Hex = sha256Hex,
+            encryptionIvHex = "", // IV is embedded in the ciphertext from the original upload
+            timestamp = System.currentTimeMillis()
+        )
+    }
+
     override suspend fun deleteFile(relativePath: String): Boolean = withContext(Dispatchers.IO) {
         val targetFile = File(context.filesDir, relativePath)
         ensureSafePath(targetFile)

@@ -2,6 +2,7 @@ package com.pims.vault.presentation.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.domain.model.NoteAttachment
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.PlainNote
@@ -34,7 +35,7 @@ class PlainNotesViewModel @Inject constructor(
     init {
         // Observe notes for primary user
         viewModelScope.launch {
-            repository.observe("primary").collect { noteList ->
+            repository.observe(CANONICAL_PRIMARY_OWNER_ID).collect { noteList ->
                 _uiState.update { it.copy(notes = noteList) }
             }
         }
@@ -56,7 +57,7 @@ class PlainNotesViewModel @Inject constructor(
             try {
                 repository.save(
                     id = id,
-                    ownerPersonId = "primary",
+                    ownerPersonId = CANONICAL_PRIMARY_OWNER_ID,
                     title = title,
                     format = format,
                     content = content
@@ -93,7 +94,7 @@ class PlainNotesViewModel @Inject constructor(
             try {
                 val saved = repository.save(
                     id = id,
-                    ownerPersonId = "primary",
+                    ownerPersonId = CANONICAL_PRIMARY_OWNER_ID,
                     title = title,
                     format = format,
                     content = content

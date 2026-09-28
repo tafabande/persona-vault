@@ -219,7 +219,11 @@ fun NoteGridCard(
             val bytes = viewModel.readAttachment(firstAttachment)
             if (bytes != null) {
                 thumbnailBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            } else {
+                thumbnailBitmap = null
             }
+        } else {
+            thumbnailBitmap = null
         }
     }
 
@@ -349,6 +353,7 @@ fun PlainNoteEditorScreen(
     // Undo / Redo history
     val undoStack = remember { mutableStateListOf<TextFieldValue>() }
     val redoStack = remember { mutableStateListOf<TextFieldValue>() }
+    val deletedAttachmentIds = remember { mutableStateListOf<String>() }
 
     val context = LocalContext.current
     LaunchedEffect(state.error) {
@@ -695,11 +700,17 @@ fun PlainNoteEditorScreen(
                 }
             }
 
-            existingNote?.attachments?.forEach { att ->
+            val visibleAttachments = remember(existingNote?.attachments, deletedAttachmentIds.toList()) {
+                existingNote?.attachments.orEmpty().filter { it.id !in deletedAttachmentIds }
+            }
+            visibleAttachments.forEach { att ->
                 NoteAttachmentPreview(
                     attachment = att,
                     viewModel = viewModel,
-                    onDelete = { viewModel.deleteAttachment(att) }
+                    onDelete = {
+                        deletedAttachmentIds.add(att.id)
+                        viewModel.deleteAttachment(att)
+                    }
                 )
                 Spacer(modifier = Modifier.height(14.dp))
             }

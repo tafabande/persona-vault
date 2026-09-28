@@ -30,7 +30,9 @@ import com.pims.vault.data.local.entity.PersonEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
 import com.pims.vault.data.local.entity.RelationshipNoteEntity
 import com.pims.vault.domain.model.NoteFormat
+import com.pims.vault.core.sync.FirestoreSyncService
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -217,7 +219,8 @@ class ProfileViewModel @Inject constructor(
     private val relationshipDao: RelationshipDao,
     private val relationshipNoteDao: RelationshipNoteDao,
     private val socialAccountDao: com.pims.vault.data.local.dao.SocialAccountDao,
-    private val sessionManager: BiometricSessionManager
+    private val sessionManager: BiometricSessionManager,
+    private val firestoreSyncService: FirestoreSyncService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -292,12 +295,29 @@ class ProfileViewModel @Inject constructor(
                     // Load Social accounts
                     val socials = socialAccountDao.getSocialAccountsFlow(p.id).firstOrNull() ?: emptyList()
 
+                    // Auto-purge duplicate contacts in local DB & Firestore, keeping distinct contacts only
+                    val seenContactKeys = mutableSetOf<String>()
+                    val distinctContacts = mutableListOf<ContactMethodEntity>()
+                    fullProfile.contactMethods.forEach { cm ->
+                        val norm = if (cm.contactType == ContactType.PHONE) cm.value.filter { it.isDigit() }.ifBlank { cm.value.trim() } else cm.value.trim().lowercase()
+                        val key = "${cm.contactType}:$norm"
+                        if (key in seenContactKeys) {
+                            viewModelScope.launch(Dispatchers.IO) {
+                                contactDao.deleteById(cm.id)
+                                try { firestoreSyncService.deleteRemoteContact(cm.id) } catch (_: Exception) {}
+                            }
+                        } else {
+                            seenContactKeys.add(key)
+                            distinctContacts.add(cm)
+                        }
+                    }
+
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             person = p,
-                            contacts = fullProfile.contactMethods,
-                            addresses = fullProfile.addresses,
+                            contacts = distinctContacts,
+                            addresses = fullProfile.addresses.distinctBy { a -> "${a.streetLine1}:${a.city}:${a.country}".lowercase() },
                             employmentRecords = fullProfile.employmentRecords,
                             educationRecords = edu,
                             certificates = certs,
@@ -342,7 +362,7 @@ class ProfileViewModel @Inject constructor(
             isPrimaryOwner = true,
             firstName = "",
             lastName = "",
-            countryOfResidence = java.util.Locale.getDefault().displayCountry.ifBlank { "Country" }
+            countryOfResidence = null
         )
         personDao.insertOrUpdate(defaultOwner)
         return CANONICAL_PRIMARY_OWNER_ID
@@ -356,14 +376,18 @@ class ProfileViewModel @Inject constructor(
                 ?: existingContacts.firstOrNull { it.contactType == ContactType.PHONE }
 
             if (phone.isBlank()) {
-                existingPhone?.let { contactDao.deleteById(it.id) }
+                existingPhone?.let {
+                    contactDao.deleteById(it.id)
+                    try { firestoreSyncService.deleteRemoteContact(it.id) } catch (_: Exception) {}
+                }
+                loadFullProfileAndRelationships()
                 return@launch
             }
 
-            if (existingPhone != null) {
-                contactDao.insertOrUpdate(existingPhone.copy(value = phone.trim(), label = label, isPrimary = true))
+            val entity = if (existingPhone != null) {
+                existingPhone.copy(value = phone.trim(), label = label, isPrimary = true)
             } else {
-                val newContact = ContactMethodEntity(
+                ContactMethodEntity(
                     id = UUID.randomUUID().toString(),
                     personId = ownerId,
                     contactType = ContactType.PHONE,
@@ -371,8 +395,10 @@ class ProfileViewModel @Inject constructor(
                     value = phone.trim(),
                     isPrimary = true
                 )
-                contactDao.insertOrUpdate(newContact)
             }
+            contactDao.insertOrUpdate(entity)
+            try { firestoreSyncService.syncContact(null, entity) } catch (_: Exception) {}
+            loadFullProfileAndRelationships()
         }
     }
 
@@ -384,14 +410,18 @@ class ProfileViewModel @Inject constructor(
                 ?: existingContacts.firstOrNull { it.contactType == ContactType.EMAIL }
 
             if (email.isBlank()) {
-                existingEmail?.let { contactDao.deleteById(it.id) }
+                existingEmail?.let {
+                    contactDao.deleteById(it.id)
+                    try { firestoreSyncService.deleteRemoteContact(it.id) } catch (_: Exception) {}
+                }
+                loadFullProfileAndRelationships()
                 return@launch
             }
 
-            if (existingEmail != null) {
-                contactDao.insertOrUpdate(existingEmail.copy(value = email.trim(), label = label, isPrimary = true))
+            val entity = if (existingEmail != null) {
+                existingEmail.copy(value = email.trim(), label = label, isPrimary = true)
             } else {
-                val newContact = ContactMethodEntity(
+                ContactMethodEntity(
                     id = UUID.randomUUID().toString(),
                     personId = ownerId,
                     contactType = ContactType.EMAIL,
@@ -399,8 +429,155 @@ class ProfileViewModel @Inject constructor(
                     value = email.trim(),
                     isPrimary = true
                 )
-                contactDao.insertOrUpdate(newContact)
             }
+            contactDao.insertOrUpdate(entity)
+            try { firestoreSyncService.syncContact(null, entity) } catch (_: Exception) {}
+            loadFullProfileAndRelationships()
+        }
+    }
+
+    fun reconcileContacts(
+        phones: List<com.pims.vault.presentation.hub.EditablePhone>,
+        emails: List<com.pims.vault.presentation.hub.EditableEmail>
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ownerId = getOrCreatePrimaryOwnerId()
+            val existingContacts = contactDao.getContactsForPerson(ownerId)
+
+            // 1. Reconcile Emails
+            val validEmails = emails.filter { it.address.isNotBlank() }
+            val validEmailIds = validEmails.map { it.id }.toSet()
+            val existingDbEmails = existingContacts.filter { it.contactType == ContactType.EMAIL }
+
+            val seenEmails = mutableSetOf<String>()
+            for (dbContact in existingDbEmails) {
+                val norm = dbContact.value.trim().lowercase()
+                if (dbContact.id !in validEmailIds || norm in seenEmails) {
+                    contactDao.deleteById(dbContact.id)
+                    try { firestoreSyncService.deleteRemoteContact(dbContact.id) } catch (_: Exception) {}
+                } else {
+                    seenEmails.add(norm)
+                }
+            }
+
+            var primaryEmailSet = false
+            validEmails.distinctBy { it.address.trim().lowercase() }.forEachIndexed { idx, editEmail ->
+                val isPrim = editEmail.isPrimary || (idx == 0 && !primaryEmailSet)
+                if (isPrim) primaryEmailSet = true
+
+                val existing = existingDbEmails.firstOrNull { it.id == editEmail.id || it.value.trim().equals(editEmail.address.trim(), ignoreCase = true) }
+                val entity = if (existing != null) {
+                    existing.copy(
+                        value = editEmail.address.trim(),
+                        label = editEmail.label.ifBlank { "Personal" },
+                        isPrimary = isPrim
+                    )
+                } else {
+                    ContactMethodEntity(
+                        id = editEmail.id.ifBlank { UUID.randomUUID().toString() },
+                        personId = ownerId,
+                        contactType = ContactType.EMAIL,
+                        label = editEmail.label.ifBlank { "Personal" },
+                        value = editEmail.address.trim(),
+                        isPrimary = isPrim
+                    )
+                }
+                contactDao.insertOrUpdate(entity)
+                try { firestoreSyncService.syncContact(null, entity) } catch (_: Exception) {}
+            }
+
+            // 2. Reconcile Phones
+            val validPhones = phones.filter { it.number.isNotBlank() }
+            val validPhoneIds = validPhones.map { it.id }.toSet()
+            val existingDbPhones = existingContacts.filter { it.contactType == ContactType.PHONE }
+
+            val seenPhones = mutableSetOf<String>()
+            for (dbContact in existingDbPhones) {
+                val digits = dbContact.value.filter { it.isDigit() }.ifBlank { dbContact.value.trim() }
+                if (dbContact.id !in validPhoneIds || digits in seenPhones) {
+                    contactDao.deleteById(dbContact.id)
+                    try { firestoreSyncService.deleteRemoteContact(dbContact.id) } catch (_: Exception) {}
+                } else {
+                    seenPhones.add(digits)
+                }
+            }
+
+            var primaryPhoneSet = false
+            validPhones.distinctBy { it.number.filter { c -> c.isDigit() }.ifBlank { it.number.trim() } }.forEachIndexed { idx, editPhone ->
+                val isPrim = editPhone.isPrimary || (idx == 0 && !primaryPhoneSet)
+                if (isPrim) primaryPhoneSet = true
+
+                val digits = editPhone.number.filter { it.isDigit() }.ifBlank { editPhone.number.trim() }
+                val existing = existingDbPhones.firstOrNull { it.id == editPhone.id || it.value.filter { c -> c.isDigit() } == digits }
+                val entity = if (existing != null) {
+                    existing.copy(
+                        value = editPhone.number.trim(),
+                        label = editPhone.label.ifBlank { "Mobile" },
+                        isPrimary = isPrim
+                    )
+                } else {
+                    ContactMethodEntity(
+                        id = editPhone.id.ifBlank { UUID.randomUUID().toString() },
+                        personId = ownerId,
+                        contactType = ContactType.PHONE,
+                        label = editPhone.label.ifBlank { "Mobile" },
+                        value = editPhone.number.trim(),
+                        isPrimary = isPrim
+                    )
+                }
+                contactDao.insertOrUpdate(entity)
+                try { firestoreSyncService.syncContact(null, entity) } catch (_: Exception) {}
+            }
+
+            loadFullProfileAndRelationships()
+        }
+    }
+
+    fun reconcileAddresses(addresses: List<com.pims.vault.presentation.hub.EditableAddress>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ownerId = getOrCreatePrimaryOwnerId()
+            val existingAddresses = addressDao.getAddressesForPerson(ownerId)
+            val validAddresses = addresses.filter { it.street1.isNotBlank() || it.city.isNotBlank() }
+            val validIds = validAddresses.map { it.id }.toSet()
+
+            for (dbAddr in existingAddresses) {
+                if (dbAddr.id !in validIds) {
+                    addressDao.deleteById(dbAddr.id)
+                }
+            }
+
+            validAddresses.forEach { a ->
+                val existing = existingAddresses.firstOrNull { it.id == a.id }
+                val label = try { AddressLabel.valueOf(a.label.uppercase()) } catch (_: Exception) { AddressLabel.HOME }
+                val entity = if (existing != null) {
+                    existing.copy(
+                        streetLine1 = a.street1.trim(),
+                        streetLine2 = a.street2.trim().ifBlank { null },
+                        city = a.city.trim(),
+                        stateProvince = a.state.trim().ifBlank { null },
+                        postalCode = a.postalCode.trim().ifBlank { null },
+                        country = a.country.trim().ifBlank { "Country" },
+                        label = label
+                    )
+                } else {
+                    AddressEntity(
+                        id = a.id.ifBlank { UUID.randomUUID().toString() },
+                        personId = ownerId,
+                        streetLine1 = a.street1.trim(),
+                        streetLine2 = a.street2.trim().ifBlank { null },
+                        city = a.city.trim(),
+                        stateProvince = a.state.trim().ifBlank { null },
+                        postalCode = a.postalCode.trim().ifBlank { null },
+                        country = a.country.trim().ifBlank { "Country" },
+                        label = label,
+                        isCurrent = true
+                    )
+                }
+                addressDao.insertOrUpdate(entity)
+                try { firestoreSyncService.syncAddress(null, entity) } catch (_: Exception) {}
+            }
+
+            loadFullProfileAndRelationships()
         }
     }
 
@@ -478,6 +655,9 @@ class ProfileViewModel @Inject constructor(
 
                         loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Identity details updated successfully") }
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncPerson(null, updatedPerson) } catch (_: Exception) {}
+                        }
                     }
 
                     is ProfileEvent.SavePersonalDetails -> {
@@ -499,6 +679,9 @@ class ProfileViewModel @Inject constructor(
                         personDao.insertOrUpdate(updatedPerson)
                         loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Profile updated successfully") }
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncPerson(null, updatedPerson) } catch (_: Exception) {}
+                        }
                     }
 
                     is ProfileEvent.AddCustomField -> {
@@ -582,7 +765,7 @@ class ProfileViewModel @Inject constructor(
                             city = event.city.trim().ifBlank { "City" },
                             stateProvince = event.stateProvince?.trim()?.takeIf { it.isNotBlank() },
                             postalCode = event.postalCode?.trim()?.takeIf { it.isNotBlank() },
-                            country = event.country.trim().ifBlank { java.util.Locale.getDefault().displayCountry.ifBlank { "Country" } },
+                            country = event.country.trim().ifBlank { "Country" },
                             isCurrent = event.isCurrent
                         )
                         addressDao.insertOrUpdate(address)

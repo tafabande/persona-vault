@@ -156,28 +156,20 @@ fun WallpaperCarousel(
         }
     }
 
-    // Faster automatic rotation: 3.5-second interval (pauses when user interacts)
-    val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
-    LaunchedEffect(pagerState.pageCount, isDragged) {
-        while (!isDragged && pagerState.pageCount > 1) {
-            delay(3500L)
-            if (!pagerState.isScrollInProgress) {
-                val nextPage = (pagerState.currentPage + 1) % pagerState.pageCount
-                pagerState.animateScrollToPage(
-                    page = nextPage,
-                    animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
-                )
-            }
+    // Pager state synchronizes with activeIndex
+    LaunchedEffect(activeIndex) {
+        if (pagerState.currentPage != activeIndex && activeIndex in wallpapers.indices) {
+            pagerState.animateScrollToPage(activeIndex)
         }
     }
 
-    // Subtle Ken Burns motion: gentle 1.00 -> 1.03 breathing scale over a 3.5s cycle
+    // Subtle breathing motion: gentle 1.00 -> 1.02 scale
     val infiniteTransition = rememberInfiniteTransition(label = "KenBurns")
     val kenBurnsScale by infiniteTransition.animateFloat(
         initialValue = 1.00f,
-        targetValue = 1.03f,
+        targetValue = 1.02f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3500, easing = LinearEasing),
+            animation = tween(durationMillis = 6000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "kenBurnsScale"
@@ -195,8 +187,6 @@ fun WallpaperCarousel(
                 onClick = {
                     haptics.selection()
                     if (wallpapers.isNotEmpty()) {
-                        // Visual-only advance: browses the reel without
-                        // touching the persisted active wallpaper.
                         val next = (pagerState.currentPage + 1) % wallpapers.size
                         scope.launch {
                             pagerState.animateScrollToPage(
@@ -219,7 +209,7 @@ fun WallpaperCarousel(
             val wallpaper = wallpapers.getOrNull(page)
             if (wallpaper != null) {
                 Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
-                    // 1. Sharp base visual artwork with subtle Ken Burns motion
+                    // Sharp visual artwork with subtle scale
                     WallpaperPageArtwork(
                         wallpaper = wallpaper,
                         modifier = Modifier
@@ -230,84 +220,6 @@ fun WallpaperCarousel(
                                 scaleY = kenBurnsScale
                                 clip = true
                             }
-                    )
-
-                    // 2. Overlap Gradient Blur: Progressively blurs across the overlap area under the card
-                    WallpaperPageArtwork(
-                        wallpaper = wallpaper,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clipToBounds()
-                            .graphicsLayer {
-                                scaleX = kenBurnsScale
-                                scaleY = kenBurnsScale
-                                clip = true
-                                compositingStrategy = CompositingStrategy.Offscreen
-                            }
-                            .blur(radius = 28.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        0.0f to Color.Transparent,
-                                        0.60f to Color.Transparent,
-                                        0.85f to Color.Black,
-                                        1.0f to Color.Black
-                                    ),
-                                    blendMode = BlendMode.DstIn
-                                )
-                            }
-                    )
-
-                    // 3. Overlap Gradient Fade: Soft ambient fade that deepens into the theme background
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    0.0f to Color.Transparent,
-                                    0.45f to Color.Transparent,
-                                    0.68f to backgroundColor.copy(alpha = 0.60f),
-                                    0.84f to backgroundColor,
-                                    1.0f to backgroundColor
-                                )
-                            )
-                    )
-
-                    // Solid base strip to guarantee zero sub-pixel photo edge peek
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .align(Alignment.BottomCenter)
-                            .background(backgroundColor)
-                    )
-                }
-            }
-        }
-
-        // Image Metadata for ambient artworks (custom photos display clean with no distracting overlays)
-        val currentWp = wallpapers.getOrNull(pagerState.currentPage)
-        if (currentWp != null && currentWp.type != WallpaperType.LOCAL_IMAGE && currentWp.title.isNotBlank()) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 24.dp, bottom = 16.dp, end = 24.dp)
-            ) {
-                AnimatedContent(
-                    targetState = currentWp,
-                    transitionSpec = {
-                        fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(400))
-                    },
-                    label = "WpMeta"
-                ) { item ->
-                    Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.3).sp
-                        ),
-                        color = MaterialTheme.colorScheme.onBackground
                     )
                 }
             }
@@ -484,79 +396,95 @@ internal fun GenerativeArtworkVisual(
 
             3 -> {
                 // =============================================================
-                // GRADUATION DAY: Majestic dawn horizon over rolling green/sage ridges
+                // SERENE HILLS: Layered sun with concentric discs and rolling sage ridges
                 // =============================================================
-                // Dawn Sky
+                // Base Sky: Warm pale cream
                 drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFFF7F3E9),
-                            Color(0xFFE5DDD0),
-                            Color(0xFFBFD1C1),
-                            Color(0xFF8BA690)
-                        ),
-                        startY = 0f,
-                        endY = h * 0.60f
-                    )
+                    color = Color(0xFFF6F3EC)
                 )
 
-                // Radiant beacon sun
-                val sunCenter = Offset(w * 0.65f, h * 0.28f + sin(drift) * 8f)
+                // Concentric Sun Discs
+                val sunCenter = Offset(w * 0.65f, h * 0.20f)
+                // Outer glow disc
                 drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFFFFFDF5),
-                            Color(0xFFFFE8B8),
-                            Color(0x66E2C98A),
-                            Color.Transparent
-                        ),
-                        center = sunCenter,
-                        radius = w * 0.35f
-                    ),
-                    center = sunCenter,
-                    radius = w * 0.35f
+                    color = Color(0xFFF4E8C1).copy(alpha = 0.35f),
+                    radius = w * 0.38f,
+                    center = sunCenter
                 )
+                // Middle glow disc
                 drawCircle(
-                    color = Color(0xFFFFF9EA),
-                    radius = 24.dp.toPx(),
+                    color = Color(0xFFF9EFC8).copy(alpha = 0.65f),
+                    radius = w * 0.25f,
+                    center = sunCenter
+                )
+                // Inner sun disc
+                drawCircle(
+                    color = Color(0xFFFFFDF0),
+                    radius = w * 0.13f,
                     center = sunCenter
                 )
 
-                // Back Hill Ridge
-                val hill1 = Path().apply {
-                    moveTo(0f, h * 0.48f)
-                    cubicTo(w * 0.30f, h * 0.38f, w * 0.65f, h * 0.52f, w, h * 0.42f)
-                    lineTo(w, h)
-                    lineTo(0f, h)
-                    close()
-                }
-                drawPath(
-                    path = hill1,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFF7A977F), Color(0xFF56725B)),
-                        startY = h * 0.38f,
-                        endY = h * 0.70f
-                    )
+                // Upper misty stratified background bands
+                drawRect(
+                    color = Color(0xFFE4EDE3).copy(alpha = 0.85f),
+                    topLeft = Offset(0f, h * 0.21f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.11f)
+                )
+                drawRect(
+                    color = Color(0xFFD2E0D1),
+                    topLeft = Offset(0f, h * 0.32f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.045f)
                 )
 
-                // Foreground Hill Ridge
-                val hill2 = Path().apply {
-                    moveTo(0f, h * 0.58f)
-                    cubicTo(w * 0.35f, h * 0.62f, w * 0.68f, h * 0.48f, w, h * 0.56f)
+                // Rolling Foreground Hill (Curving sage green slope)
+                val hill = Path().apply {
+                    moveTo(0f, h * 0.365f)
+                    cubicTo(w * 0.35f, h * 0.34f, w * 0.65f, h * 0.37f, w, h * 0.33f)
                     lineTo(w, h)
                     lineTo(0f, h)
                     close()
                 }
                 drawPath(
-                    path = hill2,
+                    path = hill,
+                    color = Color(0xFF67826A)
+                )
+
+                // Lower Stratified Horizontal Layers beneath the hill
+                drawRect(
+                    color = Color(0xFF78927B),
+                    topLeft = Offset(0f, h * 0.42f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.05f)
+                )
+                drawRect(
+                    color = Color(0xFF93A795),
+                    topLeft = Offset(0f, h * 0.47f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.05f)
+                )
+                drawRect(
+                    color = Color(0xFFAEC0B0),
+                    topLeft = Offset(0f, h * 0.52f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.055f)
+                )
+                drawRect(
+                    color = Color(0xFFC6D4C8),
+                    topLeft = Offset(0f, h * 0.575f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.06f)
+                )
+                drawRect(
+                    color = Color(0xFFDEE7E0),
+                    topLeft = Offset(0f, h * 0.635f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.065f)
+                )
+                drawRect(
                     brush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFF455C4A), Color(0xFF2E4032)),
-                        startY = h * 0.48f,
+                        colors = listOf(Color(0xFFDEE7E0), Color(0xFFF6F4EE)),
+                        startY = h * 0.70f,
                         endY = h
-                    )
+                    ),
+                    topLeft = Offset(0f, h * 0.70f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.30f)
                 )
             }
-
             else -> {
                 // =============================================================
                 // TERRACOTTA DUNES: Layered rolling sunset desert in warm terracotta

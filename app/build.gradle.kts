@@ -45,6 +45,18 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Backblaze B2 credentials — NEVER hardcode. Resolve via
+        // Environment > secrets.properties > local.properties.
+        // Rotate the exposed key in the B2 console, then populate these locally/CI.
+        val b2KeyId = resolveSecret("B2_KEY_ID") ?: ""
+        val b2AppKey = resolveSecret("B2_APP_KEY") ?: ""
+        val b2BucketId = resolveSecret("B2_BUCKET_ID") ?: ""
+        val b2BucketName = resolveSecret("B2_BUCKET_NAME") ?: ""
+        buildConfigField("String", "B2_KEY_ID", "\"$b2KeyId\"")
+        buildConfigField("String", "B2_APP_KEY", "\"$b2AppKey\"")
+        buildConfigField("String", "B2_BUCKET_ID", "\"$b2BucketId\"")
+        buildConfigField("String", "B2_BUCKET_NAME", "\"$b2BucketName\"")
     }
 
     signingConfigs {

@@ -25,15 +25,19 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Save
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,9 +75,6 @@ import com.pims.vault.presentation.ui.components.InternationalPhoneInput
 import com.pims.vault.domain.model.DocumentWithHistory
 import com.pims.vault.presentation.ui.components.PersonaTextInput
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.text.style.TextOverflow
 import com.pims.vault.presentation.ui.theme.PersonaAccent
 import com.pims.vault.presentation.ui.theme.pimsApplePress
@@ -136,20 +137,20 @@ fun HomeView(
     val effectiveIdNumber = nationalIdNumber?.takeIf { it.isNotBlank() }
         ?: documents.firstOrNull { it.document.documentType.name.contains("ID") }?.document?.id
 
-    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
+    val homeBgColor = MaterialTheme.colorScheme.background
 
     // Seamless layered layout: hero section extends under the identity card
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(homeBgColor)
     ) {
         // 1 & 2: EXTENDED HERO PHOTO AREA WITH OVERLAYING FLOATING TOP BAR
         // Fills the upper section and extends down under the identity card for a seamless magazine bleed
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.80f)
+                .fillMaxHeight(0.72f)
                 .clipToBounds()
                 .align(Alignment.TopCenter)
         ) {
@@ -163,34 +164,7 @@ fun HomeView(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                        .clickable {
-                            haptics.selection()
-                            onOpenWallpaperOptions()
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AddPhotoAlternate,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(44.dp)
-                        )
-                        Text(
-                            text = "Tap to view or add photograph",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
+                com.pims.vault.presentation.wallpaper.GenerativeArtworkVisual(seed = 3)
             }
 
             // Top Subtle Gradient Scrim & Floating Top Identity Bar
@@ -201,8 +175,8 @@ fun HomeView(
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colorStops = arrayOf(
-                                0.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
-                                0.60f to MaterialTheme.colorScheme.background.copy(alpha = 0.12f),
+                                0.0f to homeBgColor.copy(alpha = 0.35f),
+                                0.60f to homeBgColor.copy(alpha = 0.08f),
                                 1.0f to Color.Transparent
                             )
                         )
@@ -224,32 +198,20 @@ fun HomeView(
                 )
             }
 
-            // Deep Ambient Gradient Scrim: Bleeds out seamlessly beneath the identity card
+            // Soft bottom transition of hero into screen background
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
+                    .height(48.dp)
                     .align(Alignment.BottomCenter)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0.0f to Color.Transparent,
-                                0.35f to MaterialTheme.colorScheme.background.copy(alpha = 0.50f),
-                                0.70f to MaterialTheme.colorScheme.background.copy(alpha = 0.90f),
-                                0.85f to MaterialTheme.colorScheme.background,
-                                1.0f to MaterialTheme.colorScheme.background
+                            colors = listOf(
+                                Color.Transparent,
+                                homeBgColor
                             )
                         )
                     )
-            )
-
-            // Solid base strip at hero boundary to guarantee zero sub-pixel light gap
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(MaterialTheme.colorScheme.background)
             )
         }
 
@@ -258,52 +220,53 @@ fun HomeView(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // 3. IDENTITY DETAILS CARD (Displays Name, Email, Phone, ID Number, and ID Photo)
+            // 3. IDENTITY DETAILS CARD (Displays Name, Chevron, Email, Phone, and Add ID photo)
             IdentityDetailsCard(
                 displayName = displayName,
                 primaryEmail = primaryEmail,
                 primaryPhone = primaryPhone,
                 idNumber = effectiveIdNumber,
                 idPhotoPath = idPhotoPath,
+                onOpenProfile = onOpenProfile,
                 onEdit = {
                     haptics.light()
                     onOpenCentralizedEditor()
+                },
+                onAddIdPhoto = {
+                    haptics.selection()
+                    showIdentitySheet = true
                 }
             )
 
-            // 4. THREE VERTICAL CARDS SITTING SIDE BY SIDE IN THE SAME THEME ON THE BOTTOM JUST ABOVE THE NAVBAR
+            // 4. TWO QUICK ACCESS CARDS (Vault & Share)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                HomeShortcutVerticalCard(
-                    icon = Icons.Default.Badge,
-                    title = "View Info",
-                    subtitle = "Profile",
-                    accentColor = MaterialTheme.colorScheme.primary,
-                    onClick = onOpenProfile,
-                    modifier = Modifier.weight(1f)
-                )
-                HomeShortcutVerticalCard(
-                    icon = Icons.Default.Lock,
+                HomeQuickAccessCard(
+                    icon = PersonaIcons.LockOutlined,
                     title = "Vault",
                     subtitle = "Credentials",
-                    accentColor = Color(0xFF10B981),
-                    onClick = onOpenCredentials,
+                    onClick = {
+                        haptics.selection()
+                        onOpenCredentials()
+                    },
                     modifier = Modifier.weight(1f)
                 )
-                HomeShortcutVerticalCard(
-                    icon = Icons.Default.Share,
+                HomeQuickAccessCard(
+                    icon = PersonaIcons.ShareOutlined,
                     title = "Share",
-                    subtitle = "Pass & QR",
-                    accentColor = Color(0xFF8B5CF6),
-                    onClick = onOpenShare,
+                    subtitle = "Pass and QR",
+                    onClick = {
+                        haptics.selection()
+                        onOpenShare()
+                    },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -328,7 +291,7 @@ fun HomeView(
 }
 
 /**
- * Top bar without the phrase "Your Persona"
+ * Top bar without the phrase "Your Persona" - Clean circular avatar and sync/bell actions
  */
 @Composable
 private fun HomeHeaderRow(
@@ -336,7 +299,7 @@ private fun HomeHeaderRow(
     profilePhotoPath: String? = null,
     avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
     unreadNotificationCount: Int,
-    syncStatusText: String = "✓ Up to date",
+    syncStatusText: String = "V Up to date",
     syncIsGood: Boolean = true,
     onSyncClick: () -> Unit = {},
     onOpenProfile: () -> Unit,
@@ -361,9 +324,17 @@ private fun HomeHeaderRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+        // Left: Clean circular avatar button
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                .clickable {
+                    haptics.selection()
+                    onOpenProfile()
+                },
+            contentAlignment = Alignment.Center
         ) {
             if (photoBitmap != null) {
                 Image(
@@ -371,69 +342,83 @@ private fun HomeHeaderRow(
                     contentDescription = "Profile photo",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(46.dp)
+                        .fillMaxSize()
                         .clip(CircleShape)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), CircleShape)
-                        .pimsApplePress {
-                            haptics.selection()
-                            onOpenAvatarEditor()
-                        }
                 )
             } else {
-                com.pims.vault.presentation.avatar.PersonaAvatar(
-                    name = displayName,
-                    config = avatarConfig,
-                    size = 46.dp,
-                    onClick = onOpenAvatarEditor
+                Icon(
+                    imageVector = PersonaIcons.MeOutlined,
+                    contentDescription = "Profile",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
                 )
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Text(
-                text = displayName,
-                modifier = Modifier.clickable {
-                    haptics.selection()
-                    onOpenProfile()
-                },
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.3).sp
-                ),
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1
-            )
         }
 
+        // Right: Sync Status and Notification Bell with glass-morphism containers
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Interactive Sync Status Badge
-            StatusPill(
-                text = syncStatusText,
-                isGood = syncIsGood,
-                onClick = {
-                    haptics.selection()
-                    onSyncClick()
-                }
+            val isSyncing = syncStatusText.contains("Syncing", ignoreCase = true)
+            val infiniteTransition = rememberInfiniteTransition(label = "SyncRotation")
+            val rotationAngle by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 1000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "SyncAngle"
             )
+            val glassBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+            val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+            val dotColor = MaterialTheme.colorScheme.primary
+
+            // Sync Status Button
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(glassBg)
+                    .clickable {
+                        haptics.selection()
+                        onSyncClick()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = PersonaIcons.Sync,
+                    contentDescription = syncStatusText,
+                    tint = iconTint,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer {
+                            if (isSyncing) {
+                                rotationZ = rotationAngle
+                            }
+                        }
+                )
+                if (!syncIsGood || isSyncing) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 4.dp, end = 4.dp)
+                            .size(7.dp)
+                            .background(
+                                color = if (syncIsGood) dotColor else MaterialTheme.colorScheme.error,
+                                shape = CircleShape
+                            )
+                    )
+                }
+            }
 
             // Notification Bell
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .shadow(3.dp, CircleShape, ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-                    .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            )
-                        ),
-                        shape = CircleShape
-                    )
+                    .size(38.dp)
                     .clip(CircleShape)
+                    .background(glassBg)
                     .clickable {
                         haptics.selection()
                         onNotificationClick()
@@ -441,18 +426,18 @@ private fun HomeHeaderRow(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Notifications,
+                    imageVector = if (unreadNotificationCount > 0) PersonaIcons.Notifications else PersonaIcons.NotificationsOutlined,
                     contentDescription = "Activity Notifications",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = iconTint,
                     modifier = Modifier.size(20.dp)
                 )
                 if (unreadNotificationCount > 0) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(7.dp)
-                            .size(8.dp)
-                            .background(color = StateWarning, shape = CircleShape)
+                            .padding(top = 4.dp, end = 4.dp)
+                            .size(7.dp)
+                            .background(color = dotColor, shape = CircleShape)
                     )
                 }
             }
@@ -462,10 +447,9 @@ private fun HomeHeaderRow(
 
 /**
  * Clean Identity Details Card showing:
- * - Full Name
- * - National ID Number
+ * - Full Name with chevron (opens profile)
  * - Email and Phone
- * - Photo of ID thumbnail
+ * - Add ID photo link / thumbnail
  */
 @Composable
 private fun IdentityDetailsCard(
@@ -474,7 +458,9 @@ private fun IdentityDetailsCard(
     primaryPhone: String?,
     idNumber: String?,
     idPhotoPath: String?,
-    onEdit: () -> Unit
+    onOpenProfile: () -> Unit,
+    onEdit: () -> Unit,
+    onAddIdPhoto: () -> Unit
 ) {
     val idBitmap = remember(idPhotoPath) {
         idPhotoPath?.let { path ->
@@ -488,161 +474,142 @@ private fun IdentityDetailsCard(
     }
 
     val haptics = rememberPimsHaptics()
-    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
 
-    Box(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .pimsGlassmorphism(isDark = isDark, shape = RoundedCornerShape(20.dp), elevation = 6.dp)
-            .pimsTactile { onEdit() }
+            .pimsTactile { onEdit() },
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Row 1: Name and Chevron (opens profile)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        haptics.selection()
+                        onOpenProfile()
+                    },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+
+                Icon(
+                    imageVector = PersonaIcons.ChevronRight,
+                    contentDescription = "View Profile",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            // Row 2: Email
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 2.dp)
+            ) {
+                Icon(
+                    imageVector = PersonaIcons.EmailOutlined,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = primaryEmail?.takeIf { it.isNotBlank() } ?: "Add email",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+
+            // Row 3: Phone (Left) and Add ID photo (Right)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f, fill = false)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Badge,
+                        imageVector = PersonaIcons.PhoneOutlined,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
-                        text = "IDENTITY DETAILS",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        ),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                IconButton(
-                    onClick = onEdit,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit details",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
+                        text = primaryPhone?.takeIf { it.isNotBlank() } ?: "Add phone",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
-
-                    if (!idNumber.isNullOrBlank()) {
-                        Text(
-                            text = "ID: $idNumber",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1
-                        )
-                    }
-
-                    if (!primaryEmail.isNullOrBlank()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = primaryEmail,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
-                    }
-
-                    if (!primaryPhone.isNullOrBlank()) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Phone,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = primaryPhone,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
-                    }
                 }
 
-                // ID Photo Thumbnail Display
-                if (idBitmap != null) {
-                    Image(
-                        bitmap = idBitmap.asImageBitmap(),
-                        contentDescription = "Photo of ID",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(width = 86.dp, height = 58.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-                    )
-                } else {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-                        modifier = Modifier
-                            .size(width = 86.dp, height = 58.dp)
-                            .clickable { onEdit() }
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AddPhotoAlternate,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "+ ID Photo",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                // Add ID photo action / thumbnail
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            haptics.selection()
+                            onAddIdPhoto()
                         }
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    if (idBitmap != null) {
+                        Image(
+                            bitmap = idBitmap.asImageBitmap(),
+                            contentDescription = "ID photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
+                        Text(
+                            text = "ID photo",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.5.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = PersonaIcons.PhotoOutlined,
+                            contentDescription = "Add ID photo",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Text(
+                            text = "Add ID photo",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.5.sp
+                            ),
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -720,7 +687,7 @@ private fun IdentityDetailsEditorSheet(
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                 )
                 IconButton(onClick = onDismissRequest) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(PersonaIcons.Close, contentDescription = "Close")
                 }
             }
 
@@ -798,7 +765,7 @@ private fun IdentityDetailsEditorSheet(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.AddPhotoAlternate,
+                            imageVector = PersonaIcons.Photo,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(36.dp)
@@ -832,7 +799,7 @@ private fun IdentityDetailsEditorSheet(
                     .height(48.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(PersonaIcons.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Save Identity Details", fontWeight = FontWeight.SemiBold)
             }
@@ -843,64 +810,62 @@ private fun IdentityDetailsEditorSheet(
 }
 
 @Composable
-private fun HomeShortcutVerticalCard(
+private fun HomeQuickAccessCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
-    accentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
-    Box(
+    Surface(
         modifier = modifier
-            .pimsGlassmorphism(isDark = isDark, shape = RoundedCornerShape(18.dp), elevation = 4.dp)
-            .pimsApplePress { onClick() }
+            .pimsTactile { onClick() },
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 6.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(46.dp)
                     .clip(CircleShape)
-                    .background(accentColor.copy(alpha = 0.12f)),
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = accentColor,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
             }
 
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                textAlign = TextAlign.Center
-            )
-
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

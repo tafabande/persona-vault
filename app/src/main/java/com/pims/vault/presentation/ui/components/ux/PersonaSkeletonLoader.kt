@@ -7,7 +7,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,7 +37,7 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun rememberShimmerBrush(): Brush {
-    val isDark = isSystemInDarkTheme()
+    val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
     val baseColor = if (isDark) Color(0xFF252528) else Color(0xFFE2E8F0)
     val highlightColor = if (isDark) Color(0xFF38383D) else Color(0xFFF1F5F9)
 

@@ -53,6 +53,19 @@ interface FileStorageService {
     ): Boolean
 
     /**
+     * Stores an already-encrypted stream directly to disk without re-encrypting.
+     * Used during restore/pull from remote storage where bytes are already
+     * encrypted by CryptoEngine on the originating device.
+     * Returns metadata with the on-disk path and size.
+     */
+    suspend fun storePreEncryptedFile(
+        documentId: String,
+        versionNumber: Int,
+        mimeType: String,
+        inputStream: InputStream
+    ): StoredFileMetadata
+
+    /**
      * Securely deletes the physical encrypted file from storage.
      */
     suspend fun deleteFile(relativePath: String): Boolean

@@ -3,12 +3,21 @@ package com.pims.vault.presentation.ui.components
 import com.pims.vault.R
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,8 +35,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -419,43 +436,120 @@ fun PimsOutlinedTextField(
 // =========================================================================
 
 /**
- * Status Pill: Calm, understated profile status indicator.
- * e.g., "🟢 Everything looks good" or "Profile 82%".
+ * Status Pill: Premium, interactive sync & status indicator.
+ * Designed with glassmorphism, glowing micro-beacon dot, and tactile tap feedback.
+ * - Blue for Synced / Syncing
+ * - Red for Please Sync / Needs Attention
  */
 @Composable
 fun StatusPill(
     text: String,
     isGood: Boolean = true,
     modifier: Modifier = Modifier,
+    isSyncing: Boolean = text.contains("Syncing", ignoreCase = true),
     onClick: (() -> Unit)? = null
 ) {
-    val pillBg = if (isGood) StateSuccess.copy(alpha = 0.12f) else StateWarning.copy(alpha = 0.12f)
-    val textColor = if (isGood) StateSuccess else StateWarning
+    val isDark = LocalPimsDarkTheme.current
+
+    // Blue for Synced, Red for Please Sync
+    val accentColor = if (isGood) {
+        if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB) // Sky / Royal Blue
+    } else {
+        if (isDark) Color(0xFFF87171) else Color(0xFFDC2626) // Vivid Coral / Crimson Red
+    }
+
+    val textColor = if (isGood) {
+        if (isDark) Color(0xFFBFDBFE) else Color(0xFF1D4ED8)
+    } else {
+        if (isDark) Color(0xFFFECACA) else Color(0xFFB91C1C)
+    }
+
+    val backgroundColor = if (isDark) {
+        accentColor.copy(alpha = 0.16f)
+    } else {
+        accentColor.copy(alpha = 0.10f)
+    }
+
+    val borderColor = if (isDark) {
+        accentColor.copy(alpha = 0.35f)
+    } else {
+        accentColor.copy(alpha = 0.25f)
+    }
+
+    // Animation for syncing rotation and beacon pulse
+    val infiniteTransition = rememberInfiniteTransition(label = "StatusPillPulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
+    val rotationAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
 
     Surface(
-        modifier = modifier.then(
-            if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
-        ),
-        shape = RoundedCornerShape(16.dp),
-        color = pillBg
+        onClick = { onClick?.invoke() },
+        enabled = onClick != null,
+        modifier = modifier.clip(RoundedCornerShape(20.dp)),
+        shape = RoundedCornerShape(20.dp),
+        color = backgroundColor,
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .background(color = textColor, shape = androidx.compose.foundation.shape.CircleShape)
-            )
+            if (isSyncing) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Syncing",
+                    tint = accentColor,
+                    modifier = Modifier
+                        .size(12.dp)
+                        .graphicsLayer { rotationZ = rotationAngle }
+                )
+            } else {
+                // Radiant beacon indicator (outer glow halo + solid core)
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(
+                            color = accentColor.copy(alpha = if (!isGood) 0.30f * pulseAlpha else 0.25f),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .background(
+                                color = accentColor.copy(alpha = if (!isGood) pulseAlpha else 1f),
+                                shape = CircleShape
+                            )
+                    )
+                }
+            }
+
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.1.sp
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.2.sp
                 ),
-                color = textColor
+                color = textColor,
+                maxLines = 1
             )
         }
     }
@@ -722,4 +816,103 @@ fun DefaultAvatar(
             .size(size)
             .then(interactionModifier)
     )
+}
+
+/**
+ * Country Suggestion Field: Text box with autocomplete suggestions for all world countries.
+ * Uses clean icons instead of emoji flags.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CountrySuggestionField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String = "Country / Region",
+    placeholder: String = "Type country name...",
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val allCountries = remember {
+        java.util.Locale.getISOCountries().map { code ->
+            java.util.Locale("", code).displayCountry
+        }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+
+    val filteredSuggestions = remember(value) {
+        if (value.isBlank()) emptyList()
+        else allCountries.filter {
+            it.contains(value.trim(), ignoreCase = true) && !it.equals(value.trim(), ignoreCase = true)
+        }.take(6)
+    }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded && filteredSuggestions.isNotEmpty(),
+        onExpandedChange = { expanded = it },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {
+                onValueChange(it)
+                expanded = true
+            },
+            label = { Text(label) },
+            placeholder = { Text(placeholder) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Public,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            trailingIcon = {
+                if (value.isNotBlank()) {
+                    IconButton(onClick = { onValueChange("") }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            },
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true,
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded && filteredSuggestions.isNotEmpty(),
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.exposedDropdownSize(matchTextFieldWidth = true)
+        ) {
+            filteredSuggestions.forEach { countryName ->
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LocationOn,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(countryName, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    },
+                    onClick = {
+                        onValueChange(countryName)
+                        expanded = false
+                    },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                )
+            }
+        }
+    }
 }

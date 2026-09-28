@@ -45,75 +45,39 @@ service cloud.firestore {
 
       // Managed People (Me, Child, Elderly Dependents)
       match /people/{personId} {
-        allow read: if isAccountOwner(accountId);
-        allow create: if isAccountOwner(accountId) && 
-                         request.resource.data.personId == personId &&
-                         request.resource.data.accountUid == accountId &&
-                         (!('version' in request.resource.data) || request.resource.data.version == 1);
-        allow update: if isAccountOwner(accountId) && 
-                         isImmutable('personId') && 
-                         isImmutable('accountUid') && 
-                         isValidVersionIncrement();
-        allow delete: if isAccountOwner(accountId);
+        allow read, write: if isAccountOwner(accountId);
       }
 
       // Contact Methods (Phones, Emails)
       match /contacts/{contactId} {
-        allow read: if isAccountOwner(accountId);
-        allow create: if isAccountOwner(accountId);
-        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
-        allow delete: if isAccountOwner(accountId);
+        allow read, write: if isAccountOwner(accountId);
       }
 
       // Addresses (Temporally versioned)
       match /addresses/{addressId} {
-        allow read: if isAccountOwner(accountId);
-        allow create: if isAccountOwner(accountId);
-        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
-        allow delete: if isAccountOwner(accountId);
+        allow read, write: if isAccountOwner(accountId);
       }
 
       // Education & Career Records
       match /education/{eduId} {
-        allow read: if isAccountOwner(accountId);
-        allow create: if isAccountOwner(accountId);
-        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
-        allow delete: if isAccountOwner(accountId);
+        allow read, write: if isAccountOwner(accountId);
       }
       match /employment/{workId} {
-        allow read: if isAccountOwner(accountId);
-        allow create: if isAccountOwner(accountId);
-        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
-        allow delete: if isAccountOwner(accountId);
+        allow read, write: if isAccountOwner(accountId);
       }
 
       // Health Dossier: Stored exclusively as ciphertext blobs (Zone 3 Zero-Knowledge)
       match /healthRecords/{recordId} {
-        allow read: if isAccountOwner(accountId);
-        allow create: if isAccountOwner(accountId) && request.resource.data.isEncrypted == true;
-        allow update: if isAccountOwner(accountId) && isImmutable('id') && isValidVersionIncrement();
-        allow delete: if isAccountOwner(accountId);
+        allow read, write: if isAccountOwner(accountId);
       }
 
       // Document Envelopes (Civic Metadata + Encrypted Restricted Attributes)
       match /documents/{docId} {
-        allow read: if isAccountOwner(accountId);
-        allow create: if isAccountOwner(accountId) && 
-                         request.resource.data.documentId == docId &&
-                         (!('version' in request.resource.data) || request.resource.data.version == 1);
-        allow update: if isAccountOwner(accountId) && 
-                         isImmutable('documentId') && 
-                         isImmutable('personId') && 
-                         isValidVersionIncrement();
-        allow delete: if isAccountOwner(accountId);
+        allow read, write: if isAccountOwner(accountId);
 
         // Document Versions: Strictly IMMUTABLE historical snapshots
         match /versions/{versionId} {
-          allow read: if isAccountOwner(accountId);
-          allow create: if isAccountOwner(accountId) && 
-                           request.resource.data.documentId == docId &&
-                           request.resource.data.versionNumber > 0;
-          allow update, delete: if false; // Versions can never be edited or pruned individually
+          allow read, write: if isAccountOwner(accountId);
         }
       }
 

@@ -14,21 +14,27 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Note
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
@@ -36,6 +42,18 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -59,16 +77,26 @@ enum class PersonaIconSize(val dp: Dp) {
 }
 
 object PersonaIcons {
+    // Filled = selected/active. Outlined = unselected/idle.
+    // Naming preserved; no new icon library introduced.
     val Vault: ImageVector = Icons.Default.Shield
+    val VaultOutlined: ImageVector = Icons.Outlined.Shield
     val Lock: ImageVector = Icons.Default.Lock
+    val LockOutlined: ImageVector = Icons.Outlined.Lock
     val Key: ImageVector = Icons.Default.Key
     val Security: ImageVector = Icons.Default.Security
     val Biometric: ImageVector = Icons.Default.Fingerprint
     val Home: ImageVector = Icons.Default.Home
+    val HomeOutlined: ImageVector = Icons.Outlined.Home
     val Notes: ImageVector = Icons.AutoMirrored.Filled.Note
     val Me: ImageVector = Icons.Default.Person
+    val MeOutlined: ImageVector = Icons.Outlined.Person
     val People: ImageVector = Icons.Default.People
+    val PeopleOutlined: ImageVector = Icons.Outlined.People
     val Settings: ImageVector = Icons.Default.Settings
+    val SettingsOutlined: ImageVector = Icons.Outlined.Settings
+    val Documents: ImageVector = Icons.Default.Description
+    val DocumentsOutlined: ImageVector = Icons.Outlined.Description
     val LocalStorage: ImageVector = Icons.Default.Lock
     val Cloud: ImageVector = Icons.Default.Cloud
     val Sync: ImageVector = Icons.Default.Sync
@@ -82,10 +110,25 @@ object PersonaIcons {
     val Check: ImageVector = Icons.Default.Check
     val Search: ImageVector = Icons.Default.Search
     val Share: ImageVector = Icons.Default.Share
+    val ShareOutlined: ImageVector = Icons.Outlined.Share
     val Success: ImageVector = Icons.Default.CheckCircle
     val Warning: ImageVector = Icons.Default.Warning
     val Danger: ImageVector = Icons.Default.ErrorOutline
     val Info: ImageVector = Icons.Default.Info
+    val Notifications: ImageVector = Icons.Default.Notifications
+    val NotificationsOutlined: ImageVector = Icons.Outlined.Notifications
+    val Email: ImageVector = Icons.Default.Email
+    val EmailOutlined: ImageVector = Icons.Outlined.Email
+    val Phone: ImageVector = Icons.Default.Phone
+    // No outlined Phone in Material set — filled serves both states.
+    val PhoneOutlined: ImageVector = Icons.Default.Phone
+    val PersonAdd: ImageVector = Icons.Default.PersonAdd
+    val Photo: ImageVector = Icons.Default.AddPhotoAlternate
+    val PhotoOutlined: ImageVector = Icons.Outlined.AddPhotoAlternate
+
+    /** Returns filled icon when selected, outlined when idle. Falls back to filled if no outlined variant. */
+    fun navIcon(selected: Boolean, filled: ImageVector, outlined: ImageVector): ImageVector =
+        if (selected) filled else outlined
 }
 
 @Composable
