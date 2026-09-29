@@ -27,9 +27,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -45,12 +44,16 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -90,10 +93,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pims.vault.domain.model.NoteAttachment
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.PlainNote
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
+import com.pims.vault.presentation.ui.components.PersonaFAB
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -104,79 +111,252 @@ fun PlainNotesScreen(
     viewModel: PlainNotesViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+    val dayFormat = remember { SimpleDateFormat("EEE d MMM", Locale.getDefault()) }
+    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     var noteToDelete by remember { mutableStateOf<PlainNote?>(null) }
+    var showMoreMenu by remember { mutableStateOf(false) }
+    var sortNewestFirst by remember { mutableStateOf(true) }
+
+    // Compute current week number for the header label
+    val weekLabel = remember {
+        val cal = Calendar.getInstance()
+        "Week ${cal.get(Calendar.WEEK_OF_YEAR)}"
+    }
+
+    // Group notes by day label: "Today", "Yesterday", or "EEE d MMM"
+    val groupedNotes = remember(state.notes, sortNewestFirst) {
+        val sorted = if (sortNewestFirst) state.notes.sortedByDescending { it.updatedAt }
+                     else state.notes.sortedBy { it.updatedAt }
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val yesterday = today - 86_400_000L
+        sorted.groupBy { note ->
+            val d = note.updatedAt
+            when {
+                d >= today -> "Today"
+                d >= yesterday -> "Yesterday"
+                else -> dayFormat.format(Date(d))
+            }
+        }
+    }
+
+    // Expanded day sections state — must be at top level, not inside else{}
+    // Default: expand the most-recent day
+    val firstDayKey = groupedNotes.keys.firstOrNull() ?: ""
+    var expandedDays by remember(firstDayKey) { mutableStateOf(setOf(firstDayKey)) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        if (state.notes.isEmpty()) {
-            // Replicates screen_notes.png: warm background with centered terracotta icon and text
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+        Column(modifier = Modifier.fillMaxSize()) {
+            // ── Header: search | Week N | sort + more ──
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = PimsDimensions.paddingSmall, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Description,
-                        contentDescription = null,
-                        modifier = Modifier.size(42.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                    // Left: search icon
+                    IconButton(onClick = { /* TODO: search */ }) {
+                        Icon(
+                            imageVector = Icons.Default.SortByAlpha,
+                            contentDescription = "Search notes",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    // Center: week label with headlineSmall Bold
                     Text(
-                        text = "No notes yet",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onBackground
+                        text = if (state.notes.isEmpty()) "Notes" else weekLabel,
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
-                    Button(
-                        onClick = { onOpenEditor(null) },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier.tactilePress()
+                    // Right: sort toggle
+                    IconButton(onClick = { sortNewestFirst = !sortNewestFirst }) {
+                        Icon(
+                            imageVector = Icons.Default.SortByAlpha,
+                            contentDescription = if (sortNewestFirst) "Newest first" else "Oldest first",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    // Right: more options
+                    Box {
+                        IconButton(onClick = { showMoreMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("New Note") },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                onClick = { showMoreMenu = false; onOpenEditor(null) }
+                            )
+                        }
+                    }
+                }
+                // Terracotta underline accent
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                )
+            }
+
+            if (state.notes.isEmpty()) {
+                // Empty state — larger icon + CTA
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = PimsDimensions.paddingLarge),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(PimsDimensions.paddingMedium)
                     ) {
-                        Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Create Note", fontWeight = FontWeight.SemiBold)
+                        Icon(
+                            imageVector = PersonaIcons.Notes,
+                            contentDescription = null,
+                            modifier = Modifier.size(72.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = "No notes yet",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Text(
+                            text = "Capture thoughts, plans, anything",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { onOpenEditor(null) },
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Write your first note",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Day-grouped list view with collapsible sections
+                LazyColumn(
+                    contentPadding = PaddingValues(
+                        start = PimsDimensions.paddingLarge,
+                        end = PimsDimensions.paddingLarge,
+                        top = 4.dp,
+                        bottom = 120.dp
+                    ),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    groupedNotes.forEach { (dayLabel, dayNotes) ->
+                        val isExpanded = dayLabel in expandedDays
+
+                        // Collapsible day header row
+                        item(key = "header_$dayLabel") {
+                            val isToday = dayLabel == "Today"
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        expandedDays = if (isExpanded) expandedDays - dayLabel else expandedDays + dayLabel
+                                    }
+                                    .padding(vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = dayLabel,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isToday) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onBackground
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "${dayNotes.size}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Icon(
+                                        imageVector = if (isExpanded) Icons.Default.Description else Icons.Default.Description,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                            // Warm-tinted divider — thicker, primary-hued
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                            )
+                        }
+
+                        // Expanded inline note rows
+                        if (isExpanded) {
+                            items(dayNotes, key = { it.id }) { note ->
+                                NoteListRow(
+                                    note = note,
+                                    timeStr = timeFormat.format(Date(note.updatedAt)),
+                                    onClick = { onOpenEditor(note.id) },
+                                    onDelete = { noteToDelete = note },
+                                    viewModel = viewModel
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f))
+                                )
+                            }
+                        }
                     }
                 }
             }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 48.dp,
-                    bottom = 120.dp
-                ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(state.notes, key = { it.id }) { note ->
-                    NoteGridCard(
-                        note = note,
-                        dateStr = dateFormat.format(Date(note.updatedAt)),
-                        onClick = { onOpenEditor(note.id) },
-                        onDelete = { noteToDelete = note },
-                        viewModel = viewModel
-                    )
-                }
-            }
         }
+
+        // FAB — overlays the list, anchored bottom-end
+        PersonaFAB(
+            text = "New Note",
+            icon = Icons.Default.Edit,
+            onClick = { onOpenEditor(null) },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 20.dp, bottom = 20.dp)
+        )
 
         noteToDelete?.let { note ->
             AlertDialog(
@@ -203,6 +383,107 @@ fun PlainNotesScreen(
     }
 }
 
+/**
+ * Row-based note card for the day-grouped list view — flat, no card borders.
+ * Matches design screenshot: Title bold, then "Nmin ago  Snippet..." on second line.
+ */
+@Composable
+fun NoteListRow(
+    note: PlainNote,
+    timeStr: String,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    viewModel: PlainNotesViewModel? = null
+) {
+    val firstAttachment = remember(note.attachments) { note.attachments.firstOrNull() }
+    var thumbnailBitmap by remember(firstAttachment?.id) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(firstAttachment?.id) {
+        if (firstAttachment != null && viewModel != null) {
+            val bytes = viewModel.readAttachment(firstAttachment)
+            thumbnailBitmap = if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size) else null
+        } else {
+            thumbnailBitmap = null
+        }
+    }
+
+    // Flat, no-border row matching design with leading accent strip
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(PimsDimensions.paddingMedium)
+    ) {
+        // Leading 4dp colored accent strip
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(32.dp)
+                .background(
+                    MaterialTheme.colorScheme.primary,
+                    RoundedCornerShape(2.dp)
+                )
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        // Optional thumbnail
+        thumbnailBitmap?.let { bmp ->
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(PimsDimensions.skeletonCornerRadius))
+            )
+        }
+
+        // Text content
+        Column(modifier = Modifier.weight(1f)) {
+            // Title
+            Text(
+                text = note.title.ifBlank { "Untitled" },
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            // Time + snippet on same line (e.g. "2h ago  Passport, chargers...")
+            val subtitleParts = buildList {
+                add(timeStr)
+                if (note.content.isNotBlank()) {
+                    add(note.content.replace('\n', ' ').take(60))
+                }
+            }
+            Text(
+                text = subtitleParts.joinToString("  "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        // Trash delete icon (matching design)
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "Delete note",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Legacy grid card — retained for backward compatibility / internal test references.
+ * Prefer NoteListRow in new code.
+ */
 @Composable
 fun NoteGridCard(
     note: PlainNote,
@@ -228,7 +509,7 @@ fun NoteGridCard(
     }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(PimsDimensions.cardCornerRadius),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -250,7 +531,7 @@ fun NoteGridCard(
                 )
             }
             Column(
-                modifier = Modifier.padding(14.dp)
+                modifier = Modifier.padding(PimsDimensions.paddingMedium)
             ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -280,7 +561,7 @@ fun NoteGridCard(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = note.content,
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis
@@ -293,7 +574,7 @@ fun NoteGridCard(
             ) {
                 Text(
                     text = dateStr,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
                 if (note.attachments.isNotEmpty()) {
@@ -307,7 +588,7 @@ fun NoteGridCard(
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
                             text = "${note.attachments.size}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -390,23 +671,45 @@ fun PlainNoteEditorScreen(
 
     Scaffold(
         topBar = {
-            // Clean minimal title header: no heavy back bar or 'New note' subtitle
-            Box(
+            // Clean editor header: X close on left, title preview center, save indicator right
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                    .padding(horizontal = PimsDimensions.paddingMedium, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // X close button (matches design screenshot)
+                IconButton(
+                    onClick = { if (!isBusy) onBack() },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close editor",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                // Title preview
                 Text(
-                    text = title.ifBlank { "Untitled" },
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp
-                    ),
+                    text = title.ifBlank { "New Note" },
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = PimsDimensions.paddingSmall)
                 )
+                // Right: busy indicator
+                if (isBusy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         },
         bottomBar = {
@@ -423,112 +726,119 @@ fun PlainNoteEditorScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Minimal Tool Icons with WarmTooltip (Zero prominent background color)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // Minimal Tool Icons with WarmTooltip wrapped in grouped Surface
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(2.dp)
                     ) {
-                        com.pims.vault.presentation.ui.components.ux.WarmTooltip(
-                            text = "Undo",
-                            visible = activeTooltip == "undo",
-                            onDismissRequest = { activeTooltip = null }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            IconButton(
-                                onClick = {
-                                    activeTooltip = "undo"
-                                    if (undoStack.isNotEmpty()) {
-                                        haptics.light()
-                                        redoStack.add(contentValue)
-                                        contentValue = undoStack.removeAt(undoStack.lastIndex)
-                                    }
-                                },
-                                enabled = undoStack.isNotEmpty(),
-                                modifier = Modifier.size(36.dp)
+                            com.pims.vault.presentation.ui.components.ux.WarmTooltip(
+                                text = "Undo",
+                                visible = activeTooltip == "undo",
+                                onDismissRequest = { activeTooltip = null }
                             ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Undo,
-                                    contentDescription = "Undo",
-                                    tint = if (undoStack.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                IconButton(
+                                    onClick = {
+                                        activeTooltip = "undo"
+                                        if (undoStack.isNotEmpty()) {
+                                            haptics.light()
+                                            redoStack.add(contentValue)
+                                            contentValue = undoStack.removeAt(undoStack.lastIndex)
+                                        }
+                                    },
+                                    enabled = undoStack.isNotEmpty(),
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Undo,
+                                        contentDescription = "Undo",
+                                        tint = if (undoStack.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
-                        }
 
-                        com.pims.vault.presentation.ui.components.ux.WarmTooltip(
-                            text = "Redo",
-                            visible = activeTooltip == "redo",
-                            onDismissRequest = { activeTooltip = null }
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    activeTooltip = "redo"
-                                    if (redoStack.isNotEmpty()) {
+                            com.pims.vault.presentation.ui.components.ux.WarmTooltip(
+                                text = "Redo",
+                                visible = activeTooltip == "redo",
+                                onDismissRequest = { activeTooltip = null }
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        activeTooltip = "redo"
+                                        if (redoStack.isNotEmpty()) {
+                                            haptics.light()
+                                            undoStack.add(contentValue)
+                                            contentValue = redoStack.removeAt(redoStack.lastIndex)
+                                        }
+                                    },
+                                    enabled = redoStack.isNotEmpty(),
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Redo,
+                                        contentDescription = "Redo",
+                                        tint = if (redoStack.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            com.pims.vault.presentation.ui.components.ux.WarmTooltip(
+                                text = if (format == NoteFormat.BULLETS) "List active" else "Bullet list",
+                                visible = activeTooltip == "bullet",
+                                onDismissRequest = { activeTooltip = null }
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        activeTooltip = "bullet"
                                         haptics.light()
                                         undoStack.add(contentValue)
-                                        contentValue = redoStack.removeAt(redoStack.lastIndex)
-                                    }
-                                },
-                                enabled = redoStack.isNotEmpty(),
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Redo,
-                                    contentDescription = "Redo",
-                                    tint = if (redoStack.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                        format = if (format == NoteFormat.BULLETS) NoteFormat.PLAIN else NoteFormat.BULLETS
+                                        contentValue = NoteEditorLogic.toggleBulletAtCurrentLine(contentValue)
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FormatListBulleted,
+                                        contentDescription = "Bullet List",
+                                        tint = if (format == NoteFormat.BULLETS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
-                        }
 
-                        com.pims.vault.presentation.ui.components.ux.WarmTooltip(
-                            text = if (format == NoteFormat.BULLETS) "List active" else "Bullet list",
-                            visible = activeTooltip == "bullet",
-                            onDismissRequest = { activeTooltip = null }
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    activeTooltip = "bullet"
-                                    haptics.light()
-                                    undoStack.add(contentValue)
-                                    format = if (format == NoteFormat.BULLETS) NoteFormat.PLAIN else NoteFormat.BULLETS
-                                    contentValue = NoteEditorLogic.toggleBulletAtCurrentLine(contentValue)
-                                },
-                                modifier = Modifier.size(36.dp)
+                            com.pims.vault.presentation.ui.components.ux.WarmTooltip(
+                                text = if (pendingAttachmentBytes != null) "Photo attached" else "Attach photo",
+                                visible = activeTooltip == "photo",
+                                onDismissRequest = { activeTooltip = null }
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.FormatListBulleted,
-                                    contentDescription = "Bullet List",
-                                    tint = if (format == NoteFormat.BULLETS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
-                        com.pims.vault.presentation.ui.components.ux.WarmTooltip(
-                            text = if (pendingAttachmentBytes != null) "Photo attached" else "Attach photo",
-                            visible = activeTooltip == "photo",
-                            onDismissRequest = { activeTooltip = null }
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    activeTooltip = "photo"
-                                    haptics.light()
-                                    try {
-                                        visualMediaPicker.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    } catch (_: Exception) {
-                                        contentPicker.launch("image/*")
-                                    }
-                                },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AddPhotoAlternate,
-                                    contentDescription = "Add Photo",
-                                    tint = if (pendingAttachmentBytes != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                IconButton(
+                                    onClick = {
+                                        activeTooltip = "photo"
+                                        haptics.light()
+                                        try {
+                                            visualMediaPicker.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        } catch (_: Exception) {
+                                            contentPicker.launch("image/*")
+                                        }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AddPhotoAlternate,
+                                        contentDescription = "Add Photo",
+                                        tint = if (pendingAttachmentBytes != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -628,14 +938,13 @@ fun PlainNoteEditorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 24.dp, vertical = 6.dp)
+                .padding(horizontal = PimsDimensions.paddingLarge, vertical = PimsDimensions.paddingSmall)
         ) {
             // Big Bold Title TextField
             BasicTextField(
                 value = title,
                 onValueChange = { title = it },
-                textStyle = TextStyle(
-                    fontSize = 30.sp,
+                textStyle = MaterialTheme.typography.headlineMedium.copy(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 ),
@@ -645,8 +954,7 @@ fun PlainNoteEditorScreen(
                     if (title.isEmpty()) {
                         Text(
                             text = "Untitled",
-                            style = TextStyle(
-                                fontSize = 30.sp,
+                            style = MaterialTheme.typography.headlineMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.30f)
                             )
@@ -715,7 +1023,7 @@ fun PlainNoteEditorScreen(
                 Spacer(modifier = Modifier.height(14.dp))
             }
 
-            // Body TextField (replicates screen_new_note.png)
+            // Body TextField
             BasicTextField(
                 value = contentValue,
                 onValueChange = { newValue ->
@@ -729,9 +1037,8 @@ fun PlainNoteEditorScreen(
                         newValue
                     }
                 },
-                textStyle = TextStyle(
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Normal,
                     color = MaterialTheme.colorScheme.onBackground
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -739,9 +1046,7 @@ fun PlainNoteEditorScreen(
                     if (contentValue.text.isEmpty()) {
                         Text(
                             text = "Write something down",
-                            style = TextStyle(
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge.copy(
                                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f)
                             )
                         )

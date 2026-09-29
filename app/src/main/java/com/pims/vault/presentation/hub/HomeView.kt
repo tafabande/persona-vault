@@ -198,17 +198,18 @@ fun HomeView(
                 )
             }
 
-            // Soft bottom transition of hero into screen background
+            // Seamless bottom fade — taller + more opaque for a cleaner magazine bleed
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(160.dp)
                     .align(Alignment.BottomCenter)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                homeBgColor
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                0.45f to homeBgColor.copy(alpha = 0.85f),
+                                1.0f to homeBgColor
                             )
                         )
                     )
@@ -241,10 +242,11 @@ fun HomeView(
                 }
             )
 
-            // 4. TWO QUICK ACCESS CARDS (Vault & Share)
+            // 4. TWO QUICK ACCESS CARDS (Vault & Share) - with explicit height for visibility
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(72.dp)
                     .padding(bottom = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -371,11 +373,16 @@ private fun HomeHeaderRow(
                 ),
                 label = "SyncAngle"
             )
-            val glassBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+            val glassBg = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.0f to MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    1.0f to MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                )
+            )
             val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
             val dotColor = MaterialTheme.colorScheme.primary
 
-            // Sync Status Button
+            // Sync Status Button with radial gradient background
             Box(
                 modifier = Modifier
                     .size(38.dp)
@@ -413,7 +420,7 @@ private fun HomeHeaderRow(
                 }
             }
 
-            // Notification Bell
+            // Notification Bell with radial gradient background
             Box(
                 modifier = Modifier
                     .size(38.dp)
@@ -480,9 +487,9 @@ private fun IdentityDetailsCard(
             .fillMaxWidth()
             .pimsTactile { onEdit() },
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        shadowElevation = 4.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
     ) {
         Column(
             modifier = Modifier
@@ -490,7 +497,7 @@ private fun IdentityDetailsCard(
                 .padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Row 1: Name and Chevron (opens profile)
+            // Row 1: Accent bar + Name + Chevron
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -501,21 +508,36 @@ private fun IdentityDetailsCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
-                )
-
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Terracotta accent edge bar
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(26.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primary,
+                                RoundedCornerShape(2.dp)
+                            )
+                    )
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1
+                    )
+                }
                 Icon(
                     imageVector = PersonaIcons.ChevronRight,
                     contentDescription = "View Profile",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -822,50 +844,60 @@ private fun HomeQuickAccessCard(
             .pimsTactile { onClick() },
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        shadowElevation = 4.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)),
-                contentAlignment = Alignment.Center
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
+                // Pill-shaped icon container (not circle)
+                Box(
+                    modifier = Modifier
+                        .size(width = 46.dp, height = 40.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
             }
-
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
-                )
-            }
+            // Chevron right
+            Icon(
+                imageVector = PersonaIcons.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

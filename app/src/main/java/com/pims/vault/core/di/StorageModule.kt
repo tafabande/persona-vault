@@ -28,8 +28,8 @@ object StorageModule {
     @Singleton
     fun provideB2StorageUploadService(
         cryptoEngine: CryptoEngine,
-        keySecurityManager: KeySecurityManager
-    ): B2StorageUploadService = B2StorageUploadService(cryptoEngine, keySecurityManager)
+        portableFileKeyManager: com.pims.vault.core.crypto.PortableFileKeyManager
+    ): B2StorageUploadService = B2StorageUploadService(cryptoEngine, portableFileKeyManager)
 
     @Provides
     @Singleton

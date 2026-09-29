@@ -65,7 +65,9 @@ class FirestoreSyncService @Inject constructor(
     private val employmentDao: EmploymentDao,
     private val b2StorageUploadService: B2StorageUploadService,
     private val fileStorage: FileStorageService,
-    private val networkMonitor: NetworkStateMonitor
+    private val networkMonitor: NetworkStateMonitor,
+    private val portableFileKeyManager: com.pims.vault.core.crypto.PortableFileKeyManager,
+    private val keySecurityManager: com.pims.vault.core.crypto.KeySecurityManager
 ) {
     private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
@@ -154,6 +156,177 @@ class FirestoreSyncService @Inject constructor(
             VaultLogger.w("FirestoreSync", "Failed to delete remote contact: ${e.message}")
         }
     }
+
+    /**
+     * Generic remote-delete helper. Every local delete MUST call the matching
+     * helper here, otherwise the next pull resurrects the record (the
+     * "can't delete relationship tabs / notes" bug after restore).
+     */
+    private suspend fun deleteRemoteDoc(collection: String, docId: String) {
+        if (docId.isBlank()) return
+        val uid = getEffectiveUserId(null) ?: return
+        try {
+            firestore.collection("accounts").document(uid)
+                .collection(collection).document(docId)
+                .delete().await()
+            VaultLogger.i("FirestoreSync", "$collection/$docId deleted from Firestore")
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Failed to delete remote $collection/$docId: ${e.message}")
+        }
+    }
+
+    suspend fun deleteRemoteAddress(addressId: String) = withContext(Dispatchers.IO) {
+        deleteRemoteDoc("addresses", addressId)
+    }
+
+    suspend fun deleteRemoteSocialAccount(accountId: String) = withContext(Dispatchers.IO) {
+        deleteRemoteDoc("socialAccounts", accountId)
+    }
+
+    suspend fun deleteRemoteRelationship(relationshipId: String) = withContext(Dispatchers.IO) {
+        deleteRemoteDoc("relationships", relationshipId)
+    }
+
+    suspend fun deleteRemoteRelationshipNote(noteId: String) = withContext(Dispatchers.IO) {
+        deleteRemoteDoc("relationshipNotes", noteId)
+    }
+
+    suspend fun deleteRemotePerson(personId: String) = withContext(Dispatchers.IO) {
+        deleteRemoteDoc("people", personId)
+    }
+
+    suspend fun deleteRemoteEducation(eduId: String) = withContext(Dispatchers.IO) {
+        deleteRemoteDoc("education", eduId)
+    }
+
+    suspend fun deleteRemoteEmployment(workId: String) = withContext(Dispatchers.IO) {
+        deleteRemoteDoc("employment", workId)
+    }
+
+    suspend fun deleteRemoteMedicalRecord(recordId: String) = withContext(Dispatchers.IO) {
+        deleteRemoteDoc("healthRecords", recordId)
+    }
+
+    suspend fun deleteRemoteDocument(documentId: String) = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(null) ?: return@withContext
+        try {
+            // Delete version subcollection first, then the envelope.
+            val versions = firestore.collection("accounts").document(uid)
+                .collection("documents").document(documentId)
+                .collection("versions").get().await()
+            for (v in versions.documents) {
+                // Purge the B2 object so restores don't resurrect the binary.
+                try {
+                    val remotePath = v.getString("b2RemotePath") ?: v.getString("objectKey") ?: ""
+                    if (remotePath.isNotBlank()) b2StorageUploadService.delete(remotePath)
+                } catch (_: Exception) {}
+                try { v.reference.delete().await() } catch (_: Exception) {}
+            }
+            firestore.collection("accounts").document(uid)
+                .collection("documents").document(documentId)
+                .delete().await()
+            VaultLogger.i("FirestoreSync", "Document $documentId deleted from Firestore (+B2)")
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Failed to delete remote document: ${e.message}")
+        }
+    }
+
+    suspend fun deleteRemoteNoteAttachment(noteId: String, attachmentId: String) =
+        withContext(Dispatchers.IO) {
+            val uid = getEffectiveUserId(null) ?: return@withContext
+            try {
+                val ref = firestore.collection("accounts").document(uid)
+                    .collection("notes").document(noteId)
+                    .collection("attachments").document(attachmentId)
+                try {
+                    val snap = ref.get().await()
+                    val remotePath = snap.getString("b2RemotePath")
+                        ?: snap.getString("objectKey") ?: ""
+                    if (remotePath.isNotBlank()) b2StorageUploadService.delete(remotePath)
+                } catch (_: Exception) {}
+                ref.delete().await()
+                VaultLogger.i("FirestoreSync", "Attachment $attachmentId deleted from Firestore (+B2)")
+            } catch (e: Exception) {
+                VaultLogger.w("FirestoreSync", "Failed to delete remote attachment: ${e.message}")
+            }
+        }
+
+    // ------------------------------------------------------------------
+    // Profile photos (avatar / contact / ID) — Firestore metadata + B2 blob.
+    // ------------------------------------------------------------------
+
+    suspend fun syncProfilePhoto(
+        userId: String?,
+        meta: ProfilePhotoSyncService.PhotoMetadata
+    ): Boolean = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
+        return@withContext try {
+            val data = hashMapOf(
+                "photoId" to meta.photoId,
+                "kind" to meta.kind,
+                "ownerKey" to meta.ownerKey,
+                "b2RemotePath" to meta.b2RemotePath,
+                "b2DownloadUrl" to meta.b2DownloadUrl,
+                "b2IvHex" to meta.b2IvHex,
+                "sha256Hash" to meta.sha256Hex,
+                "mimeType" to meta.mimeType,
+                "fileSizeBytes" to meta.sizeBytes,
+                "updatedAt" to meta.updatedAt
+            )
+            firestore.collection("accounts").document(uid)
+                .collection("photos").document(meta.photoId)
+                .set(data, SetOptions.merge()).await()
+            true
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Photo metadata sync failed: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun deleteRemoteProfilePhoto(photoId: String) = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(null) ?: return@withContext
+        try {
+            val ref = firestore.collection("accounts").document(uid)
+                .collection("photos").document(photoId)
+            try {
+                val snap = ref.get().await()
+                val remotePath = snap.getString("b2RemotePath") ?: ""
+                if (remotePath.isNotBlank()) b2StorageUploadService.delete(remotePath)
+            } catch (_: Exception) {}
+            ref.delete().await()
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Failed to delete remote photo: ${e.message}")
+        }
+    }
+
+    suspend fun listRemotePhotos(userId: String?): List<ProfilePhotoSyncService.PhotoMetadata> =
+        withContext(Dispatchers.IO) {
+            val uid = getEffectiveUserId(userId) ?: return@withContext emptyList()
+            try {
+                val snap = firestore.collection("accounts").document(uid)
+                    .collection("photos").get().await()
+                snap.documents.mapNotNull { d ->
+                    try {
+                        ProfilePhotoSyncService.PhotoMetadata(
+                            photoId = d.id,
+                            kind = d.getString("kind") ?: return@mapNotNull null,
+                            ownerKey = d.getString("ownerKey") ?: "",
+                            b2RemotePath = d.getString("b2RemotePath") ?: "",
+                            b2DownloadUrl = d.getString("b2DownloadUrl") ?: "",
+                            b2IvHex = d.getString("b2IvHex") ?: "",
+                            sha256Hex = d.getString("sha256Hash") ?: "",
+                            mimeType = d.getString("mimeType") ?: "image/jpeg",
+                            sizeBytes = d.getLong("fileSizeBytes") ?: 0L,
+                            updatedAt = d.getLong("updatedAt") ?: 0L
+                        )
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
 
     suspend fun syncAddress(userId: String?, address: AddressEntity) = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext
@@ -338,11 +511,40 @@ class FirestoreSyncService @Inject constructor(
         try {
             var b2DownloadUrl = ""
             var b2RemotePath = ""
+            var b2IvHex = ""
             var binaryMissing = false
 
             // Storage architecture: Firestore = structured data + metadata.
             // Backblaze B2 = authoritative object store for user-uploaded binaries.
             // Read file bytes from local encrypted storage and back up to Backblaze B2 only.
+            // Skip entirely when B2 is not configured — otherwise every record
+            // would be flagged binaryMissing=true and pulled devices would
+            // skip the download forever (the "photos in notes ain't
+            // downloading" bug after reinstall).
+            if (!b2StorageUploadService.isConfigured()) {
+                VaultLogger.w("FirestoreSync", "B2 not configured — attachment metadata synced without binary upload")
+                val metaOnly = hashMapOf(
+                    "id" to attachment.id,
+                    "noteId" to noteId,
+                    "storagePath" to attachment.storagePath,
+                    "storageProvider" to "b2",
+                    "objectKey" to "",
+                    "b2RemotePath" to "",
+                    "b2DownloadUrl" to "",
+                    "b2IvHex" to "",
+                    "binaryMissing" to false,
+                    "mimeType" to attachment.mimeType,
+                    "fileSizeBytes" to attachment.fileSizeBytes,
+                    "sha256Hash" to attachment.sha256Hash,
+                    "caption" to attachment.caption,
+                    "createdAt" to attachment.createdAt
+                )
+                firestore.collection("accounts").document(uid)
+                    .collection("notes").document(noteId)
+                    .collection("attachments").document(attachment.id)
+                    .set(metaOnly, SetOptions.merge()).await()
+                return@withContext
+            }
             try {
                 val baos = ByteArrayOutputStream()
                 fileStorage.readDecryptedFile(
@@ -359,8 +561,18 @@ class FirestoreSyncService @Inject constructor(
                         mimeType = attachment.mimeType,
                         plaintextBytes = bytes
                     )
-                    b2DownloadUrl = b2Result.downloadUrl
-                    b2RemotePath = b2Result.remotePath
+                    // Only accept the upload when B2 actually persisted the
+                    // object (non-blank remotePath). A fallback URL with an
+                    // empty remotePath means "not uploaded" — flag it so the
+                    // puller retries instead of writing a dead record.
+                    if (b2Result.remotePath.isNotBlank() && b2Result.downloadUrl.isNotBlank()) {
+                        b2DownloadUrl = b2Result.downloadUrl
+                        b2RemotePath = b2Result.remotePath
+                        b2IvHex = b2Result.ivHex
+                    } else {
+                        VaultLogger.w("FirestoreSync", "Attachment upload not persisted — will retry later")
+                        binaryMissing = true
+                    }
                 } else {
                     // Local binary exists but is empty — flag so remote devices don't create dead records.
                     binaryMissing = true
@@ -379,6 +591,7 @@ class FirestoreSyncService @Inject constructor(
                 "objectKey" to b2RemotePath,
                 "b2RemotePath" to b2RemotePath,
                 "b2DownloadUrl" to b2DownloadUrl,
+                "b2IvHex" to b2IvHex,
                 "binaryMissing" to binaryMissing,
                 "mimeType" to attachment.mimeType,
                 "fileSizeBytes" to attachment.fileSizeBytes,
@@ -434,8 +647,34 @@ class FirestoreSyncService @Inject constructor(
         try {
             var b2DownloadUrl = ""
             var b2RemotePath = ""
+            var b2IvHex = ""
             var binaryMissing = false
 
+            if (!b2StorageUploadService.isConfigured()) {
+                VaultLogger.w("FirestoreSync", "B2 not configured — document metadata synced without binary upload")
+                val metaOnly = hashMapOf(
+                    "versionId" to version.id,
+                    "documentId" to documentId,
+                    "versionNumber" to version.versionNumber,
+                    "fileStoragePath" to version.fileStoragePath,
+                    "storageProvider" to "b2",
+                    "objectKey" to "",
+                    "b2RemotePath" to "",
+                    "b2DownloadUrl" to "",
+                    "b2IvHex" to "",
+                    "binaryMissing" to false,
+                    "fileSizeBytes" to version.fileSizeBytes,
+                    "mimeType" to version.mimeType,
+                    "sha256Hash" to version.sha256Hash,
+                    "notes" to (version.notes ?: ""),
+                    "createdAt" to version.createdAt
+                )
+                firestore.collection("accounts").document(uid)
+                    .collection("documents").document(documentId)
+                    .collection("versions").document(version.id)
+                    .set(metaOnly, SetOptions.merge()).await()
+                return@withContext
+            }
             // Read file bytes from local encrypted storage and back up to Backblaze B2
             try {
                 val baos = ByteArrayOutputStream()
@@ -453,8 +692,14 @@ class FirestoreSyncService @Inject constructor(
                         mimeType = version.mimeType,
                         plaintextBytes = bytes
                     )
-                    b2DownloadUrl = b2Result.downloadUrl
-                    b2RemotePath = b2Result.remotePath
+                    if (b2Result.remotePath.isNotBlank() && b2Result.downloadUrl.isNotBlank()) {
+                        b2DownloadUrl = b2Result.downloadUrl
+                        b2RemotePath = b2Result.remotePath
+                        b2IvHex = b2Result.ivHex
+                    } else {
+                        VaultLogger.w("FirestoreSync", "Document upload not persisted — will retry later")
+                        binaryMissing = true
+                    }
                 } else {
                     binaryMissing = true
                 }
@@ -472,6 +717,7 @@ class FirestoreSyncService @Inject constructor(
                 "objectKey" to b2RemotePath,
                 "b2RemotePath" to b2RemotePath,
                 "b2DownloadUrl" to b2DownloadUrl,
+                "b2IvHex" to b2IvHex,
                 "binaryMissing" to binaryMissing,
                 "fileSizeBytes" to version.fileSizeBytes,
                 "mimeType" to version.mimeType,
@@ -715,26 +961,39 @@ class FirestoreSyncService @Inject constructor(
         noteId: String,
         attachmentId: String,
         downloadUrl: String,
-        mimeType: String
+        mimeType: String,
+        ivHex: String,
+        expectedPlaintextSha256: String
     ): StoredFileMetadata? = withContext(Dispatchers.IO) {
         try {
-            val url = java.net.URL(downloadUrl)
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 20000
-            conn.requestMethod = "GET"
-            if (conn.responseCode in 200..299) {
-                conn.inputStream.use { stream ->
-                    fileStorage.storePreEncryptedFile(
-                        documentId = "note_${noteId}_${attachmentId}",
-                        versionNumber = 1,
-                        mimeType = mimeType,
-                        inputStream = stream
-                    )
-                }
+            val ciphertext = b2StorageUploadService.downloadEncryptedBytes(downloadUrl)
+                ?: return@withContext null
+            // B2 stores the single-shot AES-GCM envelope; re-encrypt into the
+            // local PCSF chunked format so readDecryptedFile can open it.
+            // Try portable key first, legacy device key second (pre-migration).
+            val impl = fileStorage as? com.pims.vault.data.local.storage.EncryptedFileStorageImpl
+            if (impl != null && ivHex.isNotBlank() && expectedPlaintextSha256.isNotBlank()) {
+                impl.storeRestoredCiphertext(
+                    documentId = "note_${noteId}_${attachmentId}",
+                    versionNumber = 1,
+                    mimeType = mimeType,
+                    ciphertextBytes = ciphertext,
+                    ivHex = ivHex,
+                    expectedPlaintextSha256Hex = expectedPlaintextSha256,
+                    alternateKeyProvider = {
+                        keySecurityManager.deriveDomainSubkey(
+                            com.pims.vault.core.crypto.HkdfKeyDerivation.CONTEXT_FILES
+                        ).copyBytes()
+                    }
+                )
             } else {
-                VaultLogger.w("FirestoreSync", "Attachment download HTTP ${conn.responseCode} for $downloadUrl")
-                null
+                // Legacy fallback: raw passthrough (readable only if already PCSF).
+                fileStorage.storePreEncryptedFile(
+                    documentId = "note_${noteId}_${attachmentId}",
+                    versionNumber = 1,
+                    mimeType = mimeType,
+                    inputStream = java.io.ByteArrayInputStream(ciphertext)
+                )
             }
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Failed to download remote attachment: ${e.message}")
@@ -747,32 +1006,119 @@ class FirestoreSyncService @Inject constructor(
         versionId: String,
         versionNum: Int,
         downloadUrl: String,
-        mimeType: String
+        mimeType: String,
+        ivHex: String,
+        expectedPlaintextSha256: String
     ): StoredFileMetadata? = withContext(Dispatchers.IO) {
         try {
-            val url = java.net.URL(downloadUrl)
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 10000
-            conn.readTimeout = 20000
-            conn.requestMethod = "GET"
-            if (conn.responseCode in 200..299) {
-                conn.inputStream.use { stream ->
-                    fileStorage.storePreEncryptedFile(
-                        documentId = "doc_${docId}_${versionId}",
-                        versionNumber = versionNum,
-                        mimeType = mimeType,
-                        inputStream = stream
-                    )
-                }
+            val ciphertext = b2StorageUploadService.downloadEncryptedBytes(downloadUrl)
+                ?: return@withContext null
+            val impl = fileStorage as? com.pims.vault.data.local.storage.EncryptedFileStorageImpl
+            if (impl != null && ivHex.isNotBlank() && expectedPlaintextSha256.isNotBlank()) {
+                impl.storeRestoredCiphertext(
+                    documentId = "doc_${docId}_${versionId}",
+                    versionNumber = versionNum,
+                    mimeType = mimeType,
+                    ciphertextBytes = ciphertext,
+                    ivHex = ivHex,
+                    expectedPlaintextSha256Hex = expectedPlaintextSha256,
+                    alternateKeyProvider = {
+                        keySecurityManager.deriveDomainSubkey(
+                            com.pims.vault.core.crypto.HkdfKeyDerivation.CONTEXT_FILES
+                        ).copyBytes()
+                    }
+                )
             } else {
-                VaultLogger.w("FirestoreSync", "Doc version download HTTP ${conn.responseCode} for $downloadUrl")
-                null
+                fileStorage.storePreEncryptedFile(
+                    documentId = "doc_${docId}_${versionId}",
+                    versionNumber = versionNum,
+                    mimeType = mimeType,
+                    inputStream = java.io.ByteArrayInputStream(ciphertext)
+                )
             }
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Failed to download remote document version: ${e.message}")
             null
         }
     }
+
+    // ------------------------------------------------------------------
+    // File-key recovery escrow (vaultEscrow collection — ciphertext only).
+    // ------------------------------------------------------------------
+
+    /**
+     * Uploads the PFK escrow (wrapped key + KDF params). Never uploads the
+     * passphrase or the raw portable key.
+     */
+    suspend fun publishRecoveryEscrow(
+        userId: String?,
+        escrow: com.pims.vault.core.crypto.FileRecoveryCrypto.RecoveryEscrow
+    ): Boolean = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
+        return@withContext try {
+            val data = hashMapOf(
+                "keyId" to escrow.keyId,
+                "version" to escrow.version,
+                "kdfAlgorithm" to escrow.kdfAlgorithm,
+                "iterations" to escrow.iterations,
+                "saltBase64" to escrow.saltBase64,
+                "wrappedKeyBase64" to escrow.wrappedKeyBase64,
+                "wrapIvBase64" to escrow.wrapIvBase64,
+                "createdAt" to escrow.createdAt,
+                "isCiphertext" to true
+            )
+            firestore.collection("accounts").document(uid)
+                .collection("vaultEscrow").document(escrow.keyId)
+                .set(data).await()
+            // Mark latest pointer (merge) so new devices find it in one read.
+            firestore.collection("accounts").document(uid)
+                .collection("vaultEscrow").document("latest")
+                .set(mapOf("keyId" to escrow.keyId, "updatedAt" to System.currentTimeMillis()), SetOptions.merge()).await()
+            VaultLogger.i("FirestoreSync", "Recovery escrow published (${escrow.keyId})")
+            true
+        } catch (e: Exception) {
+            VaultLogger.e("FirestoreSync", "Failed to publish recovery escrow", e)
+            false
+        }
+    }
+
+    /** Fetches the latest escrow record, or null when recovery was never set up. */
+    suspend fun fetchRecoveryEscrow(userId: String?): com.pims.vault.core.crypto.FileRecoveryCrypto.RecoveryEscrow? =
+        withContext(Dispatchers.IO) {
+            val uid = getEffectiveUserId(userId) ?: return@withContext null
+            try {
+                val escrowCol = firestore.collection("accounts").document(uid).collection("vaultEscrow")
+                val latest = try {
+                    escrowCol.document("latest").get().await()
+                } catch (_: Exception) {
+                    null
+                }
+                val keyId = latest?.getString("keyId")
+                val targetId = keyId ?: run {
+                    val all = escrowCol.get().await()
+                    all.documents.firstOrNull { it.id != "latest" }?.id
+                } ?: return@withContext null
+                val snap = escrowCol.document(targetId).get().await()
+                if (!snap.exists()) return@withContext null
+                com.pims.vault.core.crypto.FileRecoveryCrypto.RecoveryEscrow(
+                    keyId = snap.getString("keyId") ?: snap.id,
+                    version = (snap.getLong("version") ?: 1L).toInt(),
+                    kdfAlgorithm = snap.getString("kdfAlgorithm") ?: com.pims.vault.core.crypto.FileRecoveryCrypto.KDF_ALGORITHM,
+                    iterations = (snap.getLong("iterations") ?: com.pims.vault.core.crypto.FileRecoveryCrypto.KDF_ITERATIONS.toLong()).toInt(),
+                    saltBase64 = snap.getString("saltBase64") ?: return@withContext null,
+                    wrappedKeyBase64 = snap.getString("wrappedKeyBase64") ?: return@withContext null,
+                    wrapIvBase64 = snap.getString("wrapIvBase64") ?: return@withContext null,
+                    createdAt = snap.getLong("createdAt") ?: 0L,
+                    isCiphertext = snap.getBoolean("isCiphertext") ?: true
+                )
+            } catch (e: Exception) {
+                VaultLogger.w("FirestoreSync", "No recovery escrow found: ${e.message}")
+                null
+            }
+        }
+
+    suspend fun hasRecoveryEscrow(userId: String?): Boolean =
+        fetchRecoveryEscrow(userId) != null
 
     /**
      * Executes remote-to-local synchronization:
@@ -953,9 +1299,20 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling social accounts: ${e.message}", e)
             }
 
-            // 5. Relationships
+            // 5. Relationships — reconcile deletions: drop local rows that no
+            // longer exist remotely so deleted tabs don't resurrect on pull.
             try {
                 val relSnap = accountDocRef.collection("relationships").get().await()
+                val remoteRelIds = relSnap.documents.map { it.id }.toSet()
+                try {
+                    val localRels = relationshipDao.getAllRelationships()
+                    for (local in localRels) {
+                        if (local.id !in remoteRelIds) {
+                            relationshipDao.deleteById(local.id)
+                            try { relationshipNoteDao.deleteForRelationship(local.id) } catch (_: Exception) {}
+                        }
+                    }
+                } catch (_: Exception) {}
                 for (doc in relSnap.documents) {
                     val rawSourceId = doc.getString("sourcePersonId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val rawTargetId = doc.getString("targetPersonId") ?: ""
@@ -980,9 +1337,18 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling relationships: ${e.message}", e)
             }
 
-            // 6. Relationship Notes
+            // 6. Relationship Notes — reconcile deletions the same way.
             try {
                 val relNotesSnap = accountDocRef.collection("relationshipNotes").get().await()
+                val remoteNoteIds = relNotesSnap.documents.map { it.id }.toSet()
+                try {
+                    val localNotes = relationshipNoteDao.getAllNotes()
+                    for (local in localNotes) {
+                        if (local.id !in remoteNoteIds) {
+                            relationshipNoteDao.deleteById(local.id)
+                        }
+                    }
+                } catch (_: Exception) {}
                 for (doc in relNotesSnap.documents) {
                     val relId = doc.getString("relationshipId") ?: ""
                     if (relId.isNotBlank()) {
@@ -1081,20 +1447,28 @@ class FirestoreSyncService @Inject constructor(
                             val caption = attDoc.getString("caption")
                             val attCreatedAt = attDoc.getLong("createdAt") ?: System.currentTimeMillis()
                             val b2DownloadUrl = attDoc.getString("b2DownloadUrl")
+                            val b2IvHex = attDoc.getString("b2IvHex") ?: ""
                             val binaryMissing = attDoc.getBoolean("binaryMissing") ?: false
 
                             var fileExistsLocally = false
-                            if (storagePath.isNotBlank()) {
-                                try {
-                                    val f = java.io.File(storagePath)
-                                    if (f.exists() && f.length() > 0) fileExistsLocally = true
-                                } catch (_: Exception) {}
+                            if (storagePath.isNotBlank() && sha256Hash.isNotBlank()) {
+                                // storagePath is RELATIVE (vault_documents/...).
+                                // verifyIntegrity resolves it against filesDir AND
+                                // proves the bytes actually decrypt — a plain
+                                // File.exists() check would pass for corrupt files.
+                                fileExistsLocally = try {
+                                    fileStorage.verifyIntegrity(storagePath, "", sha256Hash)
+                                } catch (_: Exception) {
+                                    false
+                                }
                             }
 
                             // Skip download when the uploader flagged the binary as missing —
                             // avoids creating dead local records from empty remote metadata.
                             if (!binaryMissing && !fileExistsLocally && !b2DownloadUrl.isNullOrBlank()) {
-                                val stored = downloadAndStoreAttachment(noteId, attId, b2DownloadUrl, mimeType)
+                                val stored = downloadAndStoreAttachment(
+                                    noteId, attId, b2DownloadUrl, mimeType, b2IvHex, sha256Hash
+                                )
                                 if (stored != null) {
                                     storagePath = stored.relativePath
                                     fileSizeBytes = stored.sizeBytes
@@ -1168,26 +1542,31 @@ class FirestoreSyncService @Inject constructor(
                             var fileSizeBytes = vDoc.getLong("fileSizeBytes") ?: 0L
                             val mimeType = vDoc.getString("mimeType") ?: "application/pdf"
                             var sha256Hash = vDoc.getString("sha256Hash") ?: ""
-                            val encryptionIv = vDoc.getString("encryptionIv") ?: ""
+                            var encryptionIv = vDoc.getString("encryptionIv") ?: ""
                             val notes = vDoc.getString("notes")
                             val vCreatedAt = vDoc.getLong("createdAt") ?: System.currentTimeMillis()
                             val b2DownloadUrl = vDoc.getString("b2DownloadUrl")
+                            val b2IvHex = vDoc.getString("b2IvHex") ?: ""
                             val binaryMissing = vDoc.getBoolean("binaryMissing") ?: false
 
                             var fileExistsLocally = false
-                            if (storagePath.isNotBlank()) {
-                                try {
-                                    val f = java.io.File(storagePath)
-                                    if (f.exists() && f.length() > 0) fileExistsLocally = true
-                                } catch (_: Exception) {}
+                            if (storagePath.isNotBlank() && sha256Hash.isNotBlank()) {
+                                fileExistsLocally = try {
+                                    fileStorage.verifyIntegrity(storagePath, encryptionIv, sha256Hash)
+                                } catch (_: Exception) {
+                                    false
+                                }
                             }
 
                             if (!binaryMissing && !fileExistsLocally && !b2DownloadUrl.isNullOrBlank()) {
-                                val stored = downloadAndStoreDocumentVersion(docId, vId, vNum, b2DownloadUrl, mimeType)
+                                val stored = downloadAndStoreDocumentVersion(
+                                    docId, vId, vNum, b2DownloadUrl, mimeType, b2IvHex, sha256Hash
+                                )
                                 if (stored != null) {
                                     storagePath = stored.relativePath
                                     fileSizeBytes = stored.sizeBytes
                                     sha256Hash = stored.sha256Hex
+                                    encryptionIv = stored.encryptionIvHex
                                     fileExistsLocally = true
                                 }
                             }
@@ -1322,12 +1701,15 @@ class FirestoreSyncService @Inject constructor(
 
     /**
      * Executes a comprehensive bidirectional sync:
-     * 1. Pulls down latest remote state from Cloud Firestore into local Room tables.
-     * 2. Pushes up local items and media back to Cloud Firestore & Backblaze B2.
+     * PULL first (remote wins into empty local DB after reinstall), THEN push.
+     * The old push-first order re-uploaded the fresh empty DB state and
+     * clobbered remote rows (or resurrected just-deleted rows) before the
+     * pull ever ran — the root cause of "after restore I can't delete
+     * relationship tabs / notes" and missing avatars/documents.
      */
     suspend fun syncBidirectional(userId: String?): SyncResult = withContext(Dispatchers.IO) {
-        val pushResult = syncAllData(userId)
         val pullResult = pullRemoteChanges(userId)
+        val pushResult = syncAllData(userId)
         val totalCount = pullResult.processedCount + pushResult.processedCount
         val overallSuccess = pullResult.success || pushResult.success
         val msg = "Bidirectional sync: ${pullResult.processedCount} pulled, ${pushResult.processedCount} pushed"

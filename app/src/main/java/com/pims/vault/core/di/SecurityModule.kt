@@ -52,15 +52,35 @@ object SecurityModule {
 
     @Provides
     @Singleton
+    fun providePortableFileKeyManager(
+        @ApplicationContext context: Context,
+        keySecurityManager: KeySecurityManager,
+        cryptoEngine: CryptoEngine
+    ): com.pims.vault.core.crypto.PortableFileKeyManager {
+        return com.pims.vault.core.crypto.PortableFileKeyManager(context, keySecurityManager, cryptoEngine)
+    }
+
+    @Provides
+    @Singleton
     fun provideFileStorageService(
         @ApplicationContext context: Context,
         cryptoEngine: CryptoEngine,
+        portableFileKeyManager: com.pims.vault.core.crypto.PortableFileKeyManager,
         sessionManager: BiometricSessionManager
     ): FileStorageService {
         return EncryptedFileStorageImpl(
             context = context,
             cryptoEngine = cryptoEngine,
-            keyProvider = { sessionManager.getFileStorageKey() }
+            // Portable file key (cross-device) with Keystore-wrapped local
+            // protection. Falls back to the legacy device-bound key only when
+            // no portable key exists yet (pre-migration installs).
+            keyProvider = {
+                try {
+                    portableFileKeyManager.copyKeyBytes()
+                } catch (_: Exception) {
+                    sessionManager.getFileStorageKey()
+                }
+            }
         )
     }
 

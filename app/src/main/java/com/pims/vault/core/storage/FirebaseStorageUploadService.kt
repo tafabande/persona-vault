@@ -4,8 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageMetadata
 import com.pims.vault.core.crypto.CryptoEngine
-import com.pims.vault.core.crypto.HkdfKeyDerivation
-import com.pims.vault.core.crypto.KeySecurityManager
+import com.pims.vault.core.crypto.PortableFileKeyManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -17,7 +16,7 @@ import javax.inject.Singleton
 @Singleton
 class FirebaseStorageUploadService @Inject constructor(
     private val cryptoEngine: CryptoEngine,
-    private val keySecurityManager: KeySecurityManager,
+    private val portableFileKeyManager: PortableFileKeyManager,
     private val storage: FirebaseStorage,
     private val auth: FirebaseAuth
 ) : StorageUploadService {
@@ -50,10 +49,47 @@ class FirebaseStorageUploadService @Inject constructor(
         uploadEncrypted(remotePath, plaintextBytes, mimeType)
     }
 
+    override suspend fun uploadProfilePhoto(
+        ownerUid: String,
+        photoKind: String,
+        photoId: String,
+        mimeType: String,
+        plaintextBytes: ByteArray
+    ): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
+        val safeKind = photoKind.replace(Regex("[^A-Za-z0-9_-]"), "_").takeIf { it.isNotBlank() } ?: "photo"
+        val safeId = photoId.replace(Regex("[^A-Za-z0-9_-]"), "_").takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        val remotePath = "users/$ownerUid/photos/$safeKind/$safeId/${UUID.randomUUID()}"
+        uploadEncrypted(remotePath, plaintextBytes, mimeType)
+    }
+
     override suspend fun delete(remotePath: String): Unit = withContext(Dispatchers.IO) {
+        if (remotePath.isBlank()) return@withContext
         try {
             storage.reference.child(remotePath).delete().await()
         } catch (_: Exception) {}
+    }
+
+    override suspend fun downloadEncryptedBytes(downloadUrl: String): ByteArray? =
+        withContext(Dispatchers.IO) {
+            if (downloadUrl.isBlank()) return@withContext null
+            try {
+                val url = java.net.URL(downloadUrl)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 30000
+                conn.requestMethod = "GET"
+                conn.instanceFollowRedirects = true
+                if (conn.responseCode !in 200..299) return@withContext null
+                conn.inputStream.use { it.readBytes() }.takeIf { it.isNotEmpty() }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    override fun isConfigured(): Boolean = try {
+        auth.currentUser != null
+    } catch (_: Exception) {
+        false
     }
 
     private suspend fun uploadEncrypted(
@@ -61,9 +97,12 @@ class FirebaseStorageUploadService @Inject constructor(
         plaintext: ByteArray,
         mimeType: String
     ): StorageUploadService.UploadResult {
-        val fileKey = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
-        val encryptedPayload = cryptoEngine.encrypt(plaintext, fileKey.bytes)
-        fileKey.close()
+        val pfk = portableFileKeyManager.copyKeyBytes()
+        val encryptedPayload = try {
+            cryptoEngine.encrypt(plaintext, pfk)
+        } finally {
+            java.util.Arrays.fill(pfk, 0)
+        }
 
         val sha256 = MessageDigest.getInstance("SHA-256")
             .digest(encryptedPayload.combinedCiphertextWithTag)

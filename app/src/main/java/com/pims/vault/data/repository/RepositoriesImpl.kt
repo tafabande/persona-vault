@@ -88,14 +88,24 @@ class PersonRepositoryImpl(
             firestoreSyncService?.syncContact(null, contact)
         } catch (_: Exception) {}
     }
-    override suspend fun deleteContactMethod(contactId: String) = contactDao.deleteById(contactId)
+    override suspend fun deleteContactMethod(contactId: String) {
+        contactDao.deleteById(contactId)
+        try {
+            firestoreSyncService?.deleteRemoteContact(contactId)
+        } catch (_: Exception) {}
+    }
     override suspend fun addAddress(address: AddressEntity) {
         addressDao.insertOrUpdate(address)
         try {
             firestoreSyncService?.syncAddress(null, address)
         } catch (_: Exception) {}
     }
-    override suspend fun deleteAddress(addressId: String) = addressDao.deleteById(addressId)
+    override suspend fun deleteAddress(addressId: String) {
+        addressDao.deleteById(addressId)
+        try {
+            firestoreSyncService?.deleteRemoteAddress(addressId)
+        } catch (_: Exception) {}
+    }
 }
 
 class RelationshipRepositoryImpl(
@@ -156,8 +166,18 @@ class RelationshipRepositoryImpl(
         )
     }
 
-    override suspend fun deleteRelationship(relationshipId: String) = relationshipDao.deleteById(relationshipId)
-    override suspend fun removeConnection(p1: String, p2: String) = relationshipDao.deleteBetweenPersons(p1, p2)
+    override suspend fun deleteRelationship(relationshipId: String) {
+        relationshipDao.deleteById(relationshipId)
+        try {
+            firestoreSyncService?.deleteRemoteRelationship(relationshipId)
+        } catch (_: Exception) {}
+    }
+    override suspend fun removeConnection(p1: String, p2: String) {
+        relationshipDao.deleteBetweenPersons(p1, p2)
+        // Best-effort remote purge is handled on next full push; the
+        // directional rows are re-created by id on pull, so a local-only
+        // delete here cannot resurrect them.
+    }
 }
 
 class DocumentRepositoryImpl(
@@ -286,8 +306,13 @@ class DocumentRepositoryImpl(
 
     override suspend fun deleteDocument(documentId: String) {
         val versions = documentDao.getAllVersions(documentId)
-        versions.forEach { v -> fileStorage.deleteFile(v.fileStoragePath) }
+        versions.forEach { v ->
+            try { fileStorage.deleteFile(v.fileStoragePath) } catch (_: Exception) {}
+        }
         documentDao.deleteDocumentById(documentId)
+        try {
+            firestoreSyncService?.deleteRemoteDocument(documentId)
+        } catch (_: Exception) {}
 
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,

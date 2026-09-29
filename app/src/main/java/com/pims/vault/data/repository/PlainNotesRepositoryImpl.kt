@@ -63,6 +63,14 @@ class PlainNotesRepositoryImpl @Inject constructor(
     }
 
     override suspend fun delete(id: String) {
+        // Delete attachment binaries first so restores don't resurrect them.
+        try {
+            val attachments = dao.getAttachments(id)
+            for (att in attachments) {
+                try { fileStorage.deleteFile(att.storagePath) } catch (_: Exception) {}
+                try { firestoreSyncService?.deleteRemoteNoteAttachment(id, att.id) } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
         dao.deleteById(id)
         try {
             firestoreSyncService?.deleteNote(null, id)
@@ -126,6 +134,9 @@ class PlainNotesRepositoryImpl @Inject constructor(
         if (existing != null) {
             try {
                 fileStorage.deleteFile(existing.storagePath)
+            } catch (_: Exception) {}
+            try {
+                firestoreSyncService?.deleteRemoteNoteAttachment(existing.noteId, attachmentId)
             } catch (_: Exception) {}
             dao.deleteAttachment(attachmentId)
             dao.touch(existing.noteId, System.currentTimeMillis())

@@ -199,7 +199,9 @@ class PersonaAvatarManager @Inject constructor(
 
     /**
      * Saves a local custom photo to internal storage.
-     * Works 100% offline, local-first. Never auto-uploads to cloud.
+     * Local-first cache; cloud backup is handled separately by
+     * PhotoBackupCoordinator (encrypted B2 + Firestore metadata) so the
+     * avatar survives reinstall. Returns the absolute local path.
      */
     fun saveCustomPhoto(bitmap: Bitmap): String? {
         return try {
@@ -258,11 +260,31 @@ class PersonaAvatarManager @Inject constructor(
 
     fun loadCustomPhotoBitmap(): Bitmap? {
         val path = _customAvatarPath.value ?: return null
-        return try {
-            BitmapFactory.decodeFile(path)
-        } catch (_: Exception) {
-            null
+        // Same reinstall problem as contact photos: resolve by file name
+        // inside the current avatars dir when the stored absolute path is stale.
+        val candidates = listOfNotNull(
+            path,
+            try {
+                val name = File(path).name.takeIf { it.isNotBlank() }
+                name?.let { File(File(context.filesDir, "avatars"), it).absolutePath }
+            } catch (_: Exception) {
+                null
+            }
+        )
+        for (candidate in candidates) {
+            try {
+                val bmp = BitmapFactory.decodeFile(candidate)
+                if (bmp != null) {
+                    if (candidate != path) {
+                        // Heal the stored path.
+                        val updated = _avatarConfig.value.copy(customAvatarPath = candidate)
+                        saveConfig(updated)
+                    }
+                    return bmp
+                }
+            } catch (_: Exception) {}
         }
+        return null
     }
 
     fun setTemporaryExpression(expression: AvatarExpression) {
@@ -280,7 +302,23 @@ class PersonaAvatarManager @Inject constructor(
 
     fun getPersonPhotoPath(personId: String): String? {
         val path = prefs.getString("person_photo_$personId", null) ?: return null
-        return if (File(path).exists()) path else null
+        // After reinstall/restore the absolute filesDir path changes, so an
+        // old absolute path will never exist again. Fall back to the file
+        // name inside the current contact_photos dir.
+        val direct = File(path)
+        if (direct.exists()) return direct.absolutePath
+        return try {
+            val name = File(path).name
+            if (name.isBlank()) return null
+            val fallback = File(File(context.filesDir, "contact_photos"), name)
+            if (fallback.exists()) {
+                // Re-point the pref so future reads hit directly.
+                prefs.edit().putString("person_photo_$personId", fallback.absolutePath).apply()
+                fallback.absolutePath
+            } else null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun setPersonPhotoPath(personId: String, path: String?) {

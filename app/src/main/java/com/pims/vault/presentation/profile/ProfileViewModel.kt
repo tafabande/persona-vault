@@ -751,6 +751,9 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteContact -> {
                         contactDao.deleteById(event.contactId)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.deleteRemoteContact(event.contactId) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Contact removed") }
                     }
 
@@ -774,6 +777,9 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteAddress -> {
                         addressDao.deleteById(event.addressId)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.deleteRemoteAddress(event.addressId) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Address removed") }
                     }
 
@@ -797,6 +803,9 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteWorkHistory -> {
                         employmentDao.deleteById(event.id)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.deleteRemoteEmployment(event.id) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Work record removed") }
                     }
 
@@ -819,6 +828,9 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteQualification -> {
                         educationDao.deleteById(event.id)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.deleteRemoteEducation(event.id) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Qualification removed") }
                     }
 
@@ -841,6 +853,9 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteCertificate -> {
                         educationDao.deleteById(event.id)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.deleteRemoteEducation(event.id) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Certificate removed") }
                     }
 
@@ -892,6 +907,9 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteMedicalRecord -> {
                         medicalDao.deleteById(event.id)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.deleteRemoteMedicalRecord(event.id) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Medical record removed") }
                     }
 
@@ -988,6 +1006,12 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteRelationship -> {
                         relationshipDao.deleteById(event.relationshipId)
+                        // Purge relationship-scoped notes locally so the tab
+                        // can't render orphan notes after the pull.
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { relationshipNoteDao.deleteForRelationship(event.relationshipId) } catch (_: Exception) {}
+                            try { firestoreSyncService.deleteRemoteRelationship(event.relationshipId) } catch (_: Exception) {}
+                        }
                         loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Relationship removed") }
                     }
@@ -1011,6 +1035,9 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.DeleteSocialAccount -> {
                         socialAccountDao.deleteById(event.accountId)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.deleteRemoteSocialAccount(event.accountId) } catch (_: Exception) {}
+                        }
                         loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Social profile removed") }
                     }

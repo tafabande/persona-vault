@@ -89,6 +89,12 @@ service cloud.firestore {
         allow delete: if false; // Escrow is permanent protection against device loss
       }
 
+      // Profile photos (avatar / contact / ID): encrypted B2 blobs, metadata only.
+      // Same owner-only access as documents; never plaintext.
+      match /photos/{photoId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
       // Active Devices & Sessions
       match /sessions/{sessionId} {
         allow read, write: if isAccountOwner(accountId);

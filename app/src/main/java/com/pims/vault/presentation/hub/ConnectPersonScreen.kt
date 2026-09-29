@@ -72,6 +72,7 @@ import com.pims.vault.presentation.ui.components.PersonaFormSection
 import com.pims.vault.presentation.ui.components.PersonaSearchableCombobox
 import com.pims.vault.presentation.ui.components.PersonaTextInput
 import com.pims.vault.presentation.ui.components.StandardDateInput
+import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
@@ -157,28 +158,37 @@ fun ConnectPersonScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Connect Person",
+                        text = "Add someone",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close"
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
         },
         bottomBar = {
             Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 8.dp,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f).let { 
+                    // Blend with primary tint
+                    androidx.compose.ui.graphics.Color(
+                        red = (it.red + MaterialTheme.colorScheme.primary.red * 0.08f).coerceAtMost(1f),
+                        green = (it.green + MaterialTheme.colorScheme.primary.green * 0.08f).coerceAtMost(1f),
+                        blue = (it.blue + MaterialTheme.colorScheme.primary.blue * 0.08f).coerceAtMost(1f),
+                        alpha = it.alpha
+                    )
+                },
+                shadowElevation = 12.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -241,7 +251,7 @@ fun ConnectPersonScreen(
                         Text(
                             text = "Save Person",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            style = MaterialTheme.typography.labelLarge
                         )
                     }
                 }
@@ -255,10 +265,10 @@ fun ConnectPersonScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = PimsDimensions.paddingLarge, vertical = PimsDimensions.paddingMedium),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // Profile Photo Upload Hero
+            // Profile Photo Upload Hero with terracotta border and larger size
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -268,11 +278,11 @@ fun ConnectPersonScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(104.dp)
+                        .size(110.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                         .border(
-                            BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                            BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
                             CircleShape
                         )
                         .clickable {

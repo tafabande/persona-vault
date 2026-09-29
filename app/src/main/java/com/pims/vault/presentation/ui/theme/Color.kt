@@ -1,6 +1,7 @@
 package com.pims.vault.presentation.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 
 // =========================================================================
 // Persona Centralized Palette — Warm Understated Minimalist Design System
@@ -10,6 +11,62 @@ import androidx.compose.ui.graphics.Color
 //  → muted secondary information (#6F6B63)
 //  → terracotta (#B65F3A) for meaningful interaction
 // =========================================================================
+
+// --- Gradient Helpers ---
+object PersonaGradients {
+    /**
+     * Warm vertical background gradient - used for hero sections and magazine bleeds.
+     * Fades from background color at top to transparent at bottom.
+     */
+    val warmVertical = Brush.verticalGradient(
+        colorStops = arrayOf(
+            0.0f to PersonaBackground,
+            0.5f to PersonaBackground.copy(alpha = 0.5f),
+            1.0f to Color.Transparent
+        )
+    )
+
+    /**
+     * Accent gradient - terracotta to amber for highlights and CTAs.
+     */
+    val accentGradient = Brush.horizontalGradient(
+        colorStops = arrayOf(
+            0.0f to PersonaAccent,
+            1.0f to Color(0xFFD4A35A) // Warm amber
+        )
+    )
+
+    /**
+     * Terracotta vertical accent gradient for cards and surfaces.
+     */
+    val terracottaVertical = Brush.verticalGradient(
+        colorStops = arrayOf(
+            0.0f to PersonaAccent,
+            1.0f to Color(0xFFD4845E)
+        )
+    )
+
+    /**
+     * Soft accent gradient for backgrounds and containers.
+     */
+    val softAccentGradient = Brush.horizontalGradient(
+        colorStops = arrayOf(
+            0.0f to PersonaSoftAccent,
+            1.0f to PersonaSoftAccent.copy(alpha = 0.5f)
+        )
+    )
+
+    /**
+     * Radial gradient for icon backgrounds and glows.
+     */
+    fun radialGlow(color: Color = PersonaAccent, radius: Float = 0.5f) = Brush.radialGradient(
+        colorStops = arrayOf(
+            0.0f to color.copy(alpha = 0.3f),
+            1.0f to color.copy(alpha = 0.0f)
+        ),
+        radius = radius
+    )
+}
 
 // --- Core Light Theme Palette ---
 val PersonaBackground = Color(0xFFF8F9FA)       // Modern clean neutral background (no cream tint)

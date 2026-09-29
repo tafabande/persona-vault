@@ -48,6 +48,7 @@ class AccountsViewModel @Inject constructor(
     private val rememberedAccountManager: RememberedAccountManager,
     private val personRepository: PersonRepository,
     private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService,
+    private val photoBackupCoordinator: com.pims.vault.core.sync.PhotoBackupCoordinator? = null,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -326,13 +327,22 @@ class AccountsViewModel @Inject constructor(
                             }
                         } catch (_: Exception) {}
 
-                        // Bidirectional synchronization: Pull remote records first, then push local
+                        // Bidirectional synchronization: Pull remote records first, then push local.
+                        // Photo cache restore happens on-demand via the recovery
+                        // screen (needs the recovery passphrase first), so we
+                        // only opportunistically back up the local avatar here.
                         try {
                             firestoreSyncService.syncAccount(user.uid, user.email, user.displayName)
                             firestoreSyncService.syncBidirectional(user.uid)
                         } catch (e: Exception) {
                             com.pims.vault.core.logging.VaultLogger.e("AccountsViewModel", "Post-login sync error: ${e.message}", e)
                         }
+                        // Best-effort: back up whatever avatar cache exists locally
+                        // so a LATER reinstall can recover it.
+                        try {
+                            val am = com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context)
+                            photoBackupCoordinator?.backupAvatarAsync(am.customAvatarPath.value)
+                        } catch (_: Exception) {}
                     }
 
                     accountModeManager.completeInitialProfile()

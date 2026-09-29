@@ -3,8 +3,7 @@ package com.pims.vault.core.storage
 import android.util.Base64
 import android.util.Log
 import com.pims.vault.core.crypto.CryptoEngine
-import com.pims.vault.core.crypto.HkdfKeyDerivation
-import com.pims.vault.core.crypto.KeySecurityManager
+import com.pims.vault.core.crypto.PortableFileKeyManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -20,7 +19,7 @@ import javax.inject.Singleton
 @Singleton
 class B2StorageUploadService @Inject constructor(
     private val cryptoEngine: CryptoEngine,
-    private val keySecurityManager: KeySecurityManager
+    private val portableFileKeyManager: PortableFileKeyManager
 ) : StorageUploadService {
 
     companion object {
@@ -45,6 +44,12 @@ class B2StorageUploadService @Inject constructor(
     private var apiUrl: String? = null
     private var downloadUrl: String? = null
     private var tokenExpiry: Long = 0L
+
+    fun hasCredentials(): Boolean =
+        B2_KEY_ID.isNotBlank() && B2_APP_KEY.isNotBlank() &&
+            B2_BUCKET_ID.isNotBlank() && B2_BUCKET_NAME.isNotBlank()
+
+    override fun isConfigured(): Boolean = hasCredentials()
 
     override suspend fun uploadDocumentVersion(
         personId: String,
@@ -86,7 +91,31 @@ class B2StorageUploadService @Inject constructor(
         uploadEncrypted(remotePath, plaintextBytes, mimeType)
     }
 
+    override suspend fun uploadProfilePhoto(
+        ownerUid: String,
+        photoKind: String,
+        photoId: String,
+        mimeType: String,
+        plaintextBytes: ByteArray
+    ): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
+        if (plaintextBytes.size > MAX_UPLOAD_BYTES) {
+            Log.w(TAG, "Upload skipped: payload exceeds $MAX_UPLOAD_BYTES bytes")
+            return@withContext StorageUploadService.UploadResult(
+                remotePath = "",
+                downloadUrl = "",
+                ivHex = "",
+                sizeBytes = 0L,
+                sha256Hex = ""
+            )
+        }
+        val safeKind = photoKind.replace(Regex("[^A-Za-z0-9_-]"), "_").takeIf { it.isNotBlank() } ?: "photo"
+        val safeId = photoId.replace(Regex("[^A-Za-z0-9_-]"), "_").takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+        val remotePath = "users/photos/$ownerUid/$safeKind/$safeId/${UUID.randomUUID()}"
+        uploadEncrypted(remotePath, plaintextBytes, mimeType)
+    }
+
     override suspend fun delete(remotePath: String) = withContext(Dispatchers.IO) {
+        if (remotePath.isBlank()) return@withContext
         try {
             ensureAuthToken()
             val token = cachedAuthToken ?: return@withContext
@@ -129,14 +158,41 @@ class B2StorageUploadService @Inject constructor(
         }
     }
 
+    override suspend fun downloadEncryptedBytes(downloadUrl: String): ByteArray? =
+        withContext(Dispatchers.IO) {
+            if (downloadUrl.isBlank()) return@withContext null
+            try {
+                val url = java.net.URL(downloadUrl)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 30000
+                conn.requestMethod = "GET"
+                conn.instanceFollowRedirects = true
+                if (conn.responseCode !in 200..299) {
+                    Log.w(TAG, "B2 download HTTP ${conn.responseCode} for $downloadUrl")
+                    return@withContext null
+                }
+                conn.inputStream.use { it.readBytes() }.takeIf { it.isNotEmpty() }
+            } catch (e: Exception) {
+                Log.w(TAG, "B2 download failed: ${e.message}")
+                null
+            }
+        }
+
     private suspend fun uploadEncrypted(
         remotePath: String,
         plaintext: ByteArray,
         mimeType: String
     ): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
-        val fileKey = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
-        val encryptedPayload = cryptoEngine.encrypt(plaintext, fileKey.bytes)
-        fileKey.close()
+        // Portable file key: same key on every device once recovery is set up.
+        // Ciphertext format is UNCHANGED (AES-256-GCM single-shot envelope),
+        // so new uploads stay byte-compatible with the existing download path.
+        val pfk = portableFileKeyManager.copyKeyBytes()
+        val encryptedPayload = try {
+            cryptoEngine.encrypt(plaintext, pfk)
+        } finally {
+            java.util.Arrays.fill(pfk, 0)
+        }
 
         val sha256 = calculateSha256(encryptedPayload.combinedCiphertextWithTag)
         val ivHex = encryptedPayload.iv.joinToString("") { "%02x".format(it) }

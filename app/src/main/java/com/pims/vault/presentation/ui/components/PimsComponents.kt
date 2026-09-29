@@ -82,6 +82,115 @@ import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.StateWarning
 import com.pims.vault.presentation.ui.theme.pimsTactile
 import com.pims.vault.presentation.ui.theme.tactilePress
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.ui.unit.Dp
+
+// =============================================================================
+// PHASE-1 SHARED PRIMITIVES — Glass card, FAB, accent divider
+// =============================================================================
+
+/**
+ * Frosted-glass card style modifier.
+ * Use on any Surface that sits over a photo/wallpaper to give depth without blur.
+ */
+@Composable
+fun Modifier.pimsGlassmorphism(
+    alpha: Float = 0.92f,
+    borderAlpha: Float = 0.35f,
+    cornerRadius: Dp = 24.dp,
+    shadowElevation: Dp = 4.dp
+): Modifier {
+    val shape = RoundedCornerShape(cornerRadius)
+    return this
+        .shadow(shadowElevation, shape, clip = false)
+        .background(MaterialTheme.colorScheme.surface.copy(alpha = alpha), shape)
+        .then(
+            androidx.compose.foundation.border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha),
+                shape = shape
+            )
+        )
+}
+
+/**
+ * Glass card modifier - frosted glass Surface with tint overlay + subtle border.
+ * Use for identity cards, quick access cards, and floating elements.
+ */
+@Composable
+fun Modifier.pimsGlassCard(
+    alpha: Float = 0.92f,
+    borderAlpha: Float = 0.4f,
+    cornerRadius: Dp = 24.dp,
+    shadowElevation: Dp = 4.dp
+): Modifier {
+    val shape = RoundedCornerShape(cornerRadius)
+    return this
+        .shadow(shadowElevation, shape, clip = false)
+        .background(MaterialTheme.colorScheme.surface.copy(alpha = alpha), shape)
+        .then(
+            androidx.compose.foundation.border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha),
+                shape = shape
+            )
+        )
+}
+
+/**
+ * Terracotta Extended FAB — shared across Notes, People, etc.
+ * Place inside a Box(contentAlignment = Alignment.BottomEnd).
+ */
+@Composable
+fun PersonaFAB(
+    text: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    expanded: Boolean = true
+) {
+    val haptics = com.pims.vault.presentation.ui.util.rememberPimsHaptics()
+    ExtendedFloatingActionButton(
+        text = { Text(text, fontWeight = FontWeight.Bold) },
+        icon = {
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        },
+        onClick = {
+            haptics.light()
+            onClick()
+        },
+        expanded = expanded,
+        containerColor = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp, pressedElevation = 2.dp),
+        modifier = modifier
+    )
+}
+
+/**
+ * Thin vertical terracotta accent bar — used as a left-edge anchor on cards and section headers.
+ */
+@Composable
+fun PersonaAccentDivider(
+    modifier: Modifier = Modifier,
+    height: Dp = 28.dp,
+    width: Dp = 3.dp,
+    color: Color = MaterialTheme.colorScheme.primary
+) {
+    Box(
+        modifier = modifier
+            .width(width)
+            .height(height)
+            .background(color, RoundedCornerShape(2.dp))
+    )
+}
 
 @Composable
 fun PimsSectionHeader(

@@ -40,7 +40,8 @@ import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
 /**
  * Floating dock bottom navigation item:
- * Capsule indicator with terracotta accent for selected state and muted secondary for unselected.
+ * Pill-style indicator with terracotta filled pill for selected state.
+ * Icon scales up (1.08f) on selection with smooth animation.
  */
 @Composable
 internal fun FloatingDockItem(
@@ -51,7 +52,8 @@ internal fun FloatingDockItem(
 ) {
     val feedback = rememberPimsFeedback()
     val isReducedMotion = com.pims.vault.presentation.ui.theme.LocalReducedMotion.current
-    val activeBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+    // Terracotta filled pill for selected state
+    val activeBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
     val activeColor = MaterialTheme.colorScheme.primary
     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -65,8 +67,9 @@ internal fun FloatingDockItem(
         animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.smoothSpring(isReducedMotion),
         label = "dockIconTint"
     )
+    // 1.08f scale for selected icon pop effect
     val iconScale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (selected) 1.06f else 1.0f,
+        targetValue = if (selected) 1.08f else 1.0f,
         animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.snappySpring(isReducedMotion),
         label = "dockIconScale"
     )
@@ -93,6 +96,7 @@ internal fun FloatingDockItem(
                     .size(20.dp)
                     .scale(iconScale)
             )
+            // Label text only shown for selected tab with expand/shrink animation
             androidx.compose.animation.AnimatedVisibility(
                 visible = selected,
                 enter = androidx.compose.animation.fadeIn() +
@@ -125,83 +129,49 @@ internal fun PersonaDashboardBottomBar(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(26.dp),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-            shadowElevation = 6.dp,
-            tonalElevation = 3.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+            shadowElevation = 8.dp,
+            tonalElevation = 4.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 0: Home
-                PersonaNavDockItem(
+                FloatingDockItem(
                     selected = selectedTab == 0,
                     icon = PersonaIcons.navIcon(selectedTab == 0, PersonaIcons.Home, PersonaIcons.HomeOutlined),
                     label = "Home",
-                    onClick = {
-                        if (selectedTab != 0) {
-                            haptics.light()
-                            onTabSelected(0)
-                        }
-                    }
+                    onClick = { if (selectedTab != 0) { haptics.light(); onTabSelected(0) } }
                 )
-
-                // 1: Docs
-                PersonaNavDockItem(
+                FloatingDockItem(
                     selected = selectedTab == 1,
-                    icon = PersonaIcons.navIcon(selectedTab == 1, PersonaIcons.Documents, PersonaIcons.DocumentsOutlined),
-                    label = "Docs",
-                    onClick = {
-                        if (selectedTab != 1) {
-                            haptics.light()
-                            onTabSelected(1)
-                        }
-                    }
+                    icon = PersonaIcons.navIcon(selectedTab == 1, PersonaIcons.Notes, PersonaIcons.NotesOutlined),
+                    label = "Notes",
+                    onClick = { if (selectedTab != 1) { haptics.light(); onTabSelected(1) } }
                 )
-
-                // 2: Me
-                PersonaNavDockItem(
+                FloatingDockItem(
                     selected = selectedTab == 2,
                     icon = PersonaIcons.navIcon(selectedTab == 2, PersonaIcons.Me, PersonaIcons.MeOutlined),
                     label = "Me",
-                    onClick = {
-                        if (selectedTab != 2) {
-                            haptics.light()
-                            onTabSelected(2)
-                        }
-                    }
+                    onClick = { if (selectedTab != 2) { haptics.light(); onTabSelected(2) } }
                 )
-
-                // 3: People
-                PersonaNavDockItem(
+                FloatingDockItem(
                     selected = selectedTab == 3,
                     icon = PersonaIcons.navIcon(selectedTab == 3, PersonaIcons.People, PersonaIcons.PeopleOutlined),
                     label = "People",
-                    onClick = {
-                        if (selectedTab != 3) {
-                            haptics.light()
-                            onTabSelected(3)
-                        }
-                    }
+                    onClick = { if (selectedTab != 3) { haptics.light(); onTabSelected(3) } }
                 )
-
-                // 4: Settings
-                PersonaNavDockItem(
+                FloatingDockItem(
                     selected = selectedTab == 4,
                     icon = PersonaIcons.navIcon(selectedTab == 4, PersonaIcons.Settings, PersonaIcons.SettingsOutlined),
                     label = "Settings",
-                    onClick = {
-                        if (selectedTab != 4) {
-                            haptics.light()
-                            onTabSelected(4)
-                        }
-                    }
+                    onClick = { if (selectedTab != 4) { haptics.light(); onTabSelected(4) } }
                 )
             }
         }

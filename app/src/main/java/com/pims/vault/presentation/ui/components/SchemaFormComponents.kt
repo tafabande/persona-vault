@@ -821,6 +821,16 @@ fun PersonaFormSection(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
+                    // Terracotta left bar accent (3dp × 18dp)
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(18.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primary,
+                                RoundedCornerShape(2.dp)
+                            )
+                    )
                     if (icon != null) {
                         Icon(
                             imageVector = icon,

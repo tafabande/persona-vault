@@ -54,6 +54,7 @@ import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -88,15 +89,21 @@ object PersonaIcons {
     val Biometric: ImageVector = Icons.Default.Fingerprint
     val Home: ImageVector = Icons.Default.Home
     val HomeOutlined: ImageVector = Icons.Outlined.Home
-    val Notes: ImageVector = Icons.AutoMirrored.Filled.Note
+    // Notes tab icons — filled = selected, outlined = idle
+    val Notes: ImageVector = Icons.Default.Description
+    val NotesOutlined: ImageVector = Icons.Outlined.Article
     val Me: ImageVector = Icons.Default.Person
     val MeOutlined: ImageVector = Icons.Outlined.Person
     val People: ImageVector = Icons.Default.People
     val PeopleOutlined: ImageVector = Icons.Outlined.People
     val Settings: ImageVector = Icons.Default.Settings
     val SettingsOutlined: ImageVector = Icons.Outlined.Settings
+    // Documents alias (kept for backward compat)
     val Documents: ImageVector = Icons.Default.Description
     val DocumentsOutlined: ImageVector = Icons.Outlined.Description
+    // Trusted contact shield badge
+    val TrustedContact: ImageVector = Icons.Default.Shield
+    val TrustedContactOutlined: ImageVector = Icons.Outlined.Shield
     val LocalStorage: ImageVector = Icons.Default.Lock
     val Cloud: ImageVector = Icons.Default.Cloud
     val Sync: ImageVector = Icons.Default.Sync

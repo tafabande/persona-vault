@@ -23,7 +23,8 @@ class RelationshipNotesRepositoryImpl @Inject constructor(
     private val relationshipNoteDao: RelationshipNoteDao,
     private val cryptoEngine: CryptoEngine,
     private val sessionManager: BiometricSessionManager,
-    private val auditLogger: HardenedAuditLogger
+    private val auditLogger: HardenedAuditLogger,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
 ) : RelationshipNotesRepository {
 
     override fun getNotesForRelationshipFlow(
@@ -213,6 +214,9 @@ class RelationshipNotesRepositoryImpl @Inject constructor(
 
     override suspend fun deleteNote(id: String) {
         relationshipNoteDao.deleteById(id)
+        try {
+            firestoreSyncService?.deleteRemoteRelationshipNote(id)
+        } catch (_: Exception) {}
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,
             entityType = "RelationshipNote",

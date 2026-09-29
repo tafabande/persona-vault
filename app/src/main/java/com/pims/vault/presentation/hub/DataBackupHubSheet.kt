@@ -200,6 +200,19 @@ fun DataBackupHubSheet(
                     )
                 }
 
+                // 3. CLOUD RECOVERY (cross-device file/photo access)
+                item {
+                    Text(
+                        text = "CLOUD RECOVERY",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+
+                item {
+                    com.pims.vault.presentation.recovery.CloudRecoveryCard()
+                }
+
                 item { Spacer(modifier = Modifier.height(20.dp)) }
             }
         }
