@@ -81,6 +81,8 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -569,7 +571,9 @@ fun VaultDashboardView(
                     "BANKING" -> {
                         BankingSection(
                             items = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT },
-                            onOpenItem = { item -> viewModel.openItem(item) },
+                            availableCards = uiState.vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE },
+                            uiState = uiState,
+                            viewModel = viewModel,
                             onAddNew = { viewModel.openEditor(VaultCategory.BANK_ACCOUNT) },
                             onBackToDashboard = { activeViewTab = "DASHBOARD" }
                         )
@@ -1136,6 +1140,7 @@ private fun GooglePasswordsSection(
 ) {
     val cardBg = MaterialTheme.colorScheme.surface
     val borderCol = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    var showCheckupModal by remember { mutableStateOf(false) }
 
     val passwordItems = remember(items, searchQuery) {
         val userItems = items.filter { it.category == VaultCategory.PASSWORD }
@@ -1144,6 +1149,17 @@ private fun GooglePasswordsSection(
             it.title.contains(searchQuery, ignoreCase = true) ||
             it.accountIdentifier?.contains(searchQuery, ignoreCase = true) == true
         }
+    }
+
+    if (showCheckupModal) {
+        PasswordCheckupModal(
+            passwordCount = passwordItems.size,
+            onAddNew = {
+                showCheckupModal = false
+                onAddNew()
+            },
+            onDismiss = { showCheckupModal = false }
+        )
     }
 
     Column(
@@ -1230,6 +1246,60 @@ private fun GooglePasswordsSection(
             }
         }
 
+        // Modern Google Password Manager Security Banner
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, borderCol),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showCheckupModal = true }
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Password Checkup",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (passwordItems.isEmpty()) "No credentials saved yet" else "${passwordItems.size} passwords secured with hardware encryption",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+        }
+
         if (passwordItems.isEmpty()) {
             PersonaEmptyState(
                 icon = Icons.Default.Lock,
@@ -1250,7 +1320,8 @@ private fun GooglePasswordsSection(
                     passwordItems.forEachIndexed { index, item ->
                         GooglePasswordCredentialRow(
                             item = item,
-                            onClick = { onOpenItem(item) }
+                            onClick = { onOpenItem(item) },
+                            onCopy = onCopy
                         )
                         if (index < passwordItems.size - 1) {
                             HorizontalDivider(
@@ -1268,62 +1339,46 @@ private fun GooglePasswordsSection(
 @Composable
 private fun GooglePasswordCredentialRow(
     item: VaultItemHeader,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onCopy: ((String, String) -> Unit)? = null
 ) {
-    val isDark = LocalPimsDarkTheme.current
-    val isGoogle = item.title.contains("google", ignoreCase = true)
-    val isShoe = item.title.contains("shoe", ignoreCase = true)
-    val isBank = item.title.contains("bank", ignoreCase = true)
-    val isShrine = item.title.contains("shrine", ignoreCase = true)
+    val containerColors = listOf(
+        MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer,
+        MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer,
+        MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+    )
+    val colorIndex = Math.abs(item.title.lowercase().hashCode()) % containerColors.size
+    val (bgColor, fgColor) = containerColors[colorIndex]
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .pimsApplePress { onClick() }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Brand / Favicon Icon
+        // Modern Monogram Favicon
         Surface(
-            shape = CircleShape,
-            color = if (isGoogle) (if (isDark) Color(0xFF2A2D33) else Color(0xFFF1F5F9)) else MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.size(40.dp)
+            shape = RoundedCornerShape(12.dp),
+            color = bgColor,
+            modifier = Modifier.size(42.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                when {
-                    isGoogle -> {
-                        Text("G", fontWeight = FontWeight.Black, fontSize = 20.sp, color = Color(0xFF4285F4))
-                    }
-                    isShoe -> {
-                        Text("👟", fontSize = 18.sp)
-                    }
-                    isBank -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Box(modifier = Modifier.size(4.dp, 14.dp).background(Color(0xFF0F9D58), RoundedCornerShape(2.dp)))
-                            Box(modifier = Modifier.size(4.dp, 14.dp).background(Color(0xFF4285F4), RoundedCornerShape(2.dp)))
-                        }
-                    }
-                    isShrine -> {
-                        Text("💎", fontSize = 16.sp)
-                    }
-                    else -> {
-                        Text(
-                            text = item.title.firstOrNull()?.uppercase() ?: "P",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 17.sp
-                        )
-                    }
-                }
+                Text(
+                    text = item.title.firstOrNull()?.uppercase() ?: "P",
+                    fontWeight = FontWeight.Bold,
+                    color = fgColor,
+                    fontSize = 17.sp
+                )
             }
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = item.title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface
             )
             item.accountIdentifier?.let { subtitle ->
@@ -1331,6 +1386,20 @@ private fun GooglePasswordCredentialRow(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (onCopy != null && !item.accountIdentifier.isNullOrBlank()) {
+            IconButton(
+                onClick = { onCopy(item.title, item.accountIdentifier) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = "Copy username",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -1366,13 +1435,13 @@ private fun PasswordCheckupModal(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF10B981).copy(alpha = 0.15f)),
+                        .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.AssignmentTurnedIn,
                         contentDescription = null,
-                        tint = Color(0xFF10B981),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -1381,16 +1450,16 @@ private fun PasswordCheckupModal(
                     text = "Password Security Checkup",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = PimsTextPrimary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = if (passwordCount > 0)
-                        "All $passwordCount saved credentials in your vault are encrypted with AES-256-GCM hardware-backed cryptography and monitored for vulnerabilities."
+                        "All $passwordCount saved credentials in your vault are secured with hardware-backed AES-256-GCM encryption and local-first cloud backup."
                     else
-                        "No credentials stored yet. Add passwords to your vault to monitor breach exposures and strengthen your accounts.",
+                        "No credentials stored yet. Add passwords to your vault to monitor breach exposures and safeguard your accounts.",
                     fontSize = 13.sp,
-                    color = PimsTextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1404,16 +1473,31 @@ private fun PasswordCheckupModal(
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "$passwordCount", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF3B82F6))
-                        Text(text = "Total", fontSize = 11.sp, color = PimsTextSecondary)
+                        Text(
+                            text = "$passwordCount",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(text = "Vault Total", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "0", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF10B981))
-                        Text(text = "Breached", fontSize = 11.sp, color = PimsTextSecondary)
+                        Text(
+                            text = "AES-GCM",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(text = "TEE Enclave", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "0", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF10B981))
-                        Text(text = "Reused", fontSize = 11.sp, color = PimsTextSecondary)
+                        Text(
+                            text = "Backed Up",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                        Text(text = "Cloud Sync", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
@@ -1458,13 +1542,13 @@ private fun PasskeyInfoModal(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF6366F1).copy(alpha = 0.15f)),
+                        .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.PersonSearch,
                         contentDescription = null,
-                        tint = Color(0xFF6366F1),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -1473,13 +1557,13 @@ private fun PasskeyInfoModal(
                     text = "Passkeys in Persona Vault",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = PimsTextPrimary
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Passkeys replace passwords with biometric cryptographic keys stored in your device's Secure Enclave. Sign-in is seamless, phishing-proof, and unlocked with your biometric screen lock.",
                     fontSize = 13.sp,
-                    color = PimsTextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1488,14 +1572,14 @@ private fun PasskeyInfoModal(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF6366F1).copy(alpha = 0.08f))
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = Color(0xFF6366F1),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
@@ -1503,7 +1587,7 @@ private fun PasskeyInfoModal(
                         text = "Hardware Biometric Keystore Ready",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = PimsTextPrimary
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
@@ -1778,7 +1862,7 @@ internal fun GoogleWalletMainScreen(
                         if (walletCards.size > 1) {
                             Surface(
                                 shape = RoundedCornerShape(18.dp),
-                                color = Color(0xFF8A2BE2),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
                                 modifier = Modifier
                                     .fillMaxWidth(0.92f)
                                     .height(180.dp)
@@ -1787,7 +1871,7 @@ internal fun GoogleWalletMainScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .background(Brush.linearGradient(listOf(Color(0xFF7C3AED), Color(0xFF5B21B6))))
+                                        .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary)))
                                 )
                             }
                         }
@@ -1807,7 +1891,7 @@ internal fun GoogleWalletMainScreen(
                                     .fillMaxSize()
                                     .background(
                                         Brush.linearGradient(
-                                            listOf(Color(0xFF1E88E5), Color(0xFF1565C0), Color(0xFF0D47A1))
+                                            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
                                         )
                                     )
                                     .padding(18.dp)
@@ -1823,7 +1907,7 @@ internal fun GoogleWalletMainScreen(
                                     ) {
                                         Text(
                                             text = heroCard.title,
-                                            color = Color.White.copy(alpha = 0.9f),
+                                            color = MaterialTheme.colorScheme.onPrimary,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.SemiBold
                                         )
@@ -1837,7 +1921,7 @@ internal fun GoogleWalletMainScreen(
                                     ) {
                                         Text(
                                             text = heroCard.accountIdentifier ?: "•••• ••••",
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onPrimary,
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 16.sp,
                                             letterSpacing = 2.sp,
@@ -1845,7 +1929,7 @@ internal fun GoogleWalletMainScreen(
                                         )
                                         Text(
                                             text = detectCardBrand(heroCard.accountIdentifier ?: "").uppercase(),
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onPrimary,
                                             fontWeight = FontWeight.Black,
                                             fontSize = 18.sp
                                         )
@@ -1860,8 +1944,8 @@ internal fun GoogleWalletMainScreen(
                     // "Hold to reader" pill below card
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = if (isDark) Color(0xFF26262B) else Color(0xFFF1F3F4),
-                        border = BorderStroke(1.dp, if (isDark) Color(0xFF373A40) else Color(0xFFCBD5E1))
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
@@ -1871,7 +1955,7 @@ internal fun GoogleWalletMainScreen(
                             Icon(
                                 imageVector = Icons.Default.Wifi,
                                 contentDescription = null,
-                                tint = Color(0xFF1976D2),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp).graphicsLayer(rotationZ = 90f)
                             )
                             Text(
@@ -1914,7 +1998,7 @@ internal fun GoogleWalletMainScreen(
         Surface(
             onClick = onAddNew,
             shape = RoundedCornerShape(24.dp),
-            color = if (isDark) Color(0xFF2A3545) else Color(0xFFD3E3FD),
+            color = MaterialTheme.colorScheme.primary,
             shadowElevation = 6.dp,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -1930,14 +2014,14 @@ internal fun GoogleWalletMainScreen(
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = null,
-                    tint = if (isDark) Color(0xFFBAE6FD) else Color(0xFF041E49),
+                    tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(18.dp)
                 )
                 Text(
                     text = "Add to Wallet",
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = if (isDark) Color(0xFFBAE6FD) else Color(0xFF041E49)
+                    color = MaterialTheme.colorScheme.onPrimary
                 )
             }
         }
@@ -1952,11 +2036,10 @@ private fun WalletPassCardRow(
     subtitle: String,
     onClick: () -> Unit = {}
 ) {
-    val isDark = LocalPimsDarkTheme.current
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = if (isDark) Color(0xFF242528) else Color(0xFFF1F3F4),
-        border = BorderStroke(1.dp, if (isDark) Color(0xFF333539) else Color(0xFFE2E4E8)),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         modifier = Modifier
             .fillMaxWidth()
             .pimsApplePress { onClick() }
@@ -2111,9 +2194,9 @@ private fun GoogleWalletCardDetailScreen(
     if (showAddReceiptDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showAddReceiptDialog = false },
-            containerColor = if (isDark) Color(0xFF1E1E22) else Color(0xFFFFFFFF),
-            titleContentColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111827),
-            textContentColor = if (isDark) Color(0xFFF1F5F9) else Color(0xFF1F2937),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text("Add Receipt / Payment Record", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2213,10 +2296,10 @@ private fun GoogleWalletCardDetailScreen(
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = when (currentStatus) {
-                    CardStatus.IN_USE -> Color(0xFF1976D2)
-                    CardStatus.PAUSED -> Color(0xFFD97706)
-                    CardStatus.FROZEN -> Color(0xFF0284C7)
-                    CardStatus.DISCARDED -> Color(0xFF475569)
+                    CardStatus.IN_USE -> MaterialTheme.colorScheme.primary
+                    CardStatus.PAUSED -> MaterialTheme.colorScheme.tertiary
+                    CardStatus.FROZEN -> MaterialTheme.colorScheme.secondary
+                    CardStatus.DISCARDED -> MaterialTheme.colorScheme.outline
                 },
                 modifier = Modifier.size(width = 58.dp, height = 36.dp)
             ) {
@@ -2226,7 +2309,7 @@ private fun GoogleWalletCardDetailScreen(
                         .padding(5.dp),
                     contentAlignment = Alignment.BottomEnd
                 ) {
-                    Text(card.title.take(4).uppercase(), color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Black)
+                    Text(card.title.take(4).uppercase(), color = MaterialTheme.colorScheme.onPrimary, fontSize = 8.sp, fontWeight = FontWeight.Black)
                 }
             }
 
@@ -2291,31 +2374,47 @@ private fun GoogleWalletCardDetailScreen(
         // Card Account Identifier & Details
         Surface(
             shape = RoundedCornerShape(14.dp),
-            color = if (isDark) Color(0xFF242528) else Color(0xFFF8F9FA),
-            border = BorderStroke(1.dp, if (isDark) Color(0xFF333539) else Color(0xFFE2E4E8)),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Shield,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Card number",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Text(
-                            text = card.accountIdentifier ?: "•••• ••••",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Card number",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = card.accountIdentifier ?: "•••• ••••",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                    card.accountIdentifier?.let { accId ->
+                        IconButton(onClick = { viewModel.copyToClipboard(context, label = "Card Number", text = accId) }) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy Card Number",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
@@ -2354,7 +2453,7 @@ private fun GoogleWalletCardDetailScreen(
 
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, if (isDark) Color(0xFF3F4248) else Color(0xFFCBD5E1)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -2574,149 +2673,732 @@ private fun WalletOptionRow(
 @Composable
 private fun BankingSection(
     items: List<VaultItemHeader>,
-    onOpenItem: (VaultItemHeader) -> Unit,
+    availableCards: List<VaultItemHeader>,
+    uiState: VaultUiState,
+    viewModel: VaultViewModel,
     onAddNew: () -> Unit,
     onBackToDashboard: () -> Unit
 ) {
-    val isDark = LocalPimsDarkTheme.current
+    val context = LocalContext.current
+    var selectedBankAccount by remember { mutableStateOf<VaultItemHeader?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    val bankItems = remember(items) {
-        items.filter { it.category == VaultCategory.BANK_ACCOUNT }
+    BackHandler(enabled = selectedBankAccount != null) {
+        selectedBankAccount = null
+    }
+
+    if (selectedBankAccount != null) {
+        BankAccountDetailScreen(
+            account = selectedBankAccount!!,
+            availableCards = availableCards,
+            uiState = uiState,
+            viewModel = viewModel,
+            onBack = { selectedBankAccount = null }
+        )
+    } else {
+        val bankItems = remember(items, searchQuery) {
+            val all = items.filter { it.category == VaultCategory.BANK_ACCOUNT }
+            if (searchQuery.isBlank()) all
+            else all.filter {
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                it.accountIdentifier?.contains(searchQuery, ignoreCase = true) == true
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(bottom = 80.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Header Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBackToDashboard) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Banking & Accounts",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                IconButton(onClick = onAddNew) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add Bank Account",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            // Search Bar
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 14.dp, end = 10.dp)
+                    )
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                        decorationBox = { innerTextField ->
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Search bank accounts, IBANs, numbers...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            innerTextField()
+                        }
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+
+            // Overview security banner
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = BankIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Secured Banking Vault",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${bankItems.size} account(s) encrypted with AES-256-GCM hardware keys with instant copy for transfer details.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (bankItems.isEmpty()) {
+                PersonaEmptyState(
+                    icon = BankIcon,
+                    title = if (searchQuery.isNotBlank()) "No accounts found" else "No bank accounts",
+                    description = if (searchQuery.isNotBlank()) "No saved bank accounts match \"$searchQuery\"." else "Add your checking, savings, IBAN, and international wire details to your secure vault.",
+                    actionLabel = "Add Bank Account",
+                    onActionClick = onAddNew
+                )
+            } else {
+                bankItems.forEach { account ->
+                    val linkedCards = availableCards.filter { card ->
+                        val cardTitle = card.title.lowercase()
+                        val accTitle = account.title.lowercase()
+                        (cardTitle.contains(accTitle) || accTitle.contains(cardTitle)) && cardTitle.isNotBlank()
+                    }
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedBankAccount = account },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.primaryContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            BankIcon,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = account.title,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = account.accountIdentifier ?: "Bank Account",
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    account.accountIdentifier?.let { rawId ->
+                                        IconButton(
+                                            onClick = {
+                                                val cleanNum = rawId.filter { it.isLetterOrDigit() }
+                                                viewModel.copyToClipboard(context, label = "Account Number", text = cleanNum)
+                                            }
+                                        ) {
+                                            Icon(
+                                                Icons.Default.ContentCopy,
+                                                contentDescription = "Copy account number",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            if (linkedCards.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.CreditCard,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = "${linkedCards.size} linked card(s)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onAddNew),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Add Bank Account",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BankAccountDetailScreen(
+    account: VaultItemHeader,
+    availableCards: List<VaultItemHeader>,
+    uiState: VaultUiState,
+    viewModel: VaultViewModel,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var isNumberVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(account.id) {
+        viewModel.openItem(account)
+    }
+
+    val activeBanking = uiState.activeDecryptedBanking
+
+    if (showDeleteConfirmation) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurface,
+            title = {
+                Text("Remove Bank Account", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("Are you sure you want to remove \"${account.title}\"? This encrypted bank account reference will be permanently removed from your vault.")
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        viewModel.deleteItem(account.id)
+                        onBack()
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Remove", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.OutlinedButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .padding(bottom = 80.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Actions bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBackToDashboard) {
+            IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.Default.ArrowBack,
                     contentDescription = "Back",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = "Banking",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.SemiBold
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row {
+                IconButton(onClick = {
+                    viewModel.openEditor(VaultCategory.BANK_ACCOUNT, account.id)
+                }) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Account",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(onClick = { showDeleteConfirmation = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Remove Account",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
         }
 
-        if (bankItems.isEmpty()) {
-            PersonaEmptyState(
-                icon = BankIcon,
-                title = "No bank accounts",
-                description = "Add your bank accounts, savings, and international banking details to your secure vault.",
-                actionLabel = "Add Bank Account",
-                onActionClick = onAddNew
-            )
-        } else {
-            bankItems.forEach { account ->
-                Card(
+        // Bank Title & Type Banner
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenItem(account) },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isDark) Color(0xFF1E1E1E) else MaterialTheme.colorScheme.surface
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        if (isDark) Color(0xFF2E2E2E) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-                    )
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(Color(0xFF6366F1).copy(alpha = 0.1f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(BankIcon, contentDescription = null, tint = Color(0xFF6366F1), modifier = Modifier.size(20.dp))
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = account.title,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = PimsTextPrimary
-                                    )
-                                    Text(
-                                        text = account.accountIdentifier ?: "Bank account",
-                                        fontSize = 12.sp,
-                                        color = PimsTextSecondary,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
+                    Icon(
+                        imageVector = BankIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = activeBanking?.bankName?.ifBlank { account.title } ?: account.title,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    val accountType = activeBanking?.accountType?.ifBlank { "Personal Checking" } ?: "Bank Account"
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(
+                            text = accountType,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+        }
+
+        // Account Number Card with Show/Hide & 1-Tap Copy
+        val rawAccNum = activeBanking?.accountNumber ?: account.accountIdentifier ?: ""
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "ACCOUNT NUMBER",
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (isNumberVisible || rawAccNum.length <= 4) rawAccNum else "•••• •••• •••• ${rawAccNum.takeLast(4)}",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { isNumberVisible = !isNumberVisible }) {
+                        Icon(
+                            imageVector = if (isNumberVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (isNumberVisible) "Hide" else "Show",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = { viewModel.copyToClipboard(context, label = "Account Number", text = rawAccNum) }) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+
+        // Transfer & Identification Details List
+        Text(
+            text = "TRANSFER & ROUTING DETAILS",
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                val holderName = activeBanking?.accountHolderName ?: ""
+                if (holderName.isNotBlank()) {
+                    BankDetailRowItem(
+                        label = "Account Holder",
+                        value = holderName,
+                        onCopy = { viewModel.copyToClipboard(context, label = "Account Holder", text = holderName) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                }
+
+                val routingNum = activeBanking?.routingNumber ?: ""
+                if (routingNum.isNotBlank()) {
+                    BankDetailRowItem(
+                        label = "Routing Number (ABA)",
+                        value = routingNum,
+                        onCopy = { viewModel.copyToClipboard(context, label = "Routing Number", text = routingNum) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                }
+
+                val sortCode = activeBanking?.sortCode ?: ""
+                if (sortCode.isNotBlank()) {
+                    BankDetailRowItem(
+                        label = "Sort Code",
+                        value = sortCode,
+                        onCopy = { viewModel.copyToClipboard(context, label = "Sort Code", text = sortCode) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                }
+
+                val swiftBic = activeBanking?.swiftBic ?: ""
+                if (swiftBic.isNotBlank()) {
+                    BankDetailRowItem(
+                        label = "SWIFT / BIC Code",
+                        value = swiftBic,
+                        onCopy = { viewModel.copyToClipboard(context, label = "SWIFT/BIC", text = swiftBic) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                }
+
+                val iban = activeBanking?.iban ?: ""
+                if (iban.isNotBlank()) {
+                    BankDetailRowItem(
+                        label = "IBAN",
+                        value = iban,
+                        onCopy = { viewModel.copyToClipboard(context, label = "IBAN", text = iban) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                }
+
+                val branchName = activeBanking?.branchName ?: ""
+                if (branchName.isNotBlank()) {
+                    BankDetailRowItem(
+                        label = "Branch Name",
+                        value = branchName,
+                        onCopy = { viewModel.copyToClipboard(context, label = "Branch Name", text = branchName) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                }
+
+                val notes = activeBanking?.notes ?: ""
+                if (notes.isNotBlank()) {
+                    BankDetailRowItem(
+                        label = "Additional Notes",
+                        value = notes,
+                        onCopy = { viewModel.copyToClipboard(context, label = "Bank Notes", text = notes) }
+                    )
+                }
+            }
+        }
+
+        // Linked Cards Section
+        val linkedCard = availableCards.find { it.id == activeBanking?.linkedCardId } ?: availableCards.find {
+            val t = it.title.lowercase()
+            val b = (activeBanking?.bankName ?: account.title).lowercase()
+            (t.contains(b) || b.contains(t)) && b.isNotBlank()
+        }
+
+        if (linkedCard != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "LINKED PAYMENT CARD",
+                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CreditCard,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
-                            Icon(
-                                Icons.Default.ArrowForward,
-                                contentDescription = null,
-                                tint = PimsTextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = linkedCard.title,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = linkedCard.accountIdentifier ?: "Linked Debit/Credit Card",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onAddNew),
-                shape = RoundedCornerShape(16.dp),
-                color = Color.Transparent,
-                border = BorderStroke(
-                    1.5.dp,
-                    Color(0xFF6366F1).copy(alpha = 0.4f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = null,
-                        tint = Color(0xFF6366F1),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Add Bank Account",
-                        color = Color(0xFF6366F1),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
+        // Copy All Details Button
+        Button(
+            onClick = {
+                val details = buildString {
+                    appendLine("Bank: ${activeBanking?.bankName ?: account.title}")
+                    if (!activeBanking?.accountHolderName.isNullOrBlank()) appendLine("Account Holder: ${activeBanking?.accountHolderName}")
+                    if (rawAccNum.isNotBlank()) appendLine("Account Number: $rawAccNum")
+                    if (!activeBanking?.routingNumber.isNullOrBlank()) appendLine("Routing: ${activeBanking?.routingNumber}")
+                    if (!activeBanking?.sortCode.isNullOrBlank()) appendLine("Sort Code: ${activeBanking?.sortCode}")
+                    if (!activeBanking?.swiftBic.isNullOrBlank()) appendLine("SWIFT/BIC: ${activeBanking?.swiftBic}")
+                    if (!activeBanking?.iban.isNullOrBlank()) appendLine("IBAN: ${activeBanking?.iban}")
+                    if (!activeBanking?.branchName.isNullOrBlank()) appendLine("Branch: ${activeBanking?.branchName}")
                 }
-            }
+                viewModel.copyToClipboard(context, label = "All Bank Details", text = details.trim())
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        ) {
+            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Copy All Wire / Transfer Details", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun BankDetailRowItem(
+    label: String,
+    value: String,
+    onCopy: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
+            Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = "Copy $label",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }

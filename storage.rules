@@ -1,10 +1,7 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-
-    // Storage architecture: Firestore = structured data + metadata.
-    // Backblaze B2 = authoritative object store for user-uploaded binaries.
-    // Firebase Storage is NOT used — deny all to prevent accidental binary flow.
+    // Firebase Storage is NOT used. Backblaze B2 is the authoritative object store.
     match /{allPaths=**} {
       allow read, write: if false;
     }

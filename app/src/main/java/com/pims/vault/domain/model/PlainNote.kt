@@ -19,5 +19,9 @@ data class PlainNote(
     val format: NoteFormat = NoteFormat.PLAIN,
     val attachments: List<NoteAttachment> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val reminderAt: Long? = null,
+    val reminderTag: String? = null,
+    val reminderRepeat: String? = null,
+    val isReminderDone: Boolean = false
 )

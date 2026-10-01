@@ -13,8 +13,23 @@ interface PlainNotesRepository {
         ownerPersonId: String,
         title: String,
         format: NoteFormat,
-        content: String
+        content: String,
+        reminderAt: Long? = null,
+        reminderTag: String? = null,
+        reminderRepeat: String? = null,
+        isReminderDone: Boolean = false
     ): PlainNote
+
+    suspend fun setReminder(
+        noteId: String,
+        reminderAt: Long?,
+        reminderTag: String?,
+        reminderRepeat: String? = null
+    )
+
+    suspend fun markReminderDone(noteId: String, isDone: Boolean)
+
+    suspend fun clearReminder(noteId: String)
 
     suspend fun delete(id: String)
 

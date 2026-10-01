@@ -208,15 +208,20 @@ class MainViewModel @Inject constructor(
 class MainActivity : FragmentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+    private val pendingOpenNoteIdState = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        intent?.getStringExtra(com.pims.vault.core.reminder.NoteReminderReceiver.EXTRA_OPEN_NOTE_ID)?.let {
+            pendingOpenNoteIdState.value = it
+        }
 
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
             val currentMood by viewModel.currentMood.collectAsState()
             val isReducedMotion by viewModel.isReducedMotion.collectAsState()
+            val openNoteId by pendingOpenNoteIdState.collectAsState()
 
             PimsVaultTheme(
                 themeMode = themeMode,
@@ -349,6 +354,7 @@ class MainActivity : FragmentActivity() {
                                 is SessionState.Unlocked -> {
                                     PersonaDashboardScreen(
                                         securityLevel = curState.securityLevel,
+                                        initialOpenNoteId = openNoteId,
                                         onLockClicked = { viewModel.lock() },
                                         onSignOutClicked = { viewModel.signOut() },
                                         onRequestBiometricAuth = { title, subtitle, onSuccess, onError ->
@@ -367,6 +373,14 @@ class MainActivity : FragmentActivity() {
     }
 }
 
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(com.pims.vault.core.reminder.NoteReminderReceiver.EXTRA_OPEN_NOTE_ID)?.let {
+            pendingOpenNoteIdState.value = it
+        }
+    }
 
     override fun onUserInteraction() {
         super.onUserInteraction()

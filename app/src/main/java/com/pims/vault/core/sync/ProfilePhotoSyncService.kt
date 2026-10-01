@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.pims.vault.core.crypto.PortableFileKeyManager
 import com.pims.vault.core.logging.VaultLogger
-import com.pims.vault.core.storage.B2StorageUploadService
+import com.pims.vault.core.storage.StorageUploadService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -15,23 +15,10 @@ import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Cloud-backed encrypted storage for profile images (avatar, contact
- * photos, ID photos) using the SAME B2 + Firestore architecture as
- * documents/attachments.
- *
- * - Plaintext JPEG bytes are encrypted with the portable file key inside
- *   [B2StorageUploadService.uploadProfilePhoto] (AES-256-GCM envelope).
- * - Firestore `photos/{photoId}` holds metadata + B2 pointer + envelope IV
- *   + plaintext SHA-256. No plaintext ever leaves the device.
- * - Local filesDir cache (`avatars/`, `contact_photos/`, ID photo files)
- *   stays the fast path; cloud is the recovery source.
- * - ID photos get kind="id_photo" and identical protection to documents.
- */
 @Singleton
 class ProfilePhotoSyncService @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val b2: B2StorageUploadService,
+    private val storageUploadService: StorageUploadService,
     private val portableFileKeyManager: PortableFileKeyManager
 ) {
     companion object {
@@ -51,7 +38,8 @@ class ProfilePhotoSyncService @Inject constructor(
         val sha256Hex: String,
         val mimeType: String,
         val sizeBytes: Long,
-        val updatedAt: Long
+        val updatedAt: Long,
+        val photoCiphertextBase64: String? = null
     )
 
     /** Reads a local image file, downscales to a sane bound, returns JPEG bytes. */
@@ -84,12 +72,12 @@ class ProfilePhotoSyncService @Inject constructor(
         mimeType: String = "image/jpeg"
     ): com.pims.vault.core.storage.StorageUploadService.UploadResult? = withContext(Dispatchers.IO) {
         if (jpegBytes.isEmpty() || jpegBytes.size > MAX_PHOTO_BYTES) return@withContext null
-        if (!b2.isConfigured()) {
-            VaultLogger.w("PhotoSync", "B2 not configured — photo $photoId not uploaded")
+        if (!storageUploadService.isConfigured()) {
+            VaultLogger.w("PhotoSync", "Storage service not configured — photo $photoId not uploaded to cloud storage")
             return@withContext null
         }
         try {
-            val result = b2.uploadProfilePhoto(ownerUid, kind, photoId, mimeType, jpegBytes)
+            val result = storageUploadService.uploadProfilePhoto(ownerUid, kind, photoId, mimeType, jpegBytes)
             if (result.remotePath.isBlank() || result.downloadUrl.isBlank()) return@withContext null
             result
         } catch (e: Exception) {
@@ -107,10 +95,22 @@ class ProfilePhotoSyncService @Inject constructor(
         ivHex: String,
         expectedSha256Hex: String,
         destFile: File,
+        photoCiphertextBase64: String? = null,
         legacyKeyProvider: (() -> ByteArray)? = null
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val ciphertext = b2.downloadEncryptedBytes(downloadUrl) ?: return@withContext false
+            val ciphertextFromRemote = if (downloadUrl.isNotBlank()) {
+                storageUploadService.downloadEncryptedBytes(downloadUrl)
+            } else null
+
+            val ciphertext = ciphertextFromRemote ?: photoCiphertextBase64?.let {
+                try {
+                    android.util.Base64.decode(it, android.util.Base64.NO_WRAP)
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: return@withContext false
+
             val iv = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
             if (iv.size != 12) return@withContext false
             val pfk = try {

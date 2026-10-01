@@ -129,9 +129,9 @@ object FileRecoveryCrypto {
             val (wrapped, iv) = wrapPortableKey(portableKey, recoveryKey)
             RecoveryEscrow(
                 keyId = "pfk_${java.util.UUID.randomUUID().toString().take(12)}",
-                saltBase64 = android.util.Base64.encodeToString(salt, android.util.Base64.NO_WRAP),
-                wrappedKeyBase64 = android.util.Base64.encodeToString(wrapped, android.util.Base64.NO_WRAP),
-                wrapIvBase64 = android.util.Base64.encodeToString(iv, android.util.Base64.NO_WRAP)
+                saltBase64 = java.util.Base64.getEncoder().encodeToString(salt),
+                wrappedKeyBase64 = java.util.Base64.getEncoder().encodeToString(wrapped),
+                wrapIvBase64 = java.util.Base64.getEncoder().encodeToString(iv)
             )
         } finally {
             java.util.Arrays.fill(recoveryKey, 0)
@@ -141,9 +141,9 @@ object FileRecoveryCrypto {
     /** Recovers the portable key from an escrow record + passphrase. */
     fun recoverFromEscrow(escrow: RecoveryEscrow, passphrase: CharArray): ByteArray {
         require(escrow.version == ESCROW_VERSION) { "Unsupported escrow version ${escrow.version}" }
-        val salt = android.util.Base64.decode(escrow.saltBase64, android.util.Base64.NO_WRAP)
-        val wrapped = android.util.Base64.decode(escrow.wrappedKeyBase64, android.util.Base64.NO_WRAP)
-        val iv = android.util.Base64.decode(escrow.wrapIvBase64, android.util.Base64.NO_WRAP)
+        val salt = java.util.Base64.getDecoder().decode(escrow.saltBase64)
+        val wrapped = java.util.Base64.getDecoder().decode(escrow.wrappedKeyBase64)
+        val iv = java.util.Base64.getDecoder().decode(escrow.wrapIvBase64)
         val recoveryKey = deriveRecoveryKey(passphrase, salt, escrow.iterations)
         return try {
             unwrapPortableKey(wrapped, iv, recoveryKey)
@@ -159,7 +159,7 @@ object FileRecoveryCrypto {
     fun escrowFingerprint(escrow: RecoveryEscrow): String {
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(escrow.keyId.toByteArray(Charsets.UTF_8))
-        digest.update(android.util.Base64.decode(escrow.wrappedKeyBase64, android.util.Base64.NO_WRAP))
+        digest.update(java.util.Base64.getDecoder().decode(escrow.wrappedKeyBase64))
         return digest.digest().joinToString("") { "%02x".format(it) }.take(16)
     }
 }

@@ -24,8 +24,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +38,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -76,6 +80,8 @@ fun AddCardScreen(
     var cardNumber by remember { mutableStateOf("") }
     var expiryDate by remember { mutableStateOf("") }
     var cvv by remember { mutableStateOf("") }
+    var showOptionsMenu by remember { mutableStateOf(false) }
+    var showSecurityInfoDialog by remember { mutableStateOf(false) }
 
     val cleanNumber = cardNumber.filter { it.isDigit() }
     val detectedBrand = detectCardBrand(cleanNumber)
@@ -108,12 +114,37 @@ fun AddCardScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                    Box {
+                        IconButton(onClick = { showOptionsMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Card options",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showOptionsMenu,
+                            onDismissRequest = { showOptionsMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Clear All Fields") },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    bankName = ""
+                                    cardHolder = ""
+                                    cardNumber = ""
+                                    expiryDate = ""
+                                    cvv = ""
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Card Security Guide") },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    showSecurityInfoDialog = true
+                                }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -286,6 +317,30 @@ fun AddCardScreen(
                 )
             }
         }
+    }
+
+    if (showSecurityInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showSecurityInfoDialog = false },
+            title = {
+                Text("Card Security & Isolation", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text(
+                    "Your payment cards are protected under Zone 4 (Critical Vault) security.\n\n" +
+                    "• Full card numbers and CVVs are encrypted at rest with hardware-backed AES-256-GCM.\n" +
+                    "• Biometric or PIN authentication is required to unseal card numbers.\n" +
+                    "• No financial telemetry or unencrypted card data ever leaves your device.",
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showSecurityInfoDialog = false }) {
+                    Text("Understood", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
 

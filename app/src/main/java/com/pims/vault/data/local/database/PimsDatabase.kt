@@ -64,7 +64,7 @@ import com.pims.vault.data.local.entity.VaultItemEntity
         PlainNoteEntity::class,
         PlainNoteAttachmentEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(RoomConverters::class)
@@ -289,6 +289,15 @@ abstract class PimsDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `plain_notes` ADD COLUMN `reminder_at` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `plain_notes` ADD COLUMN `reminder_tag` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `plain_notes` ADD COLUMN `reminder_repeat` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `plain_notes` ADD COLUMN `is_reminder_done` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         /**
          * Builder helper for instantiating the database.
          * The open helper factory can be plugged in later for SQLCipher / encryption
@@ -311,7 +320,8 @@ abstract class PimsDatabase : RoomDatabase() {
                 MIGRATION_5_6,
                 MIGRATION_6_7,
                 MIGRATION_7_8,
-                MIGRATION_8_9
+                MIGRATION_8_9,
+                MIGRATION_9_10
             )
 
             if (openHelperFactory != null) {

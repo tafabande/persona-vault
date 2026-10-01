@@ -12,14 +12,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.Note
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Cake
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
@@ -132,6 +136,10 @@ object PersonaIcons {
     val PersonAdd: ImageVector = Icons.Default.PersonAdd
     val Photo: ImageVector = Icons.Default.AddPhotoAlternate
     val PhotoOutlined: ImageVector = Icons.Outlined.AddPhotoAlternate
+    val Calendar: ImageVector = Icons.Default.DateRange
+    val Birthday: ImageVector = Icons.Default.Cake
+    val Bookmark: ImageVector = Icons.Default.Bookmark
+    val Comment: ImageVector = Icons.AutoMirrored.Filled.Comment
 
     /** Returns filled icon when selected, outlined when idle. Falls back to filled if no outlined variant. */
     fun navIcon(selected: Boolean, filled: ImageVector, outlined: ImageVector): ImageVector =

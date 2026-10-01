@@ -1,7 +1,14 @@
 import java.util.Properties
 import java.io.FileInputStream
 
-// Enterprise Secrets Loader: Environment Variables > secrets.properties > local.properties
+// Enterprise Secrets Loader: Environment Variables > .env > secrets.properties > local.properties
+val envProperties = Properties().apply {
+    val envFile = rootProject.file(".env")
+    if (envFile.exists()) {
+        load(FileInputStream(envFile))
+    }
+}
+
 val secretsProperties = Properties().apply {
     val secretsFile = rootProject.file("secrets.properties")
     if (secretsFile.exists()) {
@@ -18,6 +25,7 @@ val localProperties = Properties().apply {
 
 fun resolveSecret(key: String): String? {
     return System.getenv(key)
+        ?: envProperties.getProperty(key)
         ?: secretsProperties.getProperty(key)
         ?: localProperties.getProperty(key)
 }
@@ -60,6 +68,13 @@ android {
     }
 
     signingConfigs {
+        create("debugConfig") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+
         val releaseKeystorePath = resolveSecret("RELEASE_KEYSTORE_PATH")
         val releaseKeystorePassword = resolveSecret("RELEASE_KEYSTORE_PASSWORD")
         val releaseKeyAlias = resolveSecret("RELEASE_KEY_ALIAS")
@@ -77,6 +92,7 @@ android {
 
     buildTypes {
         debug {
+            signingConfig = signingConfigs.getByName("debugConfig")
             isMinifyEnabled = false
             buildConfigField("Boolean", "IS_DEBUG_CRYPTO_ALLOWED", "true")
             buildConfigField("Boolean", "ENABLE_STRICT_SECURITY_LOGS", "true")
@@ -116,6 +132,16 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        unitTests.all {
+            it.jvmArgs(
+                "-XX:+EnableDynamicAgentLoading",
+                "-Djdk.attach.allowAttachSelf=true"
+            )
         }
     }
 }
@@ -192,7 +218,7 @@ dependencies {
     // Firebase authentication and remote storage
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
-    implementation(libs.firebase.storage)
+    // implementation(libs.firebase.storage) // Firebase storage is not used
     implementation(libs.firebase.firestore)
 
     // Unit & Integration Testing
@@ -205,4 +231,17 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+}
+
+tasks.withType<Test>().configureEach {
+    jvmArgs(
+        "-XX:+EnableDynamicAgentLoading",
+        "-Djdk.attach.allowAttachSelf=true"
+    )
+    doFirst {
+        val agentJar = classpath.files.find { it.name.startsWith("byte-buddy-agent-") }
+        if (agentJar != null) {
+            jvmArgs("-javaagent:${agentJar.absolutePath}")
+        }
+    }
 }

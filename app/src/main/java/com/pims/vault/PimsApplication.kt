@@ -4,6 +4,7 @@ import android.app.Application
 import com.pims.vault.core.crypto.KeySecurityLevel
 import com.pims.vault.core.crypto.KeySecurityManager
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -45,5 +46,13 @@ class PimsApplication : Application() {
         } catch (e: Exception) {
             // Hardware keystore initialization logged securely or handled via fallback
         }
+
+        // 3. Reschedule active note reminders
+        try {
+            val scheduler = com.pims.vault.core.reminder.NoteReminderScheduler(this)
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                scheduler.rescheduleAllActiveReminders()
+            }
+        } catch (_: Exception) {}
     }
 }

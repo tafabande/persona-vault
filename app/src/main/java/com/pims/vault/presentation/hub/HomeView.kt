@@ -130,7 +130,9 @@ fun HomeView(
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPimsHaptics()
-    val displayName = personName.trim().ifBlank { "Personal Name" }
+    val displayName = personName.trim().ifBlank { "Personal Vault" }
+    val effectiveEmail = primaryEmail?.takeIf { it.isNotBlank() } ?: ""
+    val effectivePhone = primaryPhone?.takeIf { it.isNotBlank() } ?: ""
     var showIdentitySheet by remember { mutableStateOf(false) }
 
     // Primary document fallback if nationalIdNumber not explicitly in state
@@ -150,7 +152,7 @@ fun HomeView(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.72f)
+                .fillMaxHeight(0.52f)
                 .clipToBounds()
                 .align(Alignment.TopCenter)
         ) {
@@ -202,7 +204,7 @@ fun HomeView(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(160.dp)
+                    .height(130.dp)
                     .align(Alignment.BottomCenter)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
@@ -217,18 +219,19 @@ fun HomeView(
         }
 
         // Lower Content Section: Sits seamlessly over the extended hero bleed
+        // Always positioned above the bottom dock with guaranteed visibility
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // 3. IDENTITY DETAILS CARD (Displays Name, Chevron, Email, Phone, and Add ID photo)
+            // 3. IDENTITY DETAILS CARD (Displays Name, Email, Phone, and Add ID photo)
             IdentityDetailsCard(
                 displayName = displayName,
-                primaryEmail = primaryEmail,
-                primaryPhone = primaryPhone,
+                primaryEmail = effectiveEmail,
+                primaryPhone = effectivePhone,
                 idNumber = effectiveIdNumber,
                 idPhotoPath = idPhotoPath,
                 onOpenProfile = onOpenProfile,
@@ -242,13 +245,11 @@ fun HomeView(
                 }
             )
 
-            // 4. TWO QUICK ACCESS CARDS (Vault & Share) - with explicit height for visibility
+            // 4. TWO QUICK ACCESS CARDS (Vault & Share)
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(72.dp)
-                    .padding(bottom = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 HomeQuickAccessCard(
@@ -321,6 +322,10 @@ private fun HomeHeaderRow(
         } else null
     }
 
+    val buttonBg = MaterialTheme.colorScheme.surfaceVariant
+    val iconTint = MaterialTheme.colorScheme.onSurface
+    val dotColor = MaterialTheme.colorScheme.primary
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -331,7 +336,7 @@ private fun HomeHeaderRow(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                .background(buttonBg)
                 .clickable {
                     haptics.selection()
                     onOpenProfile()
@@ -351,13 +356,13 @@ private fun HomeHeaderRow(
                 Icon(
                     imageVector = PersonaIcons.MeOutlined,
                     contentDescription = "Profile",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    tint = iconTint,
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
 
-        // Right: Sync Status and Notification Bell with glass-morphism containers
+        // Right: Sync Status and Notification Bell with matching circular containers
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -373,21 +378,13 @@ private fun HomeHeaderRow(
                 ),
                 label = "SyncAngle"
             )
-            val glassBg = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0.0f to MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                    1.0f to MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                )
-            )
-            val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
-            val dotColor = MaterialTheme.colorScheme.primary
 
-            // Sync Status Button with radial gradient background
+            // Sync Status Button
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(glassBg)
+                    .background(buttonBg)
                     .clickable {
                         haptics.selection()
                         onSyncClick()
@@ -399,33 +396,29 @@ private fun HomeHeaderRow(
                     contentDescription = syncStatusText,
                     tint = iconTint,
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(22.dp)
                         .graphicsLayer {
                             if (isSyncing) {
                                 rotationZ = rotationAngle
                             }
                         }
                 )
-                if (!syncIsGood || isSyncing) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 4.dp, end = 4.dp)
-                            .size(7.dp)
-                            .background(
-                                color = if (syncIsGood) dotColor else MaterialTheme.colorScheme.error,
-                                shape = CircleShape
-                            )
-                    )
-                }
+                // Small black dot indicator on top-right as shown in screenshot
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp)
+                        .size(5.5.dp)
+                        .background(color = dotColor, shape = CircleShape)
+                )
             }
 
-            // Notification Bell with radial gradient background
+            // Notification Bell
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(glassBg)
+                    .background(buttonBg)
                     .clickable {
                         haptics.selection()
                         onNotificationClick()
@@ -433,20 +426,19 @@ private fun HomeHeaderRow(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (unreadNotificationCount > 0) PersonaIcons.Notifications else PersonaIcons.NotificationsOutlined,
+                    imageVector = PersonaIcons.NotificationsOutlined,
                     contentDescription = "Activity Notifications",
                     tint = iconTint,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(22.dp)
                 )
-                if (unreadNotificationCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 4.dp, end = 4.dp)
-                            .size(7.dp)
-                            .background(color = dotColor, shape = CircleShape)
-                    )
-                }
+                // Small black dot indicator on top-right as shown in screenshot
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp)
+                        .size(5.5.dp)
+                        .background(color = dotColor, shape = CircleShape)
+                )
             }
         }
     }
@@ -481,82 +473,71 @@ private fun IdentityDetailsCard(
     }
 
     val haptics = rememberPimsHaptics()
+    val textPrimary = MaterialTheme.colorScheme.onSurface
+    val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val cardBg = MaterialTheme.colorScheme.surface
+    val cardBorder = MaterialTheme.colorScheme.outlineVariant
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .pimsTactile { onEdit() },
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        shadowElevation = 4.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        color = cardBg,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, cardBorder)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Row 1: Accent bar + Name + Chevron
+            // Row 1: Full Name (Left) + Pencil Edit Icon (Right)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
                         haptics.selection()
-                        onOpenProfile()
+                        onEdit()
                     },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 19.sp
+                    ),
+                    color = textPrimary,
+                    maxLines = 1,
                     modifier = Modifier.weight(1f)
-                ) {
-                    // Terracotta accent edge bar
-                    Box(
-                        modifier = Modifier
-                            .width(3.dp)
-                            .height(26.dp)
-                            .background(
-                                MaterialTheme.colorScheme.primary,
-                                RoundedCornerShape(2.dp)
-                            )
-                    )
-                    Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1
-                    )
-                }
+                )
                 Icon(
-                    imageVector = PersonaIcons.ChevronRight,
-                    contentDescription = "View Profile",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(20.dp)
+                    imageVector = PersonaIcons.Edit,
+                    contentDescription = "Edit details",
+                    tint = textSecondary,
+                    modifier = Modifier.size(18.dp)
                 )
             }
 
-            // Row 2: Email
+            // Row 2: Email Icon + Email text
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.padding(top = 2.dp)
             ) {
                 Icon(
                     imageVector = PersonaIcons.EmailOutlined,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
+                    tint = textSecondary,
+                    modifier = Modifier.size(17.dp)
                 )
                 Text(
                     text = primaryEmail?.takeIf { it.isNotBlank() } ?: "Add email",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                    color = textSecondary,
                     maxLines = 1
                 )
             }
@@ -571,19 +552,19 @@ private fun IdentityDetailsCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
                     Icon(
                         imageVector = PersonaIcons.PhoneOutlined,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
+                        tint = textSecondary,
+                        modifier = Modifier.size(17.dp)
                     )
                     Text(
                         text = primaryPhone?.takeIf { it.isNotBlank() } ?: "Add phone",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                        color = textSecondary,
                         maxLines = 1
                     )
                 }
@@ -591,7 +572,7 @@ private fun IdentityDetailsCard(
                 // Add ID photo action / thumbnail
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable {
@@ -606,31 +587,31 @@ private fun IdentityDetailsCard(
                             contentDescription = "ID photo",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .size(22.dp)
+                                .size(20.dp)
                                 .clip(RoundedCornerShape(4.dp))
                         )
                         Text(
                             text = "ID photo",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Normal,
                                 fontSize = 13.5.sp
                             ),
-                            color = MaterialTheme.colorScheme.primary
+                            color = textPrimary
                         )
                     } else {
                         Icon(
                             imageVector = PersonaIcons.PhotoOutlined,
                             contentDescription = "Add ID photo",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(17.dp)
+                            tint = textPrimary,
+                            modifier = Modifier.size(18.dp)
                         )
                         Text(
                             text = "Add ID photo",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Normal,
                                 fontSize = 13.5.sp
                             ),
-                            color = MaterialTheme.colorScheme.primary
+                            color = textPrimary
                         )
                     }
                 }
@@ -839,65 +820,61 @@ private fun HomeQuickAccessCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val textPrimary = MaterialTheme.colorScheme.onSurface
+    val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val cardBg = MaterialTheme.colorScheme.surface
+    val cardBorder = MaterialTheme.colorScheme.outlineVariant
+    val iconCircleBg = MaterialTheme.colorScheme.surfaceVariant
+
     Surface(
         modifier = modifier
             .pimsTactile { onClick() },
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 4.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f))
+        color = cardBg,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, cardBorder)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 14.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            // Circular icon container
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(iconCircleBg),
+                contentAlignment = Alignment.Center
             ) {
-                // Pill-shaped icon container (not circle)
-                Box(
-                    modifier = Modifier
-                        .size(width = 46.dp, height = 40.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = textPrimary,
+                    modifier = Modifier.size(19.dp)
+                )
             }
-            // Chevron right
-            Icon(
-                imageVector = PersonaIcons.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                modifier = Modifier.size(18.dp)
-            )
+            Column(verticalArrangement = Arrangement.Center) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    ),
+                    color = textPrimary,
+                    maxLines = 1
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp
+                    ),
+                    color = textSecondary,
+                    maxLines = 1
+                )
+            }
         }
     }
 }

@@ -78,6 +78,9 @@ interface DocumentDao {
     @Delete
     suspend fun deleteVersion(version: DocumentVersionEntity)
 
+    @Query("DELETE FROM document_versions WHERE id = :id")
+    suspend fun deleteVersionById(id: String)
+
     @Query("DELETE FROM documents WHERE id = :id")
     suspend fun deleteDocumentById(id: String)
 }
@@ -165,6 +168,9 @@ interface SocialAccountDao {
     @Query("SELECT * FROM social_accounts ORDER BY created_at ASC")
     suspend fun getAllSocialAccounts(): List<SocialAccountEntity>
 
+    @Query("SELECT * FROM social_accounts WHERE id = :id LIMIT 1")
+    suspend fun getSocialAccountById(id: String): SocialAccountEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(account: SocialAccountEntity): Long
 
@@ -184,6 +190,8 @@ interface VaultDao {
 
     @Query("SELECT * FROM vault_items WHERE id = :id")
     suspend fun getVaultItemById(id: String): VaultItemEntity?
+
+    suspend fun getItemById(id: String): VaultItemEntity? = getVaultItemById(id)
 
     @Query("SELECT * FROM vault_items ORDER BY category ASC, title ASC")
     suspend fun getAllVaultItems(): List<VaultItemEntity>

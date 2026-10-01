@@ -116,7 +116,8 @@ class VaultSessionTests {
             readBankAccountUseCase = ReadBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             deleteVaultItemUseCase = DeleteVaultItemUseCase(fakeVaultDao, auditLogger),
             sessionManager = sessionManager,
-            personDao = fakePersonDao
+            personDao = fakePersonDao,
+            vaultDao = fakeVaultDao
         )
     }
 

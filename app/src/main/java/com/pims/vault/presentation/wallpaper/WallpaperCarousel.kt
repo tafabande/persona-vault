@@ -398,91 +398,100 @@ internal fun GenerativeArtworkVisual(
                 // =============================================================
                 // SERENE HILLS: Layered sun with concentric discs and rolling sage ridges
                 // =============================================================
-                // Base Sky: Warm pale cream
+                // Base Sky: Warm pale cream matching background
                 drawRect(
-                    color = Color(0xFFF6F3EC)
+                    color = Color(0xFFF7F5F0)
                 )
 
-                // Concentric Sun Discs
-                val sunCenter = Offset(w * 0.65f, h * 0.20f)
+                // Concentric Sun Discs positioned in upper right
+                val sunCenter = Offset(w * 0.65f, h * 0.22f)
+                
                 // Outer glow disc
                 drawCircle(
-                    color = Color(0xFFF4E8C1).copy(alpha = 0.35f),
-                    radius = w * 0.38f,
+                    color = Color(0xFFF0E7CB).copy(alpha = 0.50f),
+                    radius = w * 0.40f,
                     center = sunCenter
                 )
                 // Middle glow disc
                 drawCircle(
-                    color = Color(0xFFF9EFC8).copy(alpha = 0.65f),
-                    radius = w * 0.25f,
+                    color = Color(0xFFF6ECCF).copy(alpha = 0.80f),
+                    radius = w * 0.26f,
                     center = sunCenter
                 )
                 // Inner sun disc
                 drawCircle(
-                    color = Color(0xFFFFFDF0),
+                    color = Color(0xFFFFFDF5),
                     radius = w * 0.13f,
                     center = sunCenter
                 )
 
-                // Upper misty stratified background bands
-                drawRect(
-                    color = Color(0xFFE4EDE3).copy(alpha = 0.85f),
-                    topLeft = Offset(0f, h * 0.21f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.11f)
-                )
-                drawRect(
-                    color = Color(0xFFD2E0D1),
-                    topLeft = Offset(0f, h * 0.32f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.045f)
-                )
-
-                // Rolling Foreground Hill (Curving sage green slope)
-                val hill = Path().apply {
-                    moveTo(0f, h * 0.365f)
-                    cubicTo(w * 0.35f, h * 0.34f, w * 0.65f, h * 0.37f, w, h * 0.33f)
+                // 1. Distant Back Hill (muted sage green)
+                val backHill = Path().apply {
+                    moveTo(0f, h * 0.44f)
+                    cubicTo(w * 0.30f, h * 0.41f, w * 0.65f, h * 0.45f, w, h * 0.43f)
                     lineTo(w, h)
                     lineTo(0f, h)
                     close()
                 }
                 drawPath(
-                    path = hill,
+                    path = backHill,
+                    color = Color(0xFF78917B)
+                )
+
+                // 2. Ivory horizon ridge accent
+                val ivoryRidge = Path().apply {
+                    moveTo(0f, h * 0.445f)
+                    cubicTo(w * 0.35f, h * 0.425f, w * 0.65f, h * 0.455f, w, h * 0.435f)
+                    lineTo(w, h * 0.465f)
+                    cubicTo(w * 0.65f, h * 0.475f, w * 0.35f, h * 0.445f, 0f, h * 0.465f)
+                    close()
+                }
+                drawPath(
+                    path = ivoryRidge,
+                    color = Color(0xFFFAF7F0)
+                )
+
+                // 3. Main Rolling Foreground Hill (rich deep sage)
+                val mainHill = Path().apply {
+                    moveTo(0f, h * 0.44f)
+                    cubicTo(w * 0.28f, h * 0.42f, w * 0.70f, h * 0.47f, w, h * 0.435f)
+                    lineTo(w, h)
+                    lineTo(0f, h)
+                    close()
+                }
+                drawPath(
+                    path = mainHill,
                     color = Color(0xFF67826A)
                 )
 
-                // Lower Stratified Horizontal Layers beneath the hill
-                drawRect(
-                    color = Color(0xFF78927B),
-                    topLeft = Offset(0f, h * 0.42f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.05f)
+                // 4. Lower Organic Swell (middle sage)
+                val foregroundHill = Path().apply {
+                    moveTo(0f, h * 0.52f)
+                    cubicTo(w * 0.35f, h * 0.48f, w * 0.75f, h * 0.52f, w, h * 0.50f)
+                    lineTo(w, h)
+                    lineTo(0f, h)
+                    close()
+                }
+                drawPath(
+                    path = foregroundHill,
+                    color = Color(0xFF769179)
                 )
-                drawRect(
-                    color = Color(0xFF93A795),
-                    topLeft = Offset(0f, h * 0.47f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.05f)
-                )
-                drawRect(
-                    color = Color(0xFFAEC0B0),
-                    topLeft = Offset(0f, h * 0.52f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.055f)
-                )
-                drawRect(
-                    color = Color(0xFFC6D4C8),
-                    topLeft = Offset(0f, h * 0.575f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.06f)
-                )
-                drawRect(
-                    color = Color(0xFFDEE7E0),
-                    topLeft = Offset(0f, h * 0.635f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.065f)
-                )
+
+                // 5. Soft Atmospheric Mist Fade into Screen Background
                 drawRect(
                     brush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFFDEE7E0), Color(0xFFF6F4EE)),
-                        startY = h * 0.70f,
+                        colors = listOf(
+                            Color.Transparent,
+                            Color(0xFF769179).copy(alpha = 0.35f),
+                            Color(0xFFBACABE).copy(alpha = 0.70f),
+                            Color(0xFFE2EBE3).copy(alpha = 0.90f),
+                            Color(0xFFF7F5F0)
+                        ),
+                        startY = h * 0.50f,
                         endY = h
                     ),
-                    topLeft = Offset(0f, h * 0.70f),
-                    size = androidx.compose.ui.geometry.Size(w, h * 0.30f)
+                    topLeft = Offset(0f, h * 0.50f),
+                    size = androidx.compose.ui.geometry.Size(w, h * 0.50f)
                 )
             }
             else -> {

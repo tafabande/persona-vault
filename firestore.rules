@@ -102,11 +102,7 @@ service cloud.firestore {
 
       // Local Tombstones for Offline Sync Horizon
       match /tombstones/{tombstoneId} {
-        allow read: if isAccountOwner(accountId);
-        allow create: if isAccountOwner(accountId) && 
-                         request.resource.data.timestamp <= request.time;
-        allow update: if false; // Tombstones are immutable deletion markers
-        allow delete: if false; // Purged only by server deletion horizon
+        allow read, write: if isAccountOwner(accountId);
       }
 
       // Plain Notes & Rich Journal

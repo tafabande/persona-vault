@@ -23,8 +23,6 @@ fragment = "1.9.0"
 # Google Fonts
 googleFonts = "1.0.0"
 
-[libraries]
-
 # Room & Database
 room = "2.6.1"
 sqlcipher = "4.5.4"

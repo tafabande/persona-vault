@@ -83,6 +83,27 @@ class PhotoBackupCoordinator @Inject constructor(
         }
     }
 
+    fun backupAvatarConfigAsync(configJson: String) {
+        if (configJson.isBlank()) return
+        scope.launch {
+            try {
+                firestoreSync.syncAvatarConfig(configJson)
+            } catch (e: Exception) {
+                VaultLogger.w("PhotoBackup", "Avatar config backup failed: ${e.message}")
+            }
+        }
+    }
+
+    fun deleteAvatarPhotoAsync() {
+        scope.launch {
+            try {
+                firestoreSync.deleteRemoteProfilePhoto("avatar_primary")
+            } catch (e: Exception) {
+                VaultLogger.w("PhotoBackup", "Avatar delete failed: ${e.message}")
+            }
+        }
+    }
+
     private suspend fun backupPhoto(kind: String, photoId: String, ownerKey: String, localPath: String) {
         val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
             ?: return
@@ -92,23 +113,43 @@ class PhotoBackupCoordinator @Inject constructor(
         try {
             portableFileKeyManager.getOrCreatePortableKey()
         } catch (_: Exception) {}
-        val result = photoSync.uploadPhoto(uid, kind, photoId, bytes) ?: return
+        val result = photoSync.uploadPhoto(uid, kind, photoId, bytes)
         val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
+
+        var photoCiphertextBase64: String? = null
+        var ivHex = result?.ivHex ?: ""
+        val pfk = try { portableFileKeyManager.copyKeyBytes() } catch (_: Exception) { null }
+        if (pfk != null && bytes.size < 800 * 1024) {
+            try {
+                val enc = com.pims.vault.core.crypto.HardenedCryptoEngine().encrypt(bytes, pfk)
+                photoCiphertextBase64 = android.util.Base64.encodeToString(enc.combinedCiphertextWithTag, android.util.Base64.NO_WRAP)
+                if (ivHex.isBlank()) {
+                    ivHex = enc.iv.joinToString("") { "%02x".format(it) }
+                }
+            } catch (_: Exception) {
+            } finally {
+                java.util.Arrays.fill(pfk, 0)
+            }
+        }
         java.util.Arrays.fill(bytes, 0)
+
+        if (result == null && photoCiphertextBase64 == null) return
+
         firestoreSync.syncProfilePhoto(
             null,
             ProfilePhotoSyncService.PhotoMetadata(
                 photoId = photoId,
                 kind = kind,
                 ownerKey = ownerKey,
-                b2RemotePath = result.remotePath,
-                b2DownloadUrl = result.downloadUrl,
-                b2IvHex = result.ivHex,
+                b2RemotePath = result?.remotePath ?: "",
+                b2DownloadUrl = result?.downloadUrl ?: "",
+                b2IvHex = ivHex,
                 sha256Hex = sha,
                 mimeType = "image/jpeg",
-                sizeBytes = result.sizeBytes,
-                updatedAt = System.currentTimeMillis()
+                sizeBytes = result?.sizeBytes ?: 0L,
+                updatedAt = System.currentTimeMillis(),
+                photoCiphertextBase64 = photoCiphertextBase64
             )
         )
     }
@@ -120,18 +161,41 @@ class PhotoBackupCoordinator @Inject constructor(
     suspend fun restoreAllPhotos(): Int {
         var restored = 0
         try {
+            try {
+                val remoteConfigJson = firestoreSync.getAvatarConfig(null)
+                if (!remoteConfigJson.isNullOrBlank()) {
+                    val avatarManager = PersonaAvatarManager.getInstance(context)
+                    avatarManager.saveConfigFromJsonString(remoteConfigJson)
+                }
+            } catch (_: Exception) {}
+
             val remote = firestoreSync.listRemotePhotos(null)
             if (remote.isEmpty()) return 0
             val avatarManager = PersonaAvatarManager.getInstance(context)
             for (meta in remote) {
                 try {
                     val dest = destFileFor(meta) ?: continue
-                    if (dest.exists() && dest.length() > 0) continue // cache hit
+                    if (dest.exists() && dest.length() > 0) {
+                        // Cache hit: ensure avatar manager points to it
+                        if (meta.kind == ProfilePhotoSyncService.KIND_AVATAR) {
+                            val cfg = avatarManager.avatarConfig.value
+                            val useAsActive = cfg.avatarSource == com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE ||
+                                !cfg.customAvatarPath.isNullOrBlank()
+                            avatarManager.saveConfig(
+                                cfg.copy(
+                                    customAvatarPath = dest.absolutePath,
+                                    avatarSource = if (useAsActive) com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE else cfg.avatarSource
+                                )
+                            )
+                        }
+                        continue
+                    }
                     val ok = photoSync.downloadPhotoToFile(
                         downloadUrl = meta.b2DownloadUrl,
                         ivHex = meta.b2IvHex,
                         expectedSha256Hex = meta.sha256Hex,
                         destFile = dest,
+                        photoCiphertextBase64 = meta.photoCiphertextBase64,
                         legacyKeyProvider = {
                             com.pims.vault.core.crypto.HkdfKeyDerivation.let {
                                 // Legacy device key fallback for pre-migration blobs.
@@ -145,14 +209,13 @@ class PhotoBackupCoordinator @Inject constructor(
                     }
                     when (meta.kind) {
                         ProfilePhotoSyncService.KIND_AVATAR -> {
-                            // Point avatar config at restored file (keep GENERATED
-                            // source unless user had a custom photo — the
-                            // metadata presence implies they did).
                             val cfg = avatarManager.avatarConfig.value
+                            val useAsActive = cfg.avatarSource == com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE ||
+                                !cfg.customAvatarPath.isNullOrBlank()
                             avatarManager.saveConfig(
                                 cfg.copy(
                                     customAvatarPath = dest.absolutePath,
-                                    avatarSource = com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE
+                                    avatarSource = if (useAsActive) com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE else cfg.avatarSource
                                 )
                             )
                         }

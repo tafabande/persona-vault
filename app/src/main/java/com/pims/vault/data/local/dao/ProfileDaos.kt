@@ -79,6 +79,9 @@ interface ContactDao {
     @Query("SELECT * FROM contact_methods ORDER BY is_primary DESC, created_at ASC")
     suspend fun getAllContacts(): List<ContactMethodEntity>
 
+    @Query("SELECT * FROM contact_methods WHERE id = :id LIMIT 1")
+    suspend fun getContactById(id: String): ContactMethodEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(contact: ContactMethodEntity): Long
 
@@ -102,6 +105,9 @@ interface AddressDao {
     @Query("SELECT * FROM addresses ORDER BY is_current DESC, created_at DESC")
     suspend fun getAllAddresses(): List<AddressEntity>
 
+    @Query("SELECT * FROM addresses WHERE id = :id LIMIT 1")
+    suspend fun getAddressById(id: String): AddressEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(address: AddressEntity): Long
 
@@ -118,6 +124,9 @@ interface RelationshipDao {
 
     @Query("SELECT * FROM relationships")
     suspend fun getAllRelationships(): List<RelationshipEntity>
+
+    @Query("SELECT * FROM relationships WHERE id = :id LIMIT 1")
+    suspend fun getRelationshipById(id: String): RelationshipEntity?
 
     @Transaction
     @Query("SELECT * FROM relationships WHERE source_person_id = :personId")

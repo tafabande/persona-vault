@@ -19,7 +19,8 @@ import javax.inject.Singleton
 class PlainNotesRepositoryImpl @Inject constructor(
     private val dao: PlainNoteDao,
     private val fileStorage: FileStorageService,
-    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null,
+    private val reminderScheduler: com.pims.vault.core.reminder.NoteReminderScheduler? = null
 ) : PlainNotesRepository {
 
     override fun observe(ownerPersonId: String): Flow<List<PlainNote>> {
@@ -38,7 +39,11 @@ class PlainNotesRepositoryImpl @Inject constructor(
         ownerPersonId: String,
         title: String,
         format: NoteFormat,
-        content: String
+        content: String,
+        reminderAt: Long?,
+        reminderTag: String?,
+        reminderRepeat: String?,
+        isReminderDone: Boolean
     ): PlainNote {
         val noteId = id ?: UUID.randomUUID().toString()
         val cleanTitle = title.trim()
@@ -52,9 +57,29 @@ class PlainNotesRepositoryImpl @Inject constructor(
             content = content,
             format = format.name,
             createdAt = existing?.createdAt ?: now,
-            updatedAt = now
+            updatedAt = now,
+            reminderAt = reminderAt ?: existing?.reminderAt,
+            reminderTag = reminderTag ?: existing?.reminderTag,
+            reminderRepeat = reminderRepeat ?: existing?.reminderRepeat,
+            isReminderDone = isReminderDone
         )
         dao.upsert(entity)
+
+        // Manage actual AlarmManager notification
+        val effectiveReminder = entity.reminderAt
+        if (effectiveReminder != null && !entity.isReminderDone && effectiveReminder > now) {
+            reminderScheduler?.scheduleReminder(
+                noteId = noteId,
+                title = finalTitle,
+                contentSnippet = content.take(120),
+                tag = entity.reminderTag,
+                triggerAtMillis = effectiveReminder,
+                repeat = entity.reminderRepeat
+            )
+        } else if (effectiveReminder == null || entity.isReminderDone) {
+            reminderScheduler?.cancelReminder(noteId)
+        }
+
         try {
             firestoreSyncService?.syncNote(null, entity, isDeleted = false)
         } catch (_: Exception) {}
@@ -62,7 +87,53 @@ class PlainNotesRepositoryImpl @Inject constructor(
         return toDomain(entity, attachments)
     }
 
+    override suspend fun setReminder(
+        noteId: String,
+        reminderAt: Long?,
+        reminderTag: String?,
+        reminderRepeat: String?
+    ) {
+        dao.updateReminder(noteId, reminderAt, reminderTag, reminderRepeat)
+        val note = dao.getById(noteId)
+        if (note != null && reminderAt != null && reminderAt > System.currentTimeMillis()) {
+            reminderScheduler?.scheduleReminder(
+                noteId = noteId,
+                title = note.title,
+                contentSnippet = note.content.take(120),
+                tag = reminderTag,
+                triggerAtMillis = reminderAt,
+                repeat = reminderRepeat
+            )
+        } else if (reminderAt == null) {
+            reminderScheduler?.cancelReminder(noteId)
+        }
+        note?.let {
+            try { firestoreSyncService?.syncNote(null, it, isDeleted = false) } catch (_: Exception) {}
+        }
+    }
+
+    override suspend fun markReminderDone(noteId: String, isDone: Boolean) {
+        dao.setReminderDone(noteId, isDone)
+        if (isDone) {
+            reminderScheduler?.cancelReminder(noteId)
+        }
+        val note = dao.getById(noteId)
+        note?.let {
+            try { firestoreSyncService?.syncNote(null, it, isDeleted = false) } catch (_: Exception) {}
+        }
+    }
+
+    override suspend fun clearReminder(noteId: String) {
+        dao.clearReminder(noteId)
+        reminderScheduler?.cancelReminder(noteId)
+        val note = dao.getById(noteId)
+        note?.let {
+            try { firestoreSyncService?.syncNote(null, it, isDeleted = false) } catch (_: Exception) {}
+        }
+    }
+
     override suspend fun delete(id: String) {
+        reminderScheduler?.cancelReminder(id)
         // Delete attachment binaries first so restores don't resurrect them.
         try {
             val attachments = dao.getAttachments(id)
@@ -155,7 +226,11 @@ class PlainNotesRepositoryImpl @Inject constructor(
             format = NoteFormat.fromString(entity.format),
             attachments = attachments,
             createdAt = entity.createdAt,
-            updatedAt = entity.updatedAt
+            updatedAt = entity.updatedAt,
+            reminderAt = entity.reminderAt,
+            reminderTag = entity.reminderTag,
+            reminderRepeat = entity.reminderRepeat,
+            isReminderDone = entity.isReminderDone
         )
     }
 

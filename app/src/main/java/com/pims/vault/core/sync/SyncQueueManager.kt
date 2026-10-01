@@ -2,8 +2,13 @@ package com.pims.vault.core.sync
 
 import com.pims.vault.core.crypto.HardenedAuditLogger
 import com.pims.vault.core.model.AuditEventType
+import com.pims.vault.data.local.dao.AddressDao
+import com.pims.vault.data.local.dao.ContactDao
+import com.pims.vault.data.local.dao.PersonDao
+import com.pims.vault.data.local.dao.PlainNoteDao
 import com.pims.vault.data.local.dao.SyncConflictDao
 import com.pims.vault.data.local.dao.SyncQueueDao
+import com.pims.vault.data.local.dao.VaultDao
 import com.pims.vault.data.local.entity.AuditEventEntity
 import com.pims.vault.data.local.entity.SyncAction
 import com.pims.vault.data.local.entity.SyncConflictEntity
@@ -31,7 +36,12 @@ class SyncQueueManager @Inject constructor(
     private val networkMonitor: NetworkStateMonitor,
     private val auditLogger: HardenedAuditLogger,
     private val remoteSyncGateway: RemoteSyncGateway,
-    private val firestoreSyncService: FirestoreSyncService? = null
+    private val firestoreSyncService: FirestoreSyncService? = null,
+    private val plainNoteDao: PlainNoteDao? = null,
+    private val contactDao: ContactDao? = null,
+    private val addressDao: AddressDao? = null,
+    private val vaultDao: VaultDao? = null,
+    private val personDao: PersonDao? = null
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -252,6 +262,62 @@ class SyncQueueManager @Inject constructor(
     ) {
         val conflict = syncConflictDao.getConflictById(conflictId) ?: return
         syncConflictDao.resolveConflict(conflictId, choice.name, System.currentTimeMillis())
+
+        if (choice == ConflictResolutionChoice.USE_REMOTE || choice == ConflictResolutionChoice.MERGED) {
+            try {
+                when (conflict.entityType) {
+                    "Note" -> {
+                        val note = plainNoteDao?.getById(conflict.entityId)
+                        if (note != null) {
+                            plainNoteDao.upsert(note.copy(content = resolvedValue, updatedAt = System.currentTimeMillis()))
+                        }
+                    }
+                    "Contact" -> {
+                        val contact = contactDao?.getContactById(conflict.entityId)
+                        if (contact != null) {
+                            contactDao.insertOrUpdate(contact.copy(value = resolvedValue))
+                        }
+                    }
+                    "Address" -> {
+                        val addr = addressDao?.getAddressById(conflict.entityId)
+                        if (addr != null) {
+                            addressDao.insertOrUpdate(addr.copy(streetLine1 = resolvedValue))
+                        }
+                    }
+                    "VaultItem" -> {
+                        val item = vaultDao?.getItemById(conflict.entityId)
+                        if (item != null) {
+                            vaultDao.insertOrUpdate(item.copy(title = resolvedValue, updatedAt = System.currentTimeMillis()))
+                        }
+                    }
+                    "Person" -> {
+                        val person = personDao?.getPersonById(conflict.entityId)
+                        if (person != null) {
+                            val parts = resolvedValue.split(" ", limit = 2)
+                            personDao.insertOrUpdate(person.copy(
+                                firstName = parts.firstOrNull() ?: person.firstName,
+                                lastName = parts.getOrNull(1) ?: person.lastName,
+                                updatedAt = System.currentTimeMillis()
+                            ))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                auditLogger.recordEvent(
+                    eventType = AuditEventType.INTEGRITY_CHECK_FAILED,
+                    entityType = conflict.entityType,
+                    entityId = conflict.entityId,
+                    description = "Failed to apply conflict resolution: ${e.message}"
+                )
+            }
+        }
+
+        // If KEEP_LOCAL or MERGED: push to remote so server state updates to user's decision
+        if (choice == ConflictResolutionChoice.KEEP_LOCAL || choice == ConflictResolutionChoice.MERGED) {
+            try {
+                firestoreSyncService?.syncAllData(null)
+            } catch (_: Exception) {}
+        }
 
         auditLogger.recordEvent(
             eventType = AuditEventType.UPDATE,

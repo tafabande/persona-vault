@@ -93,7 +93,9 @@ class DocumentViewModel @Inject constructor(
     private val deleteDocumentUseCase: DeleteDocumentUseCase,
     private val decryptDocumentUseCase: DecryptDocumentUseCase,
     private val sessionManager: BiometricSessionManager,
-    private val personDao: com.pims.vault.data.local.dao.PersonDao
+    private val personDao: com.pims.vault.data.local.dao.PersonDao,
+    private val documentDao: com.pims.vault.data.local.dao.DocumentDao,
+    private val firestoreSyncServiceProvider: javax.inject.Provider<com.pims.vault.core.sync.FirestoreSyncService>? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DocumentUiState())
@@ -146,7 +148,7 @@ class DocumentViewModel @Inject constructor(
                         if (stream == null) {
                             throw IllegalArgumentException("No file payload provided for ingestion")
                         }
-                        ingestDocumentUseCase(
+                        val docId = ingestDocumentUseCase(
                             personId = canonicalOwnerId,
                             documentType = event.type,
                             title = event.title,
@@ -160,6 +162,14 @@ class DocumentViewModel @Inject constructor(
                             mimeType = event.mimeType,
                             originalFilename = event.filename
                         )
+                        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                val docEntity = documentDao.getAllDocuments().find { it.id == docId }
+                                if (docEntity != null) {
+                                    firestoreSyncServiceProvider?.get()?.syncDocument(null, docEntity)
+                                }
+                            } catch (_: Exception) {}
+                        }
                         _uiState.update {
                             it.copy(
                                 isIngestingDocument = false,
@@ -170,6 +180,20 @@ class DocumentViewModel @Inject constructor(
                     }
 
                     is DocumentEvent.AddVersion -> {
+                        addDocumentVersionUseCase(
+                            documentId = event.documentId,
+                            fileStream = event.fileStream,
+                            mimeType = event.mimeType,
+                            notes = event.notes
+                        )
+                        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                val docEntity = documentDao.getAllDocuments().find { it.id == event.documentId }
+                                if (docEntity != null) {
+                                    firestoreSyncServiceProvider?.get()?.syncDocument(null, docEntity)
+                                }
+                            } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(feedbackMessage = "Appended new version to document") }
                     }
 

@@ -25,7 +25,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class PersonaAvatarManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val photoBackupCoordinatorProvider: javax.inject.Provider<com.pims.vault.core.sync.PhotoBackupCoordinator>? = null
 ) {
     private val prefs = context.getSharedPreferences("persona_avatar_prefs", Context.MODE_PRIVATE)
 
@@ -63,6 +64,26 @@ class PersonaAvatarManager @Inject constructor(
         val updated = current.copy(avatarSource = source)
         saveConfig(updated)
         _avatarSource.value = source
+    }
+
+    fun clearCustomPhoto() {
+        val current = _avatarConfig.value
+        current.customAvatarPath?.let { path ->
+            try {
+                val f = File(path)
+                if (f.exists()) f.delete()
+            } catch (_: Exception) {}
+        }
+        val updated = current.copy(
+            avatarSource = AvatarSource.GENERATED,
+            customAvatarPath = null
+        )
+        saveConfig(updated)
+        _customAvatarPath.value = null
+        _avatarSource.value = AvatarSource.GENERATED
+        try {
+            photoBackupCoordinatorProvider?.get()?.deleteAvatarPhotoAsync()
+        } catch (_: Exception) {}
     }
 
     /**
@@ -178,6 +199,23 @@ class PersonaAvatarManager @Inject constructor(
         _avatarConfig.value = config.copy(expression = AvatarExpression.NORMAL)
         _avatarSource.value = config.avatarSource
         _customAvatarPath.value = config.customAvatarPath
+        try {
+            photoBackupCoordinatorProvider?.get()?.backupAvatarConfigAsync(json.toString())
+            if (config.avatarSource == AvatarSource.CUSTOM_IMAGE && !config.customAvatarPath.isNullOrBlank()) {
+                photoBackupCoordinatorProvider?.get()?.backupAvatarAsync(config.customAvatarPath)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun saveConfigFromJsonString(jsonString: String) {
+        try {
+            val json = JSONObject(jsonString)
+            val config = parseConfigFromJson(json)
+            prefs.edit().putString(KEY_CONFIG, jsonString).apply()
+            _avatarConfig.value = config.copy(expression = AvatarExpression.NORMAL)
+            _avatarSource.value = config.avatarSource
+            _customAvatarPath.value = config.customAvatarPath
+        } catch (_: Exception) {}
     }
 
     fun getAvatarConfigForRelationship(personId: String, name: String, role: String): PersonaAvatarConfig {
@@ -227,6 +265,9 @@ class PersonaAvatarManager @Inject constructor(
                 avatarSource = AvatarSource.CUSTOM_IMAGE
             )
             saveConfig(updated)
+            try {
+                photoBackupCoordinatorProvider?.get()?.backupAvatarAsync(newPath)
+            } catch (_: Exception) {}
             newPath
         } catch (_: Exception) {
             null

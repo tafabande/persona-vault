@@ -9,6 +9,7 @@ import com.pims.vault.domain.rules.BackupRules
 import com.pims.vault.domain.usecase.backup.CreateBackupUseCase
 import com.pims.vault.domain.usecase.backup.RestoreBackupUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +36,64 @@ class BackupViewModel @Inject constructor(
 
     fun validatePassphrase(passphrase: CharArray) {
         _isPassphraseValid.value = BackupRules.validatePassphraseStrength(passphrase)
+    }
+
+    fun triggerFullVaultBackup(
+        context: Context,
+        passphrase: CharArray
+    ) {
+        viewModelScope.launch {
+            try {
+                val dbFile = context.getDatabasePath(com.pims.vault.data.local.database.PimsDatabase.DATABASE_NAME)
+                val dbBytes = if (dbFile.exists()) dbFile.readBytes() else ByteArray(0)
+                val backupDir = File(context.filesDir, "backups").apply { mkdirs() }
+                val outputFile = File(backupDir, "pims_vault_backup_${System.currentTimeMillis()}.pimsbak")
+
+                val tableMetrics = listOf(
+                    BackupTableMetric("vault_items", 1L, "vault_items_chk"),
+                    BackupTableMetric("persons", 1L, "persons_chk"),
+                    BackupTableMetric("documents", 0L, "documents_chk")
+                )
+
+                startBackup(
+                    passphrase = passphrase,
+                    databaseBytes = dbBytes,
+                    documentBlobs = emptyMap(),
+                    tableMetrics = tableMetrics,
+                    outputFile = outputFile
+                )
+            } catch (e: Exception) {
+                _progressState.value = BackupProgressState.Error("Backup preparation failed: ${e.message}", e)
+            }
+        }
+    }
+
+    fun triggerFullVaultRestore(
+        context: Context,
+        passphrase: CharArray,
+        backupFile: File? = null
+    ) {
+        val targetBackup = backupFile ?: run {
+            val backupDir = File(context.filesDir, "backups")
+            backupDir.listFiles()?.filter { it.name.endsWith(".pimsbak") }?.maxByOrNull { it.lastModified() }
+        }
+
+        if (targetBackup == null || !targetBackup.exists()) {
+            _progressState.value = BackupProgressState.Error("No backup package (.pimsbak) found to restore", null)
+            return
+        }
+
+        val stagingDir = File(context.cacheDir, "restore_staging").apply { mkdirs() }
+        val journalFile = File(context.filesDir, "restore_journal.log")
+        startRestore(
+            passphrase = passphrase,
+            backupFile = targetBackup,
+            stagingDir = stagingDir,
+            journalFile = journalFile
+        ) { restoredDbBytes, _ ->
+            val dbFile = context.getDatabasePath(com.pims.vault.data.local.database.PimsDatabase.DATABASE_NAME)
+            dbFile.writeBytes(restoredDbBytes)
+        }
     }
 
     fun startBackup(

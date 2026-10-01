@@ -6,7 +6,6 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -20,6 +19,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,29 +28,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddAPhoto
-import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,28 +51,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.avatar.PersonaAvatarManager
-import com.pims.vault.presentation.ui.components.InternationalPhoneInput
-import com.pims.vault.presentation.ui.components.PersonaDropdownSelector
-import com.pims.vault.presentation.ui.components.PersonaFormSection
-import com.pims.vault.presentation.ui.components.PersonaSearchableCombobox
-import com.pims.vault.presentation.ui.components.PersonaTextInput
-import com.pims.vault.presentation.ui.components.StandardDateInput
-import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
 import java.io.FileOutputStream
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectPersonScreen(
     onBack: () -> Unit,
@@ -104,8 +90,8 @@ fun ConnectPersonScreen(
     BackHandler(onBack = onBack)
 
     var relRole by remember { mutableStateOf("Mother") }
-    var personIsFemale by remember { mutableStateOf(true) }
     var relName by remember { mutableStateOf("") }
+    var primaryPhone by remember { mutableStateOf("") }
 
     var selectedPhotoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var selectedPhotoPath by remember { mutableStateOf<String?>(null) }
@@ -131,330 +117,342 @@ fun ConnectPersonScreen(
         }
     }
 
-    val relRoles = remember {
-        listOf(
-            "Mother", "Father", "Spouse", "Partner", "Son", "Daughter",
-            "Brother", "Sister", "Friend", "Colleague", "Manager", "Doctor",
-            "Lawyer", "Accountant", "Emergency Contact", "Mentor", "Other"
-        )
+    val relationshipChips = remember {
+        listOf("Mother", "Father", "Sibling", "Partner", "Friend", "Other")
     }
 
-    var primaryPhone by remember { mutableStateOf("") }
-    var additionalPhones by remember { mutableStateOf<List<String>>(emptyList()) }
-    var primaryEmail by remember { mutableStateOf("") }
-    var relAddress by remember { mutableStateOf("") }
-    var relDob by remember { mutableStateOf("") }
-    var relAnniversary by remember { mutableStateOf("") }
-    var relNotes by remember { mutableStateOf("") }
+    val textPrimary = Color(0xFF20201E)
+    val textSecondary = Color(0xFF6F6B63)
+    val textHint = Color(0xFF8E8A82)
+    val dividerColor = Color(0xFFEBE6DC)
 
-    fun isRomanticRelationship(r: String): Boolean {
-        val lower = r.lowercase()
-        return lower.contains("spouse") || lower.contains("partner") ||
-                lower.contains("wife") || lower.contains("husband")
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Add someone",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            )
-        },
-        bottomBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f).let { 
-                    // Blend with primary tint
-                    androidx.compose.ui.graphics.Color(
-                        red = (it.red + MaterialTheme.colorScheme.primary.red * 0.08f).coerceAtMost(1f),
-                        green = (it.green + MaterialTheme.colorScheme.primary.green * 0.08f).coerceAtMost(1f),
-                        blue = (it.blue + MaterialTheme.colorScheme.primary.blue * 0.08f).coerceAtMost(1f),
-                        alpha = it.alpha
-                    )
-                },
-                shadowElevation = 12.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(
-                        onClick = onBack,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .tactilePress()
-                    ) {
-                        Text(
-                            text = "Cancel",
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Button(
-                        onClick = {
-                            if (relName.isBlank()) {
-                                haptics.error()
-                                feedback.warning()
-                                return@Button
-                            }
-                            haptics.success()
-                            feedback.success()
-                            val allPhones = listOf(primaryPhone) + additionalPhones
-                            val fullPhone = allPhones.filter { it.isNotBlank() }.joinToString(" • ")
-                            onSavePerson(
-                                relRole,
-                                relName.trim(),
-                                if (personIsFemale) "Female" else "Male",
-                                fullPhone,
-                                primaryEmail.trim(),
-                                relAddress.trim(),
-                                relDob.trim(),
-                                relAnniversary.trim(),
-                                relNotes.trim(),
-                                selectedPhotoPath
-                            )
-                        },
-                        enabled = relName.isNotBlank(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier
-                            .weight(1.2f)
-                            .height(48.dp)
-                            .tactilePress()
-                    ) {
-                        Text(
-                            text = "Save Person",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.background,
-        modifier = modifier.fillMaxSize()
-    ) { padding ->
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = PimsDimensions.paddingLarge, vertical = PimsDimensions.paddingMedium),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+                .padding(horizontal = 24.dp)
         ) {
-            // Profile Photo Upload Hero with terracotta border and larger size
-            Column(
+            // Close Button
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.Start
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(110.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .border(
-                            BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
-                            CircleShape
-                        )
-                        .clickable {
-                            haptics.selection()
-                            photoPickerLauncher.launch("image/*")
-                        },
-                    contentAlignment = Alignment.Center
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    if (selectedPhotoBitmap != null) {
-                        Image(
-                            bitmap = selectedPhotoBitmap!!.asImageBitmap(),
-                            contentDescription = "Profile Photo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CameraAlt,
-                                contentDescription = "Add Photo",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Text(
-                                text = "Photo",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = textPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
-
-                Text(
-                    text = if (selectedPhotoBitmap != null) "Tap to change photo" else "Upload person photo",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
-            // Section 1: Relationship & Identity
-            PersonaFormSection(
-                title = "Relationship & Identity",
-                icon = Icons.Default.Person
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Scrollable Content
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(22.dp)
             ) {
-                PersonaSearchableCombobox(
-                    label = "How are you connected?",
-                    value = relRole,
-                    options = relRoles,
-                    onValueChange = {
-                        relRole = it
-                        if (it.equals("Mother", ignoreCase = true) || it.equals("Sister", ignoreCase = true) || it.equals("Daughter", ignoreCase = true)) {
-                            personIsFemale = true
-                        } else if (it.equals("Father", ignoreCase = true) || it.equals("Brother", ignoreCase = true) || it.equals("Son", ignoreCase = true)) {
-                            personIsFemale = false
-                        }
-                    },
-                    placeholder = "Search or type relation (e.g. Mother, Partner)...",
-                    allowCustom = true
-                )
-
-                PersonaDropdownSelector(
-                    label = "Person's Gender",
-                    selectedOption = if (personIsFemale) "Female" else "Male",
-                    options = listOf("Female", "Male"),
-                    onOptionSelected = { label ->
-                        personIsFemale = label == "Female"
-                    }
-                )
-
-                PersonaTextInput(
-                    value = relName,
-                    onValueChange = { relName = it },
-                    label = "Full name *",
-                    placeholder = "Full name"
-                )
-            }
-
-            // Section 2: Contact Information
-            PersonaFormSection(
-                title = "Contact Information",
-                icon = Icons.Default.Phone
-            ) {
-                InternationalPhoneInput(
-                    value = primaryPhone,
-                    onValueChange = { primaryPhone = it },
-                    label = "Primary Phone"
-                )
-
-                additionalPhones.forEachIndexed { idx, phone ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            InternationalPhoneInput(
-                                value = phone,
-                                onValueChange = { newVal ->
-                                    additionalPhones = additionalPhones.toMutableList().also { it[idx] = newVal }
-                                },
-                                label = "Phone ${idx + 2}"
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                additionalPhones = additionalPhones.toMutableList().also { it.removeAt(idx) }
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-
-                TextButton(
-                    onClick = { additionalPhones = additionalPhones + "" },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Add another phone", fontSize = 12.sp)
-                }
-
-                PersonaTextInput(
-                    value = primaryEmail,
-                    onValueChange = { primaryEmail = it },
-                    label = "Primary Email",
-                    placeholder = "name@example.com",
-                    keyboardType = KeyboardType.Email
-                )
-
-                PersonaTextInput(
-                    value = relAddress,
-                    onValueChange = { relAddress = it },
-                    label = "Address",
-                    placeholder = "Physical address or city"
-                )
-            }
-
-            // Section 3: Important Dates & Notes
-            PersonaFormSection(
-                title = "Dates & Notes",
-                icon = Icons.Default.CalendarToday
-            ) {
-                StandardDateInput(
-                    isoDate = relDob,
-                    onDateChange = { relDob = it },
-                    label = "Birthday"
-                )
-
-                AnimatedVisibility(visible = isRomanticRelationship(relRole)) {
-                    StandardDateInput(
-                        isoDate = relAnniversary,
-                        onDateChange = { relAnniversary = it },
-                        label = "Anniversary"
+                // Header Titles
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Add someone",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 28.sp
+                        ),
+                        color = textPrimary
+                    )
+                    Text(
+                        text = "A little about them for now — you can add more any time.",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+                        color = textSecondary
                     )
                 }
 
-                PersonaTextInput(
-                    value = relNotes,
-                    onValueChange = { relNotes = it },
-                    label = "Private Notes",
-                    placeholder = "Any personal details, memories, or preferences...",
-                    singleLine = false
-                )
+                // Avatar Photo Picker
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFF7F5F0))
+                            .border(
+                                BorderStroke(1.dp, Color(0xFFD5D1C8)),
+                                CircleShape
+                            )
+                            .clickable {
+                                haptics.selection()
+                                photoPickerLauncher.launch("image/*")
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (selectedPhotoBitmap != null) {
+                            Image(
+                                bitmap = selectedPhotoBitmap!!.asImageBitmap(),
+                                contentDescription = "Contact photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = "Add a photo",
+                                tint = textSecondary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Add a photo, or pick an avatar",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.5.sp),
+                        color = textSecondary
+                    )
+
+                    // Avatar presets
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEAE7DF))
+                                .clickable {
+                                    haptics.selection()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Avatar preset 1",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEAE7DF))
+                                .clickable {
+                                    haptics.selection()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Avatar preset 2",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+                }
+
+                // "How do you know them?"
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "How do you know them?",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp),
+                        color = textSecondary
+                    )
+
+                    // Wrap Chips
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            relationshipChips.take(4).forEach { role ->
+                                val isSelected = relRole.equals(role, ignoreCase = true)
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = if (isSelected) textPrimary else Color.White,
+                                    border = if (isSelected) null else BorderStroke(1.dp, Color(0xFFD5D1C8)),
+                                    modifier = Modifier
+                                        .tactilePress(targetScale = 0.94f) {
+                                            haptics.selection()
+                                            relRole = role
+                                        }
+                                ) {
+                                    Text(
+                                        text = role,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            fontSize = 14.5.sp
+                                        ),
+                                        color = if (isSelected) Color.White else textPrimary,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            relationshipChips.drop(4).forEach { role ->
+                                val isSelected = relRole.equals(role, ignoreCase = true)
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = if (isSelected) textPrimary else Color.White,
+                                    border = if (isSelected) null else BorderStroke(1.dp, Color(0xFFD5D1C8)),
+                                    modifier = Modifier
+                                        .tactilePress(targetScale = 0.94f) {
+                                            haptics.selection()
+                                            relRole = role
+                                        }
+                                ) {
+                                    Text(
+                                        text = role,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            fontSize = 14.5.sp
+                                        ),
+                                        color = if (isSelected) Color.White else textPrimary,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Name Field
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Name",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                        color = textHint
+                    )
+                    BasicTextField(
+                        value = relName,
+                        onValueChange = { relName = it },
+                        textStyle = TextStyle(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = textPrimary
+                        ),
+                        singleLine = true,
+                        decorationBox = { innerTextField ->
+                            if (relName.isEmpty()) {
+                                Text(
+                                    text = "Their name",
+                                    style = TextStyle(fontSize = 16.sp, color = textHint)
+                                )
+                            }
+                            innerTextField()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    )
+                    HorizontalDivider(color = dividerColor, thickness = 1.dp)
+                }
+
+                // Phone Field
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Phone · optional",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                        color = textHint
+                    )
+                    BasicTextField(
+                        value = primaryPhone,
+                        onValueChange = { primaryPhone = it },
+                        textStyle = TextStyle(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = textPrimary
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        decorationBox = { innerTextField ->
+                            if (primaryPhone.isEmpty()) {
+                                Text(
+                                    text = "+263 77 123 4567",
+                                    style = TextStyle(fontSize = 16.sp, color = textHint)
+                                )
+                            }
+                            innerTextField()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    )
+                    HorizontalDivider(color = dividerColor, thickness = 1.dp)
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            // Save Button
+            Button(
+                onClick = {
+                    if (relName.isBlank()) {
+                        haptics.warning()
+                        feedback.warning()
+                        return@Button
+                    }
+                    haptics.success()
+                    feedback.success()
+                    onSavePerson(
+                        relRole,
+                        relName.trim(),
+                        if (relRole.equals("Mother", true) || relRole.equals("Sister", true)) "Female" else "Male",
+                        primaryPhone.trim(),
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        selectedPhotoPath
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .padding(bottom = 8.dp)
+                    .tactilePress(),
+                shape = RoundedCornerShape(26.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = textPrimary,
+                    contentColor = Color.White
+                )
+            ) {
+                Text(
+                    text = "Save",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    ),
+                    color = Color.White
+                )
+            }
         }
     }
 }

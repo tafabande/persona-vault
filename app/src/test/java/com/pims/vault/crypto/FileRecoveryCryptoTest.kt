@@ -90,10 +90,10 @@ class FileRecoveryCryptoTest {
     fun testTamperedEscrowRejected() {
         val pfk = FileRecoveryCrypto.generatePortableKey()
         val escrow = FileRecoveryCrypto.createEscrow(pfk, "correct horse battery staple!".toCharArray())
-        val wrapped = android.util.Base64.decode(escrow.wrappedKeyBase64, android.util.Base64.NO_WRAP)
+        val wrapped = java.util.Base64.getDecoder().decode(escrow.wrappedKeyBase64)
         wrapped[0] = (wrapped[0].toInt() xor 0xFF).toByte()
         val tampered = escrow.copy(
-            wrappedKeyBase64 = android.util.Base64.encodeToString(wrapped, android.util.Base64.NO_WRAP)
+            wrappedKeyBase64 = java.util.Base64.getEncoder().encodeToString(wrapped)
         )
         try {
             FileRecoveryCrypto.recoverFromEscrow(tampered, "correct horse battery staple!".toCharArray())

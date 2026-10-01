@@ -34,7 +34,19 @@ data class PlainNoteEntity(
     val createdAt: Long = System.currentTimeMillis(),
 
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "reminder_at")
+    val reminderAt: Long? = null,
+
+    @ColumnInfo(name = "reminder_tag")
+    val reminderTag: String? = null,
+
+    @ColumnInfo(name = "reminder_repeat")
+    val reminderRepeat: String? = null,
+
+    @ColumnInfo(name = "is_reminder_done")
+    val isReminderDone: Boolean = false
 )
 
 @Entity(

@@ -23,6 +23,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -243,6 +245,7 @@ import java.util.Calendar
 @Composable
 fun PersonaDashboardScreen(
     securityLevel: KeySecurityLevel,
+    initialOpenNoteId: String? = null,
     onLockClicked: () -> Unit,
     onSignOutClicked: () -> Unit = onLockClicked,
     onRequestBiometricAuth: ((title: String, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit)? = null
@@ -350,7 +353,15 @@ fun PersonaDashboardScreen(
 
     // Full screen overlays (e.g. Full Vault, Backup, Notes Editor, Connect Person)
     var fullScreenOverlay by remember { mutableStateOf<String?>(null) }
-    var activeNoteId by remember { mutableStateOf<String?>(null) }
+    var activeNoteId by remember { mutableStateOf<String?>(initialOpenNoteId) }
+
+    LaunchedEffect(initialOpenNoteId) {
+        if (!initialOpenNoteId.isNullOrBlank()) {
+            activeNoteId = initialOpenNoteId
+            fullScreenOverlay = "NOTE_EDITOR"
+            selectedTab = 1
+        }
+    }
 
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
@@ -1208,7 +1219,7 @@ fun PersonaDashboardScreen(
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier
-                            .padding(bottom = 68.dp)
+                            .padding(bottom = 16.dp)
                             .tactilePress()
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = "New note", modifier = Modifier.size(24.dp))
@@ -1225,7 +1236,7 @@ fun PersonaDashboardScreen(
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier
-                            .padding(bottom = 68.dp)
+                            .padding(bottom = 16.dp)
                             .tactilePress()
                     ) {
                         Icon(Icons.Default.PersonAdd, contentDescription = "Connect Person", modifier = Modifier.size(24.dp))
@@ -1240,16 +1251,15 @@ fun PersonaDashboardScreen(
             )
         }
     ) { innerPadding ->
-        // Top inset is applied per-tab (Home bleeds wallpaper under the status
-        // bar; the other tabs pad themselves below it). Bottom inset is handled
-        // by PersonaDashboardBottomBar's own navigationBarsPadding() — consuming
-        // it here too would double-pad and leave a gap under the nav dock.
+        // Top inset is applied per-tab. Bottom inset ensures content is positioned
+        // above the bottom navigation bar so no cards are obscured.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
                     start = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
-                    end = innerPadding.calculateEndPadding(LocalLayoutDirection.current)
+                    end = innerPadding.calculateEndPadding(LocalLayoutDirection.current),
+                    bottom = innerPadding.calculateBottomPadding()
                 )
         ) {
             val reducedMotion = LocalReducedMotion.current
@@ -1260,10 +1270,12 @@ fun PersonaDashboardScreen(
                         fadeIn(tween(durationMillis = 0)) togetherWith fadeOut(tween(durationMillis = 0))
                     } else {
                         val direction = if (targetState > initialState) 1 else -1
-                        (slideInHorizontally(spring(stiffness = Spring.StiffnessMediumLow)) { it / 10 * direction } +
-                            fadeIn(spring(stiffness = Spring.StiffnessMediumLow))) togetherWith
-                            (slideOutHorizontally(spring(stiffness = Spring.StiffnessMedium)) { -it / 10 * direction } +
-                                fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                        (slideInHorizontally(spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)) { it / 12 * direction } +
+                            fadeIn(spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMediumLow)) +
+                            scaleIn(initialScale = 0.985f, animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow))) togetherWith
+                            (slideOutHorizontally(spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMedium)) { -it / 12 * direction } +
+                                fadeOut(spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMedium)) +
+                                scaleOut(targetScale = 1.015f, animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMedium)))
                     }
                 },
                 label = "TabSwitch"

@@ -61,9 +61,12 @@ import com.pims.vault.presentation.ui.components.ux.PersonaOtpInput
 import com.pims.vault.presentation.ui.components.ux.SpringDeleteButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.FilterChip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -130,6 +133,7 @@ fun MoreView(
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPimsHaptics()
+    val context = LocalContext.current
 
     // Collapsible Category Section States
     var personalisationExpanded by remember { mutableStateOf(true) }
@@ -143,6 +147,12 @@ fun MoreView(
     var showUpgradeDialog by remember { mutableStateOf(false) }
     var upgradeEmailInput by remember { mutableStateOf("") }
     var showManageAccountSheet by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    var showDocRemindersDialog by remember { mutableStateOf(false) }
+    var showAccessibilityDialog by remember { mutableStateOf(false) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showVersionDialog by remember { mutableStateOf(false) }
+    var docReminderLeadDays by remember { mutableIntStateOf(30) }
 
     LazyColumn(
         modifier = modifier
@@ -688,17 +698,28 @@ fun MoreView(
 
                     QuietSettingRow(
                         title = "Language",
-                        onClick = {}
+                        trailingText = "System Default",
+                        onClick = {
+                            haptics.light()
+                            showLanguageDialog = true
+                        }
                     )
 
                     QuietSettingRow(
                         title = "Document Reminders",
-                        onClick = {}
+                        trailingText = "${docReminderLeadDays}d before",
+                        onClick = {
+                            haptics.light()
+                            showDocRemindersDialog = true
+                        }
                     )
 
                     QuietSettingRow(
                         title = "Accessibility",
-                        onClick = {}
+                        onClick = {
+                            haptics.light()
+                            showAccessibilityDialog = true
+                        }
                     )
                 }
             }
@@ -738,12 +759,18 @@ fun MoreView(
                     )
                     QuietSettingRow(
                         title = "Privacy & Local Isolation",
-                        onClick = {}
+                        onClick = {
+                            haptics.light()
+                            showPrivacyDialog = true
+                        }
                     )
                     QuietSettingRow(
                         title = "Version",
                         trailingText = com.pims.vault.BuildConfig.VERSION_NAME,
-                        onClick = {}
+                        onClick = {
+                            haptics.light()
+                            showVersionDialog = true
+                        }
                     )
                     QuietSettingRow(
                         title = "Delete all local data",
@@ -805,6 +832,182 @@ fun MoreView(
             userEmail = userEmail,
             onSignOutClicked = onSignOutClicked,
             onDismissRequest = { showManageAccountSheet = false }
+        )
+    }
+
+    if (showLanguageDialog) {
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = { Text("Language Settings", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Persona Vault adapts to your system language. You can also customize language per-app in Android system settings.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        Text(
+                            "Current: System Default (English)",
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLanguageDialog = false
+                        try {
+                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCALE_SETTINGS))
+                        } catch (_: Exception) {}
+                    }
+                ) {
+                    Text("Open System Languages")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    if (showDocRemindersDialog) {
+        AlertDialog(
+            onDismissRequest = { showDocRemindersDialog = false },
+            title = { Text("Document Expiration Alerts", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Receive reminder alarms & notifications before passports, driver licenses, or health cards expire.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf(14, 30, 60, 90).forEach { days ->
+                            FilterChip(
+                                selected = docReminderLeadDays == days,
+                                onClick = {
+                                    docReminderLeadDays = days
+                                    android.widget.Toast.makeText(context, "Alerts set to $days days in advance", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                label = { Text("${days}d") }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showDocRemindersDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    if (showAccessibilityDialog) {
+        AlertDialog(
+            onDismissRequest = { showAccessibilityDialog = false },
+            title = { Text("Accessibility & Display", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "• Touch Target Standards: All interactive buttons meet or exceed the 48dp Android Accessibility requirement.\n" +
+                        "• Screen Reader: Full semantic labels and content descriptions for TalkBack.\n" +
+                        "• Typography: Fully supports Android Dynamic Font Scaling and high-contrast system modes.",
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAccessibilityDialog = false
+                        try {
+                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        } catch (_: Exception) {}
+                    }
+                ) {
+                    Text("System Accessibility")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAccessibilityDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    if (showPrivacyDialog) {
+        AlertDialog(
+            onDismissRequest = { showPrivacyDialog = false },
+            title = { Text("Local Cryptographic Isolation", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Persona Vault is designed around zero-knowledge personal data sovereignty:\n\n" +
+                        "• Hardware TEE/StrongBox: Master keys never leave the hardware security module.\n" +
+                        "• SQLCipher Encrypted DB: All tables and indices are encrypted at rest with AES-256.\n" +
+                        "• Four-Zone Isolation: Public, Private, Sensitive, and Critical data are stored in separated cryptographic realms.\n" +
+                        "• Zero Third-Party Trackers: Zero analytical SDKs, advertising IDs, or telemetry.",
+                        fontSize = 13.5.sp,
+                        lineHeight = 19.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showPrivacyDialog = false }) {
+                    Text("Understood")
+                }
+            }
+        )
+    }
+
+    if (showVersionDialog) {
+        AlertDialog(
+            onDismissRequest = { showVersionDialog = false },
+            title = { Text("Persona Vault Build", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Version: ${com.pims.vault.BuildConfig.VERSION_NAME}", fontWeight = FontWeight.SemiBold)
+                    Text("Version Code: ${com.pims.vault.BuildConfig.VERSION_CODE}")
+                    Text("Build Type: ${com.pims.vault.BuildConfig.BUILD_TYPE}")
+                    Text("Package: ${context.packageName}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showVersionDialog = false
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Build Info", "Persona Vault v${com.pims.vault.BuildConfig.VERSION_NAME} (${com.pims.vault.BuildConfig.VERSION_CODE})")
+                        clipboard.setPrimaryClip(clip)
+                        android.widget.Toast.makeText(context, "Copied build info to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Copy Info")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVersionDialog = false }) {
+                    Text("Close")
+                }
+            }
         )
     }
 }

@@ -42,4 +42,19 @@ interface PlainNoteDao {
 
     @Query("UPDATE plain_notes SET updated_at = :timestamp WHERE id = :noteId")
     suspend fun touch(noteId: String, timestamp: Long)
+
+    @Query("SELECT * FROM plain_notes WHERE reminder_at IS NOT NULL AND is_reminder_done = 0 ORDER BY reminder_at ASC")
+    suspend fun getActiveReminders(): List<PlainNoteEntity>
+
+    @Query("SELECT * FROM plain_notes WHERE reminder_at IS NOT NULL AND is_reminder_done = 0 ORDER BY reminder_at ASC")
+    fun observeActiveReminders(): Flow<List<PlainNoteEntity>>
+
+    @Query("UPDATE plain_notes SET reminder_at = :reminderAt, reminder_tag = :reminderTag, reminder_repeat = :reminderRepeat, is_reminder_done = 0, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateReminder(id: String, reminderAt: Long?, reminderTag: String?, reminderRepeat: String?, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE plain_notes SET is_reminder_done = :isDone, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setReminderDone(id: String, isDone: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE plain_notes SET reminder_at = NULL, reminder_tag = NULL, reminder_repeat = NULL, is_reminder_done = 0, updated_at = :updatedAt WHERE id = :id")
+    suspend fun clearReminder(id: String, updatedAt: Long = System.currentTimeMillis())
 }

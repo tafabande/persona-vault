@@ -285,12 +285,17 @@ class VerifyDocumentIntegrityUseCase @Inject constructor(
 class DeleteDocumentUseCase @Inject constructor(
     private val documentDao: DocumentDao,
     private val fileStorage: FileStorageService,
-    private val auditLogger: HardenedAuditLogger
+    private val auditLogger: HardenedAuditLogger,
+    private val firestoreSyncServiceProvider: javax.inject.Provider<com.pims.vault.core.sync.FirestoreSyncService>? = null
 ) {
     suspend operator fun invoke(documentId: String) {
         val versions = documentDao.getAllVersions(documentId)
         versions.forEach { v -> fileStorage.deleteFile(v.fileStoragePath) }
         documentDao.deleteDocumentById(documentId)
+
+        try {
+            firestoreSyncServiceProvider?.get()?.deleteRemoteDocument(documentId)
+        } catch (_: Exception) {}
 
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,

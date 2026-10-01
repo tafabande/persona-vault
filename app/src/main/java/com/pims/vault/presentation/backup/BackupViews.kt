@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -20,23 +21,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.domain.model.BackupProgressState
 
-// AMOLED Strict Design System Colors
-private val SurfaceBorder = Color(0xFF383430)
-private val TextPrimary = Color(0xFFD0C2B5)
-private val TextSecondary = Color(0xFF8A827A)
-private val SuccessGreen = Color(0xFF4E6E58)
-private val AlertRed = Color(0xFF8E4A49)
-private val WarningAmber = Color(0xFF8E7E4A)
-
 @Composable
 fun BackupDashboardScreen(
     viewModel: BackupViewModel,
     modifier: Modifier = Modifier,
-    onExportRequested: (CharArray) -> Unit = {},
-    onRestoreRequested: (CharArray) -> Unit = {}
+    onExportRequested: ((CharArray) -> Unit)? = null,
+    onRestoreRequested: ((CharArray) -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val progressState by viewModel.progressState.collectAsState()
     var selectedTab by remember { mutableStateOf(0) } // 0 = Export, 1 = Restore
+
+    val handleExport: (CharArray) -> Unit = onExportRequested ?: { passphrase ->
+        viewModel.triggerFullVaultBackup(context, passphrase)
+    }
+
+    val handleRestore: (CharArray) -> Unit = onRestoreRequested ?: { passphrase ->
+        viewModel.triggerFullVaultRestore(context, passphrase)
+    }
 
     Column(
         modifier = modifier
@@ -52,14 +54,14 @@ fun BackupDashboardScreen(
             Icon(
                 imageVector = Icons.Default.Security,
                 contentDescription = "Disaster Recovery",
-                tint = TextPrimary,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
                     text = "ENCRYPTED BACKUP & RECOVERY",
-                    color = TextPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp,
@@ -67,7 +69,7 @@ fun BackupDashboardScreen(
                 )
                 Text(
                     text = "Argon2id + HKDF Isolated Package",
-                    color = TextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -106,17 +108,17 @@ fun BackupDashboardScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .border(1.dp, SurfaceBorder, RoundedCornerShape(4.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
                 .padding(16.dp)
         ) {
             when (selectedTab) {
                 0 -> ExportBackupCard(
                     progressState = progressState,
-                    onStartExport = onExportRequested
+                    onStartExport = handleExport
                 )
                 1 -> RestoreBackupCard(
                     progressState = progressState,
-                    onStartRestore = onRestoreRequested
+                    onStartRestore = handleRestore
                 )
             }
         }
@@ -133,18 +135,18 @@ private fun TabButton(
     OutlinedButton(
         onClick = onClick,
         modifier = modifier.height(40.dp),
-        shape = RoundedCornerShape(4.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = if (isSelected) Color(0xFF181614) else MaterialTheme.colorScheme.background
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
         ),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (isSelected) TextPrimary else SurfaceBorder
+            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
         )
     ) {
         Text(
             text = title,
-            color = if (isSelected) TextPrimary else TextSecondary,
+            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             fontFamily = FontFamily.Monospace
@@ -163,14 +165,14 @@ private fun ExportBackupCard(
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             text = "CREATE ENCRYPTED SNAPSHOT (.pimsbak)",
-            color = TextPrimary,
+            color = MaterialTheme.colorScheme.onSurface,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
         )
         Text(
-            text = "Derives an isolated Master Key using Argon2id. The database and document blobs are encrypted under domain-separated subkeys.",
-            color = TextSecondary,
+            text = "Derives an isolated Master Key using Argon2id. All vault entries (passwords, cards, bank accounts, secure notes, TOTP) and documents are encrypted under domain-separated subkeys.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             modifier = Modifier.padding(vertical = 8.dp)
         )
@@ -178,28 +180,28 @@ private fun ExportBackupCard(
         OutlinedTextField(
             value = passphraseText,
             onValueChange = { passphraseText = it },
-            label = { Text("Backup Passphrase (Min 12 chars)", color = TextSecondary) },
+            label = { Text("Backup Passphrase (Min 12 chars)", color = MaterialTheme.colorScheme.onSurfaceVariant) },
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = TextPrimary,
-                unfocusedBorderColor = SurfaceBorder,
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
             )
         )
 
         OutlinedTextField(
             value = confirmText,
             onValueChange = { confirmText = it },
-            label = { Text("Confirm Passphrase", color = TextSecondary) },
+            label = { Text("Confirm Passphrase", color = MaterialTheme.colorScheme.onSurfaceVariant) },
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = TextPrimary,
-                unfocusedBorderColor = SurfaceBorder,
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
             )
         )
 
@@ -210,13 +212,15 @@ private fun ExportBackupCard(
         Button(
             onClick = { onStartExport(passphraseText.toCharArray()) },
             enabled = isReady && progressState is BackupProgressState.Idle,
-            modifier = Modifier.fillMaxWidth().height(44.dp),
-            shape = RoundedCornerShape(4.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF282522))
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
         ) {
             Text(
                 text = "EXPORT ENCRYPTED SNAPSHOT",
-                color = if (isReady) TextPrimary else TextSecondary,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold
             )
@@ -237,14 +241,14 @@ private fun RestoreBackupCard(
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             text = "TRANSACTIONAL STAGING RESTORE",
-            color = TextPrimary,
+            color = MaterialTheme.colorScheme.onSurface,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
         )
         Text(
             text = "Backups are verified in an isolated staging sandbox. The active vault is replaced ONLY after 100% of tables, records, and file hashes are cryptographically verified.",
-            color = TextSecondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             modifier = Modifier.padding(vertical = 8.dp)
         )
@@ -252,14 +256,14 @@ private fun RestoreBackupCard(
         OutlinedTextField(
             value = passphraseText,
             onValueChange = { passphraseText = it },
-            label = { Text("Enter Backup Passphrase", color = TextSecondary) },
+            label = { Text("Enter Backup Passphrase", color = MaterialTheme.colorScheme.onSurfaceVariant) },
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = TextPrimary,
-                unfocusedBorderColor = SurfaceBorder,
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
             )
         )
 
@@ -268,13 +272,15 @@ private fun RestoreBackupCard(
         Button(
             onClick = { onStartRestore(passphraseText.toCharArray()) },
             enabled = passphraseText.isNotEmpty() && progressState is BackupProgressState.Idle,
-            modifier = Modifier.fillMaxWidth().height(44.dp),
-            shape = RoundedCornerShape(4.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF282522))
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
         ) {
             Text(
                 text = "VERIFY & RESTORE VAULT",
-                color = TextPrimary,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold
             )
@@ -290,40 +296,40 @@ private fun ProgressStateDisplay(state: BackupProgressState) {
     when (state) {
         is BackupProgressState.Idle -> {}
         is BackupProgressState.DerivingKeys -> {
-            Text("Deriving domain subkeys with PBKDF2/Argon2id...", color = WarningAmber, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Deriving domain subkeys with Argon2id...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.ExportingDatabase -> {
-            Text("Streaming encrypted SQLCipher database snapshot...", color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Streaming encrypted database snapshot with vault items...", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.ExportingBlobs -> {
-            Text("Encrypting document blobs: ${state.currentBlob} / ${state.totalBlobs}", color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Encrypting document blobs: ${state.currentBlob} / ${state.totalBlobs}", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.FinalizingPackage -> {
-            Text("Signing manifest and computing global HMAC...", color = WarningAmber, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Signing manifest and computing global HMAC...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.ExportSuccess -> {
-            Text("✓ Snapshot exported successfully (${state.sizeBytes} bytes)", color = SuccessGreen, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("✓ Snapshot exported successfully (${state.sizeBytes} bytes)", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.ValidatingHeader -> {
-            Text("Validating package envelope header...", color = WarningAmber, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Validating package envelope header...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.StagingRestore -> {
-            Text("Decrypting snapshot into isolated staging sandbox...", color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Decrypting snapshot into isolated staging sandbox...", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.VerifyingIntegrity -> {
-            Text("Verifying SQLite integrity and blob SHA-256 digests...", color = WarningAmber, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Verifying SQLite integrity and blob SHA-256 digests...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.CommittingRestore -> {
-            Text("Integrity verified! Executing atomic live vault commit...", color = SuccessGreen, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Integrity verified! Executing atomic live vault commit...", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.RecordingJournal -> {
-            Text("Recording crash recovery journal checkpoint...", color = WarningAmber, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Recording crash recovery journal checkpoint...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.RestoreSuccess -> {
-            Text("✓ Restoration complete. All ${state.report.verifiedTableCount} tables & ${state.report.verifiedBlobCount} blobs intact.", color = SuccessGreen, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("✓ Restoration complete. All ${state.report.verifiedTableCount} tables & ${state.report.verifiedBlobCount} blobs intact.", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.Error -> {
-            Text("CRITICAL ERROR: ${state.message}", color = AlertRed, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("ERROR: ${state.message}", color = MaterialTheme.colorScheme.error, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
     }
 }

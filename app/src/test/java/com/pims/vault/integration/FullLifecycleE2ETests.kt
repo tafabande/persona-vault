@@ -167,6 +167,7 @@ class FullLifecycleE2ETests {
         override suspend fun update(relationship: RelationshipEntity) {
             inMemoryRelations[relationship.id] = relationship
         }
+        override suspend fun getRelationshipById(id: String): RelationshipEntity? = inMemoryRelations[id]
         override suspend fun deleteById(id: String) { inMemoryRelations.remove(id) }
         override suspend fun deleteBetweenPersons(p1: String, p2: String) {}
     }

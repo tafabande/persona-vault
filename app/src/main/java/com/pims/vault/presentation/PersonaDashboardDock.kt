@@ -2,6 +2,7 @@ package com.pims.vault.presentation
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,12 +14,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -121,57 +126,63 @@ internal fun PersonaDashboardBottomBar(
     onTabSelected: (Int) -> Unit
 ) {
     val haptics = rememberPimsHaptics()
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-        contentAlignment = Alignment.Center
+    val barBg = MaterialTheme.colorScheme.surface
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant
+
+    Surface(
+        color = barBg,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-            shadowElevation = 8.dp,
-            tonalElevation = 4.dp,
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
         ) {
+            HorizontalDivider(
+                color = dividerColor,
+                thickness = 0.5.dp
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FloatingDockItem(
+                PersonaBottomNavItem(
                     selected = selectedTab == 0,
-                    icon = PersonaIcons.navIcon(selectedTab == 0, PersonaIcons.Home, PersonaIcons.HomeOutlined),
+                    icon = PersonaIcons.HomeOutlined,
                     label = "Home",
-                    onClick = { if (selectedTab != 0) { haptics.light(); onTabSelected(0) } }
+                    onClick = { if (selectedTab != 0) { haptics.light(); onTabSelected(0) } },
+                    modifier = Modifier.weight(1f)
                 )
-                FloatingDockItem(
+                PersonaBottomNavItem(
                     selected = selectedTab == 1,
-                    icon = PersonaIcons.navIcon(selectedTab == 1, PersonaIcons.Notes, PersonaIcons.NotesOutlined),
+                    icon = PersonaIcons.NotesOutlined,
                     label = "Notes",
-                    onClick = { if (selectedTab != 1) { haptics.light(); onTabSelected(1) } }
+                    onClick = { if (selectedTab != 1) { haptics.light(); onTabSelected(1) } },
+                    modifier = Modifier.weight(1f)
                 )
-                FloatingDockItem(
+                PersonaBottomNavItem(
                     selected = selectedTab == 2,
-                    icon = PersonaIcons.navIcon(selectedTab == 2, PersonaIcons.Me, PersonaIcons.MeOutlined),
+                    icon = PersonaIcons.MeOutlined,
                     label = "Me",
-                    onClick = { if (selectedTab != 2) { haptics.light(); onTabSelected(2) } }
+                    onClick = { if (selectedTab != 2) { haptics.light(); onTabSelected(2) } },
+                    modifier = Modifier.weight(1f)
                 )
-                FloatingDockItem(
+                PersonaBottomNavItem(
                     selected = selectedTab == 3,
-                    icon = PersonaIcons.navIcon(selectedTab == 3, PersonaIcons.People, PersonaIcons.PeopleOutlined),
+                    icon = PersonaIcons.PeopleOutlined,
                     label = "People",
-                    onClick = { if (selectedTab != 3) { haptics.light(); onTabSelected(3) } }
+                    onClick = { if (selectedTab != 3) { haptics.light(); onTabSelected(3) } },
+                    modifier = Modifier.weight(1f)
                 )
-                FloatingDockItem(
+                PersonaBottomNavItem(
                     selected = selectedTab == 4,
-                    icon = PersonaIcons.navIcon(selectedTab == 4, PersonaIcons.Settings, PersonaIcons.SettingsOutlined),
+                    icon = PersonaIcons.SettingsOutlined,
                     label = "Settings",
-                    onClick = { if (selectedTab != 4) { haptics.light(); onTabSelected(4) } }
+                    onClick = { if (selectedTab != 4) { haptics.light(); onTabSelected(4) } },
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
@@ -179,39 +190,63 @@ internal fun PersonaDashboardBottomBar(
 }
 
 @Composable
-internal fun PersonaNavDockItem(
+internal fun PersonaBottomNavItem(
     selected: Boolean,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val haptics = rememberPimsHaptics()
-    val activeColor = MaterialTheme.colorScheme.primary
+    val activeColor = MaterialTheme.colorScheme.onSurface
     val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val color = if (selected) activeColor else inactiveColor
+    val color by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) activeColor else inactiveColor,
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f),
+        label = "navColor"
+    )
+
+    val iconScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (selected) 1.14f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = 450f
+        ),
+        label = "navIconScale"
+    )
+
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.90f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.70f, stiffness = 600f),
+        label = "navPressScale"
+    )
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable {
-                haptics.light()
-                onClick()
-            }
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+        modifier = modifier
+            .scale(pressScale)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(vertical = 4.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
             tint = color,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier
+                .size(24.dp)
+                .scale(iconScale)
         )
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(3.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.sp,
+                fontSize = 11.5.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
             ),
             color = color

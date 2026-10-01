@@ -312,6 +312,8 @@ class ProfileViewModel @Inject constructor(
                         }
                     }
 
+                    val effectiveKinItems = kinItems
+
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -322,7 +324,7 @@ class ProfileViewModel @Inject constructor(
                             educationRecords = edu,
                             certificates = certs,
                             medicalRecords = fullProfile.medicalRecords,
-                            relationships = kinItems,
+                            relationships = effectiveKinItems,
                             socialAccounts = socials,
                             sexuality = meta.sexuality,
                             bloodGroup = meta.bloodGroup,

@@ -63,6 +63,9 @@ interface SyncConflictDao {
     @Query("SELECT * FROM sync_conflicts WHERE id = :id LIMIT 1")
     suspend fun getConflictById(id: String): SyncConflictEntity?
 
+    @Query("SELECT * FROM sync_conflicts WHERE entity_type = :entityType AND entity_id = :entityId AND is_resolved = 0 LIMIT 1")
+    suspend fun getExistingUnresolved(entityType: String, entityId: String): SyncConflictEntity?
+
     @Query("UPDATE sync_conflicts SET is_resolved = 1, resolution_choice = :choice, resolved_at = :resolvedAt WHERE id = :id")
     suspend fun resolveConflict(id: String, choice: String, resolvedAt: Long)
 

@@ -1,0 +1,6 @@
+{
+  "name": "Persona",
+  "description": "Local-first encrypted personal identity vault",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

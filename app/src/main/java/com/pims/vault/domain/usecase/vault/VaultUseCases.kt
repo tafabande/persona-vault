@@ -787,10 +787,14 @@ class ReadBankAccountUseCase @Inject constructor(
 
 class DeleteVaultItemUseCase @Inject constructor(
     private val vaultDao: VaultDao,
-    private val auditLogger: HardenedAuditLogger
+    private val auditLogger: HardenedAuditLogger,
+    private val firestoreSyncServiceProvider: javax.inject.Provider<com.pims.vault.core.sync.FirestoreSyncService>? = null
 ) {
     suspend operator fun invoke(itemId: String) {
         vaultDao.deleteVaultItem(itemId)
+        try {
+            firestoreSyncServiceProvider?.get()?.deleteVaultItem(null, itemId)
+        } catch (_: Exception) {}
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,
             entityType = "VaultItem",

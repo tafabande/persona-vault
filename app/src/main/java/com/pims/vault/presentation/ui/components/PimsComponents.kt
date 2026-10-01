@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
@@ -111,12 +112,10 @@ fun Modifier.pimsGlassmorphism(
     return this
         .shadow(shadowElevation, shape, clip = false)
         .background(MaterialTheme.colorScheme.surface.copy(alpha = alpha), shape)
-        .then(
-            androidx.compose.foundation.border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha),
-                shape = shape
-            )
+        .border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha),
+            shape = shape
         )
 }
 
@@ -135,12 +134,10 @@ fun Modifier.pimsGlassCard(
     return this
         .shadow(shadowElevation, shape, clip = false)
         .background(MaterialTheme.colorScheme.surface.copy(alpha = alpha), shape)
-        .then(
-            androidx.compose.foundation.border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha),
-                shape = shape
-            )
+        .border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = borderAlpha),
+            shape = shape
         )
 }
 

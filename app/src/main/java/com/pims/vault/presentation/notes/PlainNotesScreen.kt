@@ -1,17 +1,18 @@
 package com.pims.vault.presentation.notes
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,89 +22,80 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.pims.vault.domain.model.NoteAttachment
-import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.PlainNote
+import com.pims.vault.presentation.ui.components.PersonaFAB
 import com.pims.vault.presentation.ui.theme.PersonaIcons
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
-import com.pims.vault.presentation.ui.components.PersonaFAB
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlainNotesScreen(
     onOpenEditor: (String?) -> Unit,
@@ -113,38 +105,123 @@ fun PlainNotesScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val dayFormat = remember { SimpleDateFormat("EEE d MMM", Locale.getDefault()) }
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-    var noteToDelete by remember { mutableStateOf<PlainNote?>(null) }
-    var showMoreMenu by remember { mutableStateOf(false) }
-    var sortNewestFirst by remember { mutableStateOf(true) }
+    val haptics = rememberPimsHaptics()
+    val focusManager = LocalFocusManager.current
 
-    // Compute current week number for the header label
-    val weekLabel = remember {
-        val cal = Calendar.getInstance()
-        "Week ${cal.get(Calendar.WEEK_OF_YEAR)}"
+    var noteToDelete by remember { mutableStateOf<PlainNote?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearchVisible by remember { mutableStateOf(false) }
+    var activeFilter by remember { mutableStateOf(NoteFilter.ALL) }
+
+    data class DaySection(
+        val dayLabel: String,
+        val isToday: Boolean = false,
+        val notes: List<PlainNote>
+    ) {
+        val displayCount: Int get() = notes.size
     }
 
-    // Group notes by day label: "Today", "Yesterday", or "EEE d MMM"
-    val groupedNotes = remember(state.notes, sortNewestFirst) {
-        val sorted = if (sortNewestFirst) state.notes.sortedByDescending { it.updatedAt }
-                     else state.notes.sortedBy { it.updatedAt }
-        val today = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        val yesterday = today - 86_400_000L
-        sorted.groupBy { note ->
-            val d = note.updatedAt
-            when {
-                d >= today -> "Today"
-                d >= yesterday -> "Yesterday"
-                else -> dayFormat.format(Date(d))
+    val currentWeekLabel = remember {
+        val c = Calendar.getInstance()
+        "Week ${c.get(Calendar.WEEK_OF_YEAR)}"
+    }
+
+    // Filter notes based on active filter and search query
+    val filteredNotes = remember(state.notes, activeFilter, searchQuery) {
+        state.notes.filter { note ->
+            val matchesFilter = when (activeFilter) {
+                NoteFilter.ALL -> true
+                NoteFilter.REMINDERS -> note.reminderAt != null && !note.isReminderDone
+                NoteFilter.PHOTOS -> note.attachments.isNotEmpty()
+                NoteFilter.DONE -> note.isReminderDone
             }
+            val matchesSearch = if (searchQuery.isBlank()) {
+                true
+            } else {
+                note.title.contains(searchQuery, ignoreCase = true) ||
+                        note.content.contains(searchQuery, ignoreCase = true) ||
+                        (note.reminderTag?.contains(searchQuery, ignoreCase = true) == true)
+            }
+            matchesFilter && matchesSearch
         }
     }
 
-    // Expanded day sections state — must be at top level, not inside else{}
-    // Default: expand the most-recent day
-    val firstDayKey = groupedNotes.keys.firstOrNull() ?: ""
-    var expandedDays by remember(firstDayKey) { mutableStateOf(setOf(firstDayKey)) }
+    // Calculate start & end of current week
+    val (weekStartMillis, weekEndMillis) = remember {
+        val cal = Calendar.getInstance().apply {
+            firstDayOfWeek = Calendar.MONDAY
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val start = cal.timeInMillis
+        val end = start + (7 * 86400000L)
+        start to end
+    }
+
+    // 7 days of the current week
+    val weekDays = remember(filteredNotes, weekStartMillis) {
+        val todayCal = Calendar.getInstance()
+        val currentYear = todayCal.get(Calendar.YEAR)
+        val currentDayOfYear = todayCal.get(Calendar.DAY_OF_YEAR)
+
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = weekStartMillis
+        }
+
+        (0..6).map { dayOffset ->
+            val dayCal = (cal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
+            val label = dayFormat.format(dayCal.time)
+            val isToday = dayCal.get(Calendar.YEAR) == currentYear && dayCal.get(Calendar.DAY_OF_YEAR) == currentDayOfYear
+            val dayStart = dayCal.timeInMillis
+            val dayEnd = dayStart + 86400000L
+
+            val dayNotes = filteredNotes.filter { note ->
+                note.updatedAt in dayStart until dayEnd
+            }
+            DaySection(label, isToday, dayNotes)
+        }
+    }
+
+    // Notes earlier than this week but within current month
+    val monthStartMillis = remember {
+        Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    val earlierThisMonthNotes = remember(filteredNotes, weekStartMillis, monthStartMillis) {
+        filteredNotes.filter { note ->
+            note.updatedAt in monthStartMillis until weekStartMillis
+        }
+    }
+
+    // Notes prior to current month
+    val olderNotes = remember(filteredNotes, monthStartMillis) {
+        filteredNotes.filter { note ->
+            note.updatedAt < monthStartMillis
+        }
+    }
+
+    val initialExpandedDay = remember(weekDays) {
+        weekDays.firstOrNull { it.isToday }?.dayLabel
+            ?: weekDays.firstOrNull { it.notes.isNotEmpty() }?.dayLabel
+            ?: weekDays.firstOrNull()?.dayLabel
+    }
+
+    var expandedDayLabels by remember(weekDays) {
+        mutableStateOf(setOfNotNull(initialExpandedDay))
+    }
+    var earlierMonthExpanded by remember { mutableStateOf(true) }
+    var olderExpanded by remember { mutableStateOf(false) }
+
+    val isSearchOrFilterActive = searchQuery.isNotBlank() || activeFilter != NoteFilter.ALL
 
     Box(
         modifier = modifier
@@ -152,182 +229,366 @@ fun PlainNotesScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ── Header: search | Week N | sort + more ──
-            Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = PimsDimensions.paddingSmall, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Header Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Search Toggle
+                IconButton(
+                    onClick = {
+                        haptics.light()
+                        isSearchVisible = !isSearchVisible
+                        if (!isSearchVisible) {
+                            searchQuery = ""
+                            focusManager.clearFocus()
+                        }
+                    },
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    // Left: search icon
-                    IconButton(onClick = { /* TODO: search */ }) {
-                        Icon(
-                            imageVector = Icons.Default.SortByAlpha,
-                            contentDescription = "Search notes",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    // Center: week label with headlineSmall Bold
-                    Text(
-                        text = if (state.notes.isEmpty()) "Notes" else weekLabel,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.weight(1f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    Icon(
+                        imageVector = if (isSearchVisible) Icons.Default.Close else PersonaIcons.Search,
+                        contentDescription = if (isSearchVisible) "Close search" else "Search notes",
+                        tint = if (isSearchVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.size(22.dp)
                     )
-                    // Right: sort toggle
-                    IconButton(onClick = { sortNewestFirst = !sortNewestFirst }) {
-                        Icon(
-                            imageVector = Icons.Default.SortByAlpha,
-                            contentDescription = if (sortNewestFirst) "Newest first" else "Oldest first",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
+                }
+
+                // Center Week Label
+                Text(
+                    text = if (isSearchVisible && searchQuery.isNotBlank()) "Search Results" else currentWeekLabel,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.5.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                // Right: Pill Badge showing total notes count
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.clickable { onOpenEditor(null) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = if (state.notes.isEmpty()) "0 Notes" else "${state.notes.size} Notes",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                    }
-                    // Right: more options
-                    Box {
-                        IconButton(onClick = { showMoreMenu = true }) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "More",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showMoreMenu,
-                            onDismissRequest = { showMoreMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("New Note") },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                onClick = { showMoreMenu = false; onOpenEditor(null) }
-                            )
-                        }
+                        Icon(
+                            imageVector = PersonaIcons.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
                     }
                 }
-                // Terracotta underline accent
-                Box(
+            }
+
+            // In-line Search Bar
+            AnimatedVisibility(visible = isSearchVisible) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search notes by title, content, tag...") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(2.dp)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                 )
             }
 
-            if (state.notes.isEmpty()) {
-                // Empty state — larger icon + CTA
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = PimsDimensions.paddingLarge),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(PimsDimensions.paddingMedium)
-                    ) {
-                        Icon(
-                            imageVector = PersonaIcons.Notes,
-                            contentDescription = null,
-                            modifier = Modifier.size(72.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            text = "No notes yet",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = "Capture thoughts, plans, anything",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        androidx.compose.material3.OutlinedButton(
-                            onClick = { onOpenEditor(null) },
-                            shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
-                        ) {
+            // Filter Chips Bar (All, Reminders, Photos, Done)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                NoteFilter.values().forEach { filter ->
+                    val isSelected = activeFilter == filter
+                    val filterCount = when (filter) {
+                        NoteFilter.ALL -> state.notes.size
+                        NoteFilter.REMINDERS -> state.notes.count { it.reminderAt != null && !it.isReminderDone }
+                        NoteFilter.PHOTOS -> state.notes.count { it.attachments.isNotEmpty() }
+                        NoteFilter.DONE -> state.notes.count { it.isReminderDone }
+                    }
+
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            haptics.selection()
+                            activeFilter = filter
+                        },
+                        label = {
+                            Text("${filter.label} ($filterCount)")
+                        },
+                        leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.Edit,
+                                imageVector = filter.icon,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "Write your first note",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+                }
+            }
+
+            // Main Notes Content
+            LazyColumn(
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 8.dp,
+                    bottom = 120.dp
+                ),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (isSearchOrFilterActive) {
+                    // Filtered / Search flat results list
+                    item(key = "search_header") {
+                        Text(
+                            text = "${filteredNotes.size} matching note${if (filteredNotes.size == 1) "" else "s"}",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(vertical = 10.dp)
+                        )
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            thickness = 0.5.dp
+                        )
+                    }
+
+                    if (filteredNotes.isEmpty()) {
+                        item(key = "search_empty") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "No notes found",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Try adjusting your search terms or filter",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    } else {
+                        items(filteredNotes, key = { it.id }) { note ->
+                            NoteListRow(
+                                note = note,
+                                timeStr = timeFormat.format(Date(note.updatedAt)),
+                                onClick = { onOpenEditor(note.id) },
+                                onDelete = { noteToDelete = note },
+                                viewModel = viewModel
+                            )
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                thickness = 0.5.dp
                             )
                         }
                     }
-                }
-            } else {
-                // Day-grouped list view with collapsible sections
-                LazyColumn(
-                    contentPadding = PaddingValues(
-                        start = PimsDimensions.paddingLarge,
-                        end = PimsDimensions.paddingLarge,
-                        top = 4.dp,
-                        bottom = 120.dp
-                    ),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    groupedNotes.forEach { (dayLabel, dayNotes) ->
-                        val isExpanded = dayLabel in expandedDays
+                } else {
+                    // Weekly structured timeline
+                    weekDays.forEach { daySection ->
+                        val isExpanded = daySection.dayLabel in expandedDayLabels
 
-                        // Collapsible day header row
-                        item(key = "header_$dayLabel") {
-                            val isToday = dayLabel == "Today"
+                        item(key = "header_${daySection.dayLabel}") {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        expandedDays = if (isExpanded) expandedDays - dayLabel else expandedDays + dayLabel
+                                    .tactilePress(targetScale = 0.98f) {
+                                        expandedDayLabels = if (isExpanded) {
+                                            expandedDayLabels - daySection.dayLabel
+                                        } else {
+                                            expandedDayLabels + daySection.dayLabel
+                                        }
                                     }
                                     .padding(vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = dayLabel,
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (isToday) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.onBackground
+                                    text = daySection.dayLabel,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.5.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onBackground
                                 )
+
+                                if (isExpanded) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = "Collapse",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                } else {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "${daySection.displayCount}",
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Icon(
+                                            imageVector = PersonaIcons.ChevronRight,
+                                            contentDescription = "Expand",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                                thickness = 0.5.dp
+                            )
+                        }
+
+                        if (isExpanded) {
+                            if (daySection.notes.isNotEmpty()) {
+                                items(daySection.notes, key = { it.id }) { note ->
+                                    NoteListRow(
+                                        note = note,
+                                        timeStr = timeFormat.format(Date(note.updatedAt)),
+                                        onClick = { onOpenEditor(note.id) },
+                                        onDelete = { noteToDelete = note },
+                                        viewModel = viewModel
+                                    )
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        thickness = 0.5.dp
+                                    )
+                                }
+                            } else {
+                                item(key = "empty_${daySection.dayLabel}") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onOpenEditor(null) }
+                                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = PersonaIcons.Edit,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "No notes · Tap to write",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Earlier This Month Section
+                    if (earlierThisMonthNotes.isNotEmpty()) {
+                        item(key = "header_earlier_month") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .tactilePress(targetScale = 0.98f) {
+                                        earlierMonthExpanded = !earlierMonthExpanded
+                                    }
+                                    .padding(vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Earlier This Month",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.5.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Text(
-                                        text = "${dayNotes.size}",
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        text = "${earlierThisMonthNotes.size}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Icon(
-                                        imageVector = if (isExpanded) Icons.Default.Description else Icons.Default.Description,
+                                        imageVector = if (earlierMonthExpanded) Icons.Default.KeyboardArrowDown else PersonaIcons.ChevronRight,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(14.dp)
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
-                            // Warm-tinted divider — thicker, primary-hued
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(1.dp)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                                thickness = 0.5.dp
                             )
                         }
 
-                        // Expanded inline note rows
-                        if (isExpanded) {
-                            items(dayNotes, key = { it.id }) { note ->
+                        if (earlierMonthExpanded) {
+                            items(earlierThisMonthNotes, key = { it.id }) { note ->
                                 NoteListRow(
                                     note = note,
                                     timeStr = timeFormat.format(Date(note.updatedAt)),
@@ -335,11 +596,71 @@ fun PlainNotesScreen(
                                     onDelete = { noteToDelete = note },
                                     viewModel = viewModel
                                 )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(1.dp)
-                                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f))
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    thickness = 0.5.dp
+                                )
+                            }
+                        }
+                    }
+
+                    // Older Notes Section
+                    if (olderNotes.isNotEmpty()) {
+                        item(key = "header_older_notes") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .tactilePress(targetScale = 0.98f) {
+                                        olderExpanded = !olderExpanded
+                                    }
+                                    .padding(vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Older Notes",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.5.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "${olderNotes.size}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Icon(
+                                        imageVector = if (olderExpanded) Icons.Default.KeyboardArrowDown else PersonaIcons.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                                thickness = 0.5.dp
+                            )
+                        }
+
+                        if (olderExpanded) {
+                            items(olderNotes, key = { it.id }) { note ->
+                                NoteListRow(
+                                    note = note,
+                                    timeStr = timeFormat.format(Date(note.updatedAt)),
+                                    onClick = { onOpenEditor(note.id) },
+                                    onDelete = { noteToDelete = note },
+                                    viewModel = viewModel
+                                )
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    thickness = 0.5.dp
                                 )
                             }
                         }
@@ -348,7 +669,7 @@ fun PlainNotesScreen(
             }
         }
 
-        // FAB — overlays the list, anchored bottom-end
+        // FAB — New Note
         PersonaFAB(
             text = "New Note",
             icon = Icons.Default.Edit,
@@ -384,13 +705,234 @@ fun PlainNotesScreen(
 }
 
 /**
- * Row-based note card for the day-grouped list view — flat, no card borders.
- * Matches design screenshot: Title bold, then "Nmin ago  Snippet..." on second line.
+ * Enhanced NoteListRow with:
+ * - Color accent strip
+ * - Attachment thumbnail
+ * - Direct tap reminder toggle (Check / Alarm)
+ * - 3-dots overflow menu (Copy text, Duplicate, Share, Delete)
  */
 @Composable
 fun NoteListRow(
     note: PlainNote,
     timeStr: String,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    viewModel: PlainNotesViewModel? = null
+) {
+    val context = LocalContext.current
+    val haptics = rememberPimsHaptics()
+    val firstAttachment = remember(note.attachments) { note.attachments.firstOrNull() }
+    var thumbnailBitmap by remember(firstAttachment?.id) { mutableStateOf<Bitmap?>(null) }
+    var showMenu by remember { mutableStateOf(false) }
+
+    LaunchedEffect(firstAttachment?.id) {
+        if (firstAttachment != null && viewModel != null) {
+            val bytes = viewModel.readAttachment(firstAttachment)
+            thumbnailBitmap = if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size) else null
+        } else {
+            thumbnailBitmap = null
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .tactilePress(targetScale = 0.97f, onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(PimsDimensions.paddingMedium)
+    ) {
+        // Leading accent strip
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(34.dp)
+                .background(
+                    if (note.isReminderDone) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.primary,
+                    RoundedCornerShape(2.dp)
+                )
+        )
+
+        // Thumbnail if photo attached
+        thumbnailBitmap?.let { bmp ->
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            )
+        }
+
+        // Text content
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = note.title.ifBlank { "Untitled" },
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            val subtitleParts = buildList {
+                add(timeStr)
+                if (note.content.isNotBlank()) {
+                    add(note.content.replace('\n', ' ').trim().take(60))
+                }
+            }
+            Text(
+                text = subtitleParts.joinToString("  "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // Reminder status row with interactive toggle
+            if (note.reminderAt != null) {
+                val remSdf = remember { SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()) }
+                val remText = remSdf.format(Date(note.reminderAt))
+                val isPast = note.reminderAt <= System.currentTimeMillis()
+                val isDone = note.isReminderDone
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .clickable {
+                            haptics.selection()
+                            viewModel?.toggleReminderDone(note)
+                        }
+                ) {
+                    Icon(
+                        imageVector = if (isDone) Icons.Default.Check else Icons.Default.Alarm,
+                        contentDescription = "Toggle reminder done",
+                        tint = if (isDone) MaterialTheme.colorScheme.outline else if (isPast) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "${if (isDone) "Done: " else ""}$remText${if (!note.reminderTag.isNullOrBlank()) " • ${note.reminderTag}" else ""}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDone) MaterialTheme.colorScheme.outline else if (isPast) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+
+        // Overflow Actions Menu (Copy, Duplicate, Share, Delete)
+        Box {
+            IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier.size(34.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Note actions",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                // Copy Note
+                DropdownMenuItem(
+                    text = { Text("Copy Text") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        haptics.light()
+                        val full = buildString {
+                            if (note.title.isNotBlank()) appendLine(note.title)
+                            if (note.content.isNotBlank()) append(note.content)
+                        }
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Persona Note", full))
+                        Toast.makeText(context, "Note copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                )
+
+                // Duplicate Note
+                DropdownMenuItem(
+                    text = { Text("Duplicate") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.ContentPaste,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        haptics.light()
+                        viewModel?.duplicateNote(note) {
+                            Toast.makeText(context, "Note duplicated", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+
+                // Share Note
+                DropdownMenuItem(
+                    text = { Text("Share") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        haptics.light()
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, note.title.ifBlank { "Note" })
+                            putExtra(Intent.EXTRA_TEXT, "${note.title}\n\n${note.content}")
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share Note"))
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+
+                // Delete Note
+                DropdownMenuItem(
+                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        onDelete()
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Legacy grid card — retained for backward compatibility.
+ */
+@Composable
+fun NoteGridCard(
+    note: PlainNote,
+    dateStr: String,
     onClick: () -> Unit,
     onDelete: () -> Unit,
     viewModel: PlainNotesViewModel? = null
@@ -407,112 +949,9 @@ fun NoteListRow(
         }
     }
 
-    // Flat, no-border row matching design with leading accent strip
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(PimsDimensions.paddingMedium)
-    ) {
-        // Leading 4dp colored accent strip
-        Box(
-            modifier = Modifier
-                .width(4.dp)
-                .height(32.dp)
-                .background(
-                    MaterialTheme.colorScheme.primary,
-                    RoundedCornerShape(2.dp)
-                )
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        // Optional thumbnail
-        thumbnailBitmap?.let { bmp ->
-            Image(
-                bitmap = bmp.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(PimsDimensions.skeletonCornerRadius))
-            )
-        }
-
-        // Text content
-        Column(modifier = Modifier.weight(1f)) {
-            // Title
-            Text(
-                text = note.title.ifBlank { "Untitled" },
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            // Time + snippet on same line (e.g. "2h ago  Passport, chargers...")
-            val subtitleParts = buildList {
-                add(timeStr)
-                if (note.content.isNotBlank()) {
-                    add(note.content.replace('\n', ' ').take(60))
-                }
-            }
-            Text(
-                text = subtitleParts.joinToString("  "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        // Trash delete icon (matching design)
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.size(36.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = "Delete note",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-/**
- * Legacy grid card — retained for backward compatibility / internal test references.
- * Prefer NoteListRow in new code.
- */
-@Composable
-fun NoteGridCard(
-    note: PlainNote,
-    dateStr: String,
-    onClick: () -> Unit,
-    onDelete: () -> Unit,
-    viewModel: PlainNotesViewModel? = null
-) {
-    val firstAttachment = remember(note.attachments) { note.attachments.firstOrNull() }
-    var thumbnailBitmap by remember(firstAttachment?.id) { mutableStateOf<Bitmap?>(null) }
-
-    LaunchedEffect(firstAttachment?.id) {
-        if (firstAttachment != null && viewModel != null) {
-            val bytes = viewModel.readAttachment(firstAttachment)
-            if (bytes != null) {
-                thumbnailBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            } else {
-                thumbnailBitmap = null
-            }
-        } else {
-            thumbnailBitmap = null
-        }
-    }
-
     Card(
         shape = RoundedCornerShape(PimsDimensions.cardCornerRadius),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier
@@ -530,623 +969,67 @@ fun NoteGridCard(
                         .height(105.dp)
                 )
             }
-            Column(
-                modifier = Modifier.padding(PimsDimensions.paddingMedium)
-            ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = note.title.ifBlank { "Untitled" },
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = note.content,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = dateStr,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-                if (note.attachments.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.AttachFile,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = "${note.attachments.size}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-}
-
-/**
- * Note Editor Screen - Replicates screen_new_note.png
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PlainNoteEditorScreen(
-    noteId: String?,
-    onBack: () -> Unit,
-    viewModel: PlainNotesViewModel = hiltViewModel()
-) {
-    val haptics = rememberPimsHaptics()
-    val feedback = rememberPimsFeedback()
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val existingNote = remember(noteId, state.notes) {
-        state.notes.find { it.id == noteId }
-    }
-
-    // Stable ID for the note during this editor session (prevents duplicate creations on repeated clicks)
-    var currentNoteId by remember(noteId) { mutableStateOf(noteId) }
-    var localIsSaving by remember { mutableStateOf(false) }
-    val isBusy = state.isSaving || localIsSaving
-
-    BackHandler(enabled = !isBusy, onBack = onBack)
-
-    var title by remember { mutableStateOf(existingNote?.title ?: "") }
-    var contentValue by remember {
-        mutableStateOf(TextFieldValue(existingNote?.content ?: ""))
-    }
-    var format by remember { mutableStateOf(existingNote?.format ?: NoteFormat.PLAIN) }
-    var pendingAttachmentBytes by remember { mutableStateOf<ByteArray?>(null) }
-    var pendingAttachmentName by remember { mutableStateOf("") }
-
-    // Undo / Redo history
-    val undoStack = remember { mutableStateListOf<TextFieldValue>() }
-    val redoStack = remember { mutableStateListOf<TextFieldValue>() }
-    val deletedAttachmentIds = remember { mutableStateListOf<String>() }
-
-    val context = LocalContext.current
-    LaunchedEffect(state.error) {
-        state.error?.let {
-            localIsSaving = false
-            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
-            viewModel.clearError()
-        }
-    }
-
-    val visualMediaPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        uri?.let {
-            processAndAttachImage(context, it) { bytes, name ->
-                pendingAttachmentBytes = bytes
-                pendingAttachmentName = name
-            }
-        }
-    }
-
-    val contentPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            processAndAttachImage(context, it) { bytes, name ->
-                pendingAttachmentBytes = bytes
-                pendingAttachmentName = name
-            }
-        }
-    }
-
-    var activeTooltip by remember { mutableStateOf<String?>(null) }
-
-    Scaffold(
-        topBar = {
-            // Clean editor header: X close on left, title preview center, save indicator right
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = PimsDimensions.paddingMedium, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // X close button (matches design screenshot)
-                IconButton(
-                    onClick = { if (!isBusy) onBack() },
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close editor",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                // Title preview
-                Text(
-                    text = title.ifBlank { "New Note" },
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = PimsDimensions.paddingSmall)
-                )
-                // Right: busy indicator
-                if (isBusy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        },
-        bottomBar = {
-            // Minimalist, low-profile bottom bar with zero prominent background color, sitting just 3% above keyboard/bottom
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-            ) {
+            Column(modifier = Modifier.padding(PimsDimensions.paddingMedium)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Minimal Tool Icons with WarmTooltip wrapped in grouped Surface
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(2.dp)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            com.pims.vault.presentation.ui.components.ux.WarmTooltip(
-                                text = "Undo",
-                                visible = activeTooltip == "undo",
-                                onDismissRequest = { activeTooltip = null }
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        activeTooltip = "undo"
-                                        if (undoStack.isNotEmpty()) {
-                                            haptics.light()
-                                            redoStack.add(contentValue)
-                                            contentValue = undoStack.removeAt(undoStack.lastIndex)
-                                        }
-                                    },
-                                    enabled = undoStack.isNotEmpty(),
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Undo,
-                                        contentDescription = "Undo",
-                                        tint = if (undoStack.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-
-                            com.pims.vault.presentation.ui.components.ux.WarmTooltip(
-                                text = "Redo",
-                                visible = activeTooltip == "redo",
-                                onDismissRequest = { activeTooltip = null }
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        activeTooltip = "redo"
-                                        if (redoStack.isNotEmpty()) {
-                                            haptics.light()
-                                            undoStack.add(contentValue)
-                                            contentValue = redoStack.removeAt(redoStack.lastIndex)
-                                        }
-                                    },
-                                    enabled = redoStack.isNotEmpty(),
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Redo,
-                                        contentDescription = "Redo",
-                                        tint = if (redoStack.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-
-                            com.pims.vault.presentation.ui.components.ux.WarmTooltip(
-                                text = if (format == NoteFormat.BULLETS) "List active" else "Bullet list",
-                                visible = activeTooltip == "bullet",
-                                onDismissRequest = { activeTooltip = null }
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        activeTooltip = "bullet"
-                                        haptics.light()
-                                        undoStack.add(contentValue)
-                                        format = if (format == NoteFormat.BULLETS) NoteFormat.PLAIN else NoteFormat.BULLETS
-                                        contentValue = NoteEditorLogic.toggleBulletAtCurrentLine(contentValue)
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.FormatListBulleted,
-                                        contentDescription = "Bullet List",
-                                        tint = if (format == NoteFormat.BULLETS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-
-                            com.pims.vault.presentation.ui.components.ux.WarmTooltip(
-                                text = if (pendingAttachmentBytes != null) "Photo attached" else "Attach photo",
-                                visible = activeTooltip == "photo",
-                                onDismissRequest = { activeTooltip = null }
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        activeTooltip = "photo"
-                                        haptics.light()
-                                        try {
-                                            visualMediaPicker.launch(
-                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                            )
-                                        } catch (_: Exception) {
-                                            contentPicker.launch("image/*")
-                                        }
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AddPhotoAlternate,
-                                        contentDescription = "Add Photo",
-                                        tint = if (pendingAttachmentBytes != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Cancel and Save actions (just 3% above bottom/keyboard)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(
-                            onClick = onBack,
-                            enabled = !isBusy,
-                            modifier = Modifier.tactilePress()
-                        ) {
-                            Text(
-                                text = "Cancel",
-                                color = if (isBusy) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                if (isBusy) return@Button
-                                localIsSaving = true
-                                val targetId = currentNoteId ?: java.util.UUID.randomUUID().toString().also { currentNoteId = it }
-                                haptics.success()
-                                feedback.success()
-                                if (pendingAttachmentBytes != null) {
-                                    viewModel.saveWithAttachment(
-                                        id = targetId,
-                                        title = title,
-                                        format = format,
-                                        content = contentValue.text,
-                                        attachmentBytes = pendingAttachmentBytes,
-                                        displayName = pendingAttachmentName,
-                                        onComplete = onBack
-                                    )
-                                } else {
-                                    viewModel.save(
-                                        id = targetId,
-                                        title = title,
-                                        format = format,
-                                        content = contentValue.text,
-                                        onComplete = onBack
-                                    )
-                                }
-                            },
-                            enabled = !isBusy,
-                            shape = RoundedCornerShape(18.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
-                            ),
-                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-                            modifier = Modifier.tactilePress()
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                if (isBusy) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                    Text(
-                                        text = "Saving...",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = "Save",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = PimsDimensions.paddingLarge, vertical = PimsDimensions.paddingSmall)
-        ) {
-            // Big Bold Title TextField
-            BasicTextField(
-                value = title,
-                onValueChange = { title = it },
-                textStyle = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                singleLine = true,
-                decorationBox = { innerTextField ->
-                    if (title.isEmpty()) {
-                        Text(
-                            text = "Untitled",
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.30f)
-                            )
-                        )
-                    }
-                    innerTextField()
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Attached Photo Preview (No redundant subtitle above it)
-            if (pendingAttachmentBytes != null) {
-                val bmp = remember(pendingAttachmentBytes) {
-                    pendingAttachmentBytes?.let {
-                        BitmapFactory.decodeByteArray(it, 0, it.size)
-                    }
-                }
-                bmp?.let {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                    ) {
-                        Image(
-                            bitmap = it.asImageBitmap(),
-                            contentDescription = "Attached photo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        IconButton(
-                            onClick = { pendingAttachmentBytes = null },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp)
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.6f))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Remove",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
-            }
-
-            val visibleAttachments = remember(existingNote?.attachments, deletedAttachmentIds.toList()) {
-                existingNote?.attachments.orEmpty().filter { it.id !in deletedAttachmentIds }
-            }
-            visibleAttachments.forEach { att ->
-                NoteAttachmentPreview(
-                    attachment = att,
-                    viewModel = viewModel,
-                    onDelete = {
-                        deletedAttachmentIds.add(att.id)
-                        viewModel.deleteAttachment(att)
-                    }
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-            }
-
-            // Body TextField
-            BasicTextField(
-                value = contentValue,
-                onValueChange = { newValue ->
-                    if (newValue.text != contentValue.text) {
-                        undoStack.add(contentValue)
-                        redoStack.clear()
-                    }
-                    contentValue = if (format == NoteFormat.BULLETS) {
-                        NoteEditorLogic.handleEnterKeyForBullets(contentValue, newValue)
-                    } else {
-                        newValue
-                    }
-                },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Normal,
-                    color = MaterialTheme.colorScheme.onBackground
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                decorationBox = { innerTextField ->
-                    if (contentValue.text.isEmpty()) {
-                        Text(
-                            text = "Write something down",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f)
-                            )
-                        )
-                    }
-                    innerTextField()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            )
-        }
-    }
-}
-
-private fun processAndAttachImage(
-    context: android.content.Context,
-    uri: Uri,
-    onSuccess: (ByteArray, String) -> Unit
-) {
-    try {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-            val rawBytes = stream.readBytes()
-            if (rawBytes.isEmpty()) return
-
-            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, boundsOptions)
-
-            val maxDimension = 1920
-            var sampleSize = 1
-            var w = boundsOptions.outWidth
-            var h = boundsOptions.outHeight
-            while (w > maxDimension || h > maxDimension) {
-                sampleSize *= 2
-                w /= 2
-                h /= 2
-            }
-
-            val decodeOptions = BitmapFactory.Options().apply {
-                inSampleSize = sampleSize
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            val bmp = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOptions)
-            if (bmp != null) {
-                val baos = java.io.ByteArrayOutputStream()
-                bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
-                val compressedBytes = baos.toByteArray()
-                onSuccess(compressedBytes, "photo_${System.currentTimeMillis()}.jpg")
-            } else {
-                onSuccess(rawBytes, "photo_${System.currentTimeMillis()}.jpg")
-            }
-        }
-    } catch (e: Exception) {
-        android.util.Log.e("PlainNotesScreen", "Failed to process photo", e)
-        android.widget.Toast.makeText(context, "Failed to load selected photo", android.widget.Toast.LENGTH_SHORT).show()
-    }
-}
-
-@Composable
-fun NoteAttachmentPreview(
-    attachment: NoteAttachment,
-    viewModel: PlainNotesViewModel,
-    onDelete: (() -> Unit)? = null
-) {
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(attachment.id) {
-        val bytes = viewModel.readAttachment(attachment)
-        if (bytes != null) {
-            bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        }
-    }
-
-    bitmap?.let {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-                .clip(RoundedCornerShape(16.dp))
-        ) {
-            Image(
-                bitmap = it.asImageBitmap(),
-                contentDescription = attachment.caption,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-            if (onDelete != null) {
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.6f))
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Remove photo",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+                    Text(
+                        text = note.title.ifBlank { "Untitled" },
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = note.content,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = dateStr,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                    if (note.attachments.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AttachFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = "${note.attachments.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
             }
         }

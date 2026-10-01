@@ -86,7 +86,9 @@ class VaultViewModel @Inject constructor(
     private val readBankAccountUseCase: ReadBankAccountUseCase,
     private val deleteVaultItemUseCase: DeleteVaultItemUseCase,
     private val sessionManager: BiometricSessionManager,
-    private val personDao: com.pims.vault.data.local.dao.PersonDao
+    private val personDao: com.pims.vault.data.local.dao.PersonDao,
+    private val vaultDao: com.pims.vault.data.local.dao.VaultDao,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(VaultUiState())
@@ -315,6 +317,14 @@ class VaultViewModel @Inject constructor(
         }
     }
 
+    fun copyToClipboard(context: Context, label: String, text: String) {
+        copyToClipboard(context = context, text = text, label = label, isSecret = true)
+    }
+
+    fun copyToClipboard(label: String, text: String) {
+        _uiState.update { it.copy(clipboardMessage = "$label copied.") }
+    }
+
     fun dismissClipboardMessage() {
         _uiState.update { it.copy(clipboardMessage = null) }
     }
@@ -431,6 +441,35 @@ class VaultViewModel @Inject constructor(
         }
     }
 
+    private fun syncItemToRemote(itemId: String) {
+        viewModelScope.launch {
+            try {
+                val entity = vaultDao.getVaultItemById(itemId)
+                if (entity != null) {
+                    firestoreSyncService?.syncVaultItem(activePersonId, entity)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun syncAllVaultItems(onComplete: ((Boolean) -> Unit)? = null) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isLoading = true) }
+                val items = vaultDao.getAllVaultItems()
+                for (item in items) {
+                    firestoreSyncService?.syncVaultItem(activePersonId, item)
+                }
+                _uiState.update { it.copy(isLoading = false, clipboardMessage = "Vault backed up & synchronized to cloud.") }
+                onComplete?.invoke(true)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "Sync error: ${e.message}") }
+                onComplete?.invoke(false)
+            }
+        }
+    }
+
     // ---------------------------------------------------------
     // CRUD Operations
     // ---------------------------------------------------------
@@ -447,7 +486,7 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
-                savePasswordUseCase(
+                val id = savePasswordUseCase(
                     personId = activePersonId,
                     title = title,
                     username = username,
@@ -457,6 +496,7 @@ class VaultViewModel @Inject constructor(
                     vaultRootKey = key,
                     existingId = existingId
                 )
+                syncItemToRemote(id)
                 closeEditor()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
@@ -477,7 +517,7 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
-                saveTotpSecretUseCase(
+                val id = saveTotpSecretUseCase(
                     personId = activePersonId,
                     issuer = issuer,
                     account = account,
@@ -488,6 +528,7 @@ class VaultViewModel @Inject constructor(
                     vaultRootKey = key,
                     existingId = existingId
                 )
+                syncItemToRemote(id)
                 closeEditor()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
@@ -505,7 +546,7 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
-                saveRecoveryCodesUseCase(
+                val id = saveRecoveryCodesUseCase(
                     personId = activePersonId,
                     title = title,
                     accountReference = accountReference,
@@ -513,6 +554,7 @@ class VaultViewModel @Inject constructor(
                     vaultRootKey = key,
                     existingId = existingId
                 )
+                syncItemToRemote(id)
                 closeEditor()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
@@ -527,6 +569,7 @@ class VaultViewModel @Inject constructor(
                 val key = getOrDeriveVaultKey()
                 val updated = consumeRecoveryCodeUseCase(itemId, code, key)
                 _uiState.update { it.copy(activeDecryptedRecoveryCodes = updated) }
+                syncItemToRemote(itemId)
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
             }
@@ -542,13 +585,14 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
-                saveSecureNoteUseCase(
+                val id = saveSecureNoteUseCase(
                     personId = activePersonId,
                     title = title,
                     noteContent = noteContent,
                     vaultRootKey = key,
                     existingId = existingId
                 )
+                syncItemToRemote(id)
                 closeEditor()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
@@ -571,7 +615,7 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
-                savePaymentReferenceUseCase(
+                val id = savePaymentReferenceUseCase(
                     personId = activePersonId,
                     nickname = nickname,
                     provider = provider,
@@ -584,6 +628,7 @@ class VaultViewModel @Inject constructor(
                     existingId = existingId,
                     status = status
                 )
+                syncItemToRemote(id)
                 closeEditor()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
@@ -612,6 +657,7 @@ class VaultViewModel @Inject constructor(
                 )
                 val refreshed = current.copy(status = newStatus)
                 _uiState.update { it.copy(activeDecryptedPayment = refreshed) }
+                syncItemToRemote(cardId)
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Failed to update card status: ${e.message}") }
             }
@@ -638,7 +684,7 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
-                saveBankAccountUseCase(
+                val id = saveBankAccountUseCase(
                     personId = activePersonId,
                     bankName = bankName,
                     accountHolderName = accountHolderName,
@@ -656,6 +702,7 @@ class VaultViewModel @Inject constructor(
                     linkedCardId = linkedCardId,
                     linkedCardSummary = linkedCardSummary
                 )
+                syncItemToRemote(id)
                 closeEditor()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
@@ -668,6 +715,7 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 deleteVaultItemUseCase(itemId)
+                firestoreSyncService?.deleteVaultItem(activePersonId, itemId)
                 closeActiveItem()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
