@@ -301,13 +301,18 @@ fun PersonaDashboardScreen(
     val accountMode by accountModeManager.accountMode.collectAsState()
     val authUser = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser }
     val isLocalOnly = accountMode == AccountMode.LOCAL_ONLY && authUser == null
+    val hasSyncAttentionNeeded = syncState is SyncState.Conflict || 
+                                 syncState is SyncState.Failed || 
+                                 conflicts.isNotEmpty()
     val effectiveSyncStatusText = when {
         syncState is SyncState.Syncing -> "Syncing..."
-        isLocalOnly -> "Please sync"
+        syncState is SyncState.Conflict -> "Needs attention"
+        syncState is SyncState.Failed -> "Sync paused"
+        isLocalOnly -> "Local Vault"
         syncState is SyncState.Idle -> "Synced"
-        else -> "Please sync"
+        else -> "Ready"
     }
-    val effectiveSyncIsGood = !isLocalOnly && (syncState is SyncState.Idle || syncState is SyncState.Syncing)
+    val effectiveSyncIsGood = !hasSyncAttentionNeeded
 
     var contextualExplanation by remember { mutableStateOf<ContextualExplanation?>(null) }
 
@@ -435,7 +440,8 @@ fun PersonaDashboardScreen(
                 "dataBackup" to false,
                 "wallpaperOptions" to false,
                 "uploadDoc" to false,
-                "centralizedEditor" to false
+                "centralizedEditor" to false,
+                "avatarEditor" to false
             )
         )
     }
@@ -448,18 +454,10 @@ fun PersonaDashboardScreen(
         sheetStates.value = sheetStates.value.toMutableMap().apply { this[sheetName] = false }
     }
 
-    // Dynamic screenshot protection: enforce FLAG_SECURE exclusively while inside the Vault
-    val isVaultActive = fullScreenOverlay == "VAULT" || sheetStates.value["vault"] == true
-    DisposableEffect(isVaultActive) {
+    // Vault allows screenshots by default unless an explicit private key is revealed
+    DisposableEffect(Unit) {
         val activity = context as? Activity
-        if (isVaultActive) {
-            activity?.window?.setFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                android.view.WindowManager.LayoutParams.FLAG_SECURE
-            )
-        } else {
-            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-        }
+        activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         onDispose {
             activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         }
@@ -510,7 +508,7 @@ fun PersonaDashboardScreen(
 
         val biometricAvailable = onRequestBiometricAuth != null && pinSecurityManager.isBiometricEnabled.value
         if (biometricAvailable) {
-            onRequestBiometricAuth(
+            onRequestBiometricAuth?.invoke(
                 title,
                 subtitle,
                 {
@@ -1038,7 +1036,7 @@ fun PersonaDashboardScreen(
             "CONNECT_PERSON" -> {
                 ConnectPersonScreen(
                     onBack = { fullScreenOverlay = null },
-                    onSavePerson = { role, relName, gender, phone, email, address, dob, anniversary, notes, photoPath ->
+                    onSavePerson = { role, relName, gender, phone, email, address, dob, anniversary, notes, photoPath, isNextOfKin ->
                         val targetId = java.util.UUID.randomUUID().toString()
                         if (!photoPath.isNullOrBlank()) {
                             avatarManager.setPersonPhotoPath(targetId, photoPath)
@@ -1053,7 +1051,7 @@ fun PersonaDashboardScreen(
                                 dob = dob,
                                 anniversary = anniversary,
                                 notes = notes,
-                                isNextOfKin = false,
+                                isNextOfKin = isNextOfKin,
                                 customPersonId = targetId,
                                 photoPath = photoPath
                             )
@@ -1207,24 +1205,6 @@ fun PersonaDashboardScreen(
         snackbarHost = { PersonaToastHost(toastController) },
         floatingActionButton = {
             when (selectedTab) {
-                1 -> {
-                    FloatingActionButton(
-                        onClick = {
-                            haptics.medium()
-                            soundManager.navigation()
-                            activeNoteId = null
-                            fullScreenOverlay = "NOTE_EDITOR"
-                        },
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        shape = RoundedCornerShape(18.dp),
-                        modifier = Modifier
-                            .padding(bottom = 16.dp)
-                            .tactilePress()
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = "New note", modifier = Modifier.size(24.dp))
-                    }
-                }
                 3 -> {
                     FloatingActionButton(
                         onClick = {
@@ -2103,6 +2083,26 @@ fun PersonaDashboardScreen(
                         hideSheet("centralizedEditor")
                     }
                 )
+            }
+        )
+    }
+
+    // 16. AVATAR EDITOR BOTTOM SHEET
+    if (sheetStates.value["avatarEditor"] == true) {
+        com.pims.vault.presentation.avatar.AvatarEditorSheet(
+            initialConfig = avatarConfig ?: com.pims.vault.presentation.avatar.PersonaAvatarConfig.default(),
+            sheetState = avatarEditorSheetState,
+            avatarManager = avatarManager,
+            onDismissRequest = { hideSheet("avatarEditor") },
+            onSaveAvatar = { newCfg: com.pims.vault.presentation.avatar.PersonaAvatarConfig ->
+                avatarManager.saveConfig(newCfg)
+                recentActivityManager.recordActivity("Profile Avatar", "Avatar profile configuration updated")
+                soundManager.success()
+                haptics.success()
+                hideSheet("avatarEditor")
+                scope.launch {
+                    snackbarHostState.showSnackbar("✓ Avatar profile updated")
+                }
             }
         )
     }

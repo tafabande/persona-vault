@@ -24,4 +24,17 @@ data class PlainNote(
     val reminderTag: String? = null,
     val reminderRepeat: String? = null,
     val isReminderDone: Boolean = false
-)
+) {
+    val tags: List<String>
+        get() {
+            val fromReminder = reminderTag?.split(",")
+                ?.map { it.trim().removePrefix("#") }
+                ?.filter { it.isNotEmpty() } ?: emptyList()
+            val hashtagRegex = Regex("""#([A-Za-z0-9_]+)""")
+            val fromContent = hashtagRegex.findAll("$title $content")
+                .map { it.groupValues[1].trim() }
+                .filter { it.isNotEmpty() }
+                .toList()
+            return (fromReminder + fromContent).distinct()
+        }
+}

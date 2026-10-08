@@ -152,7 +152,7 @@ fun HomeView(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.52f)
+                .fillMaxHeight(0.78f)
                 .clipToBounds()
                 .align(Alignment.TopCenter)
         ) {
@@ -200,17 +200,17 @@ fun HomeView(
                 )
             }
 
-            // Seamless bottom fade — taller + more opaque for a cleaner magazine bleed
+            // Seamless bottom fade — compact and gentle so it only covers the bottom edge right behind the identity card
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(130.dp)
+                    .height(72.dp)
                     .align(Alignment.BottomCenter)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colorStops = arrayOf(
                                 0.0f to Color.Transparent,
-                                0.45f to homeBgColor.copy(alpha = 0.85f),
+                                0.60f to homeBgColor.copy(alpha = 0.50f),
                                 1.0f to homeBgColor
                             )
                         )
@@ -403,14 +403,19 @@ private fun HomeHeaderRow(
                             }
                         }
                 )
-                // Small black dot indicator on top-right as shown in screenshot
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 8.dp)
-                        .size(5.5.dp)
-                        .background(color = dotColor, shape = CircleShape)
-                )
+                val showSyncDot = !syncIsGood || syncStatusText.contains("error", ignoreCase = true) || syncStatusText.contains("fail", ignoreCase = true) || syncStatusText.contains("conflict", ignoreCase = true) || syncStatusText.contains("attention", ignoreCase = true)
+                if (showSyncDot) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 8.dp, end = 8.dp)
+                            .size(5.5.dp)
+                            .background(
+                                color = if (!syncIsGood) StateWarning else dotColor,
+                                shape = CircleShape
+                            )
+                    )
+                }
             }
 
             // Notification Bell
@@ -431,14 +436,15 @@ private fun HomeHeaderRow(
                     tint = iconTint,
                     modifier = Modifier.size(22.dp)
                 )
-                // Small black dot indicator on top-right as shown in screenshot
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 8.dp)
-                        .size(5.5.dp)
-                        .background(color = dotColor, shape = CircleShape)
-                )
+                if (unreadNotificationCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 8.dp, end = 8.dp)
+                            .size(5.5.dp)
+                            .background(color = dotColor, shape = CircleShape)
+                    )
+                }
             }
         }
     }

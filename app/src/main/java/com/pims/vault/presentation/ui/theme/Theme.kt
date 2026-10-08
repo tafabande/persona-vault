@@ -34,14 +34,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-import com.pims.vault.R
+import com.pims.vault.core.res.AppResources
 
 // Apple-Grade Humanist Geometric Typography (Plus Jakarta Sans)
 val PlusJakartaSansFontFamily = FontFamily(
-    Font(R.font.plus_jakarta_sans, FontWeight.Normal),
-    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
-    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
-    Font(R.font.plus_jakarta_sans, FontWeight.Bold)
+    Font(AppResources.Font.plus_jakarta_sans, FontWeight.Normal),
+    Font(AppResources.Font.plus_jakarta_sans, FontWeight.Medium),
+    Font(AppResources.Font.plus_jakarta_sans, FontWeight.SemiBold),
+    Font(AppResources.Font.plus_jakarta_sans, FontWeight.Bold)
 )
 
 val NunitoFontFamily = PlusJakartaSansFontFamily

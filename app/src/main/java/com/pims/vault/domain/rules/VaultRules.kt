@@ -14,6 +14,10 @@ object VaultRules {
     const val DOMAIN_NOTE = "PIMS/vault/note/v1"
     const val DOMAIN_PAYMENT = "PIMS/vault/payment/v1"
     const val DOMAIN_BANKING = "PIMS/vault/banking/v1"
+    const val DOMAIN_API_KEY = "PIMS/vault/apikey/v1"
+    const val DOMAIN_SSH_KEY = "PIMS/vault/sshkey/v1"
+    const val DOMAIN_ACCESS_TOKEN = "PIMS/vault/token/v1"
+    const val DOMAIN_GENERIC = "PIMS/vault/generic/v1"
 
     /**
      * Resolves the category-level domain-separated HKDF context string.
@@ -27,6 +31,10 @@ object VaultRules {
             VaultCategory.PAYMENT_REFERENCE -> DOMAIN_PAYMENT
             VaultCategory.BANK_ACCOUNT -> DOMAIN_BANKING
             VaultCategory.IDENTITY_CREDENTIAL -> DOMAIN_PASSWORD
+            VaultCategory.API_KEY -> DOMAIN_API_KEY
+            VaultCategory.SSH_KEY -> DOMAIN_SSH_KEY
+            VaultCategory.ACCESS_TOKEN -> DOMAIN_ACCESS_TOKEN
+            VaultCategory.GENERIC_SECRET -> DOMAIN_GENERIC
         }
     }
 
@@ -149,5 +157,30 @@ object VaultRules {
     fun validateSecureNote(title: String, content: String) {
         if (title.isBlank()) throw VaultValidationException("Note title cannot be blank")
         if (content.isBlank()) throw VaultValidationException("Note content cannot be blank")
+    }
+
+    fun validateApiKey(label: String, key: String) {
+        if (label.isBlank()) throw VaultValidationException("API key label cannot be blank")
+        if (key.isBlank()) throw VaultValidationException("API key value cannot be blank")
+    }
+
+    fun validateSshKey(label: String, privateOrPublicKey: String) {
+        if (label.isBlank()) throw VaultValidationException("SSH key label cannot be blank")
+        if (privateOrPublicKey.isBlank()) throw VaultValidationException("SSH key content cannot be blank")
+    }
+
+    fun validateAccessToken(label: String, token: String) {
+        if (label.isBlank()) throw VaultValidationException("Access token label cannot be blank")
+        if (token.isBlank()) throw VaultValidationException("Access token value cannot be blank")
+    }
+
+    fun validateGenericSecret(label: String, secretValue: String) {
+        if (label.isBlank()) throw VaultValidationException("Secret label cannot be blank")
+        if (secretValue.isBlank()) throw VaultValidationException("Secret value cannot be blank")
+    }
+
+    fun validateIdentityCredential(fullName: String, identifierNumber: String) {
+        if (fullName.isBlank()) throw VaultValidationException("Full name / Holder name cannot be blank")
+        if (identifierNumber.isBlank()) throw VaultValidationException("Identifier / ID number cannot be blank")
     }
 }

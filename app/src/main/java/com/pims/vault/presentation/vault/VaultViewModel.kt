@@ -17,6 +17,10 @@ import com.pims.vault.domain.model.PaymentReferenceSecret
 import com.pims.vault.domain.model.RecoveryCodeSetSecret
 import com.pims.vault.domain.model.SecureNoteSecret
 import com.pims.vault.domain.model.TotpSecret
+import com.pims.vault.domain.model.ApiKeySecret
+import com.pims.vault.domain.model.SshKeySecret
+import com.pims.vault.domain.model.AccessTokenSecret
+import com.pims.vault.domain.model.GenericSecretItem
 import com.pims.vault.domain.model.VaultItemHeader
 import com.pims.vault.domain.usecase.vault.ConsumeRecoveryCodeUseCase
 import com.pims.vault.domain.usecase.vault.DeleteVaultItemUseCase
@@ -34,6 +38,17 @@ import com.pims.vault.domain.usecase.vault.SaveBankAccountUseCase
 import com.pims.vault.domain.usecase.vault.SaveRecoveryCodesUseCase
 import com.pims.vault.domain.usecase.vault.SaveSecureNoteUseCase
 import com.pims.vault.domain.usecase.vault.SaveTotpSecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveApiKeyUseCase
+import com.pims.vault.domain.usecase.vault.ReadApiKeySecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveSshKeyUseCase
+import com.pims.vault.domain.usecase.vault.ReadSshKeySecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveAccessTokenUseCase
+import com.pims.vault.domain.usecase.vault.ReadAccessTokenSecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveGenericSecretUseCase
+import com.pims.vault.domain.usecase.vault.ReadGenericSecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveIdentityCredentialUseCase
+import com.pims.vault.domain.usecase.vault.ReadIdentityCredentialUseCase
+import com.pims.vault.domain.model.IdentityCredentialSecret
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -59,6 +74,11 @@ data class VaultUiState(
     val activeDecryptedNote: SecureNoteSecret? = null,
     val activeDecryptedPayment: PaymentReferenceSecret? = null,
     val activeDecryptedBanking: BankingDetailsSecret? = null,
+    val activeDecryptedApiKey: ApiKeySecret? = null,
+    val activeDecryptedSshKey: SshKeySecret? = null,
+    val activeDecryptedAccessToken: AccessTokenSecret? = null,
+    val activeDecryptedGeneric: GenericSecretItem? = null,
+    val activeDecryptedIdentity: IdentityCredentialSecret? = null,
     val activeItemId: String? = null,
     val isEditing: Boolean = false,
     val editorCategory: VaultCategory? = null,
@@ -84,6 +104,16 @@ class VaultViewModel @Inject constructor(
     private val readPaymentReferenceUseCase: ReadPaymentReferenceUseCase,
     private val saveBankAccountUseCase: SaveBankAccountUseCase,
     private val readBankAccountUseCase: ReadBankAccountUseCase,
+    private val saveApiKeyUseCase: SaveApiKeyUseCase,
+    private val readApiKeySecretUseCase: ReadApiKeySecretUseCase,
+    private val saveSshKeyUseCase: SaveSshKeyUseCase,
+    private val readSshKeySecretUseCase: ReadSshKeySecretUseCase,
+    private val saveAccessTokenUseCase: SaveAccessTokenUseCase,
+    private val readAccessTokenSecretUseCase: ReadAccessTokenSecretUseCase,
+    private val saveGenericSecretUseCase: SaveGenericSecretUseCase,
+    private val readGenericSecretUseCase: ReadGenericSecretUseCase,
+    private val saveIdentityCredentialUseCase: SaveIdentityCredentialUseCase,
+    private val readIdentityCredentialUseCase: ReadIdentityCredentialUseCase,
     private val deleteVaultItemUseCase: DeleteVaultItemUseCase,
     private val sessionManager: BiometricSessionManager,
     private val personDao: com.pims.vault.data.local.dao.PersonDao,
@@ -388,11 +418,28 @@ class VaultViewModel @Inject constructor(
                         _uiState.update { it.copy(activeDecryptedPayment = secret, isLoading = false) }
                     }
                     VaultCategory.IDENTITY_CREDENTIAL -> {
-                        _uiState.update { it.copy(isLoading = false) }
+                        val secret = readIdentityCredentialUseCase(item.id, key)
+                        _uiState.update { it.copy(activeDecryptedIdentity = secret, isLoading = false) }
                     }
                     VaultCategory.BANK_ACCOUNT -> {
                         val secret = readBankAccountUseCase(item.id, key)
                         _uiState.update { it.copy(activeDecryptedBanking = secret, isLoading = false) }
+                    }
+                    VaultCategory.API_KEY -> {
+                        val secret = readApiKeySecretUseCase(item.id, key)
+                        _uiState.update { it.copy(activeDecryptedApiKey = secret, isLoading = false) }
+                    }
+                    VaultCategory.SSH_KEY -> {
+                        val secret = readSshKeySecretUseCase(item.id, key)
+                        _uiState.update { it.copy(activeDecryptedSshKey = secret, isLoading = false) }
+                    }
+                    VaultCategory.ACCESS_TOKEN -> {
+                        val secret = readAccessTokenSecretUseCase(item.id, key)
+                        _uiState.update { it.copy(activeDecryptedAccessToken = secret, isLoading = false) }
+                    }
+                    VaultCategory.GENERIC_SECRET -> {
+                        val secret = readGenericSecretUseCase(item.id, key)
+                        _uiState.update { it.copy(activeDecryptedGeneric = secret, isLoading = false) }
                     }
                 }
             } catch (e: Exception) {
@@ -412,6 +459,11 @@ class VaultViewModel @Inject constructor(
                 activeDecryptedNote = null,
                 activeDecryptedPayment = null,
                 activeDecryptedBanking = null,
+                activeDecryptedApiKey = null,
+                activeDecryptedSshKey = null,
+                activeDecryptedAccessToken = null,
+                activeDecryptedGeneric = null,
+                activeDecryptedIdentity = null,
                 isEditing = false,
                 editorCategory = null
             )
@@ -609,7 +661,9 @@ class VaultViewModel @Inject constructor(
         year: String,
         notes: String?,
         existingId: String? = null,
-        status: CardStatus = CardStatus.IN_USE
+        status: CardStatus = CardStatus.IN_USE,
+        fullCardNumber: String? = null,
+        cvv: String? = null
     ) {
         recordUserActivity()
         viewModelScope.launch {
@@ -626,7 +680,9 @@ class VaultViewModel @Inject constructor(
                     notes = notes,
                     vaultRootKey = key,
                     existingId = existingId,
-                    status = status
+                    status = status,
+                    fullCardNumber = fullCardNumber,
+                    cvv = cvv
                 )
                 syncItemToRemote(id)
                 closeEditor()
@@ -717,6 +773,186 @@ class VaultViewModel @Inject constructor(
                 deleteVaultItemUseCase(itemId)
                 firestoreSyncService?.deleteVaultItem(activePersonId, itemId)
                 closeActiveItem()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun toggleRecoveryCodeUsed(itemId: String, code: String) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val key = getOrDeriveVaultKey()
+                consumeRecoveryCodeUseCase(itemId, code, key)
+                val refreshed = readRecoveryCodesUseCase(itemId, key)
+                _uiState.update { it.copy(activeDecryptedRecoveryCodes = refreshed) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun saveApiKey(
+        label: String,
+        key: String,
+        service: String,
+        environment: String,
+        endpoint: String?,
+        expires: String?,
+        notes: String?,
+        existingId: String? = null
+    ) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val rootKey = getOrDeriveVaultKey()
+                val id = saveApiKeyUseCase(
+                    personId = activePersonId,
+                    label = label,
+                    key = key,
+                    service = service,
+                    environment = environment,
+                    endpoint = endpoint,
+                    expires = expires,
+                    notes = notes,
+                    vaultRootKey = rootKey,
+                    existingId = existingId
+                )
+                syncItemToRemote(id)
+                closeEditor()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun saveSshKey(
+        label: String,
+        host: String,
+        username: String,
+        privateKey: String,
+        publicKey: String,
+        fingerprint: String,
+        notes: String?,
+        existingId: String? = null
+    ) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val rootKey = getOrDeriveVaultKey()
+                val id = saveSshKeyUseCase(
+                    personId = activePersonId,
+                    label = label,
+                    host = host,
+                    username = username,
+                    privateKey = privateKey,
+                    publicKey = publicKey,
+                    fingerprint = fingerprint,
+                    notes = notes,
+                    vaultRootKey = rootKey,
+                    existingId = existingId
+                )
+                syncItemToRemote(id)
+                closeEditor()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun saveAccessToken(
+        label: String,
+        token: String,
+        service: String,
+        scopes: List<String>,
+        expires: String?,
+        notes: String?,
+        existingId: String? = null
+    ) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val rootKey = getOrDeriveVaultKey()
+                val id = saveAccessTokenUseCase(
+                    personId = activePersonId,
+                    label = label,
+                    token = token,
+                    service = service,
+                    scopes = scopes,
+                    expires = expires,
+                    notes = notes,
+                    vaultRootKey = rootKey,
+                    existingId = existingId
+                )
+                syncItemToRemote(id)
+                closeEditor()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun saveGenericSecret(
+        label: String,
+        secretValue: String,
+        secretType: String,
+        provider: String?,
+        notes: String?,
+        existingId: String? = null
+    ) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val rootKey = getOrDeriveVaultKey()
+                val id = saveGenericSecretUseCase(
+                    personId = activePersonId,
+                    label = label,
+                    secretValue = secretValue,
+                    secretType = secretType,
+                    provider = provider,
+                    notes = notes,
+                    vaultRootKey = rootKey,
+                    existingId = existingId
+                )
+                syncItemToRemote(id)
+                closeEditor()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun saveIdentityCredential(
+        idType: String,
+        fullName: String,
+        identifierNumber: String,
+        issuingAuthority: String?,
+        issueDate: String?,
+        expiryDate: String?,
+        secondaryIdentifier: String?,
+        notes: String?,
+        existingId: String? = null
+    ) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val rootKey = getOrDeriveVaultKey()
+                val id = saveIdentityCredentialUseCase(
+                    personId = activePersonId,
+                    idType = idType,
+                    fullName = fullName,
+                    identifierNumber = identifierNumber,
+                    issuingAuthority = issuingAuthority,
+                    issueDate = issueDate,
+                    expiryDate = expiryDate,
+                    secondaryIdentifier = secondaryIdentifier,
+                    notes = notes,
+                    vaultRootKey = rootKey,
+                    existingId = existingId
+                )
+                syncItemToRemote(id)
+                closeEditor()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
             }

@@ -1,5 +1,6 @@
 package com.pims.vault.data.repository
 
+import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.storage.FileStorageService
 import com.pims.vault.data.local.dao.PlainNoteDao
 import com.pims.vault.data.local.entity.PlainNoteAttachmentEntity
@@ -195,7 +196,7 @@ class PlainNotesRepositoryImpl @Inject constructor(
             )
             baos.toByteArray()
         } catch (e: Exception) {
-            android.util.Log.e("PlainNotesRepository", "Failed to read attachment ${attachment.id}", e)
+            VaultLogger.e("PlainNotesRepository", "Failed to read attachment ${attachment.id}", e)
             null
         }
     }

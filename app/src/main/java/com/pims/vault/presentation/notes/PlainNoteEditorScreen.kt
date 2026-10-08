@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
+import com.pims.vault.core.logging.VaultLogger
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -209,22 +211,6 @@ fun PlainNoteEditorScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Live Note Stats Pill
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier
-                            .clickable { showStatsDialog = true }
-                            .padding(end = 4.dp)
-                    ) {
-                        Text(
-                            text = "${noteStats.wordCount} words",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-
                     // Copy Note Text Button
                     IconButton(
                         onClick = {
@@ -272,22 +258,6 @@ fun PlainNoteEditorScreen(
                         )
                     }
 
-                    // Reminder Button
-                    IconButton(
-                        onClick = {
-                            haptics.selection()
-                            showReminderDialog = true
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (reminderAt != null) Icons.Default.NotificationsActive else Icons.Default.Alarm,
-                            contentDescription = "Set Reminder",
-                            tint = if (reminderAt != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-
                     if (isBusy) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
@@ -306,6 +276,74 @@ fun PlainNoteEditorScreen(
                     .navigationBarsPadding()
                     .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
+                // Interactive Hashtag Auto-Suggest Bar
+                val cursor = contentValue.selection.start.coerceIn(0, contentValue.text.length)
+                val textBeforeCursor = contentValue.text.take(cursor)
+                val lastHashIndex = textBeforeCursor.lastIndexOf('#')
+                val isTypingTag = if (lastHashIndex >= 0) {
+                    val tagSub = textBeforeCursor.substring(lastHashIndex + 1)
+                    (lastHashIndex == 0 || textBeforeCursor[lastHashIndex - 1].isWhitespace()) &&
+                        !tagSub.contains(' ') && !tagSub.contains('\n') && !tagSub.contains(',')
+                } else false
+
+                val activeTagPrefix = if (isTypingTag) textBeforeCursor.substring(lastHashIndex + 1) else ""
+                val tagSuggestions = remember(activeTagPrefix, isTypingTag, state.availableTags) {
+                    if (!isTypingTag) emptyList()
+                    else if (activeTagPrefix.isEmpty()) state.availableTags.take(8)
+                    else state.availableTags.filter { tag ->
+                        tag.startsWith(activeTagPrefix, ignoreCase = true) || tag.contains(activeTagPrefix, ignoreCase = true)
+                    }.take(8)
+                }
+
+                if (isTypingTag && tagSuggestions.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        tagSuggestions.forEach { suggestion ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .tactilePress()
+                                    .clickable {
+                                        haptics.light()
+                                        val beforeHash = textBeforeCursor.substring(0, lastHashIndex)
+                                        val afterCursor = contentValue.text.substring(cursor)
+                                        val replacement = "#$suggestion "
+                                        contentValue = TextFieldValue(
+                                            text = beforeHash + replacement + afterCursor,
+                                            selection = androidx.compose.ui.text.TextRange(beforeHash.length + replacement.length)
+                                        )
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tag,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text(
+                                        text = suggestion,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -559,6 +597,29 @@ fun PlainNoteEditorScreen(
                                     )
                                 }
                             }
+
+                            // 10. Set Reminder
+                            WarmTooltip(
+                                text = if (reminderAt != null) "Reminder set" else "Set reminder",
+                                visible = activeTooltip == "reminder",
+                                onDismissRequest = { activeTooltip = null }
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        activeTooltip = "reminder"
+                                        haptics.selection()
+                                        showReminderDialog = true
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (reminderAt != null) Icons.Default.NotificationsActive else Icons.Default.Alarm,
+                                        contentDescription = "Set Reminder",
+                                        tint = if (reminderAt != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -588,6 +649,12 @@ fun PlainNoteEditorScreen(
                                 haptics.success()
                                 feedback.success()
 
+                                val hashtagRegex = Regex("""#([A-Za-z0-9_]+)""")
+                                val extractedTags = hashtagRegex.findAll("$title ${contentValue.text}").map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toList()
+                                val existingTags = reminderTag?.split(",")?.map { it.trim().removePrefix("#") }?.filter { it.isNotEmpty() } ?: emptyList()
+                                val allStoredTags = (existingTags + extractedTags).distinct()
+                                val finalTagsToStore = allStoredTags.joinToString(",").ifBlank { null }
+
                                 if (pendingAttachments.isNotEmpty()) {
                                     viewModel.saveWithMultipleAttachments(
                                         id = targetId,
@@ -595,7 +662,7 @@ fun PlainNoteEditorScreen(
                                         format = format,
                                         content = contentValue.text,
                                         reminderAt = reminderAt,
-                                        reminderTag = reminderTag,
+                                        reminderTag = finalTagsToStore,
                                         reminderRepeat = reminderRepeat,
                                         attachments = pendingAttachments.toList(),
                                         onComplete = onBack
@@ -607,7 +674,7 @@ fun PlainNoteEditorScreen(
                                         format = format,
                                         content = contentValue.text,
                                         reminderAt = reminderAt,
-                                        reminderTag = reminderTag,
+                                        reminderTag = finalTagsToStore,
                                         reminderRepeat = reminderRepeat,
                                         onComplete = onBack
                                     )
@@ -702,68 +769,49 @@ fun PlainNoteEditorScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // "Remind me" Chip
-            val hasActiveReminder = reminderAt != null && reminderAt!! > System.currentTimeMillis()
-            val isReminderPast = reminderAt != null && reminderAt!! <= System.currentTimeMillis()
-            val remSdf = remember { SimpleDateFormat("EEE, MMM d, h:mm a", Locale.getDefault()) }
+            // Dynamic Active Note Tags Row (#tags)
+            val activeNoteTags = remember(title, contentValue.text, reminderTag) {
+                val hashtagRegex = Regex("""#([A-Za-z0-9_]+)""")
+                val extracted = hashtagRegex.findAll("$title ${contentValue.text}").map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toList()
+                val fromRem = reminderTag?.split(",")?.map { it.trim().removePrefix("#") }?.filter { it.isNotEmpty() } ?: emptyList()
+                (fromRem + extracted).distinct()
+            }
 
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = if (hasActiveReminder) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(
-                    1.dp,
-                    if (hasActiveReminder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                ),
-                modifier = Modifier.clickable {
-                    haptics.selection()
-                    showReminderDialog = true
-                }
-            ) {
+            if (activeNoteTags.isNotEmpty()) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = if (hasActiveReminder) Icons.Default.NotificationsActive
-                        else if (isReminderPast) Icons.Default.Check
-                        else Icons.Default.Alarm,
-                        contentDescription = null,
-                        tint = if (hasActiveReminder) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = when {
-                            hasActiveReminder -> "Reminder: ${remSdf.format(Date(reminderAt!!))}${if (!reminderTag.isNullOrBlank()) " • [$reminderTag]" else ""}${if (!reminderRepeat.isNullOrBlank() && reminderRepeat != "NONE") " (${reminderRepeat?.lowercase()})" else ""}"
-                            isReminderPast -> "Reminder completed${if (!reminderTag.isNullOrBlank()) " • [$reminderTag]" else ""}"
-                            else -> "Remind me"
-                        },
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
-                        ),
-                        color = if (hasActiveReminder) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                    )
-
-                    if (reminderAt != null) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Clear reminder",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clickable {
-                                    haptics.light()
-                                    reminderAt = null
-                                    reminderTag = null
-                                    reminderRepeat = null
-                                    isReminderDone = false
-                                    currentNoteId?.let { viewModel.clearReminder(it) }
-                                }
-                        )
+                    activeNoteTags.forEach { tag ->
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Tag,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = tag,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -884,7 +932,13 @@ fun PlainNoteEditorScreen(
                         undoStack.add(contentValue)
                         redoStack.clear()
                     }
-                    contentValue = NoteEditorLogic.handleEnterKeyForBullets(contentValue, newValue)
+                    val textWithCommaHandled = if (newValue.text.contains(Regex("""#([A-Za-z0-9_]+),"""))) {
+                        val replaced = newValue.text.replace(Regex("""#([A-Za-z0-9_]+),""")) { match ->
+                            "#${match.groupValues[1]} "
+                        }
+                        newValue.copy(text = replaced)
+                    } else newValue
+                    contentValue = NoteEditorLogic.handleEnterKeyForBullets(contentValue, textWithCommaHandled)
                 },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     fontWeight = FontWeight.Normal,
@@ -1001,7 +1055,7 @@ private fun processAndAttachImage(
             }
         }
     } catch (e: Exception) {
-        android.util.Log.e("PlainNoteEditor", "Failed to process photo", e)
+        VaultLogger.e("PlainNoteEditor", "Failed to process photo", e)
         Toast.makeText(context, "Failed to load selected photo", Toast.LENGTH_SHORT).show()
     }
 }

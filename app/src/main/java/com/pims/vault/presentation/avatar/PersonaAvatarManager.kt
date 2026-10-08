@@ -28,6 +28,23 @@ class PersonaAvatarManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val photoBackupCoordinatorProvider: javax.inject.Provider<com.pims.vault.core.sync.PhotoBackupCoordinator>? = null
 ) {
+    @dagger.hilt.EntryPoint
+    @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+    interface AvatarBackupEntryPoint {
+        fun photoBackupCoordinator(): com.pims.vault.core.sync.PhotoBackupCoordinator
+    }
+
+    private fun getPhotoBackupCoordinator(): com.pims.vault.core.sync.PhotoBackupCoordinator? {
+        return photoBackupCoordinatorProvider?.get() ?: try {
+            dagger.hilt.android.EntryPointAccessors.fromApplication(
+                context.applicationContext,
+                AvatarBackupEntryPoint::class.java
+            ).photoBackupCoordinator()
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private val prefs = context.getSharedPreferences("persona_avatar_prefs", Context.MODE_PRIVATE)
 
     private val _avatarConfig = MutableStateFlow(loadConfig())
@@ -82,7 +99,7 @@ class PersonaAvatarManager @Inject constructor(
         _customAvatarPath.value = null
         _avatarSource.value = AvatarSource.GENERATED
         try {
-            photoBackupCoordinatorProvider?.get()?.deleteAvatarPhotoAsync()
+            getPhotoBackupCoordinator()?.deleteAvatarPhotoAsync()
         } catch (_: Exception) {}
     }
 
@@ -184,25 +201,57 @@ class PersonaAvatarManager @Inject constructor(
         }
     }
 
+    private fun healStaleAvatarPath(config: PersonaAvatarConfig): PersonaAvatarConfig {
+        val path = config.customAvatarPath
+        if (!path.isNullOrBlank()) {
+            val f = File(path)
+            if (f.exists() && f.length() > 0) return config
+            val name = f.name
+            val fallback = File(File(context.filesDir, "avatars"), name)
+            if (fallback.exists() && fallback.length() > 0) {
+                return config.copy(
+                    customAvatarPath = fallback.absolutePath,
+                    avatarSource = AvatarSource.CUSTOM_IMAGE
+                )
+            }
+        }
+        val avatarsDir = File(context.filesDir, "avatars")
+        if (avatarsDir.exists()) {
+            val restored = avatarsDir.listFiles()?.firstOrNull { it.isFile && it.length() > 0 && it.name.startsWith("avatar_") }
+            if (restored != null) {
+                return config.copy(
+                    customAvatarPath = restored.absolutePath,
+                    avatarSource = AvatarSource.CUSTOM_IMAGE
+                )
+            }
+        }
+        return config
+    }
+
     private fun loadConfig(): PersonaAvatarConfig {
-        val jsonStr = prefs.getString(KEY_CONFIG, null) ?: return PersonaAvatarConfig.default()
+        val jsonStr = prefs.getString(KEY_CONFIG, null) ?: return healStaleAvatarPath(PersonaAvatarConfig.default())
         return try {
-            parseConfigFromJson(JSONObject(jsonStr))
+            healStaleAvatarPath(parseConfigFromJson(JSONObject(jsonStr)))
         } catch (_: Exception) {
-            PersonaAvatarConfig.default()
+            healStaleAvatarPath(PersonaAvatarConfig.default())
         }
     }
 
+    fun getCurrentConfigJsonString(): String {
+        return configToJson(_avatarConfig.value).toString()
+    }
+
     fun saveConfig(config: PersonaAvatarConfig) {
-        val json = configToJson(config)
+        val healedConfig = healStaleAvatarPath(config)
+        val json = configToJson(healedConfig)
         prefs.edit().putString(KEY_CONFIG, json.toString()).apply()
-        _avatarConfig.value = config.copy(expression = AvatarExpression.NORMAL)
-        _avatarSource.value = config.avatarSource
-        _customAvatarPath.value = config.customAvatarPath
+        _avatarConfig.value = healedConfig.copy(expression = AvatarExpression.NORMAL)
+        _avatarSource.value = healedConfig.avatarSource
+        _customAvatarPath.value = healedConfig.customAvatarPath
         try {
-            photoBackupCoordinatorProvider?.get()?.backupAvatarConfigAsync(json.toString())
-            if (config.avatarSource == AvatarSource.CUSTOM_IMAGE && !config.customAvatarPath.isNullOrBlank()) {
-                photoBackupCoordinatorProvider?.get()?.backupAvatarAsync(config.customAvatarPath)
+            getPhotoBackupCoordinator()?.backupAvatarConfigAsync(json.toString())
+            if (healedConfig.avatarSource == AvatarSource.CUSTOM_IMAGE && !healedConfig.customAvatarPath.isNullOrBlank()) {
+                getPhotoBackupCoordinator()?.backupAvatarAsync(healedConfig.customAvatarPath)
             }
         } catch (_: Exception) {}
     }
@@ -210,8 +259,8 @@ class PersonaAvatarManager @Inject constructor(
     fun saveConfigFromJsonString(jsonString: String) {
         try {
             val json = JSONObject(jsonString)
-            val config = parseConfigFromJson(json)
-            prefs.edit().putString(KEY_CONFIG, jsonString).apply()
+            val config = healStaleAvatarPath(parseConfigFromJson(json))
+            prefs.edit().putString(KEY_CONFIG, configToJson(config).toString()).apply()
             _avatarConfig.value = config.copy(expression = AvatarExpression.NORMAL)
             _avatarSource.value = config.avatarSource
             _customAvatarPath.value = config.customAvatarPath
@@ -266,7 +315,7 @@ class PersonaAvatarManager @Inject constructor(
             )
             saveConfig(updated)
             try {
-                photoBackupCoordinatorProvider?.get()?.backupAvatarAsync(newPath)
+                getPhotoBackupCoordinator()?.backupAvatarAsync(newPath)
             } catch (_: Exception) {}
             newPath
         } catch (_: Exception) {
@@ -367,6 +416,11 @@ class PersonaAvatarManager @Inject constructor(
             prefs.edit().remove("person_photo_$personId").apply()
         } else {
             prefs.edit().putString("person_photo_$personId", path).apply()
+            try {
+                if (File(path).exists()) {
+                    getPhotoBackupCoordinator()?.backupContactPhotoAsync(personId, path)
+                }
+            } catch (_: Exception) {}
         }
         _personPhotosVersion.value = System.currentTimeMillis()
     }

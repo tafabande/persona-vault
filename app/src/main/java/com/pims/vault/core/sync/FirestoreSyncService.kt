@@ -2,6 +2,8 @@ package com.pims.vault.core.sync
 
 import android.content.Context
 import android.util.Base64
+import java.io.File
+import java.util.UUID
 import com.pims.vault.presentation.avatar.PersonaAvatarManager
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -27,10 +29,13 @@ import com.pims.vault.data.local.entity.ContactMethodEntity
 import com.pims.vault.data.local.entity.SyncConflictEntity
 import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.core.model.AddressLabel
+import com.pims.vault.core.model.AllergySeverity
+import com.pims.vault.core.model.ConditionStatus
 import com.pims.vault.core.model.ContactType
 import com.pims.vault.core.model.DocumentType
 import com.pims.vault.core.model.MedicalRecordType
 import com.pims.vault.core.model.RelationshipType
+import com.pims.vault.core.model.SecurityClassification
 import com.pims.vault.core.model.VaultCategory
 import com.pims.vault.core.storage.StoredFileMetadata
 import com.pims.vault.data.local.entity.DocumentEntity
@@ -158,9 +163,16 @@ class FirestoreSyncService @Inject constructor(
                 "occupation" to (person.occupation ?: ""),
                 "nationality" to (person.nationality ?: ""),
                 "country" to (person.countryOfResidence ?: ""),
+                "countryOfResidence" to (person.countryOfResidence ?: ""),
                 "gender" to (person.gender ?: ""),
                 "dateOfBirth" to (person.dateOfBirth ?: ""),
                 "religion" to (person.religion ?: ""),
+                "ethnicity" to (person.ethnicity ?: ""),
+                "nationalIdNumber" to (person.nationalIdNumber ?: ""),
+                "previousNames" to (person.previousNames ?: ""),
+                "notes" to (person.notes ?: ""),
+                "securityClassification" to person.securityClassification.name,
+                "createdAt" to person.createdAt,
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
@@ -414,14 +426,21 @@ class FirestoreSyncService @Inject constructor(
                 "personId" to address.personId,
                 "streetLine1" to address.streetLine1,
                 "streetLine2" to (address.streetLine2 ?: ""),
+                "address2" to (address.streetLine2 ?: ""),
                 "street" to listOfNotNull(address.streetLine1, address.streetLine2).joinToString(" "),
                 "city" to address.city,
                 "state" to (address.stateProvince ?: ""),
                 "stateProvince" to (address.stateProvince ?: ""),
                 "postalCode" to (address.postalCode ?: ""),
+                "zip" to (address.postalCode ?: ""),
                 "country" to address.country,
                 "isCurrent" to address.isCurrent,
+                "validFrom" to address.validFrom,
+                "validTo" to (address.validTo ?: 0L),
+                "notes" to (address.notes ?: ""),
+                "securityClassification" to address.securityClassification.name,
                 "label" to address.label.name,
+                "createdAt" to address.createdAt,
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
@@ -808,9 +827,13 @@ class FirestoreSyncService @Inject constructor(
                 "degree" to edu.qualification,
                 "qualification" to edu.qualification,
                 "fieldOfStudy" to (edu.fieldOfStudy ?: ""),
+                "grade" to (edu.grade ?: ""),
+                "country" to (edu.country ?: ""),
+                "description" to (edu.description ?: ""),
                 "startDate" to (edu.startDate ?: ""),
                 "endDate" to (edu.endDate ?: ""),
                 "isCurrent" to (edu.endDate.isNullOrBlank()),
+                "createdAt" to edu.createdAt,
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
@@ -834,9 +857,12 @@ class FirestoreSyncService @Inject constructor(
                 "title" to work.position,
                 "position" to work.position,
                 "department" to (work.department ?: ""),
+                "location" to (work.location ?: ""),
+                "responsibilities" to (work.responsibilities ?: ""),
                 "startDate" to (work.startDate ?: ""),
                 "endDate" to (work.endDate ?: ""),
                 "isCurrent" to work.isCurrent,
+                "createdAt" to work.createdAt,
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
@@ -856,11 +882,18 @@ class FirestoreSyncService @Inject constructor(
                 "id" to profile.personId,
                 "personId" to profile.personId,
                 "bloodType" to (profile.bloodType ?: ""),
+                "heightCm" to (profile.heightCm ?: ""),
+                "weightKg" to (profile.weightKg ?: ""),
                 "emergencyContactName" to (profile.emergencyContactName ?: ""),
                 "emergencyContactPhone" to (profile.emergencyContactPhone ?: ""),
+                "emergencyContactRelationship" to (profile.emergencyContactRelationship ?: ""),
+                "medicalAidProvider" to (profile.medicalAidProvider ?: ""),
+                "medicalAidNumber" to (profile.medicalAidNumber ?: ""),
+                "membershipNumber" to (profile.membershipNumber ?: ""),
+                "policyNumber" to (profile.policyNumber ?: ""),
                 "isEncrypted" to true,
                 "version" to 1L,
-                "updatedAt" to System.currentTimeMillis()
+                "updatedAt" to profile.updatedAt
             )
             firestore.collection("accounts").document(uid)
                 .collection("healthRecords").document("profile_${profile.personId}")
@@ -879,6 +912,34 @@ class FirestoreSyncService @Inject constructor(
                 "personId" to record.personId,
                 "title" to record.title,
                 "recordType" to record.recordType.name,
+                "substanceOrDiagnosis" to (record.substanceOrDiagnosis ?: ""),
+                "severity" to (record.severity?.name ?: ""),
+                "status" to (record.status?.name ?: ""),
+                "dosage" to (record.dosage ?: ""),
+                "frequency" to (record.frequency ?: ""),
+                "route" to (record.route ?: ""),
+                "startDate" to (record.startDate ?: ""),
+                "endDate" to (record.endDate ?: ""),
+                "practitionerName" to (record.practitionerName ?: ""),
+                "facilityName" to (record.facilityName ?: ""),
+                "contactPhone" to (record.contactPhone ?: ""),
+                "contactEmail" to (record.contactEmail ?: ""),
+                "address" to (record.address ?: ""),
+                "specialty" to (record.specialty ?: ""),
+                "patientNumber" to (record.patientNumber ?: ""),
+                "policyNumber" to (record.policyNumber ?: ""),
+                "membershipNumber" to (record.membershipNumber ?: ""),
+                "planName" to (record.planName ?: ""),
+                "validUntil" to (record.validUntil ?: ""),
+                "visitDate" to (record.visitDate ?: ""),
+                "treatment" to (record.treatment ?: ""),
+                "followUpDate" to (record.followUpDate ?: ""),
+                "instructions" to (record.instructions ?: ""),
+                "photoUri" to (record.photoUri ?: ""),
+                "isEmergencyCardVisible" to record.isEmergencyCardVisible,
+                "notes" to (record.notes ?: ""),
+                "securityClassification" to record.securityClassification.name,
+                "createdAt" to record.createdAt,
                 "isEncrypted" to true,
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
@@ -911,9 +972,15 @@ class FirestoreSyncService @Inject constructor(
 
         var count = 0
         try {
-            // 1. Account Identity Document
+            // 1. Account Identity Document - local name is king, never send email as displayName
             val currentFbUser = auth.currentUser
-            syncAccount(uid, currentFbUser?.email, currentFbUser?.displayName)
+            val primaryOwner = personDao.getPrimaryOwner()
+            val localDisplayName = if (primaryOwner != null && (primaryOwner.firstName.isNotBlank() || primaryOwner.lastName.isNotBlank())) {
+                "${primaryOwner.firstName} ${primaryOwner.lastName}".trim()
+            } else {
+                currentFbUser?.displayName?.takeIf { !it.contains("@") && it.isNotBlank() }
+            }
+            syncAccount(uid, currentFbUser?.email, localDisplayName)
             count++
 
             // 2. People / Identities
@@ -1013,6 +1080,33 @@ class FirestoreSyncService @Inject constructor(
             for (rec in medRecords) {
                 syncMedicalRecord(uid, rec)
                 count++
+            }
+
+            // 13. Avatar & Profile Photos Backup
+            try {
+                val avatarManager = PersonaAvatarManager.getInstance(context)
+                val avatarConfig = avatarManager.avatarConfig.value
+                syncAvatarConfig(avatarManager.getCurrentConfigJsonString())
+                
+                if (avatarConfig.avatarSource == com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE &&
+                    !avatarConfig.customAvatarPath.isNullOrBlank() &&
+                    File(avatarConfig.customAvatarPath!!).exists()
+                ) {
+                    photoBackupCoordinatorProvider.get().backupAvatarAsync(avatarConfig.customAvatarPath)
+                    count++
+                }
+
+                val relationships = relationshipDao.getAllRelationships()
+                for (rel in relationships) {
+                    val pPhoto = avatarManager.getPersonPhotoPath(rel.targetPersonId)
+                    if (!pPhoto.isNullOrBlank() && File(pPhoto).exists()) {
+                        photoBackupCoordinatorProvider.get().backupContactPhotoAsync(rel.targetPersonId, pPhoto)
+                        count++
+                    }
+                }
+                photoBackupCoordinatorProvider.get().backupAllPhotos()
+            } catch (e: Exception) {
+                VaultLogger.w("FirestoreSync", "Error backing up avatar & contact photos: ${e.message}")
             }
 
             VaultLogger.i("FirestoreSync", "Complete multi-tiered sync finished: $count items & files backed up to Firestore & Backblaze B2")
@@ -1319,52 +1413,91 @@ class FirestoreSyncService @Inject constructor(
                     }
 
                     val remoteUpdated = doc.getLong("updatedAt") ?: 0L
-                    val firstName = doc.getString("firstName") ?: existingPerson?.firstName ?: ""
-                    val lastName = doc.getString("lastName") ?: existingPerson?.lastName ?: ""
+                    var remoteFirstName = doc.getString("firstName") ?: ""
+                    var remoteLastName = doc.getString("lastName") ?: ""
+
+                    // Never adopt an email address as a person's name
+                    if (remoteFirstName.contains("@")) remoteFirstName = ""
+                    if (remoteLastName.contains("@")) remoteLastName = ""
 
                     if (existingPerson != null) {
+                        val hasLocalName = existingPerson.firstName.isNotBlank() || existingPerson.lastName.isNotBlank()
                         val localName = "${existingPerson.firstName} ${existingPerson.lastName}".trim()
-                        val remoteName = "$firstName $lastName".trim()
-                        if (localName.isNotBlank() && remoteName.isNotBlank() && localName != remoteName) {
-                            recordConflictIfNeeded(
-                                entityType = "Person",
-                                entityId = localId,
-                                fieldName = "Full Name",
-                                localValue = localName,
-                                remoteValue = remoteName,
-                                localVersion = existingPerson.updatedAt,
-                                serverVersion = remoteUpdated
-                            )
-                        }
-                        if (existingPerson.updatedAt >= remoteUpdated) {
-                            VaultLogger.d("FirestoreSync", "Local person $localId is newer than or equal to remote. Local is king. Preserving local.")
-                            continue
-                        }
-                    }
+                        val remoteName = "$remoteFirstName $remoteLastName".trim()
 
-                    val middleName = doc.getString("middleName")?.takeIf { it.isNotBlank() } ?: existingPerson?.middleName
-                    val preferredName = doc.getString("preferredName")?.takeIf { it.isNotBlank() } ?: existingPerson?.preferredName
-                    val dob = doc.getString("dateOfBirth")?.takeIf { it.isNotBlank() } ?: existingPerson?.dateOfBirth
-                    val gender = doc.getString("gender")?.takeIf { it.isNotBlank() } ?: existingPerson?.gender
-                    val nationality = doc.getString("nationality")?.takeIf { it.isNotBlank() } ?: existingPerson?.nationality
-                    val country = (doc.getString("country") ?: doc.getString("countryOfResidence"))?.takeIf { it.isNotBlank() }
-                        ?: existingPerson?.countryOfResidence
-                    val religion = doc.getString("religion")?.takeIf { it.isNotBlank() } ?: existingPerson?.religion
-                    val occupation = doc.getString("occupation")?.takeIf { it.isNotBlank() } ?: existingPerson?.occupation
+                        if (hasLocalName) {
+                            // Local name is KING. Under no circumstance do we take the name from email or remote clash!
+                            if (remoteName.isNotBlank() && localName != remoteName) {
+                                recordConflictIfNeeded(
+                                    entityType = "Person",
+                                    entityId = localId,
+                                    fieldName = "Full Name",
+                                    localValue = localName,
+                                    remoteValue = remoteName,
+                                    localVersion = existingPerson.updatedAt,
+                                    serverVersion = remoteUpdated
+                                )
+                                // Push the true local name to Firestore to correct remote
+                                syncPerson(uid, existingPerson)
+                            }
+                        }
+
+                        // Local details take precedence; backfill any locally empty fields from remote
+                        val effectiveFirstName = if (hasLocalName) existingPerson.firstName else remoteFirstName.ifBlank { existingPerson.firstName }
+                        val effectiveLastName = if (hasLocalName) existingPerson.lastName else remoteLastName.ifBlank { existingPerson.lastName }
+                        val middleName = existingPerson.middleName?.takeIf { it.isNotBlank() } ?: doc.getString("middleName")?.takeIf { it.isNotBlank() }
+                        val preferredName = existingPerson.preferredName?.takeIf { it.isNotBlank() } ?: doc.getString("preferredName")?.takeIf { it.isNotBlank() }
+                        val dob = existingPerson.dateOfBirth?.takeIf { it.isNotBlank() } ?: doc.getString("dateOfBirth")?.takeIf { it.isNotBlank() }
+                        val gender = existingPerson.gender?.takeIf { it.isNotBlank() } ?: doc.getString("gender")?.takeIf { it.isNotBlank() }
+                        val nationality = existingPerson.nationality?.takeIf { it.isNotBlank() } ?: doc.getString("nationality")?.takeIf { it.isNotBlank() }
+                        val country = existingPerson.countryOfResidence?.takeIf { it.isNotBlank() } ?: (doc.getString("country") ?: doc.getString("countryOfResidence"))?.takeIf { it.isNotBlank() }
+                        val religion = existingPerson.religion?.takeIf { it.isNotBlank() } ?: doc.getString("religion")?.takeIf { it.isNotBlank() }
+                        val occupation = existingPerson.occupation?.takeIf { it.isNotBlank() } ?: doc.getString("occupation")?.takeIf { it.isNotBlank() }
+                        val ethnicity = existingPerson.ethnicity?.takeIf { it.isNotBlank() } ?: doc.getString("ethnicity")?.takeIf { it.isNotBlank() }
+                        val nationalId = existingPerson.nationalIdNumber?.takeIf { it.isNotBlank() } ?: doc.getString("nationalIdNumber")?.takeIf { it.isNotBlank() }
+                        val prevNames = existingPerson.previousNames?.takeIf { it.isNotBlank() } ?: doc.getString("previousNames")?.takeIf { it.isNotBlank() }
+                        val notes = existingPerson.notes?.takeIf { it.isNotBlank() } ?: doc.getString("notes")?.takeIf { it.isNotBlank() }
+
+                        val updatedEntity = existingPerson.copy(
+                            firstName = effectiveFirstName,
+                            lastName = effectiveLastName,
+                            middleName = middleName,
+                            preferredName = preferredName,
+                            dateOfBirth = dob,
+                            gender = gender,
+                            nationality = nationality,
+                            countryOfResidence = country,
+                            religion = religion,
+                            occupation = occupation,
+                            ethnicity = ethnicity,
+                            nationalIdNumber = nationalId,
+                            previousNames = prevNames,
+                            notes = notes,
+                            accountUid = uid,
+                            updatedAt = maxOf(existingPerson.updatedAt, remoteUpdated)
+                        )
+                        personDao.insertOrUpdate(updatedEntity)
+                        count++
+                        continue
+                    }
 
                     val personEntity = PersonEntity(
                         id = localId,
                         isPrimaryOwner = isPrimaryOwner,
-                        firstName = firstName,
-                        middleName = middleName,
-                        lastName = lastName,
-                        preferredName = preferredName,
-                        dateOfBirth = dob,
-                        gender = gender,
-                        nationality = nationality,
-                        countryOfResidence = country,
-                        religion = religion,
-                        occupation = occupation,
+                        firstName = remoteFirstName,
+                        middleName = doc.getString("middleName")?.takeIf { it.isNotBlank() },
+                        lastName = remoteLastName,
+                        preferredName = doc.getString("preferredName")?.takeIf { it.isNotBlank() },
+                        dateOfBirth = doc.getString("dateOfBirth")?.takeIf { it.isNotBlank() },
+                        gender = doc.getString("gender")?.takeIf { it.isNotBlank() },
+                        nationality = doc.getString("nationality")?.takeIf { it.isNotBlank() },
+                        countryOfResidence = (doc.getString("country") ?: doc.getString("countryOfResidence"))?.takeIf { it.isNotBlank() },
+                        religion = doc.getString("religion")?.takeIf { it.isNotBlank() },
+                        occupation = doc.getString("occupation")?.takeIf { it.isNotBlank() },
+                        ethnicity = doc.getString("ethnicity")?.takeIf { it.isNotBlank() },
+                        nationalIdNumber = doc.getString("nationalIdNumber")?.takeIf { it.isNotBlank() },
+                        previousNames = doc.getString("previousNames")?.takeIf { it.isNotBlank() },
+                        notes = doc.getString("notes")?.takeIf { it.isNotBlank() },
                         accountUid = uid,
                         updatedAt = remoteUpdated
                     )
@@ -1382,7 +1515,7 @@ class FirestoreSyncService @Inject constructor(
                 }
             } catch (_: Exception) {}
 
-            // 2. Contacts (Local is king — preserve local contacts, record conflicts)
+            // 2. Contacts (Local is king — preserve local contacts, create n+1 on clash)
             try {
                 val contactsSnap = accountDocRef.collection("contacts").get().await()
                 val seenContactKeys = mutableSetOf<String>()
@@ -1412,6 +1545,17 @@ class FirestoreSyncService @Inject constructor(
                                     localVersion = 1L,
                                     serverVersion = 2L
                                 )
+                                // Clash: withhold overwriting local contact, create remote as next entry n+1
+                                val nPlusOneContact = ContactMethodEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    personId = targetPersonId,
+                                    contactType = contactType,
+                                    label = "${doc.getString("label") ?: "Secondary"} (Remote)",
+                                    value = valStr,
+                                    isPrimary = false
+                                )
+                                contactDao.insertOrUpdate(nPlusOneContact)
+                                count++
                             }
                             // Local is king — preserve local contact!
                             continue
@@ -1433,23 +1577,30 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling contacts: ${e.message}", e)
             }
 
-            // 3. Addresses (Local is king — preserve local addresses, record conflicts)
+            // 3. Addresses (Local is king — preserve local addresses, create n+1 on clash)
             try {
                 val addressesSnap = accountDocRef.collection("addresses").get().await()
                 for (doc in addressesSnap.documents) {
                     val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                     val street1 = doc.getString("streetLine1") ?: doc.getString("street") ?: ""
+                    val street2 = (doc.getString("streetLine2") ?: doc.getString("address2"))?.takeIf { it.isNotBlank() }
                     val city = doc.getString("city") ?: ""
+                    val state = (doc.getString("stateProvince") ?: doc.getString("state"))?.takeIf { it.isNotBlank() }
+                    val postal = (doc.getString("postalCode") ?: doc.getString("zip"))?.takeIf { it.isNotBlank() }
                     val country = doc.getString("country") ?: ""
+                    val validFrom = doc.getLong("validFrom") ?: System.currentTimeMillis()
+                    val validTo = doc.getLong("validTo")?.takeIf { it > 0L }
+                    val notes = doc.getString("notes")?.takeIf { it.isNotBlank() }
+
                     if (street1.isNotBlank() || city.isNotBlank() || country.isNotBlank()) {
                         val labelStr = doc.getString("label") ?: "HOME"
                         val label = try { AddressLabel.valueOf(labelStr) } catch (_: Exception) { AddressLabel.HOME }
 
                         val existing = addressDao.getAddressById(doc.id)
                         if (existing != null) {
-                            val localAddrStr = listOfNotNull<String>(existing.streetLine1, existing.city, existing.country).filter { it.isNotBlank() }.joinToString(", ")
-                            val remoteAddrStr = listOfNotNull<String>(street1, city, country).filter { it.isNotBlank() }.joinToString(", ")
+                            val localAddrStr = listOfNotNull<String>(existing.streetLine1, existing.streetLine2, existing.city, existing.country).filter { it.isNotBlank() }.joinToString(", ")
+                            val remoteAddrStr = listOfNotNull<String>(street1, street2, city, country).filter { it.isNotBlank() }.joinToString(", ")
                             if (localAddrStr != remoteAddrStr) {
                                 recordConflictIfNeeded(
                                     entityType = "Address",
@@ -1460,6 +1611,24 @@ class FirestoreSyncService @Inject constructor(
                                     localVersion = 1L,
                                     serverVersion = 2L
                                 )
+                                // Clash: withhold overwriting local address, create remote as next entry n+1
+                                val nPlusOneAddress = AddressEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    personId = targetPersonId,
+                                    label = label,
+                                    streetLine1 = street1,
+                                    streetLine2 = street2,
+                                    city = city,
+                                    stateProvince = state,
+                                    postalCode = postal,
+                                    country = country,
+                                    isCurrent = false,
+                                    validFrom = validFrom,
+                                    validTo = validTo,
+                                    notes = notes
+                                )
+                                addressDao.insertOrUpdate(nPlusOneAddress)
+                                count++
                             }
                             // Local is king — preserve local address!
                             continue
@@ -1470,12 +1639,15 @@ class FirestoreSyncService @Inject constructor(
                             personId = targetPersonId,
                             label = label,
                             streetLine1 = street1,
-                            streetLine2 = doc.getString("streetLine2")?.takeIf { it.isNotBlank() },
+                            streetLine2 = street2,
                             city = city,
-                            stateProvince = (doc.getString("stateProvince") ?: doc.getString("state"))?.takeIf { it.isNotBlank() },
-                            postalCode = doc.getString("postalCode")?.takeIf { it.isNotBlank() },
+                            stateProvince = state,
+                            postalCode = postal,
                             country = country,
-                            isCurrent = doc.getBoolean("isCurrent") ?: true
+                            isCurrent = doc.getBoolean("isCurrent") ?: true,
+                            validFrom = validFrom,
+                            validTo = validTo,
+                            notes = notes
                         )
                         addressDao.insertOrUpdate(address)
                         count++
@@ -1638,11 +1810,23 @@ class FirestoreSyncService @Inject constructor(
                                     localVersion = existing.updatedAt,
                                     serverVersion = remoteUpdated
                                 )
+                                // Clash: Withhold overwriting local item, create remote as next entry n+1
+                                val nPlusOneItem = VaultItemEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    personId = targetPersonId,
+                                    category = category,
+                                    title = "$remoteTitle (2)",
+                                    accountIdentifier = remoteAccount,
+                                    encryptedPayload = payloadBytes,
+                                    encryptionIv = doc.getString("encryptionIv") ?: "",
+                                    notes = doc.getString("notes")?.takeIf { it.isNotBlank() },
+                                    updatedAt = remoteUpdated
+                                )
+                                vaultDao.insertOrUpdate(nPlusOneItem)
+                                count++
                             }
-                            if (existing.updatedAt >= remoteUpdated) {
-                                // Local is king — preserve local vault item!
-                                continue
-                            }
+                            // Local is king — preserve local vault item!
+                            continue
                         }
 
                         val item = VaultItemEntity(
@@ -1664,7 +1848,7 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling vault items: ${e.message}", e)
             }
 
-            // 8. Plain Notes & Attachments (Local is king — preserve local notes, record conflicts)
+            // 8. Plain Notes & Attachments (Local is king — preserve local notes, create n+1 on clash)
             try {
                 val notesSnap = accountDocRef.collection("notes").get().await()
                 for (doc in notesSnap.documents) {
@@ -1691,8 +1875,11 @@ class FirestoreSyncService @Inject constructor(
                         continue
                     }
 
+                    var effectiveNoteId = noteId
                     if (existingNote != null) {
-                        if (existingNote.title.trim() != title.trim() || existingNote.content.trim() != content.trim()) {
+                        val isSameContent = existingNote.title.trim() == title.trim() &&
+                                existingNote.content.trim() == content.trim()
+                        if (!isSameContent) {
                             recordConflictIfNeeded(
                                 entityType = "Note",
                                 entityId = noteId,
@@ -1702,21 +1889,26 @@ class FirestoreSyncService @Inject constructor(
                                 localVersion = existingNote.updatedAt,
                                 serverVersion = updatedAt
                             )
-                        }
-                        if (existingNote.updatedAt >= updatedAt) {
-                            VaultLogger.d("FirestoreSync", "Local note $noteId is newer or equal to remote. Local is king.")
-                        } else {
-                            val noteEntity = PlainNoteEntity(
-                                id = noteId,
+                            // Clash: Withhold overwriting local note, make remote note the next entry n+1!
+                            val baseTitle = title.trim().ifBlank { "Untitled Note" }
+                            val existingNotes = plainNoteDao.getAllNotes()
+                            val similarCount = existingNotes.count { it.title.startsWith(baseTitle) }
+                            val nPlusOneTitle = "$baseTitle (${similarCount + 1})"
+                            effectiveNoteId = UUID.randomUUID().toString()
+                            val nPlusOneNote = PlainNoteEntity(
+                                id = effectiveNoteId,
                                 ownerPersonId = targetOwner,
-                                title = title,
+                                title = nPlusOneTitle,
                                 content = content,
                                 format = format,
-                                createdAt = existingNote.createdAt,
+                                createdAt = createdAt,
                                 updatedAt = updatedAt
                             )
-                            plainNoteDao.upsert(noteEntity)
+                            plainNoteDao.upsert(nPlusOneNote)
                             count++
+                            VaultLogger.i("FirestoreSync", "Note clash resolved: preserved local note $noteId, created n+1 note $effectiveNoteId ($nPlusOneTitle)")
+                        } else {
+                            effectiveNoteId = existingNote.id
                         }
                     } else {
                         val noteEntity = PlainNoteEntity(
@@ -1732,7 +1924,7 @@ class FirestoreSyncService @Inject constructor(
                         count++
                     }
 
-                    // Attachments: Local is king — download missing remote attachments, do NOT delete local
+                    // Attachments: Download and attach to effectiveNoteId
                     try {
                         val attSnap = doc.reference.collection("attachments").get().await()
                         for (attDoc in attSnap.documents) {
@@ -1759,7 +1951,7 @@ class FirestoreSyncService @Inject constructor(
 
                             if (!binaryMissing && !fileExistsLocally && (!b2DownloadUrl.isNullOrBlank() || !ciphertextBase64.isNullOrBlank())) {
                                 val stored = downloadAndStoreAttachment(
-                                    noteId, attId, b2DownloadUrl ?: "", mimeType, b2IvHex, sha256Hash, ciphertextBase64
+                                    effectiveNoteId, attId, b2DownloadUrl ?: "", mimeType, b2IvHex, sha256Hash, ciphertextBase64
                                 )
                                 if (stored != null) {
                                     storagePath = stored.relativePath
@@ -1775,7 +1967,7 @@ class FirestoreSyncService @Inject constructor(
 
                             val attEntity = PlainNoteAttachmentEntity(
                                 id = attId,
-                                noteId = noteId,
+                                noteId = effectiveNoteId,
                                 storagePath = storagePath,
                                 mimeType = mimeType,
                                 fileSizeBytes = fileSizeBytes,
@@ -1787,10 +1979,10 @@ class FirestoreSyncService @Inject constructor(
                             count++
                         }
                     } catch (e: Exception) {
-                        VaultLogger.w("FirestoreSync", "Attachment sync error for note $noteId: ${e.message}")
+                        VaultLogger.w("FirestoreSync", "Attachment sync error for note $effectiveNoteId: ${e.message}")
                     }
 
-                    plainNoteDao.touch(noteId, updatedAt)
+                    plainNoteDao.touch(effectiveNoteId, updatedAt)
                 }
             } catch (e: Exception) {
                 VaultLogger.e("FirestoreSync", "Error pulling notes: ${e.message}", e)
@@ -1904,7 +2096,7 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling documents: ${e.message}", e)
             }
 
-            // 10. Education (Local is king — preserve local education records, record conflicts)
+            // 10. Education (Local is king — preserve local education records, create n+1 on clash)
             try {
                 val eduSnap = accountDocRef.collection("education").get().await()
                 for (doc in eduSnap.documents) {
@@ -1912,6 +2104,13 @@ class FirestoreSyncService @Inject constructor(
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                     val inst = doc.getString("institution") ?: ""
                     val qual = doc.getString("qualification") ?: doc.getString("degree") ?: ""
+                    val fieldOfStudy = doc.getString("fieldOfStudy")?.takeIf { it.isNotBlank() }
+                    val startDate = doc.getString("startDate")?.takeIf { it.isNotBlank() }
+                    val endDate = doc.getString("endDate")?.takeIf { it.isNotBlank() }
+                    val grade = doc.getString("grade")?.takeIf { it.isNotBlank() }
+                    val country = doc.getString("country")?.takeIf { it.isNotBlank() }
+                    val description = doc.getString("description")?.takeIf { it.isNotBlank() }
+
                     if (inst.isNotBlank() || qual.isNotBlank()) {
                         val existing = educationDao.getAllEducationRecords().find { it.id == doc.id }
                         if (existing != null) {
@@ -1925,6 +2124,21 @@ class FirestoreSyncService @Inject constructor(
                                     localVersion = 1L,
                                     serverVersion = 2L
                                 )
+                                // Clash: Withhold overwriting local, create remote as next entry n+1
+                                val nPlusOneEdu = EducationRecordEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    personId = targetPersonId,
+                                    institution = inst,
+                                    qualification = qual,
+                                    fieldOfStudy = fieldOfStudy,
+                                    startDate = startDate,
+                                    endDate = endDate,
+                                    grade = grade,
+                                    country = country,
+                                    description = description
+                                )
+                                educationDao.insertOrUpdate(nPlusOneEdu)
+                                count++
                             }
                             // Local is king — preserve local!
                             continue
@@ -1935,9 +2149,12 @@ class FirestoreSyncService @Inject constructor(
                             personId = targetPersonId,
                             institution = inst,
                             qualification = qual,
-                            fieldOfStudy = doc.getString("fieldOfStudy")?.takeIf { it.isNotBlank() },
-                            startDate = doc.getString("startDate")?.takeIf { it.isNotBlank() },
-                            endDate = doc.getString("endDate")?.takeIf { it.isNotBlank() }
+                            fieldOfStudy = fieldOfStudy,
+                            startDate = startDate,
+                            endDate = endDate,
+                            grade = grade,
+                            country = country,
+                            description = description
                         )
                         educationDao.insertOrUpdate(edu)
                         count++
@@ -1947,7 +2164,7 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling education: ${e.message}", e)
             }
 
-            // 11. Employment (Local is king — preserve local employment records, record conflicts)
+            // 11. Employment (Local is king — preserve local employment records, create n+1 on clash)
             try {
                 val workSnap = accountDocRef.collection("employment").get().await()
                 for (doc in workSnap.documents) {
@@ -1955,6 +2172,13 @@ class FirestoreSyncService @Inject constructor(
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                     val comp = doc.getString("company") ?: doc.getString("organization") ?: ""
                     val pos = doc.getString("position") ?: doc.getString("title") ?: ""
+                    val department = doc.getString("department")?.takeIf { it.isNotBlank() }
+                    val location = doc.getString("location")?.takeIf { it.isNotBlank() }
+                    val responsibilities = doc.getString("responsibilities")?.takeIf { it.isNotBlank() }
+                    val startDate = doc.getString("startDate")?.takeIf { it.isNotBlank() }
+                    val endDate = doc.getString("endDate")?.takeIf { it.isNotBlank() }
+                    val isCurrent = doc.getBoolean("isCurrent") ?: false
+
                     if (comp.isNotBlank() || pos.isNotBlank()) {
                         val existing = employmentDao.getAllEmploymentRecords().find { it.id == doc.id }
                         if (existing != null) {
@@ -1968,6 +2192,21 @@ class FirestoreSyncService @Inject constructor(
                                     localVersion = 1L,
                                     serverVersion = 2L
                                 )
+                                // Clash: Withhold overwriting local, create remote as next entry n+1
+                                val nPlusOneWork = EmploymentRecordEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    personId = targetPersonId,
+                                    company = comp,
+                                    position = pos,
+                                    department = department,
+                                    location = location,
+                                    responsibilities = responsibilities,
+                                    startDate = startDate,
+                                    endDate = endDate,
+                                    isCurrent = isCurrent
+                                )
+                                employmentDao.insertOrUpdate(nPlusOneWork)
+                                count++
                             }
                             // Local is king — preserve local!
                             continue
@@ -1978,10 +2217,12 @@ class FirestoreSyncService @Inject constructor(
                             personId = targetPersonId,
                             company = comp,
                             position = pos,
-                            department = doc.getString("department")?.takeIf { it.isNotBlank() },
-                            startDate = doc.getString("startDate")?.takeIf { it.isNotBlank() },
-                            endDate = doc.getString("endDate")?.takeIf { it.isNotBlank() },
-                            isCurrent = doc.getBoolean("isCurrent") ?: false
+                            department = department,
+                            location = location,
+                            responsibilities = responsibilities,
+                            startDate = startDate,
+                            endDate = endDate,
+                            isCurrent = isCurrent
                         )
                         employmentDao.insertOrUpdate(work)
                         count++
@@ -1991,7 +2232,7 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling employment: ${e.message}", e)
             }
 
-            // 12. Health Records (Local is king — preserve local health records, record conflicts)
+            // 12. Health Records (Local is king — preserve local health records, create n+1 on clash)
             try {
                 val medSnap = accountDocRef.collection("healthRecords").get().await()
                 for (doc in medSnap.documents) {
@@ -2000,6 +2241,15 @@ class FirestoreSyncService @Inject constructor(
                         val rawPersonId = doc.getString("personId") ?: docId.removePrefix("profile_")
                         val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                         val remoteBlood = doc.getString("bloodType")?.takeIf { it.isNotBlank() }
+                        val remoteHeight = doc.getString("heightCm")?.takeIf { it.isNotBlank() }
+                        val remoteWeight = doc.getString("weightKg")?.takeIf { it.isNotBlank() }
+                        val remoteContactName = doc.getString("emergencyContactName")?.takeIf { it.isNotBlank() }
+                        val remoteContactPhone = doc.getString("emergencyContactPhone")?.takeIf { it.isNotBlank() }
+                        val remoteRelationship = doc.getString("emergencyContactRelationship")?.takeIf { it.isNotBlank() }
+                        val remoteAidProvider = doc.getString("medicalAidProvider")?.takeIf { it.isNotBlank() }
+                        val remoteAidNumber = doc.getString("medicalAidNumber")?.takeIf { it.isNotBlank() }
+                        val remoteMembership = doc.getString("membershipNumber")?.takeIf { it.isNotBlank() }
+                        val remotePolicy = doc.getString("policyNumber")?.takeIf { it.isNotBlank() }
 
                         val existingProfile = medicalDao.getAllProfiles().find { it.personId == targetPersonId }
                         if (existingProfile != null) {
@@ -2014,15 +2264,35 @@ class FirestoreSyncService @Inject constructor(
                                     serverVersion = 2L
                                 )
                             }
-                            // Local is king — preserve local medical profile!
+                            // Local is king — backfill locally blank fields from remote
+                            val updatedProfile = existingProfile.copy(
+                                bloodType = existingProfile.bloodType ?: remoteBlood,
+                                heightCm = existingProfile.heightCm ?: remoteHeight,
+                                weightKg = existingProfile.weightKg ?: remoteWeight,
+                                emergencyContactName = existingProfile.emergencyContactName ?: remoteContactName,
+                                emergencyContactPhone = existingProfile.emergencyContactPhone ?: remoteContactPhone,
+                                emergencyContactRelationship = existingProfile.emergencyContactRelationship ?: remoteRelationship,
+                                medicalAidProvider = existingProfile.medicalAidProvider ?: remoteAidProvider,
+                                medicalAidNumber = existingProfile.medicalAidNumber ?: remoteAidNumber,
+                                membershipNumber = existingProfile.membershipNumber ?: remoteMembership,
+                                policyNumber = existingProfile.policyNumber ?: remotePolicy
+                            )
+                            medicalDao.insertOrUpdateProfile(updatedProfile)
                             continue
                         }
 
                         val medProfile = MedicalProfileEntity(
                             personId = targetPersonId,
                             bloodType = remoteBlood,
-                            emergencyContactName = doc.getString("emergencyContactName")?.takeIf { it.isNotBlank() },
-                            emergencyContactPhone = doc.getString("emergencyContactPhone")?.takeIf { it.isNotBlank() }
+                            heightCm = remoteHeight,
+                            weightKg = remoteWeight,
+                            emergencyContactName = remoteContactName,
+                            emergencyContactPhone = remoteContactPhone,
+                            emergencyContactRelationship = remoteRelationship,
+                            medicalAidProvider = remoteAidProvider,
+                            medicalAidNumber = remoteAidNumber,
+                            membershipNumber = remoteMembership,
+                            policyNumber = remotePolicy
                         )
                         medicalDao.insertOrUpdateProfile(medProfile)
                         count++
@@ -2032,6 +2302,33 @@ class FirestoreSyncService @Inject constructor(
                         val recTypeStr = doc.getString("recordType") ?: "CONDITION"
                         val recType = try { MedicalRecordType.valueOf(recTypeStr) } catch (_: Exception) { MedicalRecordType.CONDITION }
                         val remoteTitle = doc.getString("title") ?: "Health Record"
+
+                        val substanceOrDiag = doc.getString("substanceOrDiagnosis")?.takeIf { it.isNotBlank() }
+                        val severity = doc.getString("severity")?.takeIf { it.isNotBlank() }?.let { try { AllergySeverity.valueOf(it) } catch (_: Exception) { null } }
+                        val status = doc.getString("status")?.takeIf { it.isNotBlank() }?.let { try { ConditionStatus.valueOf(it) } catch (_: Exception) { null } }
+                        val dosage = doc.getString("dosage")?.takeIf { it.isNotBlank() }
+                        val frequency = doc.getString("frequency")?.takeIf { it.isNotBlank() }
+                        val route = doc.getString("route")?.takeIf { it.isNotBlank() }
+                        val startDate = doc.getString("startDate")?.takeIf { it.isNotBlank() }
+                        val endDate = doc.getString("endDate")?.takeIf { it.isNotBlank() }
+                        val practitionerName = doc.getString("practitionerName")?.takeIf { it.isNotBlank() }
+                        val facilityName = doc.getString("facilityName")?.takeIf { it.isNotBlank() }
+                        val contactPhone = doc.getString("contactPhone")?.takeIf { it.isNotBlank() }
+                        val contactEmail = doc.getString("contactEmail")?.takeIf { it.isNotBlank() }
+                        val address = doc.getString("address")?.takeIf { it.isNotBlank() }
+                        val specialty = doc.getString("specialty")?.takeIf { it.isNotBlank() }
+                        val patientNumber = doc.getString("patientNumber")?.takeIf { it.isNotBlank() }
+                        val policyNumber = doc.getString("policyNumber")?.takeIf { it.isNotBlank() }
+                        val membershipNumber = doc.getString("membershipNumber")?.takeIf { it.isNotBlank() }
+                        val planName = doc.getString("planName")?.takeIf { it.isNotBlank() }
+                        val validUntil = doc.getString("validUntil")?.takeIf { it.isNotBlank() }
+                        val visitDate = doc.getString("visitDate")?.takeIf { it.isNotBlank() }
+                        val treatment = doc.getString("treatment")?.takeIf { it.isNotBlank() }
+                        val followUpDate = doc.getString("followUpDate")?.takeIf { it.isNotBlank() }
+                        val instructions = doc.getString("instructions")?.takeIf { it.isNotBlank() }
+                        val photoUri = doc.getString("photoUri")?.takeIf { it.isNotBlank() }
+                        val isEmergency = doc.getBoolean("isEmergencyCardVisible") ?: false
+                        val notes = doc.getString("notes")?.takeIf { it.isNotBlank() }
 
                         val existing = medicalDao.getRecordById(docId)
                         if (existing != null) {
@@ -2045,6 +2342,41 @@ class FirestoreSyncService @Inject constructor(
                                     localVersion = 1L,
                                     serverVersion = 2L
                                 )
+                                // Clash: Withhold overwriting local, create remote as next entry n+1
+                                val nPlusOneRecord = MedicalRecordEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    personId = targetPersonId,
+                                    recordType = recType,
+                                    title = "$remoteTitle (2)",
+                                    substanceOrDiagnosis = substanceOrDiag,
+                                    severity = severity,
+                                    status = status,
+                                    dosage = dosage,
+                                    frequency = frequency,
+                                    route = route,
+                                    startDate = startDate,
+                                    endDate = endDate,
+                                    practitionerName = practitionerName,
+                                    facilityName = facilityName,
+                                    contactPhone = contactPhone,
+                                    contactEmail = contactEmail,
+                                    address = address,
+                                    specialty = specialty,
+                                    patientNumber = patientNumber,
+                                    policyNumber = policyNumber,
+                                    membershipNumber = membershipNumber,
+                                    planName = planName,
+                                    validUntil = validUntil,
+                                    visitDate = visitDate,
+                                    treatment = treatment,
+                                    followUpDate = followUpDate,
+                                    instructions = instructions,
+                                    photoUri = photoUri,
+                                    isEmergencyCardVisible = isEmergency,
+                                    notes = notes
+                                )
+                                medicalDao.insertOrUpdate(nPlusOneRecord)
+                                count++
                             }
                             // Local is king — preserve local record!
                             continue
@@ -2053,8 +2385,34 @@ class FirestoreSyncService @Inject constructor(
                         val record = MedicalRecordEntity(
                             id = docId,
                             personId = targetPersonId,
+                            recordType = recType,
                             title = remoteTitle,
-                            recordType = recType
+                            substanceOrDiagnosis = substanceOrDiag,
+                            severity = severity,
+                            status = status,
+                            dosage = dosage,
+                            frequency = frequency,
+                            route = route,
+                            startDate = startDate,
+                            endDate = endDate,
+                            practitionerName = practitionerName,
+                            facilityName = facilityName,
+                            contactPhone = contactPhone,
+                            contactEmail = contactEmail,
+                            address = address,
+                            specialty = specialty,
+                            patientNumber = patientNumber,
+                            policyNumber = policyNumber,
+                            membershipNumber = membershipNumber,
+                            planName = planName,
+                            validUntil = validUntil,
+                            visitDate = visitDate,
+                            treatment = treatment,
+                            followUpDate = followUpDate,
+                            instructions = instructions,
+                            photoUri = photoUri,
+                            isEmergencyCardVisible = isEmergency,
+                            notes = notes
                         )
                         medicalDao.insertOrUpdate(record)
                         count++

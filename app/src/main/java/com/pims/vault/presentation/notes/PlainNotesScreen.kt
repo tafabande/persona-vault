@@ -138,9 +138,13 @@ fun PlainNotesScreen(
             val matchesSearch = if (searchQuery.isBlank()) {
                 true
             } else {
+                val q = searchQuery.trim()
+                val tagQ = if (q.startsWith("#")) q.drop(1).trim() else q
                 note.title.contains(searchQuery, ignoreCase = true) ||
-                        note.content.contains(searchQuery, ignoreCase = true) ||
-                        (note.reminderTag?.contains(searchQuery, ignoreCase = true) == true)
+                    note.content.contains(searchQuery, ignoreCase = true) ||
+                    (note.reminderTag?.contains(searchQuery, ignoreCase = true) == true) ||
+                    (note.reminderTag?.contains(tagQ, ignoreCase = true) == true) ||
+                    note.tags.any { it.contains(tagQ, ignoreCase = true) || it.contains(q, ignoreCase = true) }
             }
             matchesFilter && matchesSearch
         }
@@ -430,7 +434,11 @@ fun PlainNotesScreen(
                                 timeStr = timeFormat.format(Date(note.updatedAt)),
                                 onClick = { onOpenEditor(note.id) },
                                 onDelete = { noteToDelete = note },
-                                viewModel = viewModel
+                                viewModel = viewModel,
+                                onTagClick = { tag ->
+                                    searchQuery = "#$tag"
+                                    isSearchVisible = true
+                                }
                             )
                             HorizontalDivider(
                                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -508,7 +516,11 @@ fun PlainNotesScreen(
                                         timeStr = timeFormat.format(Date(note.updatedAt)),
                                         onClick = { onOpenEditor(note.id) },
                                         onDelete = { noteToDelete = note },
-                                        viewModel = viewModel
+                                        viewModel = viewModel,
+                                        onTagClick = { tag ->
+                                            searchQuery = "#$tag"
+                                            isSearchVisible = true
+                                        }
                                     )
                                     HorizontalDivider(
                                         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -594,7 +606,11 @@ fun PlainNotesScreen(
                                     timeStr = timeFormat.format(Date(note.updatedAt)),
                                     onClick = { onOpenEditor(note.id) },
                                     onDelete = { noteToDelete = note },
-                                    viewModel = viewModel
+                                    viewModel = viewModel,
+                                    onTagClick = { tag ->
+                                        searchQuery = "#$tag"
+                                        isSearchVisible = true
+                                    }
                                 )
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -656,7 +672,11 @@ fun PlainNotesScreen(
                                     timeStr = timeFormat.format(Date(note.updatedAt)),
                                     onClick = { onOpenEditor(note.id) },
                                     onDelete = { noteToDelete = note },
-                                    viewModel = viewModel
+                                    viewModel = viewModel,
+                                    onTagClick = { tag ->
+                                        searchQuery = "#$tag"
+                                        isSearchVisible = true
+                                    }
                                 )
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -717,7 +737,8 @@ fun NoteListRow(
     timeStr: String,
     onClick: () -> Unit,
     onDelete: () -> Unit,
-    viewModel: PlainNotesViewModel? = null
+    viewModel: PlainNotesViewModel? = null,
+    onTagClick: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val haptics = rememberPimsHaptics()
@@ -775,10 +796,17 @@ fun NoteListRow(
                 overflow = TextOverflow.Ellipsis
             )
 
+            val cleanContent = note.content
+                .replace('\n', ' ')
+                .trim()
+                .let { if (it == "•" || it == "-") "" else it }
+
             val subtitleParts = buildList {
                 add(timeStr)
-                if (note.content.isNotBlank()) {
-                    add(note.content.replace('\n', ' ').trim().take(60))
+                if (cleanContent.isNotBlank()) {
+                    add(cleanContent.take(60))
+                } else if (firstAttachment != null) {
+                    add("Photo")
                 }
             }
             Text(
@@ -817,6 +845,34 @@ fun NoteListRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isDone) MaterialTheme.colorScheme.outline else if (isPast) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
+                }
+            }
+
+            // Category & Hashtag Badges
+            if (note.tags.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    note.tags.take(4).forEach { tag ->
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            modifier = Modifier.clickable {
+                                onTagClick?.invoke(tag)
+                            }
+                        ) {
+                            Text(
+                                text = "#$tag",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

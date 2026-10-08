@@ -10,13 +10,15 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import com.pims.vault.R
+import com.pims.vault.core.res.AppResources
 import com.pims.vault.data.local.database.PimsDatabase
 import com.pims.vault.presentation.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+
+import dagger.hilt.android.EntryPointAccessors
 
 class NoteReminderReceiver : BroadcastReceiver() {
 
@@ -30,8 +32,13 @@ class NoteReminderReceiver : BroadcastReceiver() {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                     try {
-                        val scheduler = NoteReminderScheduler(context)
-                        scheduler.rescheduleAllActiveReminders()
+                        val entryPoint = EntryPointAccessors.fromApplication(
+                            context.applicationContext,
+                            ReminderEntryPoint::class.java
+                        )
+                        entryPoint.noteReminderScheduler().rescheduleAllActiveReminders()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to reschedule reminders on boot/reschedule: ${e.message}", e)
                     } finally {
                         pendingResult.finish()
                     }
@@ -51,7 +58,13 @@ class NoteReminderReceiver : BroadcastReceiver() {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                     try {
-                        val db = PimsDatabase.buildDatabase(context)
+                        val entryPoint = EntryPointAccessors.fromApplication(
+                            context.applicationContext,
+                            ReminderEntryPoint::class.java
+                        )
+                        val dao = entryPoint.plainNoteDao()
+                        val scheduler = entryPoint.noteReminderScheduler()
+
                         if (repeat.isNullOrBlank() || repeat == "NONE") {
                             // Single-shot: mark done or keep for history
                         } else {
@@ -62,8 +75,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
                                 else -> null
                             }
                             if (nextTrigger != null) {
-                                db.plainNoteDao().updateReminder(noteId, nextTrigger, tag, repeat)
-                                val scheduler = NoteReminderScheduler(context)
+                                dao.updateReminder(noteId, nextTrigger, tag, repeat)
                                 scheduler.scheduleReminder(noteId, title, snippet, tag, nextTrigger, repeat)
                             }
                         }
@@ -85,14 +97,18 @@ class NoteReminderReceiver : BroadcastReceiver() {
                 notificationManager?.cancel(noteId.hashCode())
 
                 val snoozeTime = System.currentTimeMillis() + 15 * 60 * 1000L
-                val scheduler = NoteReminderScheduler(context)
-                scheduler.scheduleReminder(noteId, title, snippet, tag, snoozeTime)
 
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                     try {
-                        val db = PimsDatabase.buildDatabase(context)
-                        db.plainNoteDao().updateReminder(noteId, snoozeTime, tag, "NONE")
+                        val entryPoint = EntryPointAccessors.fromApplication(
+                            context.applicationContext,
+                            ReminderEntryPoint::class.java
+                        )
+                        entryPoint.noteReminderScheduler().scheduleReminder(noteId, title, snippet, tag, snoozeTime)
+                        entryPoint.plainNoteDao().updateReminder(noteId, snoozeTime, tag, "NONE")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to snooze reminder: ${e.message}", e)
                     } finally {
                         pendingResult.finish()
                     }
@@ -107,8 +123,13 @@ class NoteReminderReceiver : BroadcastReceiver() {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                     try {
-                        val db = PimsDatabase.buildDatabase(context)
-                        db.plainNoteDao().setReminderDone(noteId, true)
+                        val entryPoint = EntryPointAccessors.fromApplication(
+                            context.applicationContext,
+                            ReminderEntryPoint::class.java
+                        )
+                        entryPoint.plainNoteDao().setReminderDone(noteId, true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to dismiss reminder: ${e.message}", e)
                     } finally {
                         pendingResult.finish()
                     }
@@ -173,7 +194,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
         val vibrationPattern = longArrayOf(0, 350, 200, 350)
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_reminder)
+            .setSmallIcon(AppResources.Drawable.getNotificationIcon(context))
             .setContentTitle(title)
             .setContentText(body)
             .setSubText(subtext)

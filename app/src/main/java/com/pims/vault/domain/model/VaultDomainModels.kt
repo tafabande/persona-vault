@@ -60,6 +60,8 @@ data class PaymentReferenceSecret(
     val lastFourDigits: String, // Exactly 4 digits
     val expiryMonth: String,    // MM (e.g. "12")
     val expiryYear: String,     // YY or YYYY (e.g. "28")
+    val fullCardNumber: String? = null,
+    val cvv: String? = null,
     val notes: String? = null,
     val status: CardStatus = CardStatus.IN_USE
 ) {
@@ -91,4 +93,52 @@ data class LiveTotpToken(
     val token: String,
     val remainingSeconds: Int,
     val periodSeconds: Int = 30
+)
+
+data class ApiKeySecret(
+    val label: String,
+    val key: String,
+    val service: String,
+    val environment: String = "Production",
+    val endpoint: String? = null,
+    val expires: String? = null,
+    val notes: String? = null
+)
+
+data class SshKeySecret(
+    val label: String,
+    val host: String,
+    val username: String,
+    val privateKey: String,
+    val publicKey: String,
+    val fingerprint: String,
+    val notes: String? = null
+)
+
+data class AccessTokenSecret(
+    val label: String,
+    val token: String,
+    val service: String,
+    val scopes: List<String> = emptyList(),
+    val expires: String? = null,
+    val notes: String? = null
+)
+
+data class GenericSecretItem(
+    val label: String,
+    val secretValue: String,
+    val secretType: String,
+    val provider: String? = null,
+    val notes: String? = null
+)
+
+data class IdentityCredentialSecret(
+    val idType: String,
+    val fullName: String,
+    val identifierNumber: String,
+    val issuingAuthority: String? = null,
+    val issueDate: String? = null,
+    val expiryDate: String? = null,
+    val secondaryIdentifier: String? = null,
+    val notes: String? = null
 )

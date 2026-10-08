@@ -1,6 +1,6 @@
 package com.pims.vault.presentation.ui.components
 
-import com.pims.vault.R
+import com.pims.vault.core.res.AppResources
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
@@ -903,10 +903,10 @@ fun DefaultAvatar(
     modifier: Modifier = Modifier
 ) {
     val drawableRes = if (isFemale != null) {
-        if (isFemale) R.drawable.ic_default_avatar_female else R.drawable.ic_default_avatar_male
+        if (isFemale) AppResources.Drawable.ic_default_avatar_female else AppResources.Drawable.ic_default_avatar_male
     } else {
         val hash = name.hashCode()
-        if (hash % 2 == 0) R.drawable.ic_default_avatar_male else R.drawable.ic_default_avatar_female
+        if (hash % 2 == 0) AppResources.Drawable.ic_default_avatar_male else AppResources.Drawable.ic_default_avatar_female
     }
 
     val interactionModifier = if (onClick != null || onLongClick != null) {
@@ -962,7 +962,7 @@ fun CountrySuggestionField(
                 onValueChange(it)
                 expanded = true
             },
-            label = { Text(label) },
+            label = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             placeholder = { Text(placeholder) },
             leadingIcon = {
                 Icon(

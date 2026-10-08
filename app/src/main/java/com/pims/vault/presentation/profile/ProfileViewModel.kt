@@ -105,7 +105,8 @@ sealed interface ProfileEvent {
         val country: String,
         val gender: String,
         val sexuality: String,
-        val bloodGroup: String
+        val bloodGroup: String,
+        val occupation: String? = null
     ) : ProfileEvent
 
     data class AddCustomField(
@@ -545,6 +546,7 @@ class ProfileViewModel @Inject constructor(
             for (dbAddr in existingAddresses) {
                 if (dbAddr.id !in validIds) {
                     addressDao.deleteById(dbAddr.id)
+                    try { firestoreSyncService.deleteRemoteAddress(dbAddr.id) } catch (_: Exception) {}
                 }
             }
 
@@ -590,9 +592,14 @@ class ProfileViewModel @Inject constructor(
                     is ProfileEvent.SaveIdentityDetails -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
                         val existing = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
-                        val nameParts = event.fullName.trim().split(" ", limit = 2)
-                        val first = nameParts.getOrElse(0) { event.fullName }
-                        val last = nameParts.getOrElse(1) { "" }
+                        val trimmedName = event.fullName.trim()
+                        val (first, last) = if (trimmedName.isNotBlank()) {
+                            val nameParts = trimmedName.split(" ", limit = 2)
+                            Pair(nameParts.getOrElse(0) { trimmedName }, nameParts.getOrElse(1) { "" })
+                        } else {
+                            // Local name is king: preserve existing names if full name not specified
+                            Pair(existing?.firstName.orEmpty(), existing?.lastName.orEmpty())
+                        }
 
                         val currentMeta = parseNotesMeta(existing?.notes ?: _uiState.value.person?.notes)
                         val updatedMeta = currentMeta.copy(
@@ -608,8 +615,8 @@ class ProfileViewModel @Inject constructor(
                         )).copy(
                             firstName = first,
                             lastName = last,
-                            preferredName = event.fullName.trim(),
-                            nationalIdNumber = event.nationalId.trim(),
+                            preferredName = event.fullName.trim().ifBlank { existing?.preferredName },
+                            nationalIdNumber = event.nationalId.trim().ifBlank { existing?.nationalIdNumber },
                             notes = notesJson,
                             updatedAt = System.currentTimeMillis()
                         )
@@ -620,18 +627,24 @@ class ProfileViewModel @Inject constructor(
                             val existingEmails = contactDao.getContactsForPersonFlow(ownerId).firstOrNull()?.filter { it.contactType == ContactType.EMAIL } ?: emptyList()
                             val primaryEmail = existingEmails.firstOrNull { it.isPrimary } ?: existingEmails.firstOrNull()
                             if (primaryEmail != null) {
-                                contactDao.insertOrUpdate(primaryEmail.copy(value = event.email.trim(), isPrimary = true))
+                                val updated = primaryEmail.copy(value = event.email.trim(), isPrimary = true)
+                                contactDao.insertOrUpdate(updated)
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    try { firestoreSyncService.syncContact(null, updated) } catch (_: Exception) {}
+                                }
                             } else {
-                                contactDao.insertOrUpdate(
-                                    ContactMethodEntity(
-                                        id = UUID.randomUUID().toString(),
-                                        personId = ownerId,
-                                        contactType = ContactType.EMAIL,
-                                        label = "Primary",
-                                        value = event.email.trim(),
-                                        isPrimary = true
-                                    )
+                                val newEmail = ContactMethodEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    personId = ownerId,
+                                    contactType = ContactType.EMAIL,
+                                    label = "Primary",
+                                    value = event.email.trim(),
+                                    isPrimary = true
                                 )
+                                contactDao.insertOrUpdate(newEmail)
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    try { firestoreSyncService.syncContact(null, newEmail) } catch (_: Exception) {}
+                                }
                             }
                         }
 
@@ -640,18 +653,24 @@ class ProfileViewModel @Inject constructor(
                             val existingPhones = contactDao.getContactsForPersonFlow(ownerId).firstOrNull()?.filter { it.contactType == ContactType.PHONE } ?: emptyList()
                             val primaryPhone = existingPhones.firstOrNull { it.isPrimary } ?: existingPhones.firstOrNull()
                             if (primaryPhone != null) {
-                                contactDao.insertOrUpdate(primaryPhone.copy(value = event.phone.trim(), isPrimary = true))
+                                val updated = primaryPhone.copy(value = event.phone.trim(), isPrimary = true)
+                                contactDao.insertOrUpdate(updated)
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    try { firestoreSyncService.syncContact(null, updated) } catch (_: Exception) {}
+                                }
                             } else {
-                                contactDao.insertOrUpdate(
-                                    ContactMethodEntity(
-                                        id = UUID.randomUUID().toString(),
-                                        personId = ownerId,
-                                        contactType = ContactType.PHONE,
-                                        label = "Primary",
-                                        value = event.phone.trim(),
-                                        isPrimary = true
-                                    )
+                                val newPhone = ContactMethodEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    personId = ownerId,
+                                    contactType = ContactType.PHONE,
+                                    label = "Primary",
+                                    value = event.phone.trim(),
+                                    isPrimary = true
                                 )
+                                contactDao.insertOrUpdate(newPhone)
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    try { firestoreSyncService.syncContact(null, newPhone) } catch (_: Exception) {}
+                                }
                             }
                         }
 
@@ -664,18 +683,22 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.SavePersonalDetails -> {
                         val existing = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
+                        val targetFirst = event.firstName.trim().ifBlank { existing?.firstName.orEmpty() }
+                        val targetLast = event.lastName.trim().ifBlank { existing?.lastName.orEmpty() }
+                        val targetOcc = event.occupation?.trim()?.takeIf { it.isNotBlank() } ?: existing?.occupation
                         val updatedPerson = (existing ?: PersonEntity(
                             id = CANONICAL_PRIMARY_OWNER_ID,
                             isPrimaryOwner = true,
-                            firstName = "",
-                            lastName = ""
+                            firstName = targetFirst,
+                            lastName = targetLast
                         )).copy(
-                            firstName = event.firstName.trim(),
-                            lastName = event.lastName.trim(),
-                            dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
-                            gender = event.gender.trim().takeIf { it.isNotBlank() },
-                            nationality = event.nationality.trim().takeIf { it.isNotBlank() },
-                            countryOfResidence = event.country.trim().takeIf { it.isNotBlank() },
+                            firstName = targetFirst,
+                            lastName = targetLast,
+                            dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() } ?: existing?.dateOfBirth,
+                            gender = event.gender.trim().takeIf { it.isNotBlank() } ?: existing?.gender,
+                            nationality = event.nationality.trim().takeIf { it.isNotBlank() } ?: existing?.nationality,
+                            countryOfResidence = event.country.trim().takeIf { it.isNotBlank() } ?: existing?.countryOfResidence,
+                            occupation = targetOcc,
                             updatedAt = System.currentTimeMillis()
                         )
                         personDao.insertOrUpdate(updatedPerson)
@@ -716,7 +739,11 @@ class ProfileViewModel @Inject constructor(
                         val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
                         if (event.isPrimary) {
                             existingContacts.filter { it.contactType == ContactType.PHONE && it.isPrimary }.forEach {
-                                contactDao.insertOrUpdate(it.copy(isPrimary = false))
+                                val unprimary = it.copy(isPrimary = false)
+                                contactDao.insertOrUpdate(unprimary)
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    try { firestoreSyncService.syncContact(null, unprimary) } catch (_: Exception) {}
+                                }
                             }
                         }
                         val contact = ContactMethodEntity(
@@ -728,6 +755,9 @@ class ProfileViewModel @Inject constructor(
                             isPrimary = event.isPrimary
                         )
                         contactDao.insertOrUpdate(contact)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncContact(null, contact) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Phone number added") }
                     }
 
@@ -736,7 +766,11 @@ class ProfileViewModel @Inject constructor(
                         val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
                         if (event.isPrimary) {
                             existingContacts.filter { it.contactType == ContactType.EMAIL && it.isPrimary }.forEach {
-                                contactDao.insertOrUpdate(it.copy(isPrimary = false))
+                                val unprimary = it.copy(isPrimary = false)
+                                contactDao.insertOrUpdate(unprimary)
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    try { firestoreSyncService.syncContact(null, unprimary) } catch (_: Exception) {}
+                                }
                             }
                         }
                         val contact = ContactMethodEntity(
@@ -748,6 +782,9 @@ class ProfileViewModel @Inject constructor(
                             isPrimary = event.isPrimary
                         )
                         contactDao.insertOrUpdate(contact)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncContact(null, contact) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Email address added") }
                     }
 
@@ -774,6 +811,9 @@ class ProfileViewModel @Inject constructor(
                             isCurrent = event.isCurrent
                         )
                         addressDao.insertOrUpdate(address)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncAddress(null, address) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Address added") }
                     }
 
@@ -800,6 +840,9 @@ class ProfileViewModel @Inject constructor(
                             responsibilities = event.responsibilities?.trim()?.takeIf { it.isNotBlank() }
                         )
                         employmentDao.insertOrUpdate(emp)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncEmployment(null, emp) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Work experience added") }
                     }
 
@@ -825,6 +868,9 @@ class ProfileViewModel @Inject constructor(
                             description = event.description?.trim()?.takeIf { it.isNotBlank() }
                         )
                         educationDao.insertOrUpdate(edu)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncEducation(null, edu) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Qualification added") }
                     }
 
@@ -850,6 +896,9 @@ class ProfileViewModel @Inject constructor(
                             description = event.notes?.trim()?.takeIf { it.isNotBlank() }
                         )
                         educationDao.insertOrUpdate(cert)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncEducation(null, cert) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Certificate added") }
                     }
 
@@ -873,6 +922,9 @@ class ProfileViewModel @Inject constructor(
                             isEmergencyCardVisible = true
                         )
                         medicalDao.insertOrUpdate(med)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncMedicalRecord(null, med) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Allergy recorded") }
                     }
 
@@ -888,6 +940,9 @@ class ProfileViewModel @Inject constructor(
                             isEmergencyCardVisible = true
                         )
                         medicalDao.insertOrUpdate(med)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncMedicalRecord(null, med) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Condition recorded") }
                     }
 
@@ -904,6 +959,9 @@ class ProfileViewModel @Inject constructor(
                             isEmergencyCardVisible = true
                         )
                         medicalDao.insertOrUpdate(med)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { firestoreSyncService.syncMedicalRecord(null, med) } catch (_: Exception) {}
+                        }
                         _uiState.update { it.copy(userFeedbackMessage = "Medication added") }
                     }
 

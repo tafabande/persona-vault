@@ -179,12 +179,10 @@ class PhotoBackupCoordinator @Inject constructor(
                         // Cache hit: ensure avatar manager points to it
                         if (meta.kind == ProfilePhotoSyncService.KIND_AVATAR) {
                             val cfg = avatarManager.avatarConfig.value
-                            val useAsActive = cfg.avatarSource == com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE ||
-                                !cfg.customAvatarPath.isNullOrBlank()
                             avatarManager.saveConfig(
                                 cfg.copy(
                                     customAvatarPath = dest.absolutePath,
-                                    avatarSource = if (useAsActive) com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE else cfg.avatarSource
+                                    avatarSource = com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE
                                 )
                             )
                         }
@@ -210,12 +208,10 @@ class PhotoBackupCoordinator @Inject constructor(
                     when (meta.kind) {
                         ProfilePhotoSyncService.KIND_AVATAR -> {
                             val cfg = avatarManager.avatarConfig.value
-                            val useAsActive = cfg.avatarSource == com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE ||
-                                !cfg.customAvatarPath.isNullOrBlank()
                             avatarManager.saveConfig(
                                 cfg.copy(
                                     customAvatarPath = dest.absolutePath,
-                                    avatarSource = if (useAsActive) com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE else cfg.avatarSource
+                                    avatarSource = com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE
                                 )
                             )
                         }
@@ -238,6 +234,56 @@ class PhotoBackupCoordinator @Inject constructor(
             VaultLogger.w("PhotoBackup", "restoreAllPhotos failed: ${e.message}")
         }
         return restored
+    }
+
+    /**
+     * Uploads all locally saved photos (avatars, ID photos, contact photos) to cloud.
+     * Ensures photos taken while offline are immediately pushed once online.
+     */
+    suspend fun backupAllPhotos() {
+        try {
+            val avatarManager = PersonaAvatarManager.getInstance(context)
+            val currentAvatar = avatarManager.customAvatarPath.value
+            if (!currentAvatar.isNullOrBlank() && File(currentAvatar).exists()) {
+                backupPhoto(
+                    kind = ProfilePhotoSyncService.KIND_AVATAR,
+                    photoId = "avatar_primary",
+                    ownerKey = "primary_owner",
+                    localPath = currentAvatar
+                )
+            }
+            val cfgJson = avatarManager.getCurrentConfigJsonString()
+            if (cfgJson.isNotBlank()) {
+                firestoreSync.syncAvatarConfig(cfgJson)
+            }
+            // ID photo: inspect filesDir for identity_id_photo
+            val idPhotoFiles = context.filesDir.listFiles()?.filter { it.name.startsWith("identity_id_photo") && it.length() > 0 }
+            val latestIdPhoto = idPhotoFiles?.maxByOrNull { it.lastModified() }
+            if (latestIdPhoto != null) {
+                backupPhoto(
+                    kind = ProfilePhotoSyncService.KIND_ID_PHOTO,
+                    photoId = "id_primary",
+                    ownerKey = "primary_owner",
+                    localPath = latestIdPhoto.absolutePath
+                )
+            }
+            // Contact photos: inspect contact_photos directory
+            val contactDir = File(context.filesDir, "contact_photos")
+            if (contactDir.exists()) {
+                contactDir.listFiles()?.filter { it.isFile && it.length() > 0 }?.forEach { f ->
+                    val personId = f.name.removePrefix("contact_").removeSuffix(".jpg").removeSuffix("_restored")
+                    backupPhoto(
+                        kind = ProfilePhotoSyncService.KIND_CONTACT,
+                        photoId = "contact_$personId",
+                        ownerKey = personId,
+                        localPath = f.absolutePath
+                    )
+                }
+            }
+            VaultLogger.i("PhotoBackup", "All offline/cached photos backed up to cloud")
+        } catch (e: Exception) {
+            VaultLogger.w("PhotoBackup", "backupAllPhotos failed: ${e.message}")
+        }
     }
 
     private fun destFileFor(meta: ProfilePhotoSyncService.PhotoMetadata): File? {

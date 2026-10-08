@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.R
+import com.pims.vault.core.res.AppResources
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
@@ -86,7 +86,7 @@ fun PersonaAvatar(
                     .clip(CircleShape)
             )
         } else {
-            val drawableRes = if (isFemale) R.drawable.ic_default_avatar_female else R.drawable.ic_default_avatar_male
+            val drawableRes = if (isFemale) AppResources.Drawable.ic_default_avatar_female else AppResources.Drawable.ic_default_avatar_male
             Image(
                 painter = painterResource(id = drawableRes),
                 contentDescription = "$name default profile",

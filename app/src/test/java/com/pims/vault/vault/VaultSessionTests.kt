@@ -25,6 +25,16 @@ import com.pims.vault.domain.usecase.vault.SavePaymentReferenceUseCase
 import com.pims.vault.domain.usecase.vault.SaveRecoveryCodesUseCase
 import com.pims.vault.domain.usecase.vault.SaveSecureNoteUseCase
 import com.pims.vault.domain.usecase.vault.SaveTotpSecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveApiKeyUseCase
+import com.pims.vault.domain.usecase.vault.ReadApiKeySecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveSshKeyUseCase
+import com.pims.vault.domain.usecase.vault.ReadSshKeySecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveAccessTokenUseCase
+import com.pims.vault.domain.usecase.vault.ReadAccessTokenSecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveGenericSecretUseCase
+import com.pims.vault.domain.usecase.vault.ReadGenericSecretUseCase
+import com.pims.vault.domain.usecase.vault.SaveIdentityCredentialUseCase
+import com.pims.vault.domain.usecase.vault.ReadIdentityCredentialUseCase
 import com.pims.vault.presentation.vault.VaultViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -114,6 +124,16 @@ class VaultSessionTests {
             readPaymentReferenceUseCase = ReadPaymentReferenceUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             saveBankAccountUseCase = SaveBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             readBankAccountUseCase = ReadBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            saveApiKeyUseCase = SaveApiKeyUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            readApiKeySecretUseCase = ReadApiKeySecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            saveSshKeyUseCase = SaveSshKeyUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            readSshKeySecretUseCase = ReadSshKeySecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            saveAccessTokenUseCase = SaveAccessTokenUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            readAccessTokenSecretUseCase = ReadAccessTokenSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            saveGenericSecretUseCase = SaveGenericSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            readGenericSecretUseCase = ReadGenericSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            saveIdentityCredentialUseCase = SaveIdentityCredentialUseCase(fakeVaultDao, cryptoEngine, auditLogger),
+            readIdentityCredentialUseCase = ReadIdentityCredentialUseCase(fakeVaultDao, cryptoEngine, auditLogger),
             deleteVaultItemUseCase = DeleteVaultItemUseCase(fakeVaultDao, auditLogger),
             sessionManager = sessionManager,
             personDao = fakePersonDao,

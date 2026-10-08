@@ -9,7 +9,7 @@
 | 2 | **M2 Domain & Storage** | Room DAOs, EncryptedFileStorage, Audit log | `Done` | — | — | 1 |
 | 3 | **M3 Design System** | Material3, Compose nav, profile/timeline | `In Progress` | — | 2026-10 | 2 |
 | 4 | **M4 Graph & Medical** | Kinship graph, Emergency card | `Planned` | — | 2026-10 | 3 |
-| 5 | **M5 Security Vault** | Zone 4 re-auth, TOTP, payment refs | `Planned` | — | 2026-11 | 2 |
+| 5 | **M5 Security Vault** | Zone 4 re-auth, TOTP, payment refs, secrets overhaul | `In Progress` | — | 2026-10 | 2 |
 | 6 | **M6 Sharing & Pairing** | Selective disclosure, QR, P2P sync | `Planned` | — | 2026-11 | 5 |
 | 7 | **M7 Hardening** | Adversarial tests, R8, SBOM, release | `Planned` | — | 2026-12 | 6 |
 

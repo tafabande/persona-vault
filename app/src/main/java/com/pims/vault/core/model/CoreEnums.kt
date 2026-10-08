@@ -114,7 +114,11 @@ enum class VaultCategory {
     SECURE_NOTE,
     PAYMENT_REFERENCE,
     BANK_ACCOUNT,
-    IDENTITY_CREDENTIAL
+    IDENTITY_CREDENTIAL,
+    API_KEY,
+    SSH_KEY,
+    ACCESS_TOKEN,
+    GENERIC_SECRET
 }
 
 enum class AuditEventType {

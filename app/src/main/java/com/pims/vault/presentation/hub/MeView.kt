@@ -148,13 +148,49 @@ fun MeView(
     ) { uri: Uri? ->
         if (uri != null) {
             try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
-                if (bitmap != null) {
-                    avatarManager.saveCustomPhoto(bitmap)
+                // Determine sample size to protect against high-res OOM
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream, null, options)
                 }
-            } catch (_: Exception) {}
+                var inSampleSize = 1
+                val maxDim = 1200
+                while (options.outWidth / (inSampleSize * 2) >= maxDim || options.outHeight / (inSampleSize * 2) >= maxDim) {
+                    inSampleSize *= 2
+                }
+
+                val decodeOptions = BitmapFactory.Options().apply {
+                    this.inSampleSize = inSampleSize
+                }
+                val rawBitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream, null, decodeOptions)
+                }
+
+                if (rawBitmap != null) {
+                    val finalBitmap = try {
+                        val exifInterface = context.contentResolver.openInputStream(uri)?.use { stream ->
+                            android.media.ExifInterface(stream)
+                        }
+                        val orientation = exifInterface?.getAttributeInt(
+                            android.media.ExifInterface.TAG_ORIENTATION,
+                            android.media.ExifInterface.ORIENTATION_NORMAL
+                        ) ?: android.media.ExifInterface.ORIENTATION_NORMAL
+                        val matrix = android.graphics.Matrix()
+                        when (orientation) {
+                            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                        }
+                        android.graphics.Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+                    } catch (_: Throwable) {
+                        rawBitmap
+                    }
+                    avatarManager.saveCustomPhoto(finalBitmap)
+                    haptics.success()
+                }
+            } catch (_: Throwable) {
+                haptics.warning()
+            }
         }
     }
 
@@ -349,11 +385,11 @@ fun MeView(
 
         // 2. Grouped Life Areas Card
         item {
-            val totalQuals = (educationCount + certCount).coerceAtLeast(1)
-            val totalHealth = medicalCount.coerceAtLeast(1)
-            val totalVault = vaultAccountsCount.coerceAtLeast(1)
-            val totalDocs = documentsCount.coerceAtLeast(1)
-            val totalPeople = relationshipsCount.coerceAtLeast(2)
+            val totalQuals = educationCount + certCount
+            val totalHealth = medicalCount
+            val totalVault = vaultAccountsCount
+            val totalDocs = documentsCount
+            val totalPeople = relationshipsCount
 
             Surface(
                 shape = RoundedCornerShape(24.dp),
@@ -367,7 +403,7 @@ fun MeView(
                     MeFacetRowItem(
                         icon = Icons.Outlined.School,
                         title = "Education and career",
-                        subtitle = "$totalQuals qualification${if (totalQuals > 1) "s" else ""}",
+                        subtitle = if (totalQuals == 0) "No qualifications added" else "$totalQuals qualification${if (totalQuals > 1) "s" else ""}",
                         onClick = {
                             haptics.light()
                             onEducationClick()
@@ -383,7 +419,7 @@ fun MeView(
                     MeFacetRowItem(
                         icon = Icons.Outlined.MedicalServices,
                         title = "Health",
-                        subtitle = "$totalHealth record${if (totalHealth > 1) "s" else ""}",
+                        subtitle = if (totalHealth == 0) "No medical records" else "$totalHealth record${if (totalHealth > 1) "s" else ""}",
                         onClick = {
                             haptics.light()
                             onHealthClick()
@@ -399,7 +435,7 @@ fun MeView(
                     MeFacetRowItem(
                         icon = Icons.Default.Key,
                         title = "Vault",
-                        subtitle = "$totalVault item${if (totalVault > 1) "s" else ""}",
+                        subtitle = if (totalVault == 0) "No credentials stored" else "$totalVault item${if (totalVault > 1) "s" else ""}",
                         isLocked = true,
                         onClick = {
                             haptics.light()
@@ -416,7 +452,7 @@ fun MeView(
                     MeFacetRowItem(
                         icon = Icons.Outlined.Description,
                         title = "Documents",
-                        subtitle = "$totalDocs document${if (totalDocs > 1) "s" else ""}",
+                        subtitle = if (totalDocs == 0) "No documents" else "$totalDocs document${if (totalDocs > 1) "s" else ""}",
                         onClick = {
                             haptics.light()
                             onDocumentsClick()
@@ -432,7 +468,7 @@ fun MeView(
                     MeFacetRowItem(
                         icon = Icons.Outlined.People,
                         title = "People",
-                        subtitle = "$totalPeople people",
+                        subtitle = if (totalPeople == 0) "No connections" else if (totalPeople == 1) "1 person" else "$totalPeople people",
                         onClick = {
                             haptics.light()
                             onPeopleClick()

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
 import com.pims.vault.core.crypto.SessionState
+import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.core.model.DocumentType
 import com.pims.vault.core.model.SecurityClassification
@@ -111,7 +112,7 @@ class DocumentViewModel @Inject constructor(
             personDao.getPersonByIdFlow(CANONICAL_PRIMARY_OWNER_ID).collectLatest { owner ->
                 val canonicalOwnerId = CANONICAL_PRIMARY_OWNER_ID
                 activeOwnerId = canonicalOwnerId
-                android.util.Log.d("DocumentViewModel", "Observing documents for canonical ownerId='$canonicalOwnerId'")
+                VaultLogger.d("DocumentViewModel", "Observing documents for canonical ownerId='$canonicalOwnerId'")
                 getDocumentsUseCase(canonicalOwnerId).collectLatest { docList ->
                     _uiState.update {
                         it.copy(
@@ -143,7 +144,7 @@ class DocumentViewModel @Inject constructor(
                                 )
                             )
                         }
-                        android.util.Log.d("DocumentViewModel", "Ingesting document '${event.title}' under canonicalOwnerId='$canonicalOwnerId'")
+                        VaultLogger.d("DocumentViewModel", "Ingesting document '${event.title}' under canonicalOwnerId='$canonicalOwnerId'")
                         val stream = event.fileBytes?.let { java.io.ByteArrayInputStream(it) } ?: event.fileStream
                         if (stream == null) {
                             throw IllegalArgumentException("No file payload provided for ingestion")
@@ -245,7 +246,7 @@ class DocumentViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("DocumentViewModel", "Document operation failed", e)
+                VaultLogger.e("DocumentViewModel", "Document operation failed", e)
                 val userMsg = when {
                     e is com.pims.vault.domain.rules.DocumentValidationException -> e.message ?: "Invalid document details"
                     e is SecurityException -> "Security verification failed while encrypting document"

@@ -1,7 +1,7 @@
 package com.pims.vault.core.storage
 
 import android.util.Base64
-import android.util.Log
+import com.pims.vault.core.logging.VaultLogger as Log
 import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.crypto.PortableFileKeyManager
 import kotlinx.coroutines.Dispatchers

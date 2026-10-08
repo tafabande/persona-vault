@@ -280,9 +280,13 @@ class AccountsViewModel @Inject constructor(
                     viewModelScope.launch(Dispatchers.IO) {
                         try {
                             val existingOwner = personRepository.getPrimaryOwner()
-                            val isNewProfile = existingOwner == null || (existingOwner.firstName.isBlank() && existingOwner.lastName.isBlank())
-                            if (isNewProfile && (!user.displayName.isNullOrBlank() || !user.email.isNullOrBlank())) {
-                                val parts = user.displayName?.trim()?.split(" ") ?: emptyList()
+                            val hasLocalName = existingOwner != null && (existingOwner.firstName.isNotBlank() || existingOwner.lastName.isNotBlank())
+                            val dName = user.displayName?.trim().orEmpty()
+                            val isEmailLike = dName.contains("@") || dName.equals(user.email?.trim(), ignoreCase = true)
+
+                            // Local name is king: only set name if local profile has NO name, and remote displayName is a real name (NOT an email)
+                            if (!hasLocalName && dName.isNotBlank() && !isEmailLike) {
+                                val parts = dName.split(" ")
                                 val fName = parts.firstOrNull() ?: ""
                                 val lName = if (parts.size > 1) parts.drop(1).joinToString(" ") else ""
                                 val owner = existingOwner?.copy(
@@ -295,14 +299,25 @@ class AccountsViewModel @Inject constructor(
                                     lastName = lName
                                 )
                                 personRepository.savePerson(owner)
-                                if (!user.email.isNullOrBlank()) {
+                            }
+
+                            // Email is saved strictly as a contact method — NEVER used to derive or overwrite the user's name
+                            if (!user.email.isNullOrBlank()) {
+                                val ownerId = existingOwner?.id ?: com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
+                                val fullProfile = personRepository.getPersonWithFullProfileFlow(ownerId).firstOrNull()
+                                val alreadyHasEmail = fullProfile?.contactMethods?.any { 
+                                    it.contactType == com.pims.vault.core.model.ContactType.EMAIL && 
+                                    it.value.equals(user.email, ignoreCase = true) 
+                                } == true
+                                if (!alreadyHasEmail) {
                                     personRepository.addContactMethod(
                                         com.pims.vault.data.local.entity.ContactMethodEntity(
                                             id = java.util.UUID.randomUUID().toString(),
-                                            personId = com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID,
+                                            personId = ownerId,
                                             contactType = com.pims.vault.core.model.ContactType.EMAIL,
-                                            value = user.email,
-                                            label = "Primary"
+                                            value = user.email!!,
+                                            label = "Primary",
+                                            isPrimary = true
                                         )
                                     )
                                 }
@@ -332,7 +347,9 @@ class AccountsViewModel @Inject constructor(
                         // screen (needs the recovery passphrase first), so we
                         // only opportunistically back up the local avatar here.
                         try {
-                            firestoreSyncService.syncAccount(user.uid, user.email, user.displayName)
+                            val localOwner = personRepository.getPrimaryOwner()
+                            val localDisplayName = "${localOwner?.firstName} ${localOwner?.lastName}".trim().takeIf { it.isNotBlank() }
+                            firestoreSyncService.syncAccount(user.uid, user.email, localDisplayName ?: user.displayName)
                             firestoreSyncService.syncBidirectional(user.uid)
                         } catch (e: Exception) {
                             com.pims.vault.core.logging.VaultLogger.e("AccountsViewModel", "Post-login sync error: ${e.message}", e)

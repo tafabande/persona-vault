@@ -2,7 +2,12 @@ package com.pims.vault.presentation.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
+import com.pims.vault.core.model.VaultCategory
+import com.pims.vault.data.local.dao.PersonDao
+import com.pims.vault.data.local.dao.RelationshipDao
+import com.pims.vault.data.local.dao.VaultDao
 import com.pims.vault.domain.model.NoteAttachment
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.PlainNote
@@ -11,6 +16,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,13 +24,18 @@ import javax.inject.Inject
 
 data class PlainNotesUiState(
     val notes: List<PlainNote> = emptyList(),
+    val availableTags: List<String> = emptyList(),
+    val selectedTag: String? = null,
     val isSaving: Boolean = false,
     val error: String? = null
 )
 
 @HiltViewModel
 class PlainNotesViewModel @Inject constructor(
-    private val repository: PlainNotesRepository
+    private val repository: PlainNotesRepository,
+    private val personDao: PersonDao,
+    private val relationshipDao: RelationshipDao,
+    private val vaultDao: VaultDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlainNotesUiState())
@@ -33,12 +44,58 @@ class PlainNotesViewModel @Inject constructor(
     private val isSavingInProgress = AtomicBoolean(false)
 
     init {
-        // Observe notes for primary user
+        // Observe notes and combine with real fields from Database to generate intelligent, dynamic tags
         viewModelScope.launch {
-            repository.observe(CANONICAL_PRIMARY_OWNER_ID).collect { noteList ->
-                _uiState.update { it.copy(notes = noteList) }
-            }
+            combine(
+                repository.observe(CANONICAL_PRIMARY_OWNER_ID),
+                relationshipDao.getOutgoingRelationshipsFlow(CANONICAL_PRIMARY_OWNER_ID),
+                personDao.getAllPersonsFlow(),
+                vaultDao.getVaultItemsFlow(CANONICAL_PRIMARY_OWNER_ID)
+            ) { noteList, relationships, persons, vaultItems ->
+                val tagsSet = linkedSetOf<String>()
+
+                // 1. Built-in essential tags
+                tagsSet.addAll(listOf("Movie", "Todo", "Work", "Personal", "Health", "Shopping", "Finance", "Urgent", "Dinner", "Mother", "Spouse", "CoupleGoals", "Affairs", "2026", "January2026"))
+
+                // 2. Bank and Financial providers from Vault
+                tagsSet.add("Bank")
+                vaultItems.forEach { item ->
+                    if (item.category == VaultCategory.BANK_ACCOUNT || item.category == VaultCategory.PAYMENT_REFERENCE) {
+                        if (item.title.isNotBlank()) tagsSet.add(item.title.trim())
+                    }
+                }
+
+                // 3. Relationships and People
+                relationships.forEach { rel ->
+                    val typeName = rel.relationshipType.name.lowercase().replaceFirstChar { it.uppercase() }
+                    tagsSet.add(typeName)
+                    rel.customLabel?.takeIf { it.isNotBlank() }?.let { tagsSet.add(it.trim()) }
+                    rel.labelForA?.takeIf { it.isNotBlank() }?.let { tagsSet.add(it.trim()) }
+                    rel.labelForB?.takeIf { it.isNotBlank() }?.let { tagsSet.add(it.trim()) }
+                }
+                persons.forEach { person ->
+                    if (!person.isPrimaryOwner) {
+                        if (person.firstName.isNotBlank()) tagsSet.add(person.firstName.trim())
+                        person.preferredName?.takeIf { it.isNotBlank() }?.let { tagsSet.add(it.trim()) }
+                    }
+                    person.occupation?.takeIf { it.isNotBlank() }?.let { tagsSet.add(it.trim()) }
+                }
+
+                // 4. Custom tags previously created on notes
+                noteList.forEach { note ->
+                    note.tags.forEach { tag ->
+                        if (tag.isNotBlank()) tagsSet.add(tag)
+                    }
+                }
+
+                val allTags = tagsSet.toList()
+                _uiState.update { it.copy(notes = noteList, availableTags = allTags) }
+            }.collect { }
         }
+    }
+
+    fun selectTag(tag: String?) {
+        _uiState.update { it.copy(selectedTag = if (it.selectedTag == tag) null else tag) }
     }
 
     fun save(
@@ -52,7 +109,7 @@ class PlainNotesViewModel @Inject constructor(
         onComplete: () -> Unit = {}
     ) {
         if (!isSavingInProgress.compareAndSet(false, true)) {
-            android.util.Log.w("PlainNotesViewModel", "Save already in progress; dropping duplicate request")
+            VaultLogger.w("PlainNotesViewModel", "Save already in progress; dropping duplicate request")
             return
         }
         _uiState.update { it.copy(isSaving = true) }
@@ -72,7 +129,7 @@ class PlainNotesViewModel @Inject constructor(
                     onComplete()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("PlainNotesViewModel", "Failed to save note", e)
+                VaultLogger.e("PlainNotesViewModel", "Failed to save note", e)
                 _uiState.update { it.copy(error = e.localizedMessage ?: "Failed to save note") }
             } finally {
                 isSavingInProgress.set(false)
@@ -95,7 +152,7 @@ class PlainNotesViewModel @Inject constructor(
         onComplete: () -> Unit = {}
     ) {
         if (!isSavingInProgress.compareAndSet(false, true)) {
-            android.util.Log.w("PlainNotesViewModel", "Saving")
+            VaultLogger.w("PlainNotesViewModel", "Save already in progress; dropping duplicate request")
             return
         }
         _uiState.update { it.copy(isSaving = true) }
@@ -123,7 +180,7 @@ class PlainNotesViewModel @Inject constructor(
                     onComplete()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("PlainNotesViewModel", "Failed to save note with attachment", e)
+                VaultLogger.e("PlainNotesViewModel", "Failed to save note with attachment", e)
                 _uiState.update { it.copy(error = e.localizedMessage ?: "Failed to save note") }
             } finally {
                 isSavingInProgress.set(false)
@@ -144,7 +201,7 @@ class PlainNotesViewModel @Inject constructor(
         onComplete: () -> Unit = {}
     ) {
         if (!isSavingInProgress.compareAndSet(false, true)) {
-            android.util.Log.w("PlainNotesViewModel", "Save already in progress; dropping duplicate request")
+            VaultLogger.w("PlainNotesViewModel", "Save already in progress; dropping duplicate request")
             return
         }
         _uiState.update { it.copy(isSaving = true) }
@@ -174,7 +231,7 @@ class PlainNotesViewModel @Inject constructor(
                     onComplete()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("PlainNotesViewModel", "Failed to save note with attachments", e)
+                VaultLogger.e("PlainNotesViewModel", "Failed to save note with attachments", e)
                 _uiState.update { it.copy(error = e.localizedMessage ?: "Failed to save note") }
             } finally {
                 isSavingInProgress.set(false)

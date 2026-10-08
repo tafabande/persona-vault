@@ -1,6 +1,7 @@
 package com.pims.vault.data.local.database
 
 import android.content.Context
+import com.pims.vault.core.logging.VaultLogger
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -326,6 +327,8 @@ abstract class PimsDatabase : RoomDatabase() {
 
             if (openHelperFactory != null) {
                 builder.openHelperFactory(openHelperFactory)
+            } else if (databaseName == DATABASE_NAME) {
+                VaultLogger.e("PimsDatabase", "CRITICAL WARNING: Opening production database without SQLCipher openHelperFactory! This corrupts encrypted vaults.")
             }
 
             return builder.build()

@@ -41,9 +41,20 @@ class SyncQueueManager @Inject constructor(
     private val contactDao: ContactDao? = null,
     private val addressDao: AddressDao? = null,
     private val vaultDao: VaultDao? = null,
-    private val personDao: PersonDao? = null
+    private val personDao: PersonDao? = null,
+    private val photoBackupCoordinatorProvider: javax.inject.Provider<PhotoBackupCoordinator>? = null
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    init {
+        coroutineScope.launch {
+            networkMonitor.networkState.collect { state ->
+                if (state == NetworkState.ONLINE) {
+                    processPendingQueue()
+                }
+            }
+        }
+    }
 
     val pendingCount: Flow<Int> = syncQueueDao.getPendingCountFlow()
     val conflictCount: Flow<Int> = syncConflictDao.getUnresolvedCountFlow()
@@ -207,6 +218,11 @@ class SyncQueueManager @Inject constructor(
             val firestoreResult = firestoreSyncService?.syncBidirectional(userId)
             val totalProcessed = processed + if (firestoreResult?.success == true) firestoreResult.processedCount else 0
 
+            // Ensure all cached/offline photos are backed up
+            try {
+                photoBackupCoordinatorProvider?.get()?.backupAllPhotos()
+            } catch (_: Exception) {}
+
             return SyncResult(
                 success = true,
                 processedCount = totalProcessed,
@@ -269,32 +285,32 @@ class SyncQueueManager @Inject constructor(
                     "Note" -> {
                         val note = plainNoteDao?.getById(conflict.entityId)
                         if (note != null) {
-                            plainNoteDao.upsert(note.copy(content = resolvedValue, updatedAt = System.currentTimeMillis()))
+                            plainNoteDao?.upsert(note.copy(content = resolvedValue, updatedAt = System.currentTimeMillis()))
                         }
                     }
                     "Contact" -> {
                         val contact = contactDao?.getContactById(conflict.entityId)
                         if (contact != null) {
-                            contactDao.insertOrUpdate(contact.copy(value = resolvedValue))
+                            contactDao?.insertOrUpdate(contact.copy(value = resolvedValue))
                         }
                     }
                     "Address" -> {
                         val addr = addressDao?.getAddressById(conflict.entityId)
                         if (addr != null) {
-                            addressDao.insertOrUpdate(addr.copy(streetLine1 = resolvedValue))
+                            addressDao?.insertOrUpdate(addr.copy(streetLine1 = resolvedValue))
                         }
                     }
                     "VaultItem" -> {
                         val item = vaultDao?.getItemById(conflict.entityId)
                         if (item != null) {
-                            vaultDao.insertOrUpdate(item.copy(title = resolvedValue, updatedAt = System.currentTimeMillis()))
+                            vaultDao?.insertOrUpdate(item.copy(title = resolvedValue, updatedAt = System.currentTimeMillis()))
                         }
                     }
                     "Person" -> {
                         val person = personDao?.getPersonById(conflict.entityId)
                         if (person != null) {
                             val parts = resolvedValue.split(" ", limit = 2)
-                            personDao.insertOrUpdate(person.copy(
+                            personDao?.insertOrUpdate(person.copy(
                                 firstName = parts.firstOrNull() ?: person.firstName,
                                 lastName = parts.getOrNull(1) ?: person.lastName,
                                 updatedAt = System.currentTimeMillis()

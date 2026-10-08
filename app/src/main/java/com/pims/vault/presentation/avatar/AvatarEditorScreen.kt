@@ -69,7 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.R
+import com.pims.vault.core.res.AppResources
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import com.pims.vault.presentation.ui.util.rememberPimsSoundManager
@@ -223,7 +223,7 @@ fun AvatarEditorContent(
                 )
             } else {
                 val isFemale = config.gender == AvatarGender.FEMALE
-                val drawableRes = if (isFemale) R.drawable.ic_default_avatar_female else R.drawable.ic_default_avatar_male
+                val drawableRes = if (isFemale) AppResources.Drawable.ic_default_avatar_female else AppResources.Drawable.ic_default_avatar_male
                 Image(
                     painter = painterResource(id = drawableRes),
                     contentDescription = "Default Avatar",
@@ -307,7 +307,7 @@ fun AvatarEditorContent(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.ic_default_avatar_male),
+                        painter = painterResource(id = AppResources.Drawable.ic_default_avatar_male),
                         contentDescription = "Male",
                         modifier = Modifier.size(52.dp).clip(CircleShape)
                     )
@@ -346,7 +346,7 @@ fun AvatarEditorContent(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.ic_default_avatar_female),
+                        painter = painterResource(id = AppResources.Drawable.ic_default_avatar_female),
                         contentDescription = "Female",
                         modifier = Modifier.size(52.dp).clip(CircleShape)
                     )

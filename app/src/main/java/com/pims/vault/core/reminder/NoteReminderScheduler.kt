@@ -6,16 +6,28 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import com.pims.vault.data.local.database.PimsDatabase
+import com.pims.vault.data.local.dao.PlainNoteDao
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface ReminderEntryPoint {
+    fun plainNoteDao(): PlainNoteDao
+    fun noteReminderScheduler(): NoteReminderScheduler
+}
+
 @Singleton
 class NoteReminderScheduler @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val plainNoteDao: PlainNoteDao? = null
 ) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
 
@@ -140,8 +152,18 @@ class NoteReminderScheduler @Inject constructor(
 
     suspend fun rescheduleAllActiveReminders() = withContext(Dispatchers.IO) {
         try {
-            val db = PimsDatabase.buildDatabase(context)
-            val active = db.plainNoteDao().getActiveReminders()
+            val dao = plainNoteDao ?: try {
+                val entryPoint = EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    ReminderEntryPoint::class.java
+                )
+                entryPoint.plainNoteDao()
+            } catch (e: Exception) {
+                Log.e("NoteReminderScheduler", "Could not get PlainNoteDao: ${e.message}")
+                null
+            } ?: return@withContext
+
+            val active = dao.getActiveReminders()
             val now = System.currentTimeMillis()
             for (note in active) {
                 val remAt = note.reminderAt ?: continue

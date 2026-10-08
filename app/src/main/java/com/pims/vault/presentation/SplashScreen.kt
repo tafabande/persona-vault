@@ -7,6 +7,7 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -117,6 +118,10 @@ fun PimsVaultSplashScreen() {
                     .alpha(alphaAnim.value)
             ) {
                 // Persona Brand Emblem
+                val emblemBorder = if (isDark) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(26.dp))
+                } else Modifier
+
                 Box(
                     modifier = Modifier
                         .size(80.dp)
@@ -125,15 +130,16 @@ fun PimsVaultSplashScreen() {
                             brush = Brush.linearGradient(
                                 colors = listOf(
                                     primaryColor,
-                                    primaryColor.copy(alpha = 0.85f)
+                                    primaryColor.copy(alpha = 0.90f)
                                 )
                             )
-                        ),
+                        )
+                        .then(emblemBorder),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "P",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         fontSize = 42.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-1).sp

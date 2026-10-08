@@ -6,6 +6,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -147,10 +153,27 @@ import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.components.PimsCard
 import com.pims.vault.presentation.ui.components.PimsOutlinedTextField
 import com.pims.vault.presentation.ui.theme.PimsBackground
+import com.pims.vault.presentation.ui.theme.PimsWarning
 import com.pims.vault.presentation.ui.theme.PimsError
 import com.pims.vault.presentation.ui.theme.PimsSurface
-import com.pims.vault.presentation.ui.theme.PimsWarning
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import com.pims.vault.presentation.vault.screens.VaultHomeScreen
+import com.pims.vault.presentation.vault.screens.CardDetailScreen
+import com.pims.vault.presentation.vault.screens.PasswordsKeysListScreen
+import com.pims.vault.presentation.vault.screens.KeyDetailScreen
+import com.pims.vault.presentation.vault.screens.ImportRestoreScreen
+import com.pims.vault.presentation.vault.screens.RecoveryCodesScreen
+import com.pims.vault.presentation.vault.screens.AddSecretTypePickerSheet
+import com.pims.vault.presentation.vault.screens.SecretPickerType
+import com.pims.vault.presentation.vault.screens.LoginFormSheet
+import com.pims.vault.presentation.vault.screens.ApiKeyFormSheet
+import com.pims.vault.presentation.vault.screens.AccessTokenFormSheet
+import com.pims.vault.presentation.vault.screens.SshKeyFormSheet
+import com.pims.vault.presentation.vault.screens.IdMembershipListScreen
+import com.pims.vault.presentation.vault.screens.IdCredentialDetailScreen
+import com.pims.vault.presentation.vault.screens.IdCredentialFormSheet
+import com.pims.vault.presentation.vault.screens.RecoveryCodeFormSheet
+import com.pims.vault.presentation.vault.screens.GenericSecretFormSheet
 
 private val PimsBorder: Color
     @Composable get() = if (LocalPimsDarkTheme.current) Color.White.copy(alpha = 0.12f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
@@ -196,6 +219,17 @@ private val BankIcon: ImageVector by lazy {
     }.build()
 }
 
+private sealed class VaultScreenRoute {
+    object Home : VaultScreenRoute()
+    object PasswordsKeys : VaultScreenRoute()
+    data class CardDetail(val card: VaultItemHeader) : VaultScreenRoute()
+    data class KeyDetail(val item: VaultItemHeader) : VaultScreenRoute()
+    data class RecoveryCodes(val item: VaultItemHeader) : VaultScreenRoute()
+    object ImportRestore : VaultScreenRoute()
+    data class IdMembershipList(val categoryName: String = "All") : VaultScreenRoute()
+    data class IdCredentialDetail(val item: VaultItemHeader) : VaultScreenRoute()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VaultDashboardView(
@@ -213,15 +247,30 @@ fun VaultDashboardView(
     val vaultTextPrimary = if (isDark) Color.White else PimsTextPrimary
     val vaultTextSecondary = if (isDark) Color(0xFFE2E8F0) else PimsTextSecondary
 
-    var showCreateMenu by remember { mutableStateOf(false) }
-    val createSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var activeViewTab by remember { mutableStateOf("DASHBOARD") }
+    var currentRoute by remember { mutableStateOf<VaultScreenRoute>(VaultScreenRoute.Home) }
+    var activeSheetType by remember { mutableStateOf<SecretPickerType?>(null) }
+    var showTypePicker by remember { mutableStateOf(false) }
+    var showIdCredentialSheet by remember { mutableStateOf(false) }
+    var idCredentialSheetCategory by remember { mutableStateOf("National ID") }
+    var editingIdItem by remember { mutableStateOf<VaultItemHeader?>(null) }
+    val typePickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val formSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val idSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     BackHandler(enabled = true) {
-        if (showCreateMenu) {
-            showCreateMenu = false
-        } else if (activeViewTab != "DASHBOARD") {
-            activeViewTab = "DASHBOARD"
+        if (showIdCredentialSheet) {
+            showIdCredentialSheet = false
+            editingIdItem = null
+        } else if (activeSheetType != null) {
+            activeSheetType = null
+        } else if (showTypePicker) {
+            showTypePicker = false
+        } else if (currentRoute !is VaultScreenRoute.Home) {
+            if (currentRoute is VaultScreenRoute.IdCredentialDetail) {
+                currentRoute = VaultScreenRoute.IdMembershipList()
+            } else {
+                currentRoute = VaultScreenRoute.Home
+            }
         } else {
             onBack()
         }
@@ -278,375 +327,330 @@ fun VaultDashboardView(
                     onUnlockClick = { onRequireBiometricReauth?.invoke() }
                 )
             }
-        } else if (activeViewTab == "DASHBOARD") {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                // Header with Back Navigation & Session Timeout Status
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowBack,
-                                contentDescription = "Back",
-                                tint = vaultTextPrimary
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Vault",
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = vaultTextPrimary
-                        )
-                    }
-
-                    val minutes = uiState.timeoutRemainingSeconds / 60
-                    val seconds = uiState.timeoutRemainingSeconds % 60
-                    val timeFormatted = "%02d:%02d".format(minutes, seconds)
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, borderCol, RoundedCornerShape(8.dp))
-                            .background(cardBg)
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Timer,
-                            contentDescription = null,
-                            tint = if (uiState.timeoutRemainingSeconds < 60) PimsError else vaultTextSecondary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = timeFormatted,
-                            color = if (uiState.timeoutRemainingSeconds < 60) PimsError else vaultTextPrimary,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { viewModel.lockVault() },
-                            modifier = Modifier.size(20.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "Lock Vault",
-                                tint = vaultTextSecondary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Clipboard notification banner
-                uiState.clipboardMessage?.let { msg ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, PimsWarning, RoundedCornerShape(8.dp))
-                            .background(cardBg)
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = null,
-                                    tint = PimsWarning,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = msg,
-                                    color = PimsTextPrimary,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            IconButton(
-                                onClick = { viewModel.dismissClipboardMessage() },
-                                modifier = Modifier.size(20.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Dismiss",
-                                    tint = PimsTextSecondary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Error banner
-                uiState.errorMessage?.let { err ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, PimsError, RoundedCornerShape(8.dp))
-                            .background(cardBg)
-                            .padding(10.dp)
-                    ) {
-                        Text(text = err, color = PimsError, fontSize = 12.sp)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                // Top Navigation Chips (visible only on Dashboard)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    VaultNavChip(
-                        label = "Dashboard",
-                        icon = Icons.Default.Dashboard,
-                        isSelected = activeViewTab == "DASHBOARD",
-                        onClick = { activeViewTab = "DASHBOARD" }
-                    )
-                    VaultNavChip(
-                        label = "Passwords",
-                        icon = Icons.Default.Key,
-                        isSelected = activeViewTab == "PASSWORDS",
-                        onClick = { activeViewTab = "PASSWORDS" }
-                    )
-                    VaultNavChip(
-                        label = "Secure Notes",
-                        icon = Icons.Default.Note,
-                        isSelected = activeViewTab == "NOTES",
-                        onClick = { activeViewTab = "NOTES" }
-                    )
-                    VaultNavChip(
-                        label = "Wallet",
-                        icon = Icons.Default.CreditCard,
-                        isSelected = activeViewTab == "WALLET",
-                        onClick = { activeViewTab = "WALLET" }
-                    )
-                    VaultNavChip(
-                        label = "Banking",
-                        icon = BankIcon,
-                        isSelected = activeViewTab == "BANKING",
-                        onClick = { activeViewTab = "BANKING" }
-                    )
-                    VaultNavChip(
-                        label = "Search & All",
-                        icon = Icons.Default.Search,
-                        isSelected = activeViewTab == "ALL",
-                        onClick = { activeViewTab = "ALL" }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                VaultModularDashboard(
-                    uiState = uiState,
-                    onNavigateTo = { tab -> activeViewTab = tab },
-                    onOpenItem = { item -> viewModel.openItem(item) },
-                    onCopy = { text, label -> viewModel.copyToClipboard(context, text, label) }
-                )
-            }
-
-            // Dedicated Dashboard FAB (strictly on DASHBOARD)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .navigationBarsPadding()
-                    .padding(end = 20.dp, bottom = 24.dp),
-                contentAlignment = Alignment.BottomEnd
-            ) {
-                Surface(
-                    onClick = { showCreateMenu = true },
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    shadowElevation = 8.dp,
-                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)),
-                    modifier = Modifier
-                        .height(54.dp)
-                        .tactilePress()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .background(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.95f)
-                                    )
-                                )
-                            )
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Add Item",
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Text(
-                            text = "New Secret",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            letterSpacing = 0.3.sp
-                        )
-                    }
-                }
-            }
         } else {
-            // Dedicated full separate module (not overlaying dashboard)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(vaultBg)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                when (activeViewTab) {
-                    "PASSWORDS" -> {
-                        GooglePasswordsSection(
-                            items = uiState.vaultItems.filter { it.category == VaultCategory.PASSWORD },
-                            searchQuery = uiState.searchQuery,
-                            onSearchChange = { viewModel.setSearchQuery(it) },
-                            onOpenItem = { item -> viewModel.openItem(item) },
-                            onCopy = { text, label -> viewModel.copyToClipboard(context, text, label) },
-                            onAddNew = { viewModel.openEditor(VaultCategory.PASSWORD) },
-                            onBackToDashboard = { activeViewTab = "DASHBOARD" }
+            AnimatedContent(
+                targetState = currentRoute,
+                transitionSpec = {
+                    (fadeIn() + slideInHorizontally { width -> width / 4 }) togetherWith
+                            (fadeOut() + slideOutHorizontally { width -> -width / 4 })
+                },
+                label = "vault_route_transition"
+            ) { route ->
+                when (route) {
+                    is VaultScreenRoute.Home -> {
+                        VaultHomeScreen(
+                            vaultItems = uiState.vaultItems,
+                            onOpenCard = { card -> currentRoute = VaultScreenRoute.CardDetail(card) },
+                            onOpenBankAccount = { acct -> currentRoute = VaultScreenRoute.CardDetail(acct) },
+                            onOpenPasswordsAndKeys = { currentRoute = VaultScreenRoute.PasswordsKeys },
+                            onOpenIdCategory = { cat -> currentRoute = VaultScreenRoute.IdMembershipList(cat) },
+                            onOpenImportRestore = { currentRoute = VaultScreenRoute.ImportRestore },
+                            onAddSecret = { showTypePicker = true },
+                            onAddCard = { viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE) },
+                            onAddBankAccount = { viewModel.openEditor(VaultCategory.BANK_ACCOUNT) },
+                            onBack = onBack
                         )
                     }
-                    "NOTES" -> {
-                        GoogleNotesSection(
-                            items = uiState.vaultItems.filter { it.category == VaultCategory.SECURE_NOTE },
-                            searchQuery = uiState.searchQuery,
-                            onSearchChange = { viewModel.setSearchQuery(it) },
-                            onOpenItem = { item -> viewModel.openItem(item) },
-                            onAddNew = { viewModel.openEditor(VaultCategory.SECURE_NOTE) },
-                            onBackToDashboard = { activeViewTab = "DASHBOARD" }
-                        )
-                    }
-                    "WALLET" -> {
-                        GoogleWalletSection(
-                            items = uiState.vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE },
-                            uiState = uiState,
-                            viewModel = viewModel,
-                            onOpenItem = { item -> viewModel.openItem(item) },
-                            onAddNew = { viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE) },
-                            onBackToDashboard = { activeViewTab = "DASHBOARD" }
-                        )
-                    }
-                    "BANKING" -> {
-                        BankingSection(
-                            items = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT },
-                            availableCards = uiState.vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE },
-                            uiState = uiState,
-                            viewModel = viewModel,
-                            onAddNew = { viewModel.openEditor(VaultCategory.BANK_ACCOUNT) },
-                            onBackToDashboard = { activeViewTab = "DASHBOARD" }
-                        )
-                    }
-                    "ALL" -> {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconButton(onClick = { activeViewTab = "DASHBOARD" }) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
-                                }
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("All Vault Items", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                            }
-                            PimsOutlinedTextField(
-                                value = uiState.searchQuery,
-                                onValueChange = { viewModel.setSearchQuery(it) },
-                                placeholder = "Search all passwords, accounts, cards...",
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            val filteredItems = uiState.vaultItems.filter { item ->
-                                uiState.searchQuery.isBlank() ||
-                                        item.title.contains(uiState.searchQuery, ignoreCase = true) ||
-                                        (item.accountIdentifier?.contains(uiState.searchQuery, ignoreCase = true) == true)
-                            }
-
-                            if (filteredItems.isEmpty()) {
-                                Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                                    Text("No matching items found", color = PimsTextSecondary, fontSize = 14.sp)
-                                }
-                            } else {
-                                LazyColumn(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    contentPadding = PaddingValues(bottom = 80.dp)
-                                ) {
-                                    items(filteredItems, key = { it.id }) { item ->
-                                        VaultItemCard(
-                                            item = item,
-                                            liveToken = uiState.liveTotpTokens[item.id],
-                                            onClick = { viewModel.openItem(item) },
-                                            onCopy = { text, label -> viewModel.copyToClipboard(context, text, label) }
-                                        )
+                    is VaultScreenRoute.PasswordsKeys -> {
+                        PasswordsKeysListScreen(
+                            items = uiState.vaultItems,
+                            onOpenItem = { item ->
+                                when (item.category) {
+                                    VaultCategory.PAYMENT_REFERENCE, VaultCategory.BANK_ACCOUNT -> {
+                                        currentRoute = VaultScreenRoute.CardDetail(item)
+                                    }
+                                    VaultCategory.RECOVERY_CODE -> {
+                                        currentRoute = VaultScreenRoute.RecoveryCodes(item)
+                                    }
+                                    VaultCategory.IDENTITY_CREDENTIAL -> {
+                                        currentRoute = VaultScreenRoute.IdCredentialDetail(item)
+                                    }
+                                    VaultCategory.API_KEY, VaultCategory.SSH_KEY, VaultCategory.ACCESS_TOKEN, VaultCategory.GENERIC_SECRET -> {
+                                        currentRoute = VaultScreenRoute.KeyDetail(item)
+                                    }
+                                    else -> {
+                                        viewModel.openItem(item)
                                     }
                                 }
+                            },
+                            onAddSecret = { showTypePicker = true },
+                            onBack = { currentRoute = VaultScreenRoute.Home }
+                        )
+                    }
+                    is VaultScreenRoute.CardDetail -> {
+                        CardDetailScreen(
+                            card = route.card,
+                            uiState = uiState,
+                            viewModel = viewModel,
+                            onBack = {
+                                viewModel.closeActiveItem()
+                                currentRoute = VaultScreenRoute.Home
+                            },
+                            onEdit = {
+                                viewModel.openEditor(route.card.category, route.card.id)
+                            },
+                            onDelete = {
+                                viewModel.deleteItem(route.card.id)
+                                currentRoute = VaultScreenRoute.Home
                             }
-                        }
+                        )
+                    }
+                    is VaultScreenRoute.KeyDetail -> {
+                        KeyDetailScreen(
+                            item = route.item,
+                            uiState = uiState,
+                            viewModel = viewModel,
+                            onBack = {
+                                viewModel.closeActiveItem()
+                                currentRoute = VaultScreenRoute.PasswordsKeys
+                            },
+                            onEdit = {
+                                viewModel.openEditor(route.item.category, route.item.id)
+                            },
+                            onDelete = {
+                                viewModel.deleteItem(route.item.id)
+                                currentRoute = VaultScreenRoute.PasswordsKeys
+                            }
+                        )
+                    }
+                    is VaultScreenRoute.RecoveryCodes -> {
+                        RecoveryCodesScreen(
+                            item = route.item,
+                            uiState = uiState,
+                            viewModel = viewModel,
+                            onBack = {
+                                viewModel.closeActiveItem()
+                                currentRoute = VaultScreenRoute.PasswordsKeys
+                            }
+                        )
+                    }
+                    is VaultScreenRoute.ImportRestore -> {
+                        ImportRestoreScreen(
+                            onRestoreEncryptedBackup = { viewModel.syncAllVaultItems() },
+                            onImportExportedVault = { viewModel.syncAllVaultItems() },
+                            onMigrateFromAnotherVault = { viewModel.syncAllVaultItems() },
+                            onUseRecoveryCode = { currentRoute = VaultScreenRoute.PasswordsKeys },
+                            onBack = { currentRoute = VaultScreenRoute.Home }
+                        )
+                    }
+                    is VaultScreenRoute.IdMembershipList -> {
+                        IdMembershipListScreen(
+                            initialCategory = route.categoryName,
+                            items = uiState.vaultItems,
+                            onOpenItem = { item ->
+                                currentRoute = VaultScreenRoute.IdCredentialDetail(item)
+                            },
+                            onAddNew = { category ->
+                                idCredentialSheetCategory = category
+                                editingIdItem = null
+                                showIdCredentialSheet = true
+                            },
+                            onBack = { currentRoute = VaultScreenRoute.Home },
+                            onCopyNumber = { label, number ->
+                                viewModel.copyToClipboard(context, number, label, isSecret = false)
+                            }
+                        )
+                    }
+                    is VaultScreenRoute.IdCredentialDetail -> {
+                        IdCredentialDetailScreen(
+                            item = route.item,
+                            uiState = uiState,
+                            viewModel = viewModel,
+                            onBack = {
+                                viewModel.closeActiveItem()
+                                currentRoute = VaultScreenRoute.IdMembershipList()
+                            },
+                            onEdit = {
+                                editingIdItem = route.item
+                                showIdCredentialSheet = true
+                            },
+                            onDelete = {
+                                viewModel.deleteItem(route.item.id)
+                                currentRoute = VaultScreenRoute.IdMembershipList()
+                            }
+                        )
                     }
                 }
             }
         }
     }
 
-    // Modal Create Category Sheet
-    if (showCreateMenu) {
-        VaultCreateSecretSheet(
-            sheetState = createSheetState,
-            onDismissRequest = { showCreateMenu = false },
-            onSelectCategory = { category ->
-                showCreateMenu = false
-                viewModel.openEditor(category)
+    // Modal Type Picker Bottom Sheet
+    if (showTypePicker) {
+        AddSecretTypePickerSheet(
+            sheetState = typePickerSheetState,
+            onDismiss = { showTypePicker = false },
+            onSelectType = { selectedType ->
+                showTypePicker = false
+                when (selectedType) {
+                    SecretPickerType.PAYMENT_CARD -> viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE)
+                    SecretPickerType.BANK_ACCOUNT -> viewModel.openEditor(VaultCategory.BANK_ACCOUNT)
+                    SecretPickerType.IDENTITY_CREDENTIAL -> viewModel.openEditor(VaultCategory.IDENTITY_CREDENTIAL)
+                    else -> activeSheetType = selectedType
+                }
             }
         )
     }
 
-    // Item Detail / View Dialogs (Suppress popup dialog for cards and banking which have dedicated full views)
-    if (uiState.activeItemId != null && !uiState.isEditing && activeViewTab != "WALLET" && activeViewTab != "BANKING") {
+    // Secret Form Bottom Sheets
+    activeSheetType?.let { type ->
+        when (type) {
+            SecretPickerType.LOGIN,
+            SecretPickerType.PASSWORD -> {
+                LoginFormSheet(
+                    sheetState = formSheetState,
+                    onDismiss = { activeSheetType = null },
+                    onSave = { service, website, username, password, notes ->
+                        viewModel.savePassword(
+                            title = service,
+                            username = username,
+                            passwordPlain = password,
+                            websiteUrl = website.ifBlank { null },
+                            notes = notes.ifBlank { null }
+                        )
+                        activeSheetType = null
+                    }
+                )
+            }
+            SecretPickerType.API_KEY -> {
+                ApiKeyFormSheet(
+                    sheetState = formSheetState,
+                    onDismiss = { activeSheetType = null },
+                    onSave = { label, key, service, environment, endpoint, expires ->
+                        viewModel.saveApiKey(
+                            label = label,
+                            key = key,
+                            service = service,
+                            environment = environment,
+                            endpoint = endpoint,
+                            expires = expires,
+                            notes = null
+                        )
+                        activeSheetType = null
+                    }
+                )
+            }
+            SecretPickerType.ACCESS_TOKEN -> {
+                AccessTokenFormSheet(
+                    sheetState = formSheetState,
+                    onDismiss = { activeSheetType = null },
+                    onSave = { label, token, service, scopes, expires ->
+                        viewModel.saveAccessToken(
+                            label = label,
+                            token = token,
+                            service = service,
+                            scopes = scopes,
+                            expires = expires,
+                            notes = null
+                        )
+                        activeSheetType = null
+                    }
+                )
+            }
+            SecretPickerType.SSH_KEY -> {
+                SshKeyFormSheet(
+                    sheetState = formSheetState,
+                    onDismiss = { activeSheetType = null },
+                    onSave = { label, host, username, privateKey, publicKey, fingerprint ->
+                        viewModel.saveSshKey(
+                            label = label,
+                            host = host,
+                            username = username,
+                            privateKey = privateKey,
+                            publicKey = publicKey,
+                            fingerprint = fingerprint,
+                            notes = null
+                        )
+                        activeSheetType = null
+                    }
+                )
+            }
+            SecretPickerType.RECOVERY_CODE -> {
+                RecoveryCodeFormSheet(
+                    sheetState = formSheetState,
+                    onDismiss = { activeSheetType = null },
+                    onSave = { title, accountRef, codes ->
+                        viewModel.saveRecoveryCodes(
+                            title = title,
+                            accountReference = accountRef,
+                            codes = codes
+                        )
+                        activeSheetType = null
+                    }
+                )
+            }
+            SecretPickerType.LICENSE_KEY,
+            SecretPickerType.PRODUCT_KEY,
+            SecretPickerType.SERIAL_NUMBER,
+            SecretPickerType.DEVICE_KEY,
+            SecretPickerType.CLOUD_CREDENTIAL,
+            SecretPickerType.GAME_CODE,
+            SecretPickerType.CERTIFICATE,
+            SecretPickerType.CUSTOM_SECRET -> {
+                GenericSecretFormSheet(
+                    secretType = type,
+                    sheetState = formSheetState,
+                    onDismiss = { activeSheetType = null },
+                    onSave = { label, secretValue, secretType, provider, notes ->
+                        viewModel.saveGenericSecret(
+                            label = label,
+                            secretValue = secretValue,
+                            secretType = secretType,
+                            provider = provider,
+                            notes = notes
+                        )
+                        activeSheetType = null
+                    }
+                )
+            }
+            SecretPickerType.PAYMENT_CARD,
+            SecretPickerType.BANK_ACCOUNT,
+            SecretPickerType.IDENTITY_CREDENTIAL -> {
+                activeSheetType = null
+            }
+        }
+    }
+
+    // ID Credential Form Sheet
+    if (showIdCredentialSheet) {
+        val editingSecret = if (editingIdItem != null) uiState.activeDecryptedIdentity else null
+        IdCredentialFormSheet(
+            sheetState = idSheetState,
+            initialCategory = editingSecret?.idType ?: idCredentialSheetCategory,
+            onDismiss = {
+                showIdCredentialSheet = false
+                editingIdItem = null
+            },
+            onSave = { idType, fullName, identifierNumber, issuingAuthority, issueDate, expiryDate, secondaryIdentifier, notes ->
+                viewModel.saveIdentityCredential(
+                    idType = idType,
+                    fullName = fullName,
+                    identifierNumber = identifierNumber,
+                    issuingAuthority = issuingAuthority,
+                    issueDate = issueDate,
+                    expiryDate = expiryDate,
+                    secondaryIdentifier = secondaryIdentifier,
+                    notes = notes,
+                    existingId = editingIdItem?.id
+                )
+                showIdCredentialSheet = false
+                editingIdItem = null
+            },
+            initialFullName = editingSecret?.fullName ?: "",
+            initialIdentifierNumber = editingSecret?.identifierNumber ?: "",
+            initialIssuingAuthority = editingSecret?.issuingAuthority ?: "",
+            initialIssueDate = editingSecret?.issueDate ?: "",
+            initialExpiryDate = editingSecret?.expiryDate ?: "",
+            initialSecondaryIdentifier = editingSecret?.secondaryIdentifier ?: "",
+            initialNotes = editingSecret?.notes ?: "",
+            isEditing = editingIdItem != null
+        )
+    }
+
+    // Fallback item detail dialog for generic passwords/notes if opened directly
+    if (uiState.activeItemId != null && !uiState.isEditing && currentRoute !is VaultScreenRoute.CardDetail && currentRoute !is VaultScreenRoute.KeyDetail && currentRoute !is VaultScreenRoute.RecoveryCodes && currentRoute !is VaultScreenRoute.IdCredentialDetail) {
         val activeItem = uiState.vaultItems.find { it.id == uiState.activeItemId }
-        if (activeItem != null && activeItem.category != VaultCategory.PAYMENT_REFERENCE && activeItem.category != VaultCategory.BANK_ACCOUNT) {
+        if (activeItem != null && activeItem.category != VaultCategory.PAYMENT_REFERENCE && activeItem.category != VaultCategory.BANK_ACCOUNT && activeItem.category != VaultCategory.IDENTITY_CREDENTIAL) {
             VaultItemDetailDialog(
                 item = activeItem,
                 uiState = uiState,
@@ -711,12 +715,14 @@ fun VaultDashboardView(
                         viewModel.savePaymentReference(
                             nickname = nickname.ifBlank { "Personal Card" },
                             provider = provider,
-                            cardholderName = holder,
+                            cardholderName = holder.ifBlank { null },
                             lastFour = last4,
                             month = month,
                             year = year,
                             notes = "",
-                            existingId = uiState.activeItemId
+                            existingId = uiState.activeItemId,
+                            fullCardNumber = cleanNum.ifBlank { null },
+                            cvv = cvv.trim().ifBlank { null }
                         )
                     }
                 )
@@ -3457,6 +3463,10 @@ private fun VaultItemCard(
                     VaultCategory.PAYMENT_REFERENCE -> Icons.Default.CreditCard
                     VaultCategory.BANK_ACCOUNT -> BankIcon
                     VaultCategory.IDENTITY_CREDENTIAL -> Icons.Default.Key
+                    VaultCategory.API_KEY -> Icons.Default.Key
+                    VaultCategory.SSH_KEY -> Icons.Default.Key
+                    VaultCategory.ACCESS_TOKEN -> Icons.Default.Key
+                    VaultCategory.GENERIC_SECRET -> Icons.Default.Lock
                 }
 
                 Box(
@@ -3969,6 +3979,10 @@ private fun VaultEditorDialog(
                         VaultCategory.PAYMENT_REFERENCE -> "ADD PAYMENT REFERENCE"
                         VaultCategory.BANK_ACCOUNT -> "ADD BANK ACCOUNT"
                         VaultCategory.IDENTITY_CREDENTIAL -> "ADD CREDENTIAL"
+                        VaultCategory.API_KEY -> "ADD API KEY"
+                        VaultCategory.SSH_KEY -> "ADD SSH KEY"
+                        VaultCategory.ACCESS_TOKEN -> "ADD ACCESS TOKEN"
+                        VaultCategory.GENERIC_SECRET -> "ADD SECRET"
                     },
                     color = PimsTextPrimary,
                     fontSize = 16.sp,

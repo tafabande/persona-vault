@@ -110,8 +110,9 @@ internal fun handleCentralizedInfoSave(
         )
     )
 
-    var fName = ""
-    var lName = ""
+    val currentPerson = profileState.person
+    var fName = currentPerson?.firstName.orEmpty()
+    var lName = currentPerson?.lastName.orEmpty()
     if (name.isNotBlank()) {
         fName = name.substringBefore(" ")
         lName = name.substringAfter(" ", "")
@@ -120,16 +121,19 @@ internal fun handleCentralizedInfoSave(
     if (occ.isNotBlank()) onOccUpdated(occ)
     if (ctry.isNotBlank()) onCtryUpdated(ctry)
 
+    val effectiveOcc = if (occ.isNotBlank()) occ else currentPerson?.occupation.orEmpty()
+
     profileViewModel.onEvent(
         ProfileEvent.SavePersonalDetails(
             firstName = fName,
             lastName = lName,
             dob = currentDob,
             nationality = currentNationality,
-            country = if (ctry.isNotBlank()) ctry else profileState.person?.countryOfResidence ?: "",
+            country = if (ctry.isNotBlank()) ctry else currentPerson?.countryOfResidence ?: "",
             gender = currentGender,
             sexuality = currentSexuality,
-            bloodGroup = currentBloodGroup
+            bloodGroup = currentBloodGroup,
+            occupation = effectiveOcc
         )
     )
 

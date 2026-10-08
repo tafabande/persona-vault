@@ -1,8 +1,8 @@
 package com.pims.vault
 
 import android.app.Application
-import com.pims.vault.core.crypto.KeySecurityLevel
 import com.pims.vault.core.crypto.KeySecurityManager
+import com.pims.vault.core.logging.VaultLogger
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -31,7 +31,7 @@ class PimsApplication : Application() {
                 com.google.firebase.FirebaseApp.initializeApp(this, options)
             }
         } catch (e: Exception) {
-            android.util.Log.e("PimsApplication", "Failed to initialize Firebase", e)
+            VaultLogger.e("PimsApplication", "Failed to initialize Firebase", e)
         }
 
         // 1. Enforce Release Build integrity check (Disallow test/debug crypto in production)
@@ -41,7 +41,7 @@ class PimsApplication : Application() {
 
         // 2. Hardware Security Probing on startup
         try {
-            val level = keySecurityManager.initializeAndGetSecurityLevel()
+            keySecurityManager.initializeAndGetSecurityLevel()
             // Application starts in LOCKED state; no plaintext or decrypted secrets are unsealed on startup
         } catch (e: Exception) {
             // Hardware keystore initialization logged securely or handled via fallback
@@ -49,10 +49,15 @@ class PimsApplication : Application() {
 
         // 3. Reschedule active note reminders
         try {
-            val scheduler = com.pims.vault.core.reminder.NoteReminderScheduler(this)
+            val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                this,
+                com.pims.vault.core.reminder.ReminderEntryPoint::class.java
+            )
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                scheduler.rescheduleAllActiveReminders()
+                entryPoint.noteReminderScheduler().rescheduleAllActiveReminders()
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            VaultLogger.e("PimsApplication", "Failed to reschedule note reminders on startup", e)
+        }
     }
 }

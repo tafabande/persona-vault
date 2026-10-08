@@ -327,22 +327,18 @@ fun CentralizedInformationEditorSheet(
                             label = "Full legal name",
                             placeholder = "e.g. Eleanor Vance"
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            PersonaTextInput(
-                                value = occupation,
-                                onValueChange = { occupation = it },
-                                label = "Occupation / Role",
-                                placeholder = "e.g. Architect",
-                                modifier = Modifier.weight(1f)
-                            )
-                            com.pims.vault.presentation.ui.components.CountrySuggestionField(
-                                value = countryVal,
-                                onValueChange = { countryVal = it },
-                                label = "Country / Region",
-                                placeholder = "Type country...",
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        PersonaTextInput(
+                            value = occupation,
+                            onValueChange = { occupation = it },
+                            label = "Occupation / Role",
+                            placeholder = "e.g. Architect"
+                        )
+                        com.pims.vault.presentation.ui.components.CountrySuggestionField(
+                            value = countryVal,
+                            onValueChange = { countryVal = it },
+                            label = "Country / Region",
+                            placeholder = "Type country name..."
+                        )
                         PersonaTextInput(
                             value = nationalId,
                             onValueChange = { nationalId = it },

@@ -8,6 +8,11 @@ import com.pims.vault.core.model.AuditEventType
 import com.pims.vault.core.model.VaultCategory
 import com.pims.vault.data.local.dao.VaultDao
 import com.pims.vault.data.local.entity.VaultItemEntity
+import com.pims.vault.domain.model.ApiKeySecret
+import com.pims.vault.domain.model.SshKeySecret
+import com.pims.vault.domain.model.AccessTokenSecret
+import com.pims.vault.domain.model.GenericSecretItem
+import com.pims.vault.domain.model.IdentityCredentialSecret
 import com.pims.vault.domain.model.BankingDetailsSecret
 import com.pims.vault.domain.model.LiveTotpToken
 import com.pims.vault.domain.model.PasswordSecret
@@ -577,7 +582,9 @@ class SavePaymentReferenceUseCase @Inject constructor(
         vaultRootKey: ByteArray,
         existingId: String? = null,
         incomingVersion: Long? = null,
-        status: com.pims.vault.core.model.CardStatus = com.pims.vault.core.model.CardStatus.IN_USE
+        status: com.pims.vault.core.model.CardStatus = com.pims.vault.core.model.CardStatus.IN_USE,
+        fullCardNumber: String? = null,
+        cvv: String? = null
     ): String {
         VaultRules.validatePaymentReference(nickname, provider, lastFour, month, year)
         val id = existingId ?: UUID.randomUUID().toString()
@@ -591,7 +598,7 @@ class SavePaymentReferenceUseCase @Inject constructor(
         val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.PAYMENT_REFERENCE, id)
         val aad = VaultRules.constructItemAad(id, VaultCategory.PAYMENT_REFERENCE, targetVersion)
 
-        val payloadBytes = "$nickname\u0000$provider\u0000${cardholderName ?: ""}\u0000$lastFour\u0000$month\u0000$year\u0000${notes ?: ""}\u0000${status.name}".toByteArray(Charsets.UTF_8)
+        val payloadBytes = "$nickname\u0000$provider\u0000${cardholderName ?: ""}\u0000$lastFour\u0000$month\u0000$year\u0000${notes ?: ""}\u0000${status.name}\u0000${fullCardNumber ?: ""}\u0000${cvv ?: ""}".toByteArray(Charsets.UTF_8)
         val encrypted = cryptoEngine.encrypt(payloadBytes, itemKey, aad)
         payloadBytes.fill(0)
         itemKey.fill(0)
@@ -657,7 +664,9 @@ class ReadPaymentReferenceUseCase @Inject constructor(
             expiryMonth = parts.getOrElse(4) { "" },
             expiryYear = parts.getOrElse(5) { "" },
             notes = parts.getOrNull(6)?.takeIf { it.isNotBlank() },
-            status = com.pims.vault.core.model.CardStatus.fromString(parts.getOrNull(7))
+            status = com.pims.vault.core.model.CardStatus.fromString(parts.getOrNull(7)),
+            fullCardNumber = parts.getOrNull(8)?.takeIf { it.isNotBlank() },
+            cvv = parts.getOrNull(9)?.takeIf { it.isNotBlank() }
         )
     }
 }
@@ -707,7 +716,7 @@ class SaveBankAccountUseCase @Inject constructor(
         payloadBytes.fill(0)
         itemKey.fill(0)
 
-        val cardSuffix = if (!linkedCardSummary.isNullOrBlank()) " • 💳 $linkedCardSummary" else ""
+        val cardSuffix = if (!linkedCardSummary.isNullOrBlank()) " • Card: $linkedCardSummary" else ""
         val displayRef = "$bankName •••• ${accountNumber.takeLast(4).ifBlank { "----" }}$cardSuffix"
 
         val entity = VaultItemEntity(
@@ -803,3 +812,491 @@ class DeleteVaultItemUseCase @Inject constructor(
         )
     }
 }
+
+// ---------------------------------------------------------
+// 8. API Key Use Cases
+// ---------------------------------------------------------
+
+class SaveApiKeyUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(
+        personId: String,
+        label: String,
+        key: String,
+        service: String,
+        environment: String,
+        endpoint: String?,
+        expires: String?,
+        notes: String?,
+        vaultRootKey: ByteArray,
+        existingId: String? = null
+    ): String {
+        VaultRules.validateApiKey(label, key)
+        val id = existingId ?: UUID.randomUUID().toString()
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.API_KEY, id)
+        val aad = VaultRules.constructItemAad(id, VaultCategory.API_KEY, 1L)
+
+        val payload = "$label\u0000$key\u0000$service\u0000$environment\u0000${endpoint ?: ""}\u0000${expires ?: ""}\u0000${notes ?: ""}".toByteArray(Charsets.UTF_8)
+        val encrypted = cryptoEngine.encrypt(payload, itemKey, aad)
+        payload.fill(0)
+        itemKey.fill(0)
+
+        val entity = VaultItemEntity(
+            id = id,
+            personId = personId,
+            category = VaultCategory.API_KEY,
+            title = label.trim(),
+            accountIdentifier = "$service • $environment",
+            encryptedPayload = encrypted.combinedCiphertextWithTag,
+            encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
+            notes = notes,
+            updatedAt = System.currentTimeMillis()
+        )
+        vaultDao.insertOrUpdate(entity)
+
+        auditLogger.recordEvent(
+            eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
+            entityType = "VaultItem",
+            entityId = id,
+            description = "Saved API key credential"
+        )
+        return id
+    }
+}
+
+class ReadApiKeySecretUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(itemId: String, vaultRootKey: ByteArray): ApiKeySecret {
+        val entity = vaultDao.getVaultItemById(itemId)
+            ?: throw NoSuchElementException("Vault item $itemId not found")
+
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.API_KEY, itemId)
+        val aad = VaultRules.constructItemAad(itemId, VaultCategory.API_KEY, 1L)
+        val iv = entity.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        val decrypted = cryptoEngine.decrypt(
+            payload = EncryptedPayload(entity.encryptedPayload, iv),
+            keyBytes = itemKey,
+            associatedData = aad
+        )
+        itemKey.fill(0)
+
+        val parts = String(decrypted, Charsets.UTF_8).split("\u0000")
+        decrypted.fill(0)
+
+        auditLogger.recordEvent(
+            eventType = AuditEventType.READ,
+            entityType = "VaultItem",
+            entityId = itemId,
+            description = "Accessed API key"
+        )
+
+        return ApiKeySecret(
+            label = parts.getOrElse(0) { entity.title },
+            key = parts.getOrElse(1) { "" },
+            service = parts.getOrElse(2) { "" },
+            environment = parts.getOrElse(3) { "Production" },
+            endpoint = parts.getOrNull(4)?.takeIf { it.isNotBlank() },
+            expires = parts.getOrNull(5)?.takeIf { it.isNotBlank() },
+            notes = parts.getOrNull(6)?.takeIf { it.isNotBlank() }
+        )
+    }
+}
+
+// ---------------------------------------------------------
+// 9. SSH Key Use Cases
+// ---------------------------------------------------------
+
+class SaveSshKeyUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(
+        personId: String,
+        label: String,
+        host: String,
+        username: String,
+        privateKey: String,
+        publicKey: String,
+        fingerprint: String,
+        notes: String?,
+        vaultRootKey: ByteArray,
+        existingId: String? = null
+    ): String {
+        VaultRules.validateSshKey(label, if (privateKey.isNotBlank()) privateKey else publicKey)
+        val id = existingId ?: UUID.randomUUID().toString()
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.SSH_KEY, id)
+        val aad = VaultRules.constructItemAad(id, VaultCategory.SSH_KEY, 1L)
+
+        val payload = "$label\u0000$host\u0000$username\u0000$privateKey\u0000$publicKey\u0000$fingerprint\u0000${notes ?: ""}".toByteArray(Charsets.UTF_8)
+        val encrypted = cryptoEngine.encrypt(payload, itemKey, aad)
+        payload.fill(0)
+        itemKey.fill(0)
+
+        val entity = VaultItemEntity(
+            id = id,
+            personId = personId,
+            category = VaultCategory.SSH_KEY,
+            title = label.trim(),
+            accountIdentifier = if (host.isNotBlank()) "$username@$host" else "SSH key",
+            encryptedPayload = encrypted.combinedCiphertextWithTag,
+            encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
+            notes = notes,
+            updatedAt = System.currentTimeMillis()
+        )
+        vaultDao.insertOrUpdate(entity)
+
+        auditLogger.recordEvent(
+            eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
+            entityType = "VaultItem",
+            entityId = id,
+            description = "Saved SSH key"
+        )
+        return id
+    }
+}
+
+class ReadSshKeySecretUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(itemId: String, vaultRootKey: ByteArray): SshKeySecret {
+        val entity = vaultDao.getVaultItemById(itemId)
+            ?: throw NoSuchElementException("Vault item $itemId not found")
+
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.SSH_KEY, itemId)
+        val aad = VaultRules.constructItemAad(itemId, VaultCategory.SSH_KEY, 1L)
+        val iv = entity.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        val decrypted = cryptoEngine.decrypt(
+            payload = EncryptedPayload(entity.encryptedPayload, iv),
+            keyBytes = itemKey,
+            associatedData = aad
+        )
+        itemKey.fill(0)
+
+        val parts = String(decrypted, Charsets.UTF_8).split("\u0000")
+        decrypted.fill(0)
+
+        auditLogger.recordEvent(
+            eventType = AuditEventType.READ,
+            entityType = "VaultItem",
+            entityId = itemId,
+            description = "Accessed SSH key"
+        )
+
+        return SshKeySecret(
+            label = parts.getOrElse(0) { entity.title },
+            host = parts.getOrElse(1) { "" },
+            username = parts.getOrElse(2) { "" },
+            privateKey = parts.getOrElse(3) { "" },
+            publicKey = parts.getOrElse(4) { "" },
+            fingerprint = parts.getOrElse(5) { "" },
+            notes = parts.getOrNull(6)?.takeIf { it.isNotBlank() }
+        )
+    }
+}
+
+// ---------------------------------------------------------
+// 10. Access Token Use Cases
+// ---------------------------------------------------------
+
+class SaveAccessTokenUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(
+        personId: String,
+        label: String,
+        token: String,
+        service: String,
+        scopes: List<String>,
+        expires: String?,
+        notes: String?,
+        vaultRootKey: ByteArray,
+        existingId: String? = null
+    ): String {
+        VaultRules.validateAccessToken(label, token)
+        val id = existingId ?: UUID.randomUUID().toString()
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.ACCESS_TOKEN, id)
+        val aad = VaultRules.constructItemAad(id, VaultCategory.ACCESS_TOKEN, 1L)
+
+        val scopesJoined = scopes.joinToString(",")
+        val payload = "$label\u0000$token\u0000$service\u0000$scopesJoined\u0000${expires ?: ""}\u0000${notes ?: ""}".toByteArray(Charsets.UTF_8)
+        val encrypted = cryptoEngine.encrypt(payload, itemKey, aad)
+        payload.fill(0)
+        itemKey.fill(0)
+
+        val entity = VaultItemEntity(
+            id = id,
+            personId = personId,
+            category = VaultCategory.ACCESS_TOKEN,
+            title = label.trim(),
+            accountIdentifier = service.ifBlank { "Token" },
+            encryptedPayload = encrypted.combinedCiphertextWithTag,
+            encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
+            notes = notes,
+            updatedAt = System.currentTimeMillis()
+        )
+        vaultDao.insertOrUpdate(entity)
+
+        auditLogger.recordEvent(
+            eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
+            entityType = "VaultItem",
+            entityId = id,
+            description = "Saved personal access token"
+        )
+        return id
+    }
+}
+
+class ReadAccessTokenSecretUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(itemId: String, vaultRootKey: ByteArray): AccessTokenSecret {
+        val entity = vaultDao.getVaultItemById(itemId)
+            ?: throw NoSuchElementException("Vault item $itemId not found")
+
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.ACCESS_TOKEN, itemId)
+        val aad = VaultRules.constructItemAad(itemId, VaultCategory.ACCESS_TOKEN, 1L)
+        val iv = entity.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        val decrypted = cryptoEngine.decrypt(
+            payload = EncryptedPayload(entity.encryptedPayload, iv),
+            keyBytes = itemKey,
+            associatedData = aad
+        )
+        itemKey.fill(0)
+
+        val parts = String(decrypted, Charsets.UTF_8).split("\u0000")
+        decrypted.fill(0)
+
+        auditLogger.recordEvent(
+            eventType = AuditEventType.READ,
+            entityType = "VaultItem",
+            entityId = itemId,
+            description = "Accessed access token"
+        )
+
+        val scopesList = parts.getOrNull(3)?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+
+        return AccessTokenSecret(
+            label = parts.getOrElse(0) { entity.title },
+            token = parts.getOrElse(1) { "" },
+            service = parts.getOrElse(2) { "" },
+            scopes = scopesList,
+            expires = parts.getOrNull(4)?.takeIf { it.isNotBlank() },
+            notes = parts.getOrNull(5)?.takeIf { it.isNotBlank() }
+        )
+    }
+}
+
+// ---------------------------------------------------------
+// 11. Generic Secret (License, Product, Serial, Device, etc.)
+// ---------------------------------------------------------
+
+class SaveGenericSecretUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(
+        personId: String,
+        label: String,
+        secretValue: String,
+        secretType: String,
+        provider: String?,
+        notes: String?,
+        vaultRootKey: ByteArray,
+        existingId: String? = null
+    ): String {
+        VaultRules.validateGenericSecret(label, secretValue)
+        val id = existingId ?: UUID.randomUUID().toString()
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.GENERIC_SECRET, id)
+        val aad = VaultRules.constructItemAad(id, VaultCategory.GENERIC_SECRET, 1L)
+
+        val payload = "$label\u0000$secretValue\u0000$secretType\u0000${provider ?: ""}\u0000${notes ?: ""}".toByteArray(Charsets.UTF_8)
+        val encrypted = cryptoEngine.encrypt(payload, itemKey, aad)
+        payload.fill(0)
+        itemKey.fill(0)
+
+        val entity = VaultItemEntity(
+            id = id,
+            personId = personId,
+            category = VaultCategory.GENERIC_SECRET,
+            title = label.trim(),
+            accountIdentifier = secretType,
+            encryptedPayload = encrypted.combinedCiphertextWithTag,
+            encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
+            notes = notes,
+            updatedAt = System.currentTimeMillis()
+        )
+        vaultDao.insertOrUpdate(entity)
+
+        auditLogger.recordEvent(
+            eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
+            entityType = "VaultItem",
+            entityId = id,
+            description = "Saved $secretType secret"
+        )
+        return id
+    }
+}
+
+class ReadGenericSecretUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(itemId: String, vaultRootKey: ByteArray): GenericSecretItem {
+        val entity = vaultDao.getVaultItemById(itemId)
+            ?: throw NoSuchElementException("Vault item $itemId not found")
+
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.GENERIC_SECRET, itemId)
+        val aad = VaultRules.constructItemAad(itemId, VaultCategory.GENERIC_SECRET, 1L)
+        val iv = entity.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        val decrypted = cryptoEngine.decrypt(
+            payload = EncryptedPayload(entity.encryptedPayload, iv),
+            keyBytes = itemKey,
+            associatedData = aad
+        )
+        itemKey.fill(0)
+
+        val parts = String(decrypted, Charsets.UTF_8).split("\u0000")
+        decrypted.fill(0)
+
+        auditLogger.recordEvent(
+            eventType = AuditEventType.READ,
+            entityType = "VaultItem",
+            entityId = itemId,
+            description = "Accessed generic secret"
+        )
+
+        return GenericSecretItem(
+            label = parts.getOrElse(0) { entity.title },
+            secretValue = parts.getOrElse(1) { "" },
+            secretType = parts.getOrElse(2) { "Secret" },
+            provider = parts.getOrNull(3)?.takeIf { it.isNotBlank() },
+            notes = parts.getOrNull(4)?.takeIf { it.isNotBlank() }
+        )
+    }
+}
+
+// ---------------------------------------------------------
+// 12. Identity Credential Use Cases
+// ---------------------------------------------------------
+
+class SaveIdentityCredentialUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(
+        personId: String,
+        idType: String,
+        fullName: String,
+        identifierNumber: String,
+        issuingAuthority: String?,
+        issueDate: String?,
+        expiryDate: String?,
+        secondaryIdentifier: String?,
+        notes: String?,
+        vaultRootKey: ByteArray,
+        existingId: String? = null
+    ): String {
+        VaultRules.validateIdentityCredential(fullName, identifierNumber)
+        val id = existingId ?: UUID.randomUUID().toString()
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.IDENTITY_CREDENTIAL, id)
+        val aad = VaultRules.constructItemAad(id, VaultCategory.IDENTITY_CREDENTIAL, 1L)
+
+        val payload = "$idType\u0000$fullName\u0000$identifierNumber\u0000${issuingAuthority ?: ""}\u0000${issueDate ?: ""}\u0000${expiryDate ?: ""}\u0000${secondaryIdentifier ?: ""}\u0000${notes ?: ""}".toByteArray(Charsets.UTF_8)
+        val encrypted = cryptoEngine.encrypt(payload, itemKey, aad)
+        payload.fill(0)
+        itemKey.fill(0)
+
+        val displayPrefix = when (idType.uppercase()) {
+            "NATIONAL_ID" -> "National ID"
+            "SCHOOL_ID" -> "School ID"
+            "LIBRARY_ID" -> "Library ID"
+            "MEDICAL_AID" -> "Medical Aid"
+            else -> "ID / Membership"
+        }
+
+        val entity = VaultItemEntity(
+            id = id,
+            personId = personId,
+            category = VaultCategory.IDENTITY_CREDENTIAL,
+            title = "$displayPrefix — $fullName",
+            accountIdentifier = "$idType • $identifierNumber",
+            encryptedPayload = encrypted.combinedCiphertextWithTag,
+            encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
+            notes = notes,
+            updatedAt = System.currentTimeMillis()
+        )
+        vaultDao.insertOrUpdate(entity)
+
+        auditLogger.recordEvent(
+            eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
+            entityType = "VaultItem",
+            entityId = id,
+            description = "Saved $idType identity credential"
+        )
+        return id
+    }
+}
+
+class ReadIdentityCredentialUseCase @Inject constructor(
+    private val vaultDao: VaultDao,
+    private val cryptoEngine: CryptoEngine,
+    private val auditLogger: HardenedAuditLogger
+) {
+    suspend operator fun invoke(itemId: String, vaultRootKey: ByteArray): IdentityCredentialSecret {
+        val entity = vaultDao.getVaultItemById(itemId)
+            ?: throw NoSuchElementException("Vault item $itemId not found")
+
+        val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.IDENTITY_CREDENTIAL, itemId)
+        val aad = VaultRules.constructItemAad(itemId, VaultCategory.IDENTITY_CREDENTIAL, 1L)
+        val iv = entity.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        val decrypted = cryptoEngine.decrypt(
+            payload = EncryptedPayload(entity.encryptedPayload, iv),
+            keyBytes = itemKey,
+            associatedData = aad
+        )
+        itemKey.fill(0)
+
+        val parts = String(decrypted, Charsets.UTF_8).split("\u0000")
+        decrypted.fill(0)
+
+        auditLogger.recordEvent(
+            eventType = AuditEventType.READ,
+            entityType = "VaultItem",
+            entityId = itemId,
+            description = "Accessed identity credential"
+        )
+
+        return IdentityCredentialSecret(
+            idType = parts.getOrElse(0) { "CUSTOM" },
+            fullName = parts.getOrElse(1) { entity.title },
+            identifierNumber = parts.getOrElse(2) { "" },
+            issuingAuthority = parts.getOrNull(3)?.takeIf { it.isNotBlank() },
+            issueDate = parts.getOrNull(4)?.takeIf { it.isNotBlank() },
+            expiryDate = parts.getOrNull(5)?.takeIf { it.isNotBlank() },
+            secondaryIdentifier = parts.getOrNull(6)?.takeIf { it.isNotBlank() },
+            notes = parts.getOrNull(7)?.takeIf { it.isNotBlank() }
+        )
+    }
+}
+
