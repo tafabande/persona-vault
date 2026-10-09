@@ -280,7 +280,11 @@ class AccountsViewModel @Inject constructor(
                     viewModelScope.launch(Dispatchers.IO) {
                         try {
                             val existingOwner = personRepository.getPrimaryOwner()
-                            val hasLocalName = existingOwner != null && (existingOwner.firstName.isNotBlank() || existingOwner.lastName.isNotBlank())
+                            val hasLocalName = existingOwner != null && (
+                                existingOwner.preferredName?.isNotBlank() == true ||
+                                existingOwner.firstName.isNotBlank() ||
+                                existingOwner.lastName.isNotBlank()
+                            )
                             val dName = user.displayName?.trim().orEmpty()
                             val isEmailLike = dName.contains("@") || dName.equals(user.email?.trim(), ignoreCase = true)
 
@@ -348,7 +352,8 @@ class AccountsViewModel @Inject constructor(
                         // only opportunistically back up the local avatar here.
                         try {
                             val localOwner = personRepository.getPrimaryOwner()
-                            val localDisplayName = "${localOwner?.firstName} ${localOwner?.lastName}".trim().takeIf { it.isNotBlank() }
+                            val localDisplayName = localOwner?.preferredName?.takeIf { it.isNotBlank() }
+                                ?: "${localOwner?.firstName} ${localOwner?.lastName}".trim().takeIf { it.isNotBlank() }
                             firestoreSyncService.syncAccount(user.uid, user.email, localDisplayName ?: user.displayName)
                             firestoreSyncService.syncBidirectional(user.uid)
                         } catch (e: Exception) {

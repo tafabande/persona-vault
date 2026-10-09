@@ -67,7 +67,10 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.vault.detectCardBrand
+import com.pims.vault.presentation.vault.card.CardNetwork
+import com.pims.vault.presentation.vault.card.CardNetworkBadge
+import com.pims.vault.presentation.vault.card.CardSkinCatalogue
+import com.pims.vault.presentation.vault.card.CardSkin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,13 +102,20 @@ fun AddCardScreen(
 
     val isEditing = initialBankName.isNotBlank() || initialCardNumber.isNotBlank() || initialCardHolder.isNotBlank()
     val cleanNumber = cardNumber.filter { it.isDigit() }
-    val detectedBrand = detectCardBrand(cleanNumber)
-    val expectedDigits = when (detectedBrand) {
-        "Amex" -> 15
-        "Diners Club" -> 14
+    var selectedNetwork by remember { mutableStateOf<CardNetwork?>(null) }
+    val detectedNetwork = selectedNetwork ?: CardNetwork.detectFromCardNumber(cleanNumber)
+    var selectedSkinId by remember { mutableStateOf<String?>(null) }
+    val currentSkin = remember(selectedSkinId, bankName) {
+        selectedSkinId?.let { CardSkinCatalogue.getSkinById(it) }
+            ?: CardSkinCatalogue.suggestSkinForBank(bankName)
+            ?: CardSkinCatalogue.DEFAULT_SKIN
+    }
+    val expectedDigits = when (detectedNetwork) {
+        CardNetwork.AMEX -> 15
+        CardNetwork.DINERS_CLUB -> 14
         else -> 16
     }
-    val isNumberFormatCorrect = cleanNumber.length == expectedDigits
+    val isNumberFormatCorrect = cleanNumber.length in 12..19
 
     Scaffold(
         modifier = modifier,
@@ -225,13 +235,13 @@ fun AddCardScreen(
                     FilterChip(
                         selected = cardType == "PHYSICAL",
                         onClick = { cardType = "PHYSICAL" },
-                        label = { Text("💳 Physical Card") },
+                        label = { Text("Physical Card") },
                         modifier = Modifier.weight(1f)
                     )
                     FilterChip(
                         selected = cardType == "VIRTUAL",
                         onClick = { cardType = "VIRTUAL" },
-                        label = { Text("📱 Virtual Card") },
+                        label = { Text("Virtual Card") },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -242,7 +252,9 @@ fun AddCardScreen(
                     holderName = cardHolder,
                     cardNumber = cardNumber,
                     expiryDate = expiryDate,
-                    cardType = cardType
+                    cardType = cardType,
+                    skin = currentSkin,
+                    network = detectedNetwork
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -279,7 +291,7 @@ fun AddCardScreen(
                         visualTransformation = CardNumberVisualTransformation()
                     )
 
-                    // Live Card Brand & Format Feedback Banner
+                    // Live Card Network & Format Feedback Banner (Zero emojis)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -287,36 +299,28 @@ fun AddCardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Detected Brand Chip
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (detectedBrand != "Card") MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        // Detected Network Badge
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = when (detectedBrand) {
-                                    "Visa" -> "💳 Visa"
-                                    "Mastercard" -> "💳 Mastercard"
-                                    "Amex" -> "💳 American Express"
-                                    "Discover" -> "💳 Discover"
-                                    "Diners Club" -> "💳 Diners Club"
-                                    "JCB" -> "💳 JCB"
-                                    else -> "💳 Card"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (detectedBrand != "Card") MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
+                            CardNetworkBadge(network = detectedNetwork)
+                            if (detectedNetwork != CardNetwork.UNKNOWN) {
+                                Text(
+                                    text = detectedNetwork.displayName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
 
-                        // Format Validation Text (Informs user, never blocks)
+                        // Format Validation Text
                         Text(
                             text = when {
                                 cleanNumber.isEmpty() -> "Visa / Mastercard / Amex"
-                                cleanNumber.length in 12..19 -> "✓ Valid length (${cleanNumber.length} digits)"
-                                else -> "ℹ ${cleanNumber.length} digits • Must be 12-19 digits"
+                                cleanNumber.length in 12..19 -> "Valid length (${cleanNumber.length} digits)"
+                                else -> "${cleanNumber.length} digits • Standard: 12-19 digits"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = if (cleanNumber.length in 12..19) MaterialTheme.colorScheme.primary
@@ -340,7 +344,7 @@ fun AddCardScreen(
                             )
                             if (expiryDate.isNotEmpty()) {
                                 Text(
-                                    text = if (expiryDate.length == 4) "✓ MM/YY valid" else "ℹ ${expiryDate.length}/4 digits • Accepted",
+                                    text = if (expiryDate.length == 4) "MM/YY valid" else "${expiryDate.length}/4 digits entered",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (expiryDate.length == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 4.dp)
@@ -362,7 +366,7 @@ fun AddCardScreen(
             // 3. Bottom Full-Width Action Button (Always works and accepts nevertheless)
             Button(
                 onClick = {
-                    val finalBank = bankName.trim().ifBlank { detectedBrand }
+                    val finalBank = bankName.trim().ifBlank { detectedNetwork.displayName }
                     val finalHolder = cardHolder.trim()
                     val finalNumber = cardNumber.trim().ifBlank { "0000" }
                     val finalExpiry = expiryDate.trim().ifBlank { "1228" }
@@ -420,7 +424,9 @@ private fun CardLivePreview(
     holderName: String,
     cardNumber: String,
     expiryDate: String,
-    cardType: String = "PHYSICAL"
+    cardType: String = "PHYSICAL",
+    skin: CardSkin = CardSkinCatalogue.DEFAULT_SKIN,
+    network: CardNetwork = CardNetwork.UNKNOWN
 ) {
     val isVirtual = cardType.equals("VIRTUAL", ignoreCase = true)
     Box(
@@ -430,11 +436,7 @@ private fun CardLivePreview(
             .clip(RoundedCornerShape(20.dp))
             .background(
                 Brush.linearGradient(
-                    colors = if (isVirtual) {
-                        listOf(Color(0xFF0F172A), Color(0xFF1E1B4B), Color(0xFF0284C7))
-                    } else {
-                        listOf(Color(0xFF1E293B), Color(0xFF0F172A))
-                    },
+                    colors = skin.gradientColors,
                     start = Offset(0f, 0f),
                     end = Offset(800f, 600f)
                 )
@@ -471,7 +473,7 @@ private fun CardLivePreview(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = bankName.ifBlank { detectCardBrand(cardNumber) },
+                        text = bankName.ifBlank { network.displayName },
                         color = Color.White.copy(alpha = 0.9f),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
@@ -547,22 +549,8 @@ private fun CardLivePreview(
                         letterSpacing = 2.sp
                     )
 
-                    // Card Brand Circles (Mastercard Style)
-                    Row {
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFEA001B).copy(alpha = 0.9f))
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .padding(start = 0.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFF79E1B).copy(alpha = 0.85f))
-                        )
-                    }
+                    // Card Network Indicator (Clean graphic/typographic badge)
+                    CardNetworkBadge(network = network)
                 }
             }
         }

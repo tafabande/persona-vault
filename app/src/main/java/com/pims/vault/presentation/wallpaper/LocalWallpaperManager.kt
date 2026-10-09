@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -37,14 +40,24 @@ data class WallpaperItem(
 /**
  * LocalWallpaperManager
  *
- * Enforces strict local isolation: user-uploaded images are saved exclusively
- * to internal app storage (context.filesDir/wallpapers/) and are NEVER included
- * in cloud sync, Firebase, remote backups, or external profile shares.
+ * User-imported images remain app-private locally and are backed up only as
+ * encrypted objects with metadata in the signed-in account namespace.
  */
 @Singleton
 class LocalWallpaperManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val wallpaperBackupProvider: javax.inject.Provider<com.pims.vault.core.sync.WallpaperBackupCoordinator>? = null
 ) {
+    @dagger.hilt.EntryPoint
+    @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+    interface WallpaperBackupEntryPoint { fun wallpaperBackupCoordinator(): com.pims.vault.core.sync.WallpaperBackupCoordinator }
+
+    private fun backupCoordinator(): com.pims.vault.core.sync.WallpaperBackupCoordinator? =
+        wallpaperBackupProvider?.get() ?: try {
+            dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext, WallpaperBackupEntryPoint::class.java).wallpaperBackupCoordinator()
+        } catch (_: Throwable) { null }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val wallpaperDir = File(context.filesDir, "wallpapers").apply { if (!exists()) mkdirs() }
     private val storeFile = File(context.filesDir, "wallpapers_meta.json")
     private val activeIndexFile = File(context.filesDir, "wallpapers_active.txt")
@@ -92,6 +105,8 @@ class LocalWallpaperManager @Inject constructor(
 
     private val _activeWallpaperIndex = MutableStateFlow(loadActiveIndex())
     val activeWallpaperIndex: StateFlow<Int> = _activeWallpaperIndex.asStateFlow()
+
+    init { restoreFromCloudAsync() }
 
     private fun loadActiveIndex(): Int {
         return try {
@@ -161,6 +176,7 @@ class LocalWallpaperManager @Inject constructor(
             current[index] = current[index].copy(alignmentY = alignmentY.coerceIn(-1f, 1f))
             _wallpapers.value = current
             persistWallpapers(current)
+            syncCustomWallpaperState()
         }
     }
 
@@ -173,6 +189,7 @@ class LocalWallpaperManager @Inject constructor(
         val coerced = if (total > 0) index.coerceIn(0, total - 1) else 0
         _activeWallpaperIndex.value = coerced
         persistActiveIndex(coerced)
+        syncCustomWallpaperState()
     }
 
     fun nextWallpaper() {
@@ -211,6 +228,7 @@ class LocalWallpaperManager @Inject constructor(
             persistWallpapers(updated)
             _wallpapers.value = updated
             setActiveIndex(updated.size - 1)
+            backupCoordinator()?.backupAsync(newItem, updated.lastIndex, true)
             true
         } catch (_: Exception) {
             false
@@ -228,6 +246,7 @@ class LocalWallpaperManager @Inject constructor(
         }
 
         val updated = _wallpapers.value.filterNot { it.id == current.id }
+        if (!current.isBuiltIn) backupCoordinator()?.deleteAsync(current.id)
         persistWallpapers(updated)
         _wallpapers.value = updated
         setActiveIndex(if (updated.isEmpty()) 0 else (_activeWallpaperIndex.value - 1).coerceAtLeast(0))
@@ -240,6 +259,7 @@ class LocalWallpaperManager @Inject constructor(
             try { File(path).delete() } catch (_: Exception) {}
         }
         val updated = _wallpapers.value.filterNot { it.id == id }
+        if (!item.isBuiltIn) backupCoordinator()?.deleteAsync(item.id)
         persistWallpapers(updated)
         _wallpapers.value = updated
         setActiveIndex(if (updated.isEmpty()) 0 else _activeWallpaperIndex.value.coerceAtMost(updated.size - 1))
@@ -268,6 +288,31 @@ class LocalWallpaperManager @Inject constructor(
             BitmapFactory.decodeFile(filePath)
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun syncCustomWallpaperState() {
+        val activeId = _wallpapers.value.getOrNull(_activeWallpaperIndex.value)?.id
+        _wallpapers.value.forEachIndexed { index, item ->
+            backupCoordinator()?.syncStateAsync(item, index, item.id == activeId)
+        }
+    }
+
+    fun restoreFromCloudAsync() {
+        scope.launch {
+            val restored = backupCoordinator()?.restore().orEmpty()
+            if (restored.isEmpty()) return@launch
+            val local = _wallpapers.value.toMutableList()
+            var activeIndex: Int? = null
+            restored.forEach { (remote, file) ->
+                val item = WallpaperItem(remote.id, remote.title, remote.subtitle, WallpaperType.LOCAL_IMAGE, localFilePath = file.absolutePath, isBuiltIn = false, alignmentY = remote.alignmentY)
+                val existing = local.indexOfFirst { it.id == remote.id }
+                if (existing >= 0) local[existing] = item else local.add(item)
+                if (remote.isActive) activeIndex = local.indexOfFirst { it.id == remote.id }
+            }
+            _wallpapers.value = local
+            persistWallpapers(local)
+            activeIndex?.let { setActiveIndex(it) }
         }
     }
 }

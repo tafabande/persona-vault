@@ -186,29 +186,33 @@ fun PeopleView(
                         fontWeight = FontWeight.Bold,
                         fontSize = 28.sp
                     ),
-                    color = Color(0xFF20201E)
+                    color = MaterialTheme.colorScheme.onBackground
                 )
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Search Button
+                    // Search Button with app design system theme tokens
                     Surface(
                         shape = CircleShape,
-                        color = Color(0xFFF0EBE1),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier
                             .size(42.dp)
                             .tactilePress(targetScale = 0.90f) {
                                 haptics.selection()
-                                if (searchQuery.isNotBlank()) searchQuery = ""
+                                if (searchQuery.isNotBlank()) {
+                                    searchQuery = ""
+                                } else {
+                                    searchQuery = " "
+                                }
                             }
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = "Search",
-                                tint = Color(0xFF20201E),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -217,7 +221,7 @@ fun PeopleView(
                     // Add Person Button (+)
                     Surface(
                         shape = CircleShape,
-                        color = Color(0xFF20201E),
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
                             .size(42.dp)
                             .tactilePress(targetScale = 0.90f) {
@@ -229,7 +233,7 @@ fun PeopleView(
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Add someone",
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }

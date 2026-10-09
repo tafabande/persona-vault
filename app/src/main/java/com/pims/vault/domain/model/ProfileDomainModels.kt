@@ -47,18 +47,18 @@ data class ProfilePhotoAttachment(
 
 data class PersonProfile(
     val id: String,
-    val isPrimaryOwner: Boolean,
+    val isPrimaryOwner: Boolean = false,
     val firstName: String,
-    val middleName: String?,
+    val middleName: String? = null,
     val lastName: String,
-    val preferredName: String?,
-    val dateOfBirth: String?, // YYYY-MM-DD
-    val gender: String?,
-    val nationality: String?,
-    val countryOfResidence: String?,
-    val religion: String?,
-    val ethnicity: String?,
-    val occupation: String?,
+    val preferredName: String? = null,
+    val dateOfBirth: String? = null, // YYYY-MM-DD
+    val gender: String? = null,
+    val nationality: String? = null,
+    val countryOfResidence: String? = null,
+    val religion: String? = null,
+    val ethnicity: String? = null,
+    val occupation: String? = null,
     val securityClassification: SecurityClassification = SecurityClassification.ZONE_1_PERSONAL,
     val photo: ProfilePhotoAttachment? = null,
     val contacts: List<ContactMethod> = emptyList(),

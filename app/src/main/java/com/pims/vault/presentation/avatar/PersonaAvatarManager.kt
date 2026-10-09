@@ -279,9 +279,21 @@ class PersonaAvatarManager @Inject constructor(
     }
 
     fun saveAvatarConfigForRelationship(personId: String, config: PersonaAvatarConfig) {
+        if (personId.isBlank()) return
         val customKey = "rel_avatar_$personId"
         val json = configToJson(config)
         prefs.edit().putString(customKey, json.toString()).apply()
+        try {
+            getPhotoBackupCoordinator()?.backupAvatarConfigAsync(json.toString(), personId)
+        } catch (_: Exception) {}
+    }
+
+    fun saveAvatarConfigForRelationshipFromJson(personId: String, jsonString: String) {
+        if (personId.isBlank() || jsonString.isBlank()) return
+        try {
+            val config = parseConfigFromJson(JSONObject(jsonString))
+            prefs.edit().putString("rel_avatar_$personId", configToJson(config).toString()).apply()
+        } catch (_: Exception) {}
     }
 
     /**
@@ -391,24 +403,40 @@ class PersonaAvatarManager @Inject constructor(
     }
 
     fun getPersonPhotoPath(personId: String): String? {
-        val path = prefs.getString("person_photo_$personId", null) ?: return null
-        // After reinstall/restore the absolute filesDir path changes, so an
-        // old absolute path will never exist again. Fall back to the file
-        // name inside the current contact_photos dir.
-        val direct = File(path)
-        if (direct.exists()) return direct.absolutePath
-        return try {
-            val name = File(path).name
-            if (name.isBlank()) return null
-            val fallback = File(File(context.filesDir, "contact_photos"), name)
-            if (fallback.exists()) {
-                // Re-point the pref so future reads hit directly.
-                prefs.edit().putString("person_photo_$personId", fallback.absolutePath).apply()
-                fallback.absolutePath
-            } else null
-        } catch (_: Exception) {
-            null
+        if (personId.isBlank()) return null
+        val path = prefs.getString("person_photo_$personId", null)
+        if (!path.isNullOrBlank()) {
+            val direct = File(path)
+            if (direct.exists() && direct.length() > 0) return direct.absolutePath
+            try {
+                val name = File(path).name
+                if (name.isNotBlank()) {
+                    val fallback = File(File(context.filesDir, "contact_photos"), name)
+                    if (fallback.exists() && fallback.length() > 0) {
+                        prefs.edit().putString("person_photo_$personId", fallback.absolutePath).apply()
+                        return fallback.absolutePath
+                    }
+                }
+            } catch (_: Exception) {}
         }
+        try {
+            val contactDir = File(context.filesDir, "contact_photos")
+            if (contactDir.exists()) {
+                val matches = contactDir.listFiles()?.filter {
+                    it.isFile && it.length() > 0 && (
+                        it.name == "contact_${personId}.jpg" ||
+                        it.name.startsWith("contact_${personId}_") ||
+                        it.name == "contact_${personId}_restored.jpg"
+                    )
+                }
+                val match = matches?.maxByOrNull { it.lastModified() }
+                if (match != null) {
+                    prefs.edit().putString("person_photo_$personId", match.absolutePath).apply()
+                    return match.absolutePath
+                }
+            }
+        } catch (_: Exception) {}
+        return null
     }
 
     fun setPersonPhotoPath(personId: String, path: String?) {

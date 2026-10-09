@@ -1082,26 +1082,10 @@ class VaultViewModel @Inject constructor(
                     linkedCardSummary = linkedCardSummary,
                     currency = currency
                 )
-                val refreshedSecret = try {
-                    readBankAccountUseCase(id, key)
-                } catch (_: Exception) {
-                    BankingDetailsSecret(
-                        bankName = bankName,
-                        accountHolderName = accountHolderName,
-                        accountNumber = accountNumber,
-                        accountType = accountType,
-                        sortCode = sortCode,
-                        swiftBic = swiftBic,
-                        iban = iban,
-                        routingNumber = routingNumber,
-                        bsb = bsb,
-                        branchName = branchName,
-                        notes = notes,
-                        linkedCardId = linkedCardId,
-                        linkedCardSummary = linkedCardSummary,
-                        currency = currency
-                    )
-                }
+                // The editor must reflect the encrypted record that was actually
+                // persisted.  Do not render a form-value fallback as if it had
+                // been read back successfully.
+                val refreshedSecret = readBankAccountUseCase(id, key)
                 _uiState.update { current ->
                     current.copy(
                         activeItemId = id,

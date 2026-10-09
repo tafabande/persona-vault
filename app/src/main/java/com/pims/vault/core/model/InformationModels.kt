@@ -116,6 +116,8 @@ data class FinancialCardRecord(
     val sensitivity: InformationSensitivity = InformationSensitivity.HIGHLY_PROTECTED,
     val isFavorite: Boolean = false,
     val isArchived: Boolean = false,
+    val skinId: String? = null,
+    val network: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
@@ -212,6 +214,8 @@ data class DigitalCardRecord(
     val sensitivity: InformationSensitivity = InformationSensitivity.PROTECTED,
     val isFavorite: Boolean = false,
     val isArchived: Boolean = false,
+    val skinId: String? = null,
+    val network: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {

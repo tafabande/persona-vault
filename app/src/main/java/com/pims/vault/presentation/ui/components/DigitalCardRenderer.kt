@@ -60,6 +60,9 @@ import com.pims.vault.core.model.DigitalCardRecord
 import com.pims.vault.core.model.DigitalCardType
 import com.pims.vault.core.model.FinancialCardRecord
 import com.pims.vault.presentation.ui.components.DefaultAvatar
+import com.pims.vault.presentation.vault.card.CardSkinCatalogue
+import com.pims.vault.presentation.vault.card.CardNetwork
+import com.pims.vault.presentation.vault.card.CardNetworkBadge
 import java.io.File
 
 /**
@@ -316,6 +319,16 @@ fun FinancialCardRepresentation(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        val skin = remember(card.skinId, card.bankName) {
+            card.skinId?.let { CardSkinCatalogue.getSkinById(it) }
+                ?: CardSkinCatalogue.suggestSkinForBank(card.bankName)
+                ?: CardSkinCatalogue.DEFAULT_SKIN
+        }
+        val cardNetwork = remember(card.network, card.cardNumber) {
+            card.network?.let { CardNetwork.fromString(it) }?.takeIf { it != CardNetwork.UNKNOWN }
+                ?: CardNetwork.detectFromCardNumber(card.cardNumber)
+        }
+
         // Digital Bank Card (Aspect ratio 1.586)
         Card(
             modifier = Modifier
@@ -323,17 +336,13 @@ fun FinancialCardRepresentation(
                 .aspectRatio(1.586f)
                 .shadow(14.dp, shape = RoundedCornerShape(18.dp), spotColor = Color.Black.copy(alpha = 0.4f)),
             shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-            border = BorderStroke(1.dp, Color(0xFF334155))
+            colors = CardDefaults.cardColors(containerColor = skin.gradientColors.firstOrNull() ?: Color(0xFF0F172A)),
+            border = BorderStroke(1.dp, skin.accentColor.copy(alpha = 0.35f))
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF0F172A), Color(0xFF1E1B4B), Color(0xFF0284C7))
-                        )
-                    )
+                    .background(Brush.linearGradient(skin.gradientColors))
                     .padding(18.dp)
             ) {
                 Column(
@@ -449,13 +458,19 @@ fun FinancialCardRepresentation(
                             letterSpacing = 0.5.sp
                         )
 
-                        Text(
-                            text = (if (card.isVirtualCard) "VIRTUAL CARD" else card.cardType).uppercase(),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFFF1F5F9),
-                            letterSpacing = 1.sp
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = (if (card.isVirtualCard) "VIRTUAL" else card.cardType).uppercase(),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFF1F5F9),
+                                letterSpacing = 0.5.sp
+                            )
+                            CardNetworkBadge(network = cardNetwork)
+                        }
                     }
                 }
             }

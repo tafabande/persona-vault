@@ -117,32 +117,26 @@ fun PimsVaultSplashScreen() {
                     .scale(scaleAnim.value)
                     .alpha(alphaAnim.value)
             ) {
-                // Persona Brand Emblem
-                val emblemBorder = if (isDark) {
-                    Modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(26.dp))
-                } else Modifier
-
+                // Persona Minimalist Brand Emblem
                 Box(
                     modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(26.dp))
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(22.dp))
                         .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    primaryColor,
-                                    primaryColor.copy(alpha = 0.90f)
-                                )
-                            )
+                            color = primaryColor.copy(alpha = if (isDark) 0.15f else 0.08f)
                         )
-                        .then(emblemBorder),
+                        .border(
+                            width = 1.dp,
+                            color = primaryColor.copy(alpha = if (isDark) 0.35f else 0.20f),
+                            shape = RoundedCornerShape(22.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "P",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 42.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-1).sp
+                    androidx.compose.material3.Icon(
+                        painter = androidx.compose.ui.res.painterResource(id = com.pims.vault.R.drawable.ic_splash_logo),
+                        contentDescription = "Persona Logo",
+                        tint = primaryColor,
+                        modifier = Modifier.size(44.dp)
                     )
                 }
 

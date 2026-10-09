@@ -12,6 +12,9 @@ Every release must satisfy 100% of the checklist items below before progressing 
 - [ ] **Crypto Verification**: RFC 6238 TOTP vectors and X25519 AEAD tests passing.
 - [ ] **Manifest Gate**: Verified `allowBackup="false"`, `usesCleartextTraffic="false"`, and `networkSecurityConfig` configured.
 - [ ] **R8 Verification**: Minification enabled (`isMinifyEnabled = true`), resource shrinking enabled.
+- [ ] **Cloud integrity verification**: On a staging account, verify one primary-owner and one relationship-person avatar (encrypted bytes and metadata), person-scoped notes after restart, a sparse optional profile update, and Firebase Auth UID/account-document/person-ID mappings. Confirm that no duplicate records were created.
+- [ ] **Wallpaper recovery verification**: Import a custom carousel wallpaper, verify its encrypted object and metadata, then restore it on a clean signed-in device. Confirm its alignment, ordering, and active selection are restored and built-in presets were not uploaded.
+- [ ] **Financial record verification**: Decrypt a staged bank record through the authorized path and confirm its display mask is derived from that record’s verified account number; do not infer or bulk-correct disputed historical suffixes.
 
 ---
 

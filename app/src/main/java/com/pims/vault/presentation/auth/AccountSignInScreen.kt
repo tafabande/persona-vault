@@ -171,25 +171,24 @@ fun AccountSignInScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Central Monogram Brand Emblem
+            // Central Minimalist Brand Emblem
             Box(
                 modifier = Modifier
-                    .size(76.dp)
+                    .size(64.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
                     .border(
-                        width = 1.5.dp,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "P",
-                    fontSize = 38.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = (-1).sp
+                Icon(
+                    painter = androidx.compose.ui.res.painterResource(id = com.pims.vault.R.drawable.ic_launcher_foreground),
+                    contentDescription = "Persona Logo",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(38.dp)
                 )
             }
 

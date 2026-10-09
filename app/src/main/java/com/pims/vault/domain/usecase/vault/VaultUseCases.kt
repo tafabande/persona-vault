@@ -721,12 +721,25 @@ class SaveBankAccountUseCase @Inject constructor(
         val id = existingId ?: UUID.randomUUID().toString()
 
         val existingEntity = if (existingId != null) vaultDao.getVaultItemById(existingId) else null
+        if (existingId != null && existingEntity == null) {
+            throw NoSuchElementException("Bank account $existingId was not found")
+        }
+        if (existingEntity != null) {
+            require(existingEntity.category == VaultCategory.BANK_ACCOUNT) {
+                "The selected record is not a bank account"
+            }
+            require(existingEntity.personId == personId) {
+                "Bank account ownership does not match the selected person"
+            }
+        }
         val targetVersion = if (existingEntity != null && incomingVersion != null && incomingVersion > 1L) {
             VaultRules.validateVersionMonotonicity(incomingVersion, 1L)
             incomingVersion
         } else 1L
 
-        // Attempt to load existing secret to preserve any fields not provided in partial update
+        // An edit is only safe after the selected record has been authenticated
+        // and decrypted. Never convert an authentication/decryption failure into
+        // a partial overwrite with blank form fields.
         var existingSecret: BankingDetailsSecret? = null
         if (existingEntity != null) {
             try {
@@ -753,8 +766,8 @@ class SaveBankAccountUseCase @Inject constructor(
                     linkedCardSummary = parts.getOrNull(12)?.takeIf { it.isNotBlank() },
                     currency = parts.getOrNull(13)?.takeIf { it.isNotBlank() } ?: "USD"
                 )
-            } catch (_: Exception) {
-                // Ignore decryption failure for fallback
+            } catch (e: Exception) {
+                throw IllegalStateException("Unable to safely edit this bank account", e)
             }
         }
 
@@ -800,7 +813,10 @@ class SaveBankAccountUseCase @Inject constructor(
             accountIdentifier = displayRef,
             encryptedPayload = encrypted.combinedCiphertextWithTag,
             encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
-            notes = resolvedNotes,
+            // Financial notes belong inside the authenticated encrypted payload;
+            // do not leave a second plaintext copy in list/sync metadata.
+            notes = null,
+            createdAt = existingEntity?.createdAt ?: System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )
         vaultDao.insertOrUpdate(entity)

@@ -10,11 +10,11 @@ import com.pims.vault.core.model.CardStatus
 import com.pims.vault.core.model.DocumentType
 import com.pims.vault.core.model.SecurityClassification
 import com.pims.vault.core.model.VaultCategory
-import com.pims.vault.data.local.dao.AuditLogDao
+import com.pims.vault.data.local.dao.AuditDao
 import com.pims.vault.data.local.dao.DocumentDao
 import com.pims.vault.data.local.dao.PlainNoteDao
 import com.pims.vault.data.local.dao.VaultDao
-import com.pims.vault.data.local.entity.AuditLogEntity
+import com.pims.vault.data.local.entity.AuditEventEntity
 import com.pims.vault.data.local.entity.DocumentEntity
 import com.pims.vault.data.local.entity.DocumentVersionEntity
 import com.pims.vault.data.local.entity.PlainNoteAttachmentEntity
@@ -57,7 +57,7 @@ class PersonaFeatureInitiativeRegressionTests {
     private val rootKey = HkdfKeyDerivation.deriveKey(masterKey, infoContext = "PIMS/vault/v1")
 
     private val inMemoryVaultItems = mutableMapOf<String, VaultItemEntity>()
-    private val inMemoryAudits = mutableListOf<AuditLogEntity>()
+    private val inMemoryAudits = mutableListOf<AuditEventEntity>()
 
     private val fakeVaultDao = object : VaultDao {
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
@@ -76,20 +76,26 @@ class PersonaFeatureInitiativeRegressionTests {
         }
     }
 
-    private val fakeAuditDao = object : AuditLogDao {
-        override suspend fun insert(event: AuditLogEntity): Long {
+    private val fakeAuditDao = object : AuditDao {
+        override fun getRecentEventsFlow(limit: Int): Flow<List<AuditEventEntity>> =
+            flowOf(inMemoryAudits.takeLast(limit))
+
+        override suspend fun getLatestAuditEvent(): AuditEventEntity? = inMemoryAudits.lastOrNull()
+        override suspend fun getMaxSequenceNumber(): Long? = inMemoryAudits.maxOfOrNull { it.sequenceNumber }
+        override suspend fun getAllEventsAscending(): List<AuditEventEntity> = inMemoryAudits.sortedBy { it.sequenceNumber }
+        override suspend fun getEventsInSequenceRange(fromSeq: Long, toSeq: Long): List<AuditEventEntity> =
+            inMemoryAudits.filter { it.sequenceNumber in fromSeq..toSeq }
+        override fun getEventsForEntityFlow(entityType: String, entityId: String): Flow<List<AuditEventEntity>> =
+            flowOf(inMemoryAudits.filter { it.entityType == entityType && it.entityId == entityId })
+        override suspend fun insertAuditEvent(event: AuditEventEntity) {
             inMemoryAudits.add(event)
-            return inMemoryAudits.size.toLong()
         }
-        override suspend fun getLatestEvent(): AuditLogEntity? = inMemoryAudits.lastOrNull()
-        override fun getEventsFlow(): Flow<List<AuditLogEntity>> = flowOf(inMemoryAudits)
-        override suspend fun getEventsPaged(limit: Int, offset: Int): List<AuditLogEntity> = inMemoryAudits
-        override suspend fun verifyIntegrity(): Boolean = true
+        override suspend fun getAuditCount(): Long = inMemoryAudits.size.toLong()
     }
 
     private val auditLogger = HardenedAuditLogger(
         auditDao = fakeAuditDao,
-        auditMasterKey = ByteArray(32) { 0x55 }
+        auditKey = ByteArray(32) { 0x55 }
     )
 
     private val savePaymentReferenceUseCase = SavePaymentReferenceUseCase(
@@ -127,7 +133,6 @@ class PersonaFeatureInitiativeRegressionTests {
             notes = "Physical standard debit",
             vaultRootKey = rootKey,
             linkedBankAccountId = "bank-acc-1",
-            colorHex = "#1A1A2E",
             cardType = "PHYSICAL"
         )
 
@@ -153,7 +158,6 @@ class PersonaFeatureInitiativeRegressionTests {
             notes = "Virtual subscription card",
             vaultRootKey = rootKey,
             linkedBankAccountId = "bank-acc-2",
-            colorHex = "#2B1055",
             cardType = "VIRTUAL"
         )
 

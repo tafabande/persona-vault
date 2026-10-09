@@ -11,6 +11,6 @@
     <color name="persona_splash_glyph">#FFFFFF</color>
 
     <!-- App Launcher Icon Themed Tokens (Dark Mode) -->
-    <color name="persona_icon_background">#141311</color>
+    <color name="persona_icon_background">#D4845E</color>
     <color name="persona_icon_foreground">#FFFFFF</color>
 </resources>

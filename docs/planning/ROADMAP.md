@@ -16,6 +16,8 @@
 ### Active integrity work
 
 - [ ] Audit and harden Persona/Firebase identity mapping, optional profile-field serialization, person-scoped note/avatar recovery, and encrypted financial display metadata. This work is additive and uses stable Room/Firestore record IDs; it does not perform a production bulk migration.
+- [ ] Add encrypted backup and restore for user-imported carousel wallpapers, including stable item IDs, visual alignment, ordering, and active selection.
+- [ ] Harden bank-account record lifecycle: selected-ID-only edits, authenticated read-back, multi-account support, explicit card links, and idempotent sync verification. No destructive financial migration is authorised.
 
 ## Current Focus (Planning Phase)
 

@@ -81,6 +81,15 @@ class FirestoreSyncService @Inject constructor(
     private val photoBackupCoordinatorProvider: javax.inject.Provider<PhotoBackupCoordinator>,
     private val syncConflictDao: SyncConflictDao
 ) {
+    data class RemoteWallpaper(
+        val id: String,
+        val title: String,
+        val subtitle: String?,
+        val alignmentY: Float,
+        val sortOrder: Long,
+        val isActive: Boolean,
+        val photo: ProfilePhotoSyncService.PhotoMetadata
+    )
     private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
 
@@ -322,12 +331,27 @@ class FirestoreSyncService @Inject constructor(
     // Profile photos (avatar / contact / ID) — Firestore metadata + storage blob.
     // ------------------------------------------------------------------
 
-    suspend fun syncAvatarConfig(configJson: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun syncAvatarConfig(
+        configJson: String,
+        personId: String = CANONICAL_PRIMARY_OWNER_ID
+    ): Boolean = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(null) ?: return@withContext false
         try {
+            val documentId = if (personId == CANONICAL_PRIMARY_OWNER_ID) {
+                "avatar_config" // legacy-compatible primary owner location
+            } else {
+                "avatar_config_$personId"
+            }
             firestore.collection("accounts").document(uid)
-                .collection("photos").document("avatar_config")
-                .set(mapOf("configJson" to configJson, "updatedAt" to System.currentTimeMillis()), SetOptions.merge())
+                .collection("photos").document(documentId)
+                .set(
+                    mapOf(
+                        "configJson" to configJson,
+                        "personId" to personId,
+                        "updatedAt" to System.currentTimeMillis()
+                    ),
+                    SetOptions.merge()
+                )
                 .await()
             true
         } catch (e: Exception) {
@@ -345,6 +369,24 @@ class FirestoreSyncService @Inject constructor(
             snap.getString("configJson")
         } catch (_: Exception) {
             null
+        }
+    }
+
+    suspend fun getRelationshipAvatarConfigs(userId: String?): Map<String, String> = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext emptyMap()
+        try {
+            firestore.collection("accounts").document(uid).collection("photos").get().await()
+                .documents
+                .filter { it.id.startsWith("avatar_config_") }
+                .mapNotNull { doc ->
+                    val personId = doc.getString("personId")
+                        ?: doc.id.removePrefix("avatar_config_").takeIf { it.isNotBlank() }
+                    val config = doc.getString("configJson")
+                    if (personId.isNullOrBlank() || config.isNullOrBlank()) null else personId to config
+                }
+                .toMap()
+        } catch (_: Exception) {
+            emptyMap()
         }
     }
 
@@ -399,7 +441,7 @@ class FirestoreSyncService @Inject constructor(
             try {
                 val snap = firestore.collection("accounts").document(uid)
                     .collection("photos").get().await()
-                snap.documents.filter { it.id != "avatar_config" }.mapNotNull { d ->
+                snap.documents.filter { !it.id.startsWith("avatar_config") }.mapNotNull { d ->
                     try {
                         ProfilePhotoSyncService.PhotoMetadata(
                             photoId = d.id,
@@ -422,6 +464,88 @@ class FirestoreSyncService @Inject constructor(
                 emptyList()
             }
         }
+
+    /** Metadata only; the wallpaper bytes stay encrypted in object storage. */
+    suspend fun syncWallpaper(
+        userId: String?,
+        wallpaperId: String,
+        title: String,
+        subtitle: String?,
+        alignmentY: Float,
+        sortOrder: Int,
+        isActive: Boolean,
+        photo: ProfilePhotoSyncService.PhotoMetadata
+    ): Boolean = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
+        try {
+            firestore.collection("accounts").document(uid).collection("wallpapers").document(wallpaperId)
+                .set(mapOf(
+                    "id" to wallpaperId,
+                    "title" to title,
+                    "subtitle" to (subtitle ?: ""),
+                    "alignmentY" to alignmentY.toDouble(),
+                    "sortOrder" to sortOrder.toLong(),
+                    "isActive" to isActive,
+                    "photoId" to photo.photoId,
+                    "kind" to photo.kind,
+                    "ownerKey" to photo.ownerKey,
+                    "b2RemotePath" to photo.b2RemotePath,
+                    "b2DownloadUrl" to photo.b2DownloadUrl,
+                    "b2IvHex" to photo.b2IvHex,
+                    "sha256Hash" to photo.sha256Hex,
+                    "mimeType" to photo.mimeType,
+                    "fileSizeBytes" to photo.sizeBytes,
+                    "updatedAt" to photo.updatedAt,
+                    "photoCiphertextBase64" to (photo.photoCiphertextBase64 ?: "")
+                ), SetOptions.merge()).await()
+            true
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Wallpaper metadata sync failed: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun syncWallpaperState(userId: String?, wallpaperId: String, alignmentY: Float, sortOrder: Int, isActive: Boolean) = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext
+        try {
+            firestore.collection("accounts").document(uid).collection("wallpapers").document(wallpaperId)
+                .set(mapOf("alignmentY" to alignmentY.toDouble(), "sortOrder" to sortOrder.toLong(), "isActive" to isActive, "updatedAt" to System.currentTimeMillis()), SetOptions.merge()).await()
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Wallpaper state sync failed: ${e.message}")
+        }
+    }
+
+    suspend fun listRemoteWallpapers(userId: String?): List<RemoteWallpaper> = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext emptyList()
+        try {
+            firestore.collection("accounts").document(uid).collection("wallpapers").get().await().documents.mapNotNull { d ->
+                val id = d.id.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val iv = d.getString("b2IvHex") ?: return@mapNotNull null
+                val hash = d.getString("sha256Hash") ?: return@mapNotNull null
+                RemoteWallpaper(id, d.getString("title") ?: "", d.getString("subtitle")?.takeIf { it.isNotBlank() },
+                    (d.getDouble("alignmentY") ?: 0.0).toFloat(), d.getLong("sortOrder") ?: Long.MAX_VALUE,
+                    d.getBoolean("isActive") ?: false,
+                    ProfilePhotoSyncService.PhotoMetadata(d.getString("photoId") ?: "wallpaper_$id", d.getString("kind") ?: "wallpaper", d.getString("ownerKey") ?: id,
+                        d.getString("b2RemotePath") ?: "", d.getString("b2DownloadUrl") ?: "", iv, hash,
+                        d.getString("mimeType") ?: "image/jpeg", d.getLong("fileSizeBytes") ?: 0L,
+                        d.getLong("updatedAt") ?: 0L, d.getString("photoCiphertextBase64")?.takeIf { it.isNotBlank() }))
+            }.sortedBy { it.sortOrder }
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Wallpaper metadata restore failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    suspend fun deleteRemoteWallpaper(wallpaperId: String) = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(null) ?: return@withContext
+        try {
+            val ref = firestore.collection("accounts").document(uid).collection("wallpapers").document(wallpaperId)
+            ref.get().await().getString("b2RemotePath")?.takeIf { it.isNotBlank() }?.let { storageUploadService.delete(it) }
+            ref.delete().await()
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Wallpaper delete failed: ${e.message}")
+        }
+    }
 
     suspend fun syncAddress(userId: String?, address: AddressEntity) = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext
@@ -1428,11 +1552,21 @@ class FirestoreSyncService @Inject constructor(
                     if (existingPerson != null) {
                         val hasLocalName = existingPerson.firstName.isNotBlank() || existingPerson.lastName.isNotBlank()
                         val localName = "${existingPerson.firstName} ${existingPerson.lastName}".trim()
+                        val localFullNameWithMiddle = listOfNotNull(
+                            existingPerson.firstName.takeIf { it.isNotBlank() },
+                            existingPerson.middleName?.takeIf { it.isNotBlank() },
+                            existingPerson.lastName.takeIf { it.isNotBlank() }
+                        ).joinToString(" ")
                         val remoteName = "$remoteFirstName $remoteLastName".trim()
 
+                        val isNameEquivalent = localName.equals(remoteName, ignoreCase = true) ||
+                                localFullNameWithMiddle.equals(remoteName, ignoreCase = true) ||
+                                localName.replace(" ", "").equals(remoteName.replace(" ", ""), ignoreCase = true) ||
+                                (existingPerson.preferredName?.isNotBlank() == true && remoteName.contains(existingPerson.preferredName.orEmpty(), ignoreCase = true))
+
                         if (hasLocalName) {
-                            // Local name is KING. Under no circumstance do we take the name from email or remote clash!
-                            if (remoteName.isNotBlank() && localName != remoteName) {
+                            // Local name is KING. For primary owner or matching middle/preferred names, local identity is authoritative.
+                            if (remoteName.isNotBlank() && !isNameEquivalent && !isPrimaryOwner) {
                                 recordConflictIfNeeded(
                                     entityType = "Person",
                                     entityId = localId,
@@ -1442,9 +1576,18 @@ class FirestoreSyncService @Inject constructor(
                                     localVersion = existingPerson.updatedAt,
                                     serverVersion = remoteUpdated
                                 )
-                                // Push the true local name to Firestore to correct remote
-                                syncPerson(uid, existingPerson)
+                            } else {
+                                // Auto-resolve / purge any existing stale conflict for this person
+                                syncConflictDao.resolveAllConflictsForField(
+                                    entityType = "Person",
+                                    entityId = localId,
+                                    fieldName = "Full Name",
+                                    choice = "KEEP_LOCAL",
+                                    resolvedAt = System.currentTimeMillis()
+                                )
                             }
+                            // Push the canonical local person to Firestore to keep remote synchronized
+                            syncPerson(uid, existingPerson)
                         }
 
                         // Local details take precedence; backfill any locally empty fields from remote
@@ -2419,6 +2562,12 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.i("FirestoreSync", "Restored $restoredPhotos profile/avatar photos")
             } catch (e: Exception) {
                 VaultLogger.w("FirestoreSync", "Error restoring profile photos: ${e.message}")
+            }
+
+            try {
+                com.pims.vault.presentation.wallpaper.LocalWallpaperManager(context).restoreFromCloudAsync()
+            } catch (e: Exception) {
+                VaultLogger.w("FirestoreSync", "Error restoring carousel wallpapers: ${e.message}")
             }
 
             VaultLogger.i("FirestoreSync", "Remote-to-local sync complete: $count records synchronized from Firestore into Room")

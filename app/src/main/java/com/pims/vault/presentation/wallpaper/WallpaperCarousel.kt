@@ -156,10 +156,21 @@ fun WallpaperCarousel(
         }
     }
 
-    // Pager state synchronizes with activeIndex
-    LaunchedEffect(activeIndex) {
-        if (pagerState.currentPage != activeIndex && activeIndex in wallpapers.indices) {
-            pagerState.animateScrollToPage(activeIndex)
+    val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
+
+    // Active, fluid auto-advance carousel (4.5s loop with smooth transition)
+    LaunchedEffect(pagerState, isDragged, wallpapers.size) {
+        if (wallpapers.size > 1 && !isDragged) {
+            while (true) {
+                delay(4500L)
+                if (!isDragged && wallpapers.isNotEmpty()) {
+                    val nextPage = (pagerState.currentPage + 1) % wallpapers.size
+                    pagerState.animateScrollToPage(
+                        page = nextPage,
+                        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing)
+                    )
+                }
+            }
         }
     }
 
@@ -220,6 +231,34 @@ fun WallpaperCarousel(
                                 scaleY = kenBurnsScale
                                 clip = true
                             }
+                    )
+                }
+            }
+        }
+
+        // Subtle Page Indicator Dots
+        if (wallpapers.size > 1) {
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                wallpapers.indices.forEach { index ->
+                    val isSelected = pagerState.currentPage == index
+                    Box(
+                        modifier = Modifier
+                            .size(if (isSelected) 16.dp else 6.dp, 6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(
+                                if (isSelected) Color.White else Color.White.copy(alpha = 0.45f)
+                            )
                     )
                 }
             }

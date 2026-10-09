@@ -83,11 +83,14 @@ class PhotoBackupCoordinator @Inject constructor(
         }
     }
 
-    fun backupAvatarConfigAsync(configJson: String) {
+    fun backupAvatarConfigAsync(
+        configJson: String,
+        personId: String = com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
+    ) {
         if (configJson.isBlank()) return
         scope.launch {
             try {
-                firestoreSync.syncAvatarConfig(configJson)
+                firestoreSync.syncAvatarConfig(configJson, personId)
             } catch (e: Exception) {
                 VaultLogger.w("PhotoBackup", "Avatar config backup failed: ${e.message}")
             }
@@ -166,6 +169,13 @@ class PhotoBackupCoordinator @Inject constructor(
                 if (!remoteConfigJson.isNullOrBlank()) {
                     val avatarManager = PersonaAvatarManager.getInstance(context)
                     avatarManager.saveConfigFromJsonString(remoteConfigJson)
+                }
+            } catch (_: Exception) {}
+
+            try {
+                firestoreSync.getRelationshipAvatarConfigs(null).forEach { (personId, configJson) ->
+                    PersonaAvatarManager.getInstance(context)
+                        .saveAvatarConfigForRelationshipFromJson(personId, configJson)
                 }
             } catch (_: Exception) {}
 
@@ -271,13 +281,25 @@ class PhotoBackupCoordinator @Inject constructor(
             val contactDir = File(context.filesDir, "contact_photos")
             if (contactDir.exists()) {
                 contactDir.listFiles()?.filter { it.isFile && it.length() > 0 }?.forEach { f ->
-                    val personId = f.name.removePrefix("contact_").removeSuffix(".jpg").removeSuffix("_restored")
-                    backupPhoto(
-                        kind = ProfilePhotoSyncService.KIND_CONTACT,
-                        photoId = "contact_$personId",
-                        ownerKey = personId,
-                        localPath = f.absolutePath
-                    )
+                    val raw = f.name.removePrefix("contact_").removeSuffix(".jpg")
+                    val personId = if (raw.contains("_")) {
+                        val parts = raw.split("_")
+                        if (parts.last() == "restored" || parts.last().toLongOrNull() != null) {
+                            parts.dropLast(1).joinToString("_")
+                        } else {
+                            raw
+                        }
+                    } else {
+                        raw
+                    }
+                    if (personId.isNotBlank()) {
+                        backupPhoto(
+                            kind = ProfilePhotoSyncService.KIND_CONTACT,
+                            photoId = "contact_$personId",
+                            ownerKey = personId,
+                            localPath = f.absolutePath
+                        )
+                    }
                 }
             }
             VaultLogger.i("PhotoBackup", "All offline/cached photos backed up to cloud")
