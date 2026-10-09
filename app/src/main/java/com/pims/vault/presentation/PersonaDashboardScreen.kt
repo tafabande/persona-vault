@@ -1029,6 +1029,14 @@ fun PersonaDashboardScreen(
                     onBack = {
                         activeNoteId = null
                         fullScreenOverlay = null
+                    },
+                    onRequestAuth = { title, subtitle, onSuccess ->
+                        requestGatedAccess(
+                            SecurityTier.LEVEL_2_SENSITIVE,
+                            title,
+                            subtitle,
+                            onSuccess
+                        )
                     }
                 )
                 return
@@ -1349,6 +1357,14 @@ fun PersonaDashboardScreen(
                         onOpenEditor = { noteId ->
                             activeNoteId = noteId
                             fullScreenOverlay = "NOTE_EDITOR"
+                        },
+                        onRequestAuth = { title, subtitle, onSuccess ->
+                            requestGatedAccess(
+                                SecurityTier.LEVEL_2_SENSITIVE,
+                                title,
+                                subtitle,
+                                onSuccess
+                            )
                         }
                     )
 

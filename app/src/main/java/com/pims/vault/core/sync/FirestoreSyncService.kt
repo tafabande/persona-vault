@@ -699,6 +699,11 @@ class FirestoreSyncService @Inject constructor(
                 "format" to note.format,
                 "createdAt" to note.createdAt,
                 "updatedAt" to note.updatedAt,
+                "reminderAt" to note.reminderAt,
+                "reminderTag" to note.reminderTag,
+                "reminderRepeat" to note.reminderRepeat,
+                "isReminderDone" to note.isReminderDone,
+                "isLocked" to note.isLocked,
                 "isDeleted" to isDeleted,
                 "version" to 1L
             )
@@ -2034,6 +2039,11 @@ class FirestoreSyncService @Inject constructor(
                             effectiveNoteId = existingNote.id
                         }
                     } else {
+                        val isLocked = doc.getBoolean("isLocked") ?: false
+                        val reminderAt = doc.getLong("reminderAt")
+                        val reminderTag = doc.getString("reminderTag")
+                        val reminderRepeat = doc.getString("reminderRepeat")
+                        val isReminderDone = doc.getBoolean("isReminderDone") ?: false
                         val noteEntity = PlainNoteEntity(
                             id = noteId,
                             ownerPersonId = targetOwner,
@@ -2041,7 +2051,12 @@ class FirestoreSyncService @Inject constructor(
                             content = content,
                             format = format,
                             createdAt = createdAt,
-                            updatedAt = updatedAt
+                            updatedAt = updatedAt,
+                            reminderAt = reminderAt,
+                            reminderTag = reminderTag,
+                            reminderRepeat = reminderRepeat,
+                            isReminderDone = isReminderDone,
+                            isLocked = isLocked
                         )
                         plainNoteDao.upsert(noteEntity)
                         count++

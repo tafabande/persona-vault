@@ -374,11 +374,17 @@ fun VaultDashboardView(
                                     VaultCategory.IDENTITY_CREDENTIAL -> {
                                         currentRoute = VaultScreenRoute.IdCredentialDetail(item)
                                     }
-                                    VaultCategory.API_KEY, VaultCategory.SSH_KEY, VaultCategory.ACCESS_TOKEN, VaultCategory.GENERIC_SECRET -> {
+                                    VaultCategory.PASSWORD,
+                                    VaultCategory.TOTP_2FA,
+                                    VaultCategory.SECURE_NOTE,
+                                    VaultCategory.API_KEY,
+                                    VaultCategory.SSH_KEY,
+                                    VaultCategory.ACCESS_TOKEN,
+                                    VaultCategory.GENERIC_SECRET -> {
                                         currentRoute = VaultScreenRoute.KeyDetail(item)
                                     }
                                     else -> {
-                                        viewModel.openItem(item)
+                                        currentRoute = VaultScreenRoute.KeyDetail(item)
                                     }
                                 }
                             },
@@ -685,11 +691,29 @@ fun VaultDashboardView(
     // Editor Dialogs
     if (uiState.isEditing && uiState.editorCategory != null) {
         if (uiState.editorCategory == VaultCategory.PASSWORD) {
+            val initialPass = if (uiState.activeItemId != null) uiState.activeDecryptedPassword else null
+            val header = if (uiState.activeItemId != null) uiState.vaultItems.find { it.id == uiState.activeItemId } else null
+            val isEditingPassword = uiState.activeItemId != null
+            val isPasswordLoading = isEditingPassword && uiState.isLoading && initialPass == null
             androidx.compose.ui.window.Dialog(
                 onDismissRequest = { viewModel.closeEditor() },
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
                 com.pims.vault.presentation.vault.password.AddPasswordScreen(
+                    initialTitle = header?.title.orEmpty(),
+                    initialUsername = initialPass?.username ?: header?.accountIdentifier.orEmpty(),
+                    initialPassword = initialPass?.passwordPlaintext.orEmpty(),
+                    initialWebsite = initialPass?.websiteUrl.orEmpty(),
+                    initialNotes = initialPass?.notes.orEmpty(),
+                    isEditingPassword = isEditingPassword,
+                    isLoading = isPasswordLoading,
+                    errorMessage = uiState.errorMessage,
+                    onRetry = {
+                        uiState.activeItemId?.let { id ->
+                            val item = uiState.vaultItems.find { it.id == id }
+                            if (item != null) viewModel.openItem(item)
+                        }
+                    },
                     onNavigateBack = { viewModel.closeEditor() },
                     onSavePassword = { title, username, pass, url, notes ->
                         viewModel.savePassword(title, username, pass, url, notes, uiState.activeItemId)
@@ -698,12 +722,23 @@ fun VaultDashboardView(
             }
         } else if (uiState.editorCategory == VaultCategory.PAYMENT_REFERENCE) {
             val initialPayment = if (uiState.activeItemId != null) uiState.activeDecryptedPayment else null
+            val isEditingCard = uiState.activeItemId != null
+            val isCardLoading = isEditingCard && uiState.isLoading && initialPayment == null
             androidx.compose.ui.window.Dialog(
                 onDismissRequest = { viewModel.closeEditor() },
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
                 com.pims.vault.presentation.vault.card.AddCardScreen(
                     onNavigateBack = { viewModel.closeEditor() },
+                    isEditingCard = isEditingCard,
+                    isLoading = isCardLoading,
+                    errorMessage = uiState.errorMessage,
+                    onRetry = {
+                        uiState.activeItemId?.let { id ->
+                            val header = uiState.vaultItems.find { it.id == id }
+                            if (header != null) viewModel.openItem(header)
+                        }
+                    },
                     initialBankName = initialPayment?.provider.orEmpty(),
                     initialCardHolder = initialPayment?.cardholderName.orEmpty(),
                     initialCardNumber = initialPayment?.fullCardNumber.orEmpty(),

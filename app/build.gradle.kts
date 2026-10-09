@@ -201,8 +201,7 @@ dependencies {
     // Room & Encrypted Database (SQLCipher)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    kspDebug(libs.androidx.room.compiler)
-    kspRelease(libs.androidx.room.compiler)
+    ksp(libs.androidx.room.compiler)
     implementation(libs.sqlcipher)
     implementation(libs.androidx.sqlite)
 
@@ -212,8 +211,7 @@ dependencies {
 
     // Hilt Dependency Injection
     implementation(libs.hilt.android)
-    kspDebug(libs.hilt.compiler)
-    kspRelease(libs.hilt.compiler)
+    ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
 
     // Firebase authentication and remote storage

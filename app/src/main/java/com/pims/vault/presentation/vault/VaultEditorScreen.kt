@@ -39,12 +39,24 @@ fun VaultEditorScreen(
 
     when (category) {
         VaultCategory.PASSWORD -> {
+            val isEditingPassword = itemId != null
+            val decryptedPass = if (itemId != null && existingItem?.category == VaultCategory.PASSWORD) uiState.activeDecryptedPassword else null
+            val isPasswordLoading = isEditingPassword && uiState.isLoading && decryptedPass == null
             AddPasswordScreen(
                 initialTitle = existingItem?.title.orEmpty(),
-                initialUsername = existingItem?.accountIdentifier.orEmpty(),
-                initialPassword = "",
-                initialWebsite = "",
-                initialNotes = "",
+                initialUsername = decryptedPass?.username ?: existingItem?.accountIdentifier.orEmpty(),
+                initialPassword = decryptedPass?.passwordPlaintext.orEmpty(),
+                initialWebsite = decryptedPass?.websiteUrl.orEmpty(),
+                initialNotes = decryptedPass?.notes.orEmpty(),
+                isEditingPassword = isEditingPassword,
+                isLoading = isPasswordLoading,
+                errorMessage = uiState.errorMessage,
+                onRetry = {
+                    itemId?.let { id ->
+                        val header = uiState.vaultItems.find { it.id == id }
+                        if (header != null) viewModel.openItem(header)
+                    }
+                },
                 onNavigateBack = onNavigateBack,
                 onSavePassword = { title, username, password, website, notes ->
                     viewModel.savePassword(title, username, password, website, notes, itemId)
@@ -53,9 +65,20 @@ fun VaultEditorScreen(
             )
         }
         VaultCategory.PAYMENT_REFERENCE -> {
+            val isEditingCard = itemId != null
             val decryptedPayment = if (itemId != null && existingItem?.category == VaultCategory.PAYMENT_REFERENCE) uiState.activeDecryptedPayment else null
+            val isCardLoading = isEditingCard && uiState.isLoading && decryptedPayment == null
             AddCardScreen(
                 onNavigateBack = onNavigateBack,
+                isEditingCard = isEditingCard,
+                isLoading = isCardLoading,
+                errorMessage = uiState.errorMessage,
+                onRetry = {
+                    itemId?.let { id ->
+                        val header = uiState.vaultItems.find { it.id == id }
+                        if (header != null) viewModel.openItem(header)
+                    }
+                },
                 initialBankName = decryptedPayment?.provider.orEmpty(),
                 initialCardHolder = decryptedPayment?.cardholderName.orEmpty(),
                 initialCardNumber = decryptedPayment?.fullCardNumber.orEmpty(),

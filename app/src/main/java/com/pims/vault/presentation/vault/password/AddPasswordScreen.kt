@@ -63,6 +63,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -106,6 +107,10 @@ fun AddPasswordScreen(
     initialPassword: String = "",
     initialWebsite: String = "",
     initialNotes: String = "",
+    isEditingPassword: Boolean = false,
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    onRetry: (() -> Unit)? = null,
     onNavigateBack: () -> Unit,
     onSavePassword: (title: String, username: String, passwordPlain: String, websiteUrl: String?, notes: String?) -> Unit
 ) {
@@ -120,6 +125,15 @@ fun AddPasswordScreen(
     var websiteUrl by remember { mutableStateOf(initialWebsite) }
     var notes by remember { mutableStateOf(initialNotes) }
     var selectedCategory by remember { mutableStateOf("Personal") }
+
+    // Asynchronous prepopulation: update form state when decrypted password arrives
+    LaunchedEffect(initialTitle, initialUsername, initialPassword, initialWebsite, initialNotes) {
+        if (initialTitle.isNotBlank() && title.isBlank()) title = initialTitle
+        if (initialUsername.isNotBlank() && username.isBlank()) username = initialUsername
+        if (initialPassword.isNotBlank() && password.isBlank()) password = initialPassword
+        if (initialWebsite.isNotBlank() && websiteUrl.isBlank()) websiteUrl = initialWebsite
+        if (initialNotes.isNotBlank() && notes.isBlank()) notes = initialNotes
+    }
 
     // Generator configuration state
     var showGenerator by remember { mutableStateOf(false) }

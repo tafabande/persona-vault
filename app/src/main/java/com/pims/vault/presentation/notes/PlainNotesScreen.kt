@@ -25,6 +25,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Schedule
+
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -60,6 +64,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -102,8 +109,20 @@ import java.util.Locale
 fun PlainNotesScreen(
     onOpenEditor: (String?) -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: PlainNotesViewModel = hiltViewModel()
+    viewModel: PlainNotesViewModel = hiltViewModel(),
+    onRequestAuth: ((title: String, subtitle: String, onSuccess: () -> Unit) -> Unit)? = null
 ) {
+    var showCumulativeOverview by remember { mutableStateOf(false) }
+
+    val handleNoteClick: (PlainNote) -> Unit = { note ->
+        if (note.isLocked && onRequestAuth != null) {
+            onRequestAuth("Unlock Protected Note", "Authentication required to open protected note") {
+                onOpenEditor(note.id)
+            }
+        } else {
+            onOpenEditor(note.id)
+        }
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val dayFormat = remember { SimpleDateFormat("EEE d MMM", Locale.getDefault()) }
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
@@ -274,12 +293,15 @@ fun PlainNotesScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                // Right: Pill Badge showing total notes count
+                // Right: Pill Badge showing total notes count (Tapping opens cumulative overview)
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.clickable { onOpenEditor(null) }
+                    modifier = Modifier.clickable {
+                        haptics.light()
+                        showCumulativeOverview = true
+                    }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -434,7 +456,7 @@ fun PlainNotesScreen(
                             NoteListRow(
                                 note = note,
                                 timeStr = timeFormat.format(Date(note.updatedAt)),
-                                onClick = { onOpenEditor(note.id) },
+                                onClick = { handleNoteClick(note) },
                                 onDelete = { noteToDelete = note },
                                 viewModel = viewModel,
                                 onTagClick = { tag ->
@@ -516,7 +538,7 @@ fun PlainNotesScreen(
                                     NoteListRow(
                                         note = note,
                                         timeStr = timeFormat.format(Date(note.updatedAt)),
-                                        onClick = { onOpenEditor(note.id) },
+                                        onClick = { handleNoteClick(note) },
                                         onDelete = { noteToDelete = note },
                                         viewModel = viewModel,
                                         onTagClick = { tag ->
@@ -606,13 +628,14 @@ fun PlainNotesScreen(
                                 NoteListRow(
                                     note = note,
                                     timeStr = timeFormat.format(Date(note.updatedAt)),
-                                    onClick = { onOpenEditor(note.id) },
+                                    onClick = { handleNoteClick(note) },
                                     onDelete = { noteToDelete = note },
                                     viewModel = viewModel,
                                     onTagClick = { tag ->
                                         searchQuery = "#$tag"
                                         isSearchVisible = true
-                                    }
+                                    },
+                                    onRequestAuth = onRequestAuth
                                 )
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -672,13 +695,14 @@ fun PlainNotesScreen(
                                 NoteListRow(
                                     note = note,
                                     timeStr = timeFormat.format(Date(note.updatedAt)),
-                                    onClick = { onOpenEditor(note.id) },
+                                    onClick = { handleNoteClick(note) },
                                     onDelete = { noteToDelete = note },
                                     viewModel = viewModel,
                                     onTagClick = { tag ->
                                         searchQuery = "#$tag"
                                         isSearchVisible = true
-                                    }
+                                    },
+                                    onRequestAuth = onRequestAuth
                                 )
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -723,6 +747,336 @@ fun PlainNotesScreen(
                 }
             )
         }
+
+        CumulativeNotesOverviewSheet(
+            notes = state.notes,
+            isVisible = showCumulativeOverview,
+            onDismiss = { showCumulativeOverview = false },
+            onNoteClick = { note ->
+                showCumulativeOverview = false
+                handleNoteClick(note)
+            }
+        )
+    }
+}
+
+@Composable
+private fun OverviewMetricCard(
+    title: String,
+    count: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = "$count",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CumulativeNotesOverviewSheet(
+    notes: List<PlainNote>,
+    isVisible: Boolean,
+    onDismiss: () -> Unit,
+    onNoteClick: (PlainNote) -> Unit
+) {
+    if (!isVisible) return
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val dateFormat = remember { SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault()) }
+    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+
+    // Group chronologically by date
+    val groupedNotes = remember(notes) {
+        notes.sortedByDescending { it.updatedAt }
+            .groupBy { dateFormat.format(Date(it.updatedAt)) }
+    }
+
+    val totalNotesCount = notes.size
+    val lockedNotesCount = notes.count { it.isLocked }
+    val reminderNotesCount = notes.count { it.reminderAt != null }
+    val photoNotesCount = notes.count { it.attachments.isNotEmpty() }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 10.dp)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Notes & Timeline Overview",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Cumulative audit and chronological history",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = PersonaIcons.Close,
+                        contentDescription = "Close overview",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Metrics Grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OverviewMetricCard(
+                    title = "Total Notes",
+                    count = totalNotesCount,
+                    icon = PersonaIcons.Edit,
+                    modifier = Modifier.weight(1f)
+                )
+                OverviewMetricCard(
+                    title = "Protected",
+                    count = lockedNotesCount,
+                    icon = Icons.Default.Lock,
+                    modifier = Modifier.weight(1f)
+                )
+                OverviewMetricCard(
+                    title = "Reminders",
+                    count = reminderNotesCount,
+                    icon = Icons.Default.Alarm,
+                    modifier = Modifier.weight(1f)
+                )
+                OverviewMetricCard(
+                    title = "Photos",
+                    count = photoNotesCount,
+                    icon = Icons.Default.AddPhotoAlternate,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            if (notes.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = PersonaIcons.Edit,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Text(
+                            text = "No notes recorded yet",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    groupedNotes.forEach { (dateStr, dateNotes) ->
+                        item(key = "date_$dateStr") {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text(
+                                        text = dateStr,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "• ${dateNotes.size} ${if (dateNotes.size == 1) "entry" else "entries"}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        items(dateNotes, key = { "overview_${it.id}" }) { note ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNoteClick(note) }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (note.isLocked) MaterialTheme.colorScheme.primaryContainer
+                                                else MaterialTheme.colorScheme.surfaceVariant
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = if (note.isLocked) Icons.Default.Lock else PersonaIcons.Edit,
+                                            contentDescription = null,
+                                            tint = if (note.isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = note.title.ifBlank { "Untitled" },
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            if (note.isLocked) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Lock,
+                                                    contentDescription = "Locked",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                            }
+                                        }
+
+                                        val previewText = if (note.isLocked) "🔒 Protected note content"
+                                        else note.content.replace('\n', ' ').trim().take(50).ifBlank { "No text content" }
+
+                                        Text(
+                                            text = previewText,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.padding(top = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = timeFormat.format(Date(note.updatedAt)),
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                            )
+                                            if (note.reminderAt != null) {
+                                                Text(
+                                                    text = "⏰ Reminder",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                            if (note.attachments.isNotEmpty()) {
+                                                Text(
+                                                    text = "📷 ${note.attachments.size} ${if (note.attachments.size == 1) "photo" else "photos"}",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                                    color = MaterialTheme.colorScheme.secondary
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Icon(
+                                        imageVector = PersonaIcons.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -740,7 +1094,8 @@ fun NoteListRow(
     onClick: () -> Unit,
     onDelete: () -> Unit,
     viewModel: PlainNotesViewModel? = null,
-    onTagClick: ((String) -> Unit)? = null
+    onTagClick: ((String) -> Unit)? = null,
+    onRequestAuth: ((title: String, subtitle: String, onSuccess: () -> Unit) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val haptics = rememberPimsHaptics()
@@ -777,15 +1132,32 @@ fun NoteListRow(
         )
 
         // Thumbnail if photo attached
-        thumbnailBitmap?.let { bmp ->
-            Image(
-                bitmap = bmp.asImageBitmap(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
+        if (!note.isLocked) {
+            thumbnailBitmap?.let { bmp ->
+                Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            }
+        } else {
+            Box(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(RoundedCornerShape(8.dp))
-            )
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = "Protected note",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
 
         // Text content
@@ -924,8 +1296,20 @@ fun NoteListRow(
                     onClick = {
                         showMenu = false
                         haptics.light()
-                        viewModel?.toggleLock(note)
-                        Toast.makeText(context, if (note.isLocked) "Note unlocked" else "Note locked", Toast.LENGTH_SHORT).show()
+                        if (note.isLocked) {
+                            if (onRequestAuth != null) {
+                                onRequestAuth("Unlock Note", "Authentication required to remove note protection") {
+                                    viewModel?.toggleLock(note)
+                                    Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                viewModel?.toggleLock(note)
+                                Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            viewModel?.toggleLock(note)
+                            Toast.makeText(context, "Note locked", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
 

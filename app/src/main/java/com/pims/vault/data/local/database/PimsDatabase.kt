@@ -331,7 +331,12 @@ abstract class PimsDatabase : RoomDatabase() {
                 MIGRATION_8_9,
                 MIGRATION_9_10,
                 MIGRATION_10_11
-            )
+            ).addCallback(object : RoomDatabase.Callback() {
+                override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    super.onOpen(db)
+                    db.execSQL("PRAGMA foreign_keys = ON;")
+                }
+            })
 
             if (openHelperFactory != null) {
                 builder.openHelperFactory(openHelperFactory)

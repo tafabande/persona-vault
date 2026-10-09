@@ -507,6 +507,24 @@ class VaultViewModel @Inject constructor(
             val item = _uiState.value.vaultItems.find { it.id == itemId }
             if (item != null) {
                 openItem(item)
+            } else {
+                viewModelScope.launch {
+                    try {
+                        val entity = vaultDao.getVaultItemById(itemId)
+                        if (entity != null) {
+                            val header = VaultItemHeader(
+                                id = entity.id,
+                                personId = entity.personId,
+                                category = entity.category,
+                                title = entity.title,
+                                accountIdentifier = entity.accountIdentifier,
+                                createdAt = entity.createdAt,
+                                updatedAt = entity.updatedAt
+                            )
+                            openItem(header)
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }
     }

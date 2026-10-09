@@ -114,7 +114,8 @@ import java.util.UUID
 fun PlainNoteEditorScreen(
     noteId: String?,
     onBack: () -> Unit,
-    viewModel: PlainNotesViewModel = hiltViewModel()
+    viewModel: PlainNotesViewModel = hiltViewModel(),
+    onRequestAuth: ((title: String, subtitle: String, onSuccess: () -> Unit) -> Unit)? = null
 ) {
     val haptics = rememberPimsHaptics()
     val feedback = rememberPimsFeedback()
@@ -131,12 +132,27 @@ fun PlainNoteEditorScreen(
 
     BackHandler(enabled = !isBusy, onBack = onBack)
 
-    var title by remember { mutableStateOf(existingNote?.title ?: "") }
-    var contentValue by remember {
-        mutableStateOf(TextFieldValue(existingNote?.content ?: ""))
+    var isUnlocked by remember(noteId, existingNote?.isLocked) { 
+        mutableStateOf(existingNote == null || !existingNote.isLocked) 
+    }
+    var title by remember(isUnlocked) { 
+        mutableStateOf(if (isUnlocked) (existingNote?.title ?: "") else "") 
+    }
+    var contentValue by remember(isUnlocked) {
+        mutableStateOf(TextFieldValue(if (isUnlocked) (existingNote?.content ?: "") else ""))
     }
     var format by remember { mutableStateOf(existingNote?.format ?: NoteFormat.PLAIN) }
     var isLocked by remember(existingNote) { mutableStateOf(existingNote?.isLocked ?: false) }
+
+    LaunchedEffect(existingNote?.id) {
+        if (existingNote?.isLocked == true && !isUnlocked && onRequestAuth != null) {
+            onRequestAuth("Unlock Protected Note", "Verify your identity to open this note") {
+                isUnlocked = true
+                title = existingNote.title
+                contentValue = TextFieldValue(existingNote.content)
+            }
+        }
+    }
     var reminderAt by remember(existingNote) { mutableStateOf(existingNote?.reminderAt) }
     var reminderTag by remember(existingNote) { mutableStateOf(existingNote?.reminderTag) }
     var reminderRepeat by remember(existingNote) { mutableStateOf(existingNote?.reminderRepeat) }
@@ -231,9 +247,20 @@ fun PlainNoteEditorScreen(
                     IconButton(
                         onClick = {
                             haptics.light()
-                            isLocked = !isLocked
-                            val msg = if (isLocked) "Note locked (biometric protected)" else "Note unlocked"
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            if (isLocked) {
+                                if (onRequestAuth != null) {
+                                    onRequestAuth("Unlock Note", "Authentication required to remove note lock") {
+                                        isLocked = false
+                                        Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    isLocked = false
+                                    Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                isLocked = true
+                                Toast.makeText(context, "Note locked (biometric protected)", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -303,7 +330,8 @@ fun PlainNoteEditorScreen(
             }
         },
         bottomBar = {
-            Column(
+            if (isUnlocked) {
+                Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .imePadding()
@@ -786,15 +814,97 @@ fun PlainNoteEditorScreen(
                     }
                 }
             }
+            }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = PimsDimensions.paddingLarge, vertical = PimsDimensions.paddingSmall)
-        ) {
+        if (!isUnlocked) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(80.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Protected note",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                    }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Protected Note",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Text(
+                            text = "This note is encrypted and locked. Authenticate using your biometric or security PIN to view and edit its contents.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            if (onRequestAuth != null) {
+                                onRequestAuth("Unlock Protected Note", "Authenticate to unlock note") {
+                                    isUnlocked = true
+                                    title = existingNote?.title ?: ""
+                                    contentValue = TextFieldValue(existingNote?.content ?: "")
+                                }
+                            } else {
+                                isUnlocked = true
+                                title = existingNote?.title ?: ""
+                                contentValue = TextFieldValue(existingNote?.content ?: "")
+                            }
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .fillMaxWidth(0.75f)
+                            .height(50.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LockOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Unlock Note", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+
+                    TextButton(onClick = onBack) {
+                        Text("Go Back", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = PimsDimensions.paddingLarge, vertical = PimsDimensions.paddingSmall)
+            ) {
             // Big Bold Title TextField
             BasicTextField(
                 value = title,
@@ -1133,6 +1243,7 @@ fun PlainNoteEditorScreen(
                     .fillMaxWidth()
                     .weight(1f)
             )
+        }
         }
     }
 

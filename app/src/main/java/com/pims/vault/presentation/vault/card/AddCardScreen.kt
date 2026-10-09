@@ -72,12 +72,20 @@ import com.pims.vault.presentation.vault.card.CardNetworkBadge
 import com.pims.vault.presentation.vault.card.CardSkinCatalogue
 import com.pims.vault.presentation.vault.card.CardSkin
 
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.runtime.LaunchedEffect
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddCardScreen(
     onNavigateBack: () -> Unit,
     onSaveCard: (bankName: String, holder: String, number: String, expiry: String, cvv: String, linkedBankAccountId: String?, linkedBankAccountName: String?, cardType: String) -> Unit,
     modifier: Modifier = Modifier,
+    isEditingCard: Boolean = false,
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    onRetry: (() -> Unit)? = null,
     initialBankName: String = "",
     initialCardHolder: String = "",
     initialCardNumber: String = "",
@@ -87,20 +95,43 @@ fun AddCardScreen(
     initialLinkedBankAccountName: String? = null,
     initialCardType: String = "PHYSICAL"
 ) {
-    var bankName by remember(initialBankName, initialLinkedBankAccountName) { 
+    var bankName by remember { 
         mutableStateOf(initialBankName.ifBlank { initialLinkedBankAccountName.orEmpty() }) 
     }
-    var cardHolder by remember(initialCardHolder) { mutableStateOf(initialCardHolder) }
-    var cardNumber by remember(initialCardNumber) { mutableStateOf(initialCardNumber) }
-    var expiryDate by remember(initialExpiryDate) { mutableStateOf(initialExpiryDate) }
-    var cvv by remember(initialCvv) { mutableStateOf(initialCvv) }
-    var cardType by remember(initialCardType) { mutableStateOf(if (initialCardType.contains("VIRTUAL", ignoreCase = true)) "VIRTUAL" else "PHYSICAL") }
-    var linkedBankAccountId by remember(initialLinkedBankAccountId) { mutableStateOf(initialLinkedBankAccountId) }
-    var linkedBankAccountName by remember(initialLinkedBankAccountName) { mutableStateOf(initialLinkedBankAccountName) }
+    var cardHolder by remember { mutableStateOf(initialCardHolder) }
+    var cardNumber by remember { mutableStateOf(initialCardNumber) }
+    var expiryDate by remember { mutableStateOf(initialExpiryDate) }
+    var cvv by remember { mutableStateOf(initialCvv) }
+    var cardType by remember { mutableStateOf(if (initialCardType.contains("VIRTUAL", ignoreCase = true)) "VIRTUAL" else "PHYSICAL") }
+    var linkedBankAccountId by remember { mutableStateOf(initialLinkedBankAccountId) }
+    var linkedBankAccountName by remember { mutableStateOf(initialLinkedBankAccountName) }
     var showOptionsMenu by remember { mutableStateOf(false) }
     var showSecurityInfoDialog by remember { mutableStateOf(false) }
 
-    val isEditing = initialBankName.isNotBlank() || initialCardNumber.isNotBlank() || initialCardHolder.isNotBlank()
+    val isEditing = isEditingCard || initialBankName.isNotBlank() || initialCardNumber.isNotBlank() || initialCardHolder.isNotBlank()
+
+    // Dynamically synchronize form fields when decrypted data arrives asynchronously
+    LaunchedEffect(
+        initialBankName,
+        initialCardHolder,
+        initialCardNumber,
+        initialExpiryDate,
+        initialCvv,
+        initialLinkedBankAccountId,
+        initialLinkedBankAccountName,
+        initialCardType
+    ) {
+        if (initialBankName.isNotBlank() || initialCardHolder.isNotBlank() || initialCardNumber.isNotBlank() || initialExpiryDate.isNotBlank() || initialCvv.isNotBlank() || initialLinkedBankAccountId != null || initialLinkedBankAccountName != null) {
+            bankName = initialBankName.ifBlank { initialLinkedBankAccountName.orEmpty() }
+            cardHolder = initialCardHolder
+            cardNumber = initialCardNumber
+            expiryDate = initialExpiryDate
+            cvv = initialCvv
+            cardType = if (initialCardType.contains("VIRTUAL", ignoreCase = true)) "VIRTUAL" else "PHYSICAL"
+            linkedBankAccountId = initialLinkedBankAccountId
+            linkedBankAccountName = initialLinkedBankAccountName
+        }
+    }
     val cleanNumber = cardNumber.filter { it.isDigit() }
     var selectedNetwork by remember { mutableStateOf<CardNetwork?>(null) }
     val detectedNetwork = selectedNetwork ?: CardNetwork.detectFromCardNumber(cleanNumber)
@@ -177,20 +208,69 @@ fun AddCardScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
             ) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Text(
+                        text = "Decrypting card details...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 20.dp)
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    if (errorMessage != null) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = errorMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (onRetry != null) {
+                                    TextButton(onClick = onRetry) {
+                                        Text("Retry", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                 if (!linkedBankAccountName.isNullOrBlank()) {
                     Surface(
@@ -391,6 +471,7 @@ fun AddCardScreen(
                 )
             }
         }
+    }
     }
 
     if (showSecurityInfoDialog) {
