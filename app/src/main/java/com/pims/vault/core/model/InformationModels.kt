@@ -105,7 +105,8 @@ data class FinancialCardRecord(
     val cardNumber: String,
     val expiryDate: String = "",
     val cvv: String = "",
-    val cardType: String = "Debit", // Debit, Credit, Prepaid
+    val cardType: String = "Debit", // Debit, Credit, Prepaid, Virtual
+    val isVirtual: Boolean = false,
     val branch: String? = null,
     val nickname: String? = null,
     val notes: String? = null,
@@ -118,6 +119,9 @@ data class FinancialCardRecord(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
+    val isVirtualCard: Boolean
+        get() = isVirtual || cardType.contains("VIRTUAL", ignoreCase = true)
+
     val maskedCardNumber: String
         get() {
             val clean = cardNumber.filter { it.isDigit() }
@@ -136,6 +140,39 @@ data class FinancialCardRecord(
     val maskedCvv: String = "•••"
     val maskedExpiry: String = "••/••"
 }
+
+/**
+ * Reusable Attachment Role for Identity Cards, Membership Cards, Payment Cards, etc.
+ */
+enum class AttachmentRole(val displayName: String) {
+    FRONT("Front Image"),
+    BACK("Back Image"),
+    OTHER("Additional / Document");
+
+    companion object {
+        fun fromString(value: String?): AttachmentRole {
+            return when (value?.uppercase()?.trim()) {
+                "FRONT" -> FRONT
+                "BACK" -> BACK
+                else -> OTHER
+            }
+        }
+    }
+}
+
+/**
+ * Reusable Attachment Item for any Record.
+ */
+data class RecordAttachment(
+    val id: String = UUID.randomUUID().toString(),
+    val parentRecordId: String,
+    val role: AttachmentRole = AttachmentRole.FRONT,
+    val storagePath: String,
+    val mimeType: String = "image/jpeg",
+    val fileSizeBytes: Long = 0L,
+    val label: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
 
 /**
  * Supported digital card types.

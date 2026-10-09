@@ -89,6 +89,9 @@ val plain = engine.decrypt(payload, keyBytes, aad)
 - Validate with the smallest covering command (`testDebugUnitTest` for logic, `lintDebug` for UI).
 - Never commit secrets, `secrets.properties`, or `local.properties`. Use `secrets.properties.example` as template.
 - Use `view`/`edit` for existing files, `create` only for new files. Clean up temp files.
+- **Store raw and derive display**: Save raw inputs/digits (encrypted), and compute masked or formatted strings at render time.
+- **Patch don't replace**: Use targeted updates/patching (e.g. `set()` with merge, or touching only changed fields) instead of replacing entire records during sync or lookup.
+- **IDs identify and names label**: Use unique IDs as keys. Never rely on names for uniqueness constraints. (e.g. keep what the user typed in `fullName`, and place external lookup names in a separate `profileName`).
 
 ## 8. Definition of Done
 

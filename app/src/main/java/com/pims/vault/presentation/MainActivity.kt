@@ -87,6 +87,10 @@ import com.pims.vault.presentation.ui.theme.ThemeMode
 import java.util.UUID
 import javax.inject.Inject
 
+import com.pims.vault.core.auth.AuthenticationService
+import com.pims.vault.core.auth.AuthUser
+import com.pims.vault.core.session.RememberedAccountManager
+
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val sessionManager: BiometricSessionManager,
@@ -95,7 +99,9 @@ class MainViewModel @Inject constructor(
     private val moodManager: PersonaMoodManager,
     private val motionManager: PersonaMotionManager,
     private val personDao: PersonDao,
-    private val contactDao: ContactDao
+    private val contactDao: ContactDao,
+    private val authenticationService: AuthenticationService,
+    private val rememberedAccountManager: RememberedAccountManager
 ) : ViewModel() {
     val sessionState: StateFlow<SessionState> = sessionManager.sessionState
     val accountMode: StateFlow<AccountMode> = accountModeManager.accountMode
@@ -105,6 +111,17 @@ class MainViewModel @Inject constructor(
     val hasCompletedWalkthrough: StateFlow<Boolean> = accountModeManager.hasCompletedWalkthrough
     val hasCompletedInitialProfile: StateFlow<Boolean> = accountModeManager.hasCompletedInitialProfile
     val isRevisitingWalkthrough: StateFlow<Boolean> = accountModeManager.isRevisitingWalkthrough
+    val authUser: StateFlow<AuthUser?> = authenticationService.authState
+
+    init {
+        viewModelScope.launch {
+            authenticationService.authState.collect { user ->
+                if (user != null && accountModeManager.accountMode.value == AccountMode.UNSET) {
+                    accountModeManager.upgradeToCloudAccount(user.email ?: "")
+                }
+            }
+        }
+    }
 
     fun onAuthSuccess() {
         viewModelScope.launch {
@@ -194,6 +211,12 @@ class MainViewModel @Inject constructor(
 
     fun signOut() {
         viewModelScope.launch {
+            try {
+                authenticationService.signOut()
+            } catch (e: Exception) {
+                com.pims.vault.core.logging.VaultLogger.e("MainViewModel", "Sign out error: ${e.message}", e)
+            }
+            rememberedAccountManager.forgetAccount()
             accountModeManager.signOut()
             sessionManager.lockSession()
         }
@@ -238,6 +261,7 @@ class MainActivity : FragmentActivity() {
                     }
                 }
                 var showSplash by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
+                val authUser by viewModel.authUser.collectAsState()
                 val accountMode by viewModel.accountMode.collectAsState()
                 val hasCompletedWalkthrough by viewModel.hasCompletedWalkthrough.collectAsState()
                 val hasCompletedInitialProfile by viewModel.hasCompletedInitialProfile.collectAsState()
@@ -247,7 +271,9 @@ class MainActivity : FragmentActivity() {
 
                 LaunchedEffect(Unit) {
                     delay(800L)
-                    if (accountMode != AccountMode.UNSET && hasCompletedInitialProfile) {
+                    val isReadyToUnlock = (accountMode == AccountMode.CLOUD_SYNCED && authUser != null && hasCompletedInitialProfile) ||
+                            (accountMode == AccountMode.LOCAL_ONLY && hasCompletedInitialProfile)
+                    if (isReadyToUnlock) {
                         viewModel.onAuthSuccess()
                     }
                     showSplash = false
@@ -260,6 +286,7 @@ class MainActivity : FragmentActivity() {
                         showSplash -> "SPLASH"
                         !hasCompletedWalkthrough || isRevisitingWalkthrough -> "WALKTHROUGH"
                         accountMode == AccountMode.UNSET -> "ACCOUNT_CHOICE"
+                        accountMode == AccountMode.CLOUD_SYNCED && authUser == null -> "ACCOUNT_CHOICE"
                         !hasCompletedInitialProfile -> "MINIMAL_SETUP"
                         else -> "APP"
                     },
@@ -316,6 +343,9 @@ class MainActivity : FragmentActivity() {
                                 },
                                 onSkip = {
                                     viewModel.startLocalMode()
+                                },
+                                onClearError = {
+                                    accountsViewModel.clearError()
                                 }
                             )
                         }

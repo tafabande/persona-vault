@@ -67,7 +67,10 @@ data class DocumentEntity(
     val createdAt: Long = System.currentTimeMillis(),
 
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "is_locked", defaultValue = "0")
+    val isLocked: Boolean = false
 )
 
 @Entity(

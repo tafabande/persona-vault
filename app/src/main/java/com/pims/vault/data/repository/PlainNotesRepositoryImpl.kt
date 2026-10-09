@@ -44,7 +44,8 @@ class PlainNotesRepositoryImpl @Inject constructor(
         reminderAt: Long?,
         reminderTag: String?,
         reminderRepeat: String?,
-        isReminderDone: Boolean
+        isReminderDone: Boolean,
+        isLocked: Boolean
     ): PlainNote {
         val noteId = id ?: UUID.randomUUID().toString()
         val cleanTitle = title.trim()
@@ -62,7 +63,8 @@ class PlainNotesRepositoryImpl @Inject constructor(
             reminderAt = reminderAt ?: existing?.reminderAt,
             reminderTag = reminderTag ?: existing?.reminderTag,
             reminderRepeat = reminderRepeat ?: existing?.reminderRepeat,
-            isReminderDone = isReminderDone
+            isReminderDone = isReminderDone,
+            isLocked = isLocked
         )
         dao.upsert(entity)
 
@@ -86,6 +88,14 @@ class PlainNotesRepositoryImpl @Inject constructor(
         } catch (_: Exception) {}
         val attachments = dao.getAttachments(noteId).map { toDomain(it) }
         return toDomain(entity, attachments)
+    }
+
+    override suspend fun toggleLock(noteId: String, isLocked: Boolean) {
+        dao.setNoteLocked(noteId, isLocked)
+        val note = dao.getById(noteId)
+        note?.let {
+            try { firestoreSyncService?.syncNote(null, it, isDeleted = false) } catch (_: Exception) {}
+        }
     }
 
     override suspend fun setReminder(
@@ -231,7 +241,8 @@ class PlainNotesRepositoryImpl @Inject constructor(
             reminderAt = entity.reminderAt,
             reminderTag = entity.reminderTag,
             reminderRepeat = entity.reminderRepeat,
-            isReminderDone = entity.isReminderDone
+            isReminderDone = entity.isReminderDone,
+            isLocked = entity.isLocked
         )
     }
 

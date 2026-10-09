@@ -21,6 +21,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.DateRange
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -42,12 +45,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.pims.vault.core.model.VaultCategory
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,10 +95,8 @@ fun CardDetailScreen(
     }
 
     val decryptedPayment = uiState.activeDecryptedPayment
-    val decryptedBanking = uiState.activeDecryptedBanking
 
     val actualPan = decryptedPayment?.fullCardNumber?.ifBlank { null }
-        ?: decryptedBanking?.accountNumber?.ifBlank { null }
 
     val lastFour = decryptedPayment?.lastFourDigits?.ifBlank { null }
         ?: actualPan?.filter { it.isDigit() }?.takeLast(4)
@@ -101,10 +104,16 @@ fun CardDetailScreen(
         ?: "••••"
 
     val cvv = decryptedPayment?.cvv?.ifBlank { null }
-    val cardholderName = decryptedPayment?.cardholderName ?: decryptedBanking?.accountHolderName
-    val expiry = decryptedPayment?.let { "${it.expiryMonth}/${it.expiryYear.takeLast(2)}" } ?: "••••"
-    val linkedAccountName = decryptedBanking?.bankName
-    val notes = decryptedPayment?.notes ?: decryptedBanking?.notes
+    val cardholderName = decryptedPayment?.cardholderName
+    val expiry = decryptedPayment?.let {
+        if (it.expiryMonth.isNotBlank() || it.expiryYear.isNotBlank()) "${it.expiryMonth}/${it.expiryYear.takeLast(2)}"
+        else null
+    } ?: "••••"
+    val linkedAccountName = decryptedPayment?.linkedBankAccountName
+    val notes = decryptedPayment?.notes
+    val availableBankAccounts = remember(uiState.vaultItems) {
+        uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT }
+    }
 
     CardDetailScreen(
         issuer = card.title,
@@ -116,9 +125,12 @@ fun CardDetailScreen(
         expiry = expiry,
         linkedAccountName = linkedAccountName,
         notes = notes,
+        availableBankAccounts = availableBankAccounts,
         onBack = onBack,
         onEdit = onEdit,
         onDelete = onDelete,
+        onUnlinkAccount = { viewModel.unlinkCardFromBankAccount(card.id) },
+        onLinkAccount = { bankId, bankName -> viewModel.linkCardToBankAccount(card.id, bankId, bankName) },
         onCopyNumber = { num ->
             viewModel.copyToClipboard(context, num, "${card.title} Card Number")
         },
@@ -143,9 +155,12 @@ fun CardDetailScreen(
     expiry: String,
     linkedAccountName: String? = null,
     notes: String?,
+    availableBankAccounts: List<VaultItemHeader> = emptyList(),
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onUnlinkAccount: (() -> Unit)? = null,
+    onLinkAccount: ((bankAccountId: String, bankAccountName: String) -> Unit)? = null,
     onCopyNumber: (String) -> Unit,
     onCopyCvv: ((String) -> Unit)? = null,
     onCopyExpiry: ((String) -> Unit)? = null,
@@ -154,13 +169,10 @@ fun CardDetailScreen(
     var isPanRevealed by remember { mutableStateOf(false) }
     var isCvvRevealed by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showLinkBankDialog by remember { mutableStateOf(false) }
 
-    val baseGradient = when {
-        cardType.equals("Virtual", ignoreCase = true) -> listOf(Color(0xFF0F172A), Color(0xFF1E293B))
-        cardType.equals("Debit", ignoreCase = true) -> listOf(Color(0xFF064E3B), Color(0xFF0F172A))
-        cardType.equals("Credit", ignoreCase = true) -> listOf(Color(0xFF0C4A6E), Color(0xFF0F172A))
-        issuer.contains("Ecocash", ignoreCase = true) -> listOf(Color(0xFF1E293B), Color(0xFF0F172A))
-        else -> listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+    val baseGradient = remember(issuer, cardType) {
+        getCardBrandStyle(issuer, cardType).gradientColors
     }
 
     LaunchedEffect(isPanRevealed) {
@@ -305,24 +317,44 @@ fun CardDetailScreen(
                                 )
                             }
 
-                            // EMV Chip & Quick Reveal Indicator
+                            // Chip / Badge & Quick Reveal Indicator
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Brushed Titanium EMV Chip
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 38.dp, height = 28.dp)
-                                        .clip(RoundedCornerShape(5.dp))
-                                        .background(
-                                            Brush.linearGradient(
-                                                listOf(Color(0xFF94A3B8), Color(0xFFE2E8F0), Color(0xFF64748B))
+                                val isVirtual = cardType.contains("VIRTUAL", ignoreCase = true)
+                                if (!isVirtual) {
+                                    // Brushed Titanium EMV Chip
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 38.dp, height = 28.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(Color(0xFF94A3B8), Color(0xFFE2E8F0), Color(0xFF64748B))
+                                                )
                                             )
+                                            .border(0.7.dp, Color(0xFF475569), RoundedCornerShape(5.dp))
+                                    )
+                                } else {
+                                    // Sleek Virtual Card Badge
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White.copy(alpha = 0.2f))
+                                            .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "VIRTUAL",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.White,
+                                            letterSpacing = 1.sp
                                         )
-                                        .border(0.7.dp, Color(0xFF475569), RoundedCornerShape(5.dp))
-                                )
+                                    }
+                                }
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -339,7 +371,11 @@ fun CardDetailScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = if (isPanRevealed) "Revealed (15s)" else "Tap to reveal",
+                                        text = when {
+                                            isPanRevealed && !fullPan.isNullOrBlank() -> "Revealed (15s)"
+                                            isPanRevealed -> "No full number saved"
+                                            else -> "Tap to reveal"
+                                        },
                                         fontSize = 10.sp,
                                         color = Color.White.copy(alpha = 0.85f)
                                     )
@@ -352,7 +388,8 @@ fun CardDetailScreen(
                                     fullPan.filter { it.isDigit() }.chunked(4).joinToString("   ")
                                 }
                                 isPanRevealed -> {
-                                    "••••   ••••   ••••   $lastFour"
+                                    // No full PAN stored — show last four clearly
+                                    "****   ****   ****   $lastFour"
                                 }
                                 else -> {
                                     "••••   ••••   ••••   $lastFour"
@@ -672,7 +709,7 @@ fun CardDetailScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -686,17 +723,112 @@ fun CardDetailScreen(
                                 Text(
                                     text = linkedAccountName,
                                     fontSize = 15.sp,
-                                    fontWeight = FontWeight.Normal,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = getVaultTextPrimary()
                                 )
                                 Text(
-                                    text = "Linked account",
+                                    text = "Linked bank account",
                                     fontSize = 12.sp,
                                     color = getVaultTextSecondary()
                                 )
                             }
+                            if (onUnlinkAccount != null) {
+                                IconButton(
+                                    onClick = onUnlinkAccount,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Unlink bank account",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
                         }
                     }
+                } else if (onLinkAccount != null && availableBankAccounts.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    VaultGroupedCard {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showLinkBankDialog = true }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AccountBalance,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Link Bank Account",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Explicitly associate with a saved bank account",
+                                    fontSize = 12.sp,
+                                    color = getVaultTextSecondary()
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Link account",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (showLinkBankDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showLinkBankDialog = false },
+                        title = { Text("Link Bank Account", fontWeight = FontWeight.Bold) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Select a bank account to link to this payment card:", style = MaterialTheme.typography.bodyMedium)
+                                availableBankAccounts.forEach { bank ->
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                showLinkBankDialog = false
+                                                onLinkAccount?.invoke(bank.id, bank.title)
+                                            },
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.AccountBalance, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(bank.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                                bank.accountIdentifier?.let {
+                                                    Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(onClick = { showLinkBankDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
                 }
 
                 if (!notes.isNullOrBlank()) {

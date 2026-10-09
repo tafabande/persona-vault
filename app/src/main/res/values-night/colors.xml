@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="persona_background">#141311</color>
+    <color name="persona_surface">#232220</color>
+    <color name="persona_primary_text">#FFFFFF</color>
+    <color name="persona_accent">#F4F4F5</color>
+
+    <!-- Splash Screen Themed Tokens (Dark Mode) -->
+    <color name="persona_splash_background">#141311</color>
+    <color name="persona_splash_container">#232220</color>
+    <color name="persona_splash_glyph">#FFFFFF</color>
+
+    <!-- App Launcher Icon Themed Tokens (Dark Mode) -->
+    <color name="persona_icon_background">#141311</color>
+    <color name="persona_icon_foreground">#FFFFFF</color>
+</resources>

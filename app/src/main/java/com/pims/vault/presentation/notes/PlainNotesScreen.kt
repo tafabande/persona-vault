@@ -43,6 +43,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -788,25 +790,39 @@ fun NoteListRow(
 
         // Text content
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = note.title.ifBlank { "Untitled" },
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            val cleanContent = note.content
-                .replace('\n', ' ')
-                .trim()
-                .let { if (it == "•" || it == "-") "" else it }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = note.title.ifBlank { "Untitled" },
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (note.isLocked) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Locked Note",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
 
             val subtitleParts = buildList {
                 add(timeStr)
-                if (cleanContent.isNotBlank()) {
-                    add(cleanContent.take(60))
-                } else if (firstAttachment != null) {
-                    add("Photo")
+                if (note.isLocked) {
+                    add("🔒 Protected entry")
+                } else {
+                    val cleanContent = note.content
+                        .replace('\n', ' ')
+                        .trim()
+                        .let { if (it == "•" || it == "-") "" else it }
+                    if (cleanContent.isNotBlank()) {
+                        add(cleanContent.take(60))
+                    } else if (firstAttachment != null) {
+                        add("Photo")
+                    }
                 }
             }
             Text(
@@ -877,7 +893,7 @@ fun NoteListRow(
             }
         }
 
-        // Overflow Actions Menu (Copy, Duplicate, Share, Delete)
+        // Overflow Actions Menu (Copy, Duplicate, Share, Lock, Delete)
         Box {
             IconButton(
                 onClick = { showMenu = true },
@@ -895,6 +911,24 @@ fun NoteListRow(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
+                // Lock / Unlock Note
+                DropdownMenuItem(
+                    text = { Text(if (note.isLocked) "Unlock Note" else "Lock Note") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (note.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        haptics.light()
+                        viewModel?.toggleLock(note)
+                        Toast.makeText(context, if (note.isLocked) "Note unlocked" else "Note locked", Toast.LENGTH_SHORT).show()
+                    }
+                )
+
                 // Copy Note
                 DropdownMenuItem(
                     text = { Text("Copy Text") },
@@ -1031,14 +1065,24 @@ fun NoteGridCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = note.title.ifBlank { "Untitled" },
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = note.title.ifBlank { "Untitled" },
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (note.isLocked) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Locked Note",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
                     IconButton(
                         onClick = onDelete,
                         modifier = Modifier.size(24.dp)
@@ -1053,7 +1097,7 @@ fun NoteGridCard(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = note.content,
+                    text = if (note.isLocked) "🔒 Protected note content" else note.content,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 4,

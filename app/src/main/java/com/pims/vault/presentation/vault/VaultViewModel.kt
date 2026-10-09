@@ -82,6 +82,8 @@ data class VaultUiState(
     val activeItemId: String? = null,
     val isEditing: Boolean = false,
     val editorCategory: VaultCategory? = null,
+    val proposedLinkedBankAccountId: String? = null,
+    val proposedLinkedBankAccountName: String? = null,
     val clipboardMessage: String? = null,
     val errorMessage: String? = null,
     val isLoading: Boolean = false
@@ -216,6 +218,8 @@ class VaultViewModel @Inject constructor(
                 activeItemId = null,
                 isEditing = false,
                 editorCategory = null,
+                proposedLinkedBankAccountId = null,
+                proposedLinkedBankAccountName = null,
                 liveTotpTokens = emptyMap()
             )
         }
@@ -393,7 +397,24 @@ class VaultViewModel @Inject constructor(
     fun openItem(item: VaultItemHeader) {
         recordUserActivity()
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, activeItemId = item.id, errorMessage = null) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    activeItemId = item.id,
+                    errorMessage = null,
+                    activeDecryptedPassword = null,
+                    activeDecryptedTotp = null,
+                    activeDecryptedRecoveryCodes = null,
+                    activeDecryptedNote = null,
+                    activeDecryptedPayment = null,
+                    activeDecryptedBanking = null,
+                    activeDecryptedApiKey = null,
+                    activeDecryptedSshKey = null,
+                    activeDecryptedAccessToken = null,
+                    activeDecryptedGeneric = null,
+                    activeDecryptedIdentity = null
+                )
+            }
             try {
                 val key = getOrDeriveVaultKey()
                 when (item.category) {
@@ -477,18 +498,56 @@ class VaultViewModel @Inject constructor(
                 isEditing = true,
                 editorCategory = category,
                 activeItemId = itemId,
+                proposedLinkedBankAccountId = null,
+                proposedLinkedBankAccountName = null,
+                errorMessage = null
+            )
+        }
+        if (itemId != null) {
+            val item = _uiState.value.vaultItems.find { it.id == itemId }
+            if (item != null) {
+                openItem(item)
+            }
+        }
+    }
+
+    fun openBankAccountEditorForInstitution(institutionName: String) {
+        recordUserActivity()
+        _uiState.update {
+            it.copy(
+                isEditing = true,
+                editorCategory = VaultCategory.BANK_ACCOUNT,
+                activeItemId = null,
+                proposedLinkedBankAccountName = institutionName,
+                errorMessage = null,
+                activeDecryptedBanking = null
+            )
+        }
+    }
+
+    fun openCardEditorForBankAccount(bankAccountId: String, bankAccountName: String) {
+        recordUserActivity()
+        _uiState.update {
+            it.copy(
+                isEditing = true,
+                editorCategory = VaultCategory.PAYMENT_REFERENCE,
+                activeItemId = null,
+                proposedLinkedBankAccountId = bankAccountId,
+                proposedLinkedBankAccountName = bankAccountName,
                 errorMessage = null
             )
         }
     }
 
-    fun closeEditor() {
+    fun closeEditor(keepActiveItem: Boolean = true) {
         recordUserActivity()
         _uiState.update {
             it.copy(
                 isEditing = false,
                 editorCategory = null,
-                activeItemId = null
+                activeItemId = if (keepActiveItem) it.activeItemId else null,
+                proposedLinkedBankAccountId = null,
+                proposedLinkedBankAccountName = null
             )
         }
     }
@@ -631,7 +690,8 @@ class VaultViewModel @Inject constructor(
     fun saveSecureNote(
         title: String,
         noteContent: String,
-        existingId: String? = null
+        existingId: String? = null,
+        tags: List<String> = emptyList()
     ) {
         recordUserActivity()
         viewModelScope.launch {
@@ -642,7 +702,8 @@ class VaultViewModel @Inject constructor(
                     title = title,
                     noteContent = noteContent,
                     vaultRootKey = key,
-                    existingId = existingId
+                    existingId = existingId,
+                    tags = tags
                 )
                 syncItemToRemote(id)
                 closeEditor()
@@ -663,7 +724,10 @@ class VaultViewModel @Inject constructor(
         existingId: String? = null,
         status: CardStatus = CardStatus.IN_USE,
         fullCardNumber: String? = null,
-        cvv: String? = null
+        cvv: String? = null,
+        linkedBankAccountId: String? = null,
+        linkedBankAccountName: String? = null,
+        cardType: String = "PHYSICAL"
     ) {
         recordUserActivity()
         viewModelScope.launch {
@@ -682,8 +746,47 @@ class VaultViewModel @Inject constructor(
                     existingId = existingId,
                     status = status,
                     fullCardNumber = fullCardNumber,
-                    cvv = cvv
+                    cvv = cvv,
+                    linkedBankAccountId = linkedBankAccountId,
+                    linkedBankAccountName = linkedBankAccountName,
+                    cardType = cardType,
+                    isVirtual = cardType.equals("VIRTUAL", ignoreCase = true)
                 )
+                if (existingId == null && !linkedBankAccountId.isNullOrBlank()) {
+                    try {
+                        val currentBank = readBankAccountUseCase(linkedBankAccountId, key)
+                        saveBankAccountUseCase(
+                            personId = activePersonId,
+                            bankName = currentBank.bankName,
+                            accountHolderName = currentBank.accountHolderName,
+                            accountNumber = currentBank.accountNumber,
+                            accountType = currentBank.accountType,
+                            sortCode = currentBank.sortCode,
+                            swiftBic = currentBank.swiftBic,
+                            iban = currentBank.iban,
+                            routingNumber = currentBank.routingNumber,
+                            bsb = currentBank.bsb,
+                            branchName = currentBank.branchName,
+                            notes = currentBank.notes,
+                            vaultRootKey = key,
+                            existingId = linkedBankAccountId,
+                            linkedCardId = id,
+                            linkedCardSummary = "$nickname (•••• $lastFour)",
+                            currency = currentBank.currency
+                        )
+                        syncItemToRemote(linkedBankAccountId)
+                        if (_uiState.value.activeItemId == linkedBankAccountId) {
+                            _uiState.update {
+                                it.copy(
+                                    activeDecryptedBanking = currentBank.copy(
+                                        linkedCardId = id,
+                                        linkedCardSummary = "$nickname (•••• $lastFour)"
+                                    )
+                                )
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
                 syncItemToRemote(id)
                 closeEditor()
             } catch (e: Exception) {
@@ -709,13 +812,232 @@ class VaultViewModel @Inject constructor(
                     notes = current.notes,
                     vaultRootKey = key,
                     existingId = cardId,
-                    status = newStatus
+                    status = newStatus,
+                    fullCardNumber = current.fullCardNumber,
+                    cvv = current.cvv,
+                    linkedBankAccountId = current.linkedBankAccountId,
+                    linkedBankAccountName = current.linkedBankAccountName,
+                    cardType = current.cardType,
+                    isVirtual = current.isVirtual
                 )
                 val refreshed = current.copy(status = newStatus)
                 _uiState.update { it.copy(activeDecryptedPayment = refreshed) }
                 syncItemToRemote(cardId)
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = "Failed to update card status: ${e.message}") }
+            }
+        }
+    }
+
+    fun linkCardToBankAccount(cardId: String, bankAccountId: String, bankAccountName: String) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val key = getOrDeriveVaultKey()
+                val currentCard = readPaymentReferenceUseCase(cardId, key)
+                savePaymentReferenceUseCase(
+                    personId = activePersonId,
+                    nickname = currentCard.nickname,
+                    provider = currentCard.provider,
+                    cardholderName = currentCard.cardholderName,
+                    lastFour = currentCard.lastFourDigits,
+                    month = currentCard.expiryMonth,
+                    year = currentCard.expiryYear,
+                    notes = currentCard.notes,
+                    vaultRootKey = key,
+                    existingId = cardId,
+                    status = currentCard.status,
+                    fullCardNumber = currentCard.fullCardNumber,
+                    cvv = currentCard.cvv,
+                    linkedBankAccountId = bankAccountId,
+                    linkedBankAccountName = bankAccountName,
+                    cardType = currentCard.cardType,
+                    isVirtual = currentCard.isVirtual
+                )
+                val refreshed = currentCard.copy(
+                    linkedBankAccountId = bankAccountId,
+                    linkedBankAccountName = bankAccountName
+                )
+                if (_uiState.value.activeItemId == cardId) {
+                    _uiState.update { it.copy(activeDecryptedPayment = refreshed) }
+                }
+                syncItemToRemote(cardId)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to link card: ${e.message}") }
+            }
+        }
+    }
+
+    fun unlinkCardFromBankAccount(cardId: String) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val key = getOrDeriveVaultKey()
+                val currentCard = readPaymentReferenceUseCase(cardId, key)
+                val previousBankId = currentCard.linkedBankAccountId
+                savePaymentReferenceUseCase(
+                    personId = activePersonId,
+                    nickname = currentCard.nickname,
+                    provider = currentCard.provider,
+                    cardholderName = currentCard.cardholderName,
+                    lastFour = currentCard.lastFourDigits,
+                    month = currentCard.expiryMonth,
+                    year = currentCard.expiryYear,
+                    notes = currentCard.notes,
+                    vaultRootKey = key,
+                    existingId = cardId,
+                    status = currentCard.status,
+                    fullCardNumber = currentCard.fullCardNumber,
+                    cvv = currentCard.cvv,
+                    linkedBankAccountId = null,
+                    linkedBankAccountName = null,
+                    cardType = currentCard.cardType,
+                    isVirtual = currentCard.isVirtual
+                )
+                val refreshed = currentCard.copy(
+                    linkedBankAccountId = null,
+                    linkedBankAccountName = null
+                )
+                if (_uiState.value.activeItemId == cardId) {
+                    _uiState.update { it.copy(activeDecryptedPayment = refreshed) }
+                }
+                syncItemToRemote(cardId)
+
+                // If the bank account also referenced this card, clear it
+                if (!previousBankId.isNullOrBlank()) {
+                    try {
+                        val currentBank = readBankAccountUseCase(previousBankId, key)
+                        if (currentBank.linkedCardId == cardId) {
+                            saveBankAccountUseCase(
+                                personId = activePersonId,
+                                bankName = currentBank.bankName,
+                                accountHolderName = currentBank.accountHolderName,
+                                accountNumber = currentBank.accountNumber,
+                                accountType = currentBank.accountType,
+                                sortCode = currentBank.sortCode,
+                                swiftBic = currentBank.swiftBic,
+                                iban = currentBank.iban,
+                                routingNumber = currentBank.routingNumber,
+                                bsb = currentBank.bsb,
+                                branchName = currentBank.branchName,
+                                notes = currentBank.notes,
+                                vaultRootKey = key,
+                                existingId = previousBankId,
+                                linkedCardId = null,
+                                linkedCardSummary = null
+                            )
+                            syncItemToRemote(previousBankId)
+                        }
+                    } catch (_: Exception) {}
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to unlink card: ${e.message}") }
+            }
+        }
+    }
+
+    fun linkBankAccountToCard(bankAccountId: String, cardId: String, cardSummary: String) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val key = getOrDeriveVaultKey()
+                val currentBank = readBankAccountUseCase(bankAccountId, key)
+                saveBankAccountUseCase(
+                    personId = activePersonId,
+                    bankName = currentBank.bankName,
+                    accountHolderName = currentBank.accountHolderName,
+                    accountNumber = currentBank.accountNumber,
+                    accountType = currentBank.accountType,
+                    sortCode = currentBank.sortCode,
+                    swiftBic = currentBank.swiftBic,
+                    iban = currentBank.iban,
+                    routingNumber = currentBank.routingNumber,
+                    bsb = currentBank.bsb,
+                    branchName = currentBank.branchName,
+                    notes = currentBank.notes,
+                    vaultRootKey = key,
+                    existingId = bankAccountId,
+                    linkedCardId = cardId,
+                    linkedCardSummary = cardSummary
+                )
+                val refreshed = currentBank.copy(
+                    linkedCardId = cardId,
+                    linkedCardSummary = cardSummary
+                )
+                if (_uiState.value.activeItemId == bankAccountId) {
+                    _uiState.update { it.copy(activeDecryptedBanking = refreshed) }
+                }
+                syncItemToRemote(bankAccountId)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to link bank account: ${e.message}") }
+            }
+        }
+    }
+
+    fun unlinkBankAccountFromCard(bankAccountId: String) {
+        recordUserActivity()
+        viewModelScope.launch {
+            try {
+                val key = getOrDeriveVaultKey()
+                val currentBank = readBankAccountUseCase(bankAccountId, key)
+                val previousCardId = currentBank.linkedCardId
+                saveBankAccountUseCase(
+                    personId = activePersonId,
+                    bankName = currentBank.bankName,
+                    accountHolderName = currentBank.accountHolderName,
+                    accountNumber = currentBank.accountNumber,
+                    accountType = currentBank.accountType,
+                    sortCode = currentBank.sortCode,
+                    swiftBic = currentBank.swiftBic,
+                    iban = currentBank.iban,
+                    routingNumber = currentBank.routingNumber,
+                    bsb = currentBank.bsb,
+                    branchName = currentBank.branchName,
+                    notes = currentBank.notes,
+                    vaultRootKey = key,
+                    existingId = bankAccountId,
+                    linkedCardId = null,
+                    linkedCardSummary = null
+                )
+                val refreshed = currentBank.copy(
+                    linkedCardId = null,
+                    linkedCardSummary = null
+                )
+                if (_uiState.value.activeItemId == bankAccountId) {
+                    _uiState.update { it.copy(activeDecryptedBanking = refreshed) }
+                }
+                syncItemToRemote(bankAccountId)
+
+                // If the card also referenced this bank account, clear it
+                if (!previousCardId.isNullOrBlank()) {
+                    try {
+                        val currentCard = readPaymentReferenceUseCase(previousCardId, key)
+                        if (currentCard.linkedBankAccountId == bankAccountId) {
+                            savePaymentReferenceUseCase(
+                                personId = activePersonId,
+                                nickname = currentCard.nickname,
+                                provider = currentCard.provider,
+                                cardholderName = currentCard.cardholderName,
+                                lastFour = currentCard.lastFourDigits,
+                                month = currentCard.expiryMonth,
+                                year = currentCard.expiryYear,
+                                notes = currentCard.notes,
+                                vaultRootKey = key,
+                                existingId = previousCardId,
+                                status = currentCard.status,
+                                fullCardNumber = currentCard.fullCardNumber,
+                                cvv = currentCard.cvv,
+                                linkedBankAccountId = null,
+                                linkedBankAccountName = null,
+                                cardType = currentCard.cardType,
+                                isVirtual = currentCard.isVirtual
+                            )
+                            syncItemToRemote(previousCardId)
+                        }
+                    } catch (_: Exception) {}
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to unlink bank account: ${e.message}") }
             }
         }
     }
@@ -734,7 +1056,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null,
         linkedCardId: String? = null,
-        linkedCardSummary: String? = null
+        linkedCardSummary: String? = null,
+        currency: String = "USD"
     ) {
         recordUserActivity()
         viewModelScope.launch {
@@ -756,10 +1079,41 @@ class VaultViewModel @Inject constructor(
                     vaultRootKey = key,
                     existingId = existingId,
                     linkedCardId = linkedCardId,
-                    linkedCardSummary = linkedCardSummary
+                    linkedCardSummary = linkedCardSummary,
+                    currency = currency
                 )
+                val refreshedSecret = try {
+                    readBankAccountUseCase(id, key)
+                } catch (_: Exception) {
+                    BankingDetailsSecret(
+                        bankName = bankName,
+                        accountHolderName = accountHolderName,
+                        accountNumber = accountNumber,
+                        accountType = accountType,
+                        sortCode = sortCode,
+                        swiftBic = swiftBic,
+                        iban = iban,
+                        routingNumber = routingNumber,
+                        bsb = bsb,
+                        branchName = branchName,
+                        notes = notes,
+                        linkedCardId = linkedCardId,
+                        linkedCardSummary = linkedCardSummary,
+                        currency = currency
+                    )
+                }
+                _uiState.update { current ->
+                    current.copy(
+                        activeItemId = id,
+                        activeDecryptedBanking = refreshedSecret,
+                        isEditing = false,
+                        editorCategory = null,
+                        proposedLinkedBankAccountId = null,
+                        proposedLinkedBankAccountName = null,
+                        errorMessage = null
+                    )
+                }
                 syncItemToRemote(id)
-                closeEditor()
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message) }
             }

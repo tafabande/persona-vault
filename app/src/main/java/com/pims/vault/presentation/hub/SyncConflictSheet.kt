@@ -52,6 +52,10 @@ fun SyncConflictSheet(
     onResolveConflict: (conflictId: String, choice: ConflictResolutionChoice, resolvedValue: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val distinctConflicts = androidx.compose.runtime.remember(conflicts) {
+        conflicts.distinctBy { "${it.entityType}_${it.entityId}_${it.fieldName}" }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
@@ -98,7 +102,7 @@ fun SyncConflictSheet(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "${conflicts.size} changes need your review",
+                            text = if (distinctConflicts.size == 1) "1 change needs your review" else "${distinctConflicts.size} changes need your review",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -112,7 +116,7 @@ fun SyncConflictSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (conflicts.isEmpty()) {
+            if (distinctConflicts.isEmpty()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -148,7 +152,7 @@ fun SyncConflictSheet(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(conflicts, key = { it.id }) { conflict ->
+                    items(distinctConflicts, key = { it.id }) { conflict ->
                         ConflictCard(
                             conflict = conflict,
                             onKeepLocal = { onResolveConflict(conflict.id, ConflictResolutionChoice.KEEP_LOCAL, conflict.localValue) },

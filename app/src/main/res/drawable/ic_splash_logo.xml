@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Soft Shadow under Notepad -->
+    <path
+        android:fillColor="#1A000000"
+        android:pathData="M22,86 C22,83 70,83 70,86 C70,89 22,89 22,86 Z" />
+
+    <!-- Cute Notepad Outer Cover (Themed) -->
+    <path
+        android:fillColor="@color/persona_splash_container"
+        android:pathData="M26,18 H66 C72,18 76,22 76,28 V78 C76,84 72,88 66,88 H26 C20,88 16,84 16,78 V28 C16,22 20,18 26,18 Z" />
+
+    <!-- Inner Paper Sheet (Cream/White) -->
+    <path
+        android:fillColor="@color/persona_surface"
+        android:pathData="M29,22 H63 C67,22 70,25 70,29 V75 C70,79 67,82 63,82 H29 C25,82 22,79 22,75 V29 C22,25 25,22 29,22 Z" />
+
+    <!-- Subtle paper ruling line -->
+    <path
+        android:fillColor="#15888888"
+        android:pathData="M26,34 H66 V35.5 H26 Z M26,70 H66 V71.5 H26 Z" />
+
+    <!-- Spiral Binder Loops -->
+    <path
+        android:fillColor="#78909C"
+        android:pathData="M27,14 C27,12 31,12 31,14 V22 C31,24 27,24 27,22 Z M39,14 C39,12 43,12 43,14 V22 C43,24 39,24 39,22 Z M51,14 C51,12 55,12 55,14 V22 C55,24 51,24 51,22 Z M63,14 C63,12 67,12 67,14 V22 C67,24 63,24 63,22 Z" />
+
+    <!-- Kawaii Left Eye (Glossy Anime pupil) -->
+    <path
+        android:fillColor="@color/persona_primary_text"
+        android:pathData="M35,42 C38,42 40,44.5 40,48 C40,51.5 38,54 35,54 C32,54 30,51.5 30,48 C30,44.5 32,42 35,42 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,44.5 A1.6,1.6 0 1,1 33.99,44.5 Z M37,49 A0.9,0.9 0 1,1 36.99,49 Z" />
+
+    <!-- Kawaii Right Eye (Glossy Anime pupil) -->
+    <path
+        android:fillColor="@color/persona_primary_text"
+        android:pathData="M57,42 C60,42 62,44.5 62,48 C62,51.5 60,54 57,54 C54,54 52,51.5 52,48 C52,44.5 54,42 57,42 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,44.5 A1.6,1.6 0 1,1 55.99,44.5 Z M59,49 A0.9,0.9 0 1,1 58.99,49 Z" />
+
+    <!-- Rosy Kawaii Blush Cheeks -->
+    <path
+        android:fillColor="#FF7597"
+        android:pathData="M26,53 C26,51.5 31,51.5 31,53 C31,55.5 26,55.5 26,53 Z M61,53 C61,51.5 66,51.5 66,53 C66,55.5 61,55.5 61,53 Z" />
+
+    <!-- Sweet Kawaii Smile -->
+    <path
+        android:strokeColor="@color/persona_primary_text"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M42,53 Q46,58 50,53" />
+
+    <!-- Cute Companion Pen / Stylus -->
+    <!-- Pen Barrel -->
+    <path
+        android:fillColor="#FFA726"
+        android:pathData="M78,28 C78,25.5 84,25.5 84,28 L84,56 L78,56 Z" />
+    <!-- Pen Cap Band -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M78,35 H84 V38 H78 Z" />
+    <!-- Pen Metallic Nib -->
+    <path
+        android:fillColor="#90A4AE"
+        android:pathData="M78,56 H84 L81,64 Z" />
+    <!-- Pen Tip Ink Point -->
+    <path
+        android:fillColor="@color/persona_splash_container"
+        android:pathData="M81,64 A1,1 0 1,1 80.99,64 Z" />
+
+    <!-- Magic Kawaii Sparkle Stars ✦ -->
+    <!-- Large Sparkle Top-Right -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M85,10 Q85,17 92,17 Q85,17 85,24 Q85,17 78,17 Q85,17 85,10 Z" />
+
+    <!-- Mini Sparkle Top-Left -->
+    <path
+        android:fillColor="#FFE082"
+        android:pathData="M15,22 Q15,26 19,26 Q15,26 15,30 Q15,26 11,26 Q15,26 15,22 Z" />
+</vector>

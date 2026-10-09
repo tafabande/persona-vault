@@ -64,7 +64,8 @@ data class BankingFormResult(
     val branchName: String,
     val notes: String,
     val linkedCardId: String? = null,
-    val linkedCardSummary: String? = null
+    val linkedCardSummary: String? = null,
+    val currency: String = "USD"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,21 +74,62 @@ fun AddBankAccountScreen(
     availableCards: List<VaultItemHeader> = emptyList(),
     onNavigateBack: () -> Unit,
     onSaveAccount: (BankingFormResult) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isEditing: Boolean = false,
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    initialBankName: String = "",
+    initialAccountHolder: String = "",
+    initialAccountNumber: String = "",
+    initialAccountType: String = "",
+    initialSortCode: String = "",
+    initialSwiftBic: String = "",
+    initialIban: String = "",
+    initialRoutingNumber: String = "",
+    initialBsb: String = "",
+    initialBranchName: String = "",
+    initialNotes: String = "",
+    initialLinkedCardId: String? = null,
+    initialLinkedCardSummary: String? = null,
+    initialCurrency: String = "USD"
 ) {
-    var bankName by remember { mutableStateOf("") }
-    var accountHolder by remember { mutableStateOf("") }
-    var accountNumber by remember { mutableStateOf("") }
-    var accountType by remember { mutableStateOf("") }
-    var sortCode by remember { mutableStateOf("") }
-    var swiftBic by remember { mutableStateOf("") }
-    var iban by remember { mutableStateOf("") }
-    var routingNumber by remember { mutableStateOf("") }
-    var bsb by remember { mutableStateOf("") }
-    var branchName by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    var selectedLinkedCardId by remember { mutableStateOf<String?>(null) }
-    var selectedLinkedCardSummary by remember { mutableStateOf<String?>(null) }
+    var bankName by remember(initialBankName) { mutableStateOf(initialBankName) }
+    var accountHolder by remember(initialAccountHolder) { mutableStateOf(initialAccountHolder) }
+    var accountNumber by remember(initialAccountNumber) { mutableStateOf(initialAccountNumber) }
+    var accountType by remember(initialAccountType) { mutableStateOf(initialAccountType) }
+    var currency by remember(initialCurrency) { mutableStateOf(initialCurrency) }
+    var sortCode by remember(initialSortCode) { mutableStateOf(initialSortCode) }
+    var swiftBic by remember(initialSwiftBic) { mutableStateOf(initialSwiftBic) }
+    var iban by remember(initialIban) { mutableStateOf(initialIban) }
+    var routingNumber by remember(initialRoutingNumber) { mutableStateOf(initialRoutingNumber) }
+    var bsb by remember(initialBsb) { mutableStateOf(initialBsb) }
+    var branchName by remember(initialBranchName) { mutableStateOf(initialBranchName) }
+    var notes by remember(initialNotes) { mutableStateOf(initialNotes) }
+    var selectedLinkedCardId by remember(initialLinkedCardId) { mutableStateOf(initialLinkedCardId) }
+    var selectedLinkedCardSummary by remember(initialLinkedCardSummary) { mutableStateOf(initialLinkedCardSummary) }
+
+    androidx.compose.runtime.LaunchedEffect(
+        initialBankName, initialAccountHolder, initialAccountNumber,
+        initialAccountType, initialCurrency, initialSortCode,
+        initialSwiftBic, initialIban, initialRoutingNumber,
+        initialBsb, initialBranchName, initialNotes,
+        initialLinkedCardId, initialLinkedCardSummary
+    ) {
+        if (bankName.isBlank() && initialBankName.isNotBlank()) bankName = initialBankName
+        if (accountHolder.isBlank() && initialAccountHolder.isNotBlank()) accountHolder = initialAccountHolder
+        if (accountNumber.isBlank() && initialAccountNumber.isNotBlank()) accountNumber = initialAccountNumber
+        if (accountType.isBlank() && initialAccountType.isNotBlank()) accountType = initialAccountType
+        if (initialCurrency.isNotBlank()) currency = initialCurrency
+        if (sortCode.isBlank() && initialSortCode.isNotBlank()) sortCode = initialSortCode
+        if (swiftBic.isBlank() && initialSwiftBic.isNotBlank()) swiftBic = initialSwiftBic
+        if (iban.isBlank() && initialIban.isNotBlank()) iban = initialIban
+        if (routingNumber.isBlank() && initialRoutingNumber.isNotBlank()) routingNumber = initialRoutingNumber
+        if (bsb.isBlank() && initialBsb.isNotBlank()) bsb = initialBsb
+        if (branchName.isBlank() && initialBranchName.isNotBlank()) branchName = initialBranchName
+        if (notes.isBlank() && initialNotes.isNotBlank()) notes = initialNotes
+        if (selectedLinkedCardId == null && initialLinkedCardId != null) selectedLinkedCardId = initialLinkedCardId
+        if (selectedLinkedCardSummary == null && initialLinkedCardSummary != null) selectedLinkedCardSummary = initialLinkedCardSummary
+    }
 
     Scaffold(
         modifier = modifier,
@@ -95,7 +137,7 @@ fun AddBankAccountScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Add Bank Account",
+                        text = if (isEditing) "Edit Bank Account" else "Add Bank Account",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -114,15 +156,69 @@ fun AddBankAccountScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        if (isLoading) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = "Loading bank account details...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else if (errorMessage != null) {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check, // Fallback icon
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Unable to load account",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = errorMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Button(onClick = onNavigateBack) {
+                        Text("Go Back")
+                    }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 20.dp)
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
@@ -169,15 +265,77 @@ fun AddBankAccountScreen(
                 }
             }
 
-            CleanBankTextField(
-                value = accountType,
-                onValueChange = { accountType = it },
-                label = "Account Type (e.g. Checking, Savings)",
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Words,
-                    keyboardType = KeyboardType.Text
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                CleanBankTextField(
+                    value = accountType,
+                    onValueChange = { accountType = it },
+                    label = "Account Classification / Type *",
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        keyboardType = KeyboardType.Text
+                    )
                 )
-            )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("Checking", "Savings", "Local Account", "Nostro / USD", "Business", "Fixed Deposit").forEach { preset ->
+                        val isSelected = accountType.equals(preset, ignoreCase = true)
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier.clickable { accountType = preset }
+                        ) {
+                            Text(
+                                text = preset,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                CleanBankTextField(
+                    value = currency,
+                    onValueChange = { currency = it.uppercase() },
+                    label = "Account Currency *",
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Characters,
+                        keyboardType = KeyboardType.Text
+                    )
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("USD", "ZWG", "EUR", "GBP", "ZAR", "AUD", "CAD").forEach { curr ->
+                        val isSelected = currency.equals(curr, ignoreCase = true)
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier.clickable { currency = curr }
+                        ) {
+                            Text(
+                                text = curr,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
 
             CleanBankTextField(
                 value = branchName,
@@ -365,7 +523,8 @@ fun AddBankAccountScreen(
                             branchName = branchName.trim(),
                             notes = notes.trim(),
                             linkedCardId = selectedLinkedCardId,
-                            linkedCardSummary = selectedLinkedCardSummary
+                            linkedCardSummary = selectedLinkedCardSummary,
+                            currency = currency.trim().ifBlank { "USD" }
                         )
                     )
                 },
@@ -380,7 +539,7 @@ fun AddBankAccountScreen(
                 enabled = true
             ) {
                 Text(
-                    text = "Save Bank Account",
+                    text = if (isEditing) "Save Changes" else "Save Bank Account",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -389,6 +548,7 @@ fun AddBankAccountScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
 }
 
 @Composable

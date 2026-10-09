@@ -62,6 +62,7 @@ data class DocumentItem(
     val expirationDate: String? = null,
     val securityClassification: SecurityClassification,
     val status: DocumentStatus = DocumentStatus.ACTIVE,
+    val isLocked: Boolean = false,
     val notes: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()

@@ -247,6 +247,10 @@ class SyncQueueManager @Inject constructor(
         localVersion: Long,
         serverVersion: Long
     ) {
+        if (localValue.trim() == remoteValue.trim()) return
+        val existing = syncConflictDao.getExistingUnresolvedByField(entityType, entityId, fieldName)
+        if (existing != null) return
+
         val conflict = SyncConflictEntity(
             id = UUID.randomUUID().toString(),
             entityType = entityType,
@@ -277,6 +281,13 @@ class SyncQueueManager @Inject constructor(
         resolvedValue: String
     ) {
         val conflict = syncConflictDao.getConflictById(conflictId) ?: return
+        syncConflictDao.resolveAllConflictsForField(
+            entityType = conflict.entityType,
+            entityId = conflict.entityId,
+            fieldName = conflict.fieldName,
+            choice = choice.name,
+            resolvedAt = System.currentTimeMillis()
+        )
         syncConflictDao.resolveConflict(conflictId, choice.name, System.currentTimeMillis())
 
         if (choice == ConflictResolutionChoice.USE_REMOTE || choice == ConflictResolutionChoice.MERGED) {

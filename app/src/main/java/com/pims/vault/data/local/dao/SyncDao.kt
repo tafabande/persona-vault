@@ -66,8 +66,14 @@ interface SyncConflictDao {
     @Query("SELECT * FROM sync_conflicts WHERE entity_type = :entityType AND entity_id = :entityId AND is_resolved = 0 LIMIT 1")
     suspend fun getExistingUnresolved(entityType: String, entityId: String): SyncConflictEntity?
 
+    @Query("SELECT * FROM sync_conflicts WHERE entity_type = :entityType AND entity_id = :entityId AND field_name = :fieldName AND is_resolved = 0 LIMIT 1")
+    suspend fun getExistingUnresolvedByField(entityType: String, entityId: String, fieldName: String): SyncConflictEntity?
+
     @Query("UPDATE sync_conflicts SET is_resolved = 1, resolution_choice = :choice, resolved_at = :resolvedAt WHERE id = :id")
     suspend fun resolveConflict(id: String, choice: String, resolvedAt: Long)
+
+    @Query("UPDATE sync_conflicts SET is_resolved = 1, resolution_choice = :choice, resolved_at = :resolvedAt WHERE entity_type = :entityType AND entity_id = :entityId AND field_name = :fieldName AND is_resolved = 0")
+    suspend fun resolveAllConflictsForField(entityType: String, entityId: String, fieldName: String, choice: String, resolvedAt: Long)
 
     @Query("SELECT COUNT(*) FROM sync_conflicts WHERE is_resolved = 0")
     fun getUnresolvedCountFlow(): Flow<Int>

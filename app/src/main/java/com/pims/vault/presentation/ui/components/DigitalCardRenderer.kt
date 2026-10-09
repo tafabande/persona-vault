@@ -363,14 +363,31 @@ fun FinancialCardRepresentation(
                             }
                         }
 
-                        // EMV Chip representation
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFFBBF24),
-                            modifier = Modifier
-                                .width(36.dp)
-                                .height(26.dp)
-                        ) {}
+                        // Chip representation: Only render physical EMV chip on Physical cards!
+                        if (!card.isVirtualCard) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFFBBF24),
+                                modifier = Modifier
+                                    .width(36.dp)
+                                    .height(26.dp)
+                            ) {}
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF38BDF8).copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.6f))
+                            ) {
+                                Text(
+                                    text = "VIRTUAL",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF38BDF8),
+                                    letterSpacing = 1.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
                     }
 
                     // Middle: Card Number
@@ -433,7 +450,7 @@ fun FinancialCardRepresentation(
                         )
 
                         Text(
-                            text = card.cardType.uppercase(),
+                            text = (if (card.isVirtualCard) "VIRTUAL CARD" else card.cardType).uppercase(),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color(0xFFF1F5F9),
@@ -444,7 +461,7 @@ fun FinancialCardRepresentation(
             }
         }
 
-        // Card Photos Protected Trigger
+        // Card Photos Protected Trigger & Sensitive Guidance
         if (!card.frontPhotoPath.isNullOrBlank() || !card.backPhotoPath.isNullOrBlank()) {
             Surface(
                 shape = RoundedCornerShape(14.dp),
@@ -452,46 +469,52 @@ fun FinancialCardRepresentation(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "Card Physical Photos",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
                             )
-                            Text(
-                                text = "Front & Back photos • Requires auth",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            Column {
+                                Text(
+                                    text = "Card Front & Back Attachments",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+                                )
+                                Text(
+                                    text = "Encrypted binary storage • Auth required to view",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = onRequestViewPhotos,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                contentColor = MaterialTheme.colorScheme.primary
                             )
+                        ) {
+                            Text("View Photos", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
-                    Button(
-                        onClick = onRequestViewPhotos,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text("View Photos", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+                    Text(
+                        text = "🔒 Sensitive image safeguard: Never store unmasked CVV codes or visible payment credentials.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
                 }
             }
         }

@@ -43,13 +43,17 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
@@ -86,6 +90,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -131,6 +136,7 @@ fun PlainNoteEditorScreen(
         mutableStateOf(TextFieldValue(existingNote?.content ?: ""))
     }
     var format by remember { mutableStateOf(existingNote?.format ?: NoteFormat.PLAIN) }
+    var isLocked by remember(existingNote) { mutableStateOf(existingNote?.isLocked ?: false) }
     var reminderAt by remember(existingNote) { mutableStateOf(existingNote?.reminderAt) }
     var reminderTag by remember(existingNote) { mutableStateOf(existingNote?.reminderTag) }
     var reminderRepeat by remember(existingNote) { mutableStateOf(existingNote?.reminderRepeat) }
@@ -183,6 +189,16 @@ fun PlainNoteEditorScreen(
         }
     }
 
+    val documentPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            processAndAttachDocument(context, it) { bytes, name ->
+                pendingAttachments.add(bytes to name)
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             Row(
@@ -211,6 +227,24 @@ fun PlainNoteEditorScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // Lock Toggle Button
+                    IconButton(
+                        onClick = {
+                            haptics.light()
+                            isLocked = !isLocked
+                            val msg = if (isLocked) "Note locked (biometric protected)" else "Note unlocked"
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = if (isLocked) "Unlock note" else "Lock note",
+                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     // Copy Note Text Button
                     IconButton(
                         onClick = {
@@ -598,7 +632,34 @@ fun PlainNoteEditorScreen(
                                 }
                             }
 
-                            // 10. Set Reminder
+                            // 10. Add Document / PDF
+                            WarmTooltip(
+                                text = "Attach document / PDF",
+                                visible = activeTooltip == "document",
+                                onDismissRequest = { activeTooltip = null }
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        activeTooltip = "document"
+                                        haptics.light()
+                                        try {
+                                            documentPicker.launch("*/*")
+                                        } catch (_: Exception) {
+                                            contentPicker.launch("*/*")
+                                        }
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AttachFile,
+                                        contentDescription = "Attach Document",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
+
+                            // 11. Set Reminder
                             WarmTooltip(
                                 text = if (reminderAt != null) "Reminder set" else "Set reminder",
                                 visible = activeTooltip == "reminder",
@@ -664,6 +725,7 @@ fun PlainNoteEditorScreen(
                                         reminderAt = reminderAt,
                                         reminderTag = finalTagsToStore,
                                         reminderRepeat = reminderRepeat,
+                                        isLocked = isLocked,
                                         attachments = pendingAttachments.toList(),
                                         onComplete = onBack
                                     )
@@ -676,6 +738,7 @@ fun PlainNoteEditorScreen(
                                         reminderAt = reminderAt,
                                         reminderTag = finalTagsToStore,
                                         reminderRepeat = reminderRepeat,
+                                        isLocked = isLocked,
                                         onComplete = onBack
                                     )
                                 }
@@ -816,7 +879,7 @@ fun PlainNoteEditorScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Attached Photos section (horizontal scroll if multiple)
+            // Attached Photos and Documents section (horizontal scroll if multiple)
             val visibleExisting = remember(existingNote?.attachments, deletedAttachmentIds.toList()) {
                 existingNote?.attachments.orEmpty().filter { it.id !in deletedAttachmentIds }
             }
@@ -828,23 +891,25 @@ fun PlainNoteEditorScreen(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Pending photos
+                    // Pending attachments
                     pendingAttachments.forEachIndexed { index, (bytes, name) ->
                         val bmp = remember(bytes) {
-                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            try {
+                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            } catch (_: Exception) { null }
                         }
-                        bmp?.let {
+                        if (bmp != null) {
                             Box(
                                 modifier = Modifier
                                     .size(width = 150.dp, height = 110.dp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .clickable {
-                                        previewImageBitmap = it
+                                        previewImageBitmap = bmp
                                         previewImageTitle = name
                                     }
                             ) {
                                 Image(
-                                    bitmap = it.asImageBitmap(),
+                                    bitmap = bmp.asImageBitmap(),
                                     contentDescription = name,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
@@ -863,36 +928,91 @@ fun PlainNoteEditorScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
-                                        contentDescription = "Remove photo",
+                                        contentDescription = "Remove attachment",
                                         tint = Color.White,
                                         modifier = Modifier.size(15.dp)
                                     )
                                 }
                             }
+                        } else {
+                            // Non-image document attachment card
+                            Surface(
+                                modifier = Modifier
+                                    .size(width = 150.dp, height = 110.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+                                    Column(
+                                        modifier = Modifier.align(Alignment.Center),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Description,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = name,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            haptics.light()
+                                            pendingAttachments.removeAt(index)
+                                        },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remove attachment",
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    // Existing saved photos
+                    // Existing saved attachments
                     visibleExisting.forEach { att ->
                         var bmp by remember(att.id) { mutableStateOf<Bitmap?>(null) }
+                        var isDocType by remember(att.id) {
+                            mutableStateOf(att.mimeType == "application/pdf" || att.caption?.endsWith(".pdf", ignoreCase = true) == true)
+                        }
                         LaunchedEffect(att.id) {
-                            val bytes = viewModel.readAttachment(att)
-                            if (bytes != null) {
-                                bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            if (!isDocType) {
+                                val bytes = viewModel.readAttachment(att)
+                                if (bytes != null) {
+                                    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                    if (decoded != null) bmp = decoded else isDocType = true
+                                }
                             }
                         }
-                        bmp?.let { loadedBmp ->
+                        if (bmp != null) {
                             Box(
                                 modifier = Modifier
                                     .size(width = 150.dp, height = 110.dp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .clickable {
-                                        previewImageBitmap = loadedBmp
+                                        previewImageBitmap = bmp
                                         previewImageTitle = att.caption
                                     }
                             ) {
                                 Image(
-                                    bitmap = loadedBmp.asImageBitmap(),
+                                    bitmap = bmp!!.asImageBitmap(),
                                     contentDescription = att.caption,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
@@ -912,10 +1032,59 @@ fun PlainNoteEditorScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
-                                        contentDescription = "Remove photo",
+                                        contentDescription = "Remove attachment",
                                         tint = Color.White,
                                         modifier = Modifier.size(15.dp)
                                     )
+                                }
+                            }
+                        } else {
+                            Surface(
+                                modifier = Modifier
+                                    .size(width = 150.dp, height = 110.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+                                    Column(
+                                        modifier = Modifier.align(Alignment.Center),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Description,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = att.caption ?: "Document",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            haptics.light()
+                                            deletedAttachmentIds.add(att.id)
+                                            viewModel.deleteAttachment(att)
+                                        },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remove attachment",
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1059,3 +1228,32 @@ private fun processAndAttachImage(
         Toast.makeText(context, "Failed to load selected photo", Toast.LENGTH_SHORT).show()
     }
 }
+
+private fun processAndAttachDocument(
+    context: Context,
+    uri: Uri,
+    onSuccess: (ByteArray, String) -> Unit
+) {
+    try {
+        var displayName = "document_${System.currentTimeMillis()}.pdf"
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIdx >= 0) {
+                    val name = cursor.getString(nameIdx)
+                    if (!name.isNullOrBlank()) displayName = name
+                }
+            }
+        }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            val bytes = stream.readBytes()
+            if (bytes.isNotEmpty()) {
+                onSuccess(bytes, displayName)
+            }
+        }
+    } catch (e: Exception) {
+        VaultLogger.e("PlainNoteEditor", "Failed to process document", e)
+        Toast.makeText(context, "Failed to load selected document", Toast.LENGTH_SHORT).show()
+    }
+}
+

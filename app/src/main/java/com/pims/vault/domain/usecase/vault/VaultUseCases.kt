@@ -483,7 +483,8 @@ class SaveSecureNoteUseCase @Inject constructor(
         noteContent: String,
         vaultRootKey: ByteArray,
         existingId: String? = null,
-        incomingVersion: Long? = null
+        incomingVersion: Long? = null,
+        tags: List<String> = emptyList()
     ): String {
         VaultRules.validateSecureNote(title, noteContent)
         val id = existingId ?: UUID.randomUUID().toString()
@@ -497,7 +498,8 @@ class SaveSecureNoteUseCase @Inject constructor(
         val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.SECURE_NOTE, id)
         val aad = VaultRules.constructItemAad(id, VaultCategory.SECURE_NOTE, targetVersion)
 
-        val payloadBytes = "$title\u0000$noteContent".toByteArray(Charsets.UTF_8)
+        val tagsStr = tags.filter { it.isNotBlank() }.joinToString(",")
+        val payloadBytes = "$title\u0000$noteContent\u0000$tagsStr".toByteArray(Charsets.UTF_8)
         val encrypted = cryptoEngine.encrypt(payloadBytes, itemKey, aad)
         payloadBytes.fill(0)
         itemKey.fill(0)
@@ -507,7 +509,7 @@ class SaveSecureNoteUseCase @Inject constructor(
             personId = personId,
             category = VaultCategory.SECURE_NOTE,
             title = title.trim(),
-            accountIdentifier = null,
+            accountIdentifier = if (tagsStr.isNotBlank()) tagsStr else null,
             encryptedPayload = encrypted.combinedCiphertextWithTag,
             encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
             updatedAt = System.currentTimeMillis()
@@ -556,7 +558,11 @@ class ReadSecureNoteUseCase @Inject constructor(
 
         return SecureNoteSecret(
             title = parts.getOrElse(0) { "" },
-            noteContent = parts.getOrElse(1) { "" }
+            noteContent = parts.getOrElse(1) { "" },
+            tags = parts.getOrElse(2) { "" }
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
         )
     }
 }
@@ -584,7 +590,11 @@ class SavePaymentReferenceUseCase @Inject constructor(
         incomingVersion: Long? = null,
         status: com.pims.vault.core.model.CardStatus = com.pims.vault.core.model.CardStatus.IN_USE,
         fullCardNumber: String? = null,
-        cvv: String? = null
+        cvv: String? = null,
+        linkedBankAccountId: String? = null,
+        linkedBankAccountName: String? = null,
+        cardType: String = "PHYSICAL",
+        isVirtual: Boolean = (cardType.equals("VIRTUAL", ignoreCase = true))
     ): String {
         VaultRules.validatePaymentReference(nickname, provider, lastFour, month, year)
         val id = existingId ?: UUID.randomUUID().toString()
@@ -598,7 +608,7 @@ class SavePaymentReferenceUseCase @Inject constructor(
         val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.PAYMENT_REFERENCE, id)
         val aad = VaultRules.constructItemAad(id, VaultCategory.PAYMENT_REFERENCE, targetVersion)
 
-        val payloadBytes = "$nickname\u0000$provider\u0000${cardholderName ?: ""}\u0000$lastFour\u0000$month\u0000$year\u0000${notes ?: ""}\u0000${status.name}\u0000${fullCardNumber ?: ""}\u0000${cvv ?: ""}".toByteArray(Charsets.UTF_8)
+        val payloadBytes = "$nickname\u0000$provider\u0000${cardholderName ?: ""}\u0000$lastFour\u0000$month\u0000$year\u0000${notes ?: ""}\u0000${status.name}\u0000${fullCardNumber ?: ""}\u0000${cvv ?: ""}\u0000${linkedBankAccountId ?: ""}\u0000${linkedBankAccountName ?: ""}\u0000$cardType\u0000$isVirtual".toByteArray(Charsets.UTF_8)
         val encrypted = cryptoEngine.encrypt(payloadBytes, itemKey, aad)
         payloadBytes.fill(0)
         itemKey.fill(0)
@@ -656,6 +666,9 @@ class ReadPaymentReferenceUseCase @Inject constructor(
             description = "Accessed payment token reference"
         )
 
+        val rawCardType = parts.getOrNull(12)?.takeIf { it.isNotBlank() } ?: "PHYSICAL"
+        val rawIsVirtual = parts.getOrNull(13)?.toBooleanStrictOrNull() ?: rawCardType.equals("VIRTUAL", ignoreCase = true)
+
         return PaymentReferenceSecret(
             nickname = parts.getOrElse(0) { "" },
             provider = parts.getOrElse(1) { "" },
@@ -666,7 +679,11 @@ class ReadPaymentReferenceUseCase @Inject constructor(
             notes = parts.getOrNull(6)?.takeIf { it.isNotBlank() },
             status = com.pims.vault.core.model.CardStatus.fromString(parts.getOrNull(7)),
             fullCardNumber = parts.getOrNull(8)?.takeIf { it.isNotBlank() },
-            cvv = parts.getOrNull(9)?.takeIf { it.isNotBlank() }
+            cvv = parts.getOrNull(9)?.takeIf { it.isNotBlank() },
+            linkedBankAccountId = parts.getOrNull(10)?.takeIf { it.isNotBlank() },
+            linkedBankAccountName = parts.getOrNull(11)?.takeIf { it.isNotBlank() },
+            cardType = rawCardType,
+            isVirtual = rawIsVirtual
         )
     }
 }
@@ -697,7 +714,8 @@ class SaveBankAccountUseCase @Inject constructor(
         existingId: String? = null,
         incomingVersion: Long? = null,
         linkedCardId: String? = null,
-        linkedCardSummary: String? = null
+        linkedCardSummary: String? = null,
+        currency: String = "USD"
     ): String {
         VaultRules.validateBankAccount(bankName, accountHolderName)
         val id = existingId ?: UUID.randomUUID().toString()
@@ -708,26 +726,81 @@ class SaveBankAccountUseCase @Inject constructor(
             incomingVersion
         } else 1L
 
+        // Attempt to load existing secret to preserve any fields not provided in partial update
+        var existingSecret: BankingDetailsSecret? = null
+        if (existingEntity != null) {
+            try {
+                val existingItemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.BANK_ACCOUNT, existingId!!)
+                val existingAad = VaultRules.constructItemAad(existingId, VaultCategory.BANK_ACCOUNT, 1L)
+                val iv = existingEntity.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                val decrypted = cryptoEngine.decrypt(EncryptedPayload(existingEntity.encryptedPayload, iv), existingItemKey, existingAad)
+                existingItemKey.fill(0)
+                val parts = String(decrypted, Charsets.UTF_8).split("\u0000")
+                decrypted.fill(0)
+                existingSecret = BankingDetailsSecret(
+                    bankName = parts.getOrElse(0) { "" },
+                    accountHolderName = parts.getOrElse(1) { "" },
+                    accountNumber = parts.getOrElse(2) { "" },
+                    accountType = parts.getOrElse(3) { "" },
+                    sortCode = parts.getOrElse(4) { "" },
+                    swiftBic = parts.getOrElse(5) { "" },
+                    iban = parts.getOrElse(6) { "" },
+                    routingNumber = parts.getOrElse(7) { "" },
+                    bsb = parts.getOrElse(8) { "" },
+                    branchName = parts.getOrElse(9) { "" },
+                    notes = parts.getOrNull(10)?.takeIf { it.isNotBlank() },
+                    linkedCardId = parts.getOrNull(11)?.takeIf { it.isNotBlank() },
+                    linkedCardSummary = parts.getOrNull(12)?.takeIf { it.isNotBlank() },
+                    currency = parts.getOrNull(13)?.takeIf { it.isNotBlank() } ?: "USD"
+                )
+            } catch (_: Exception) {
+                // Ignore decryption failure for fallback
+            }
+        }
+
+        val resolvedBankName = bankName.ifBlank { existingSecret?.bankName ?: bankName }
+        val resolvedHolder = accountHolderName.ifBlank { existingSecret?.accountHolderName ?: accountHolderName }
+        val resolvedAccNum = if (accountNumber.any { it == '•' || it == '*' } && existingSecret != null) {
+            existingSecret.accountNumber
+        } else if (accountNumber.isBlank() && existingSecret != null) {
+            existingSecret.accountNumber
+        } else {
+            accountNumber
+        }
+        val resolvedType = accountType.ifBlank { existingSecret?.accountType.orEmpty() }
+        val resolvedCurrency = currency.ifBlank { existingSecret?.currency ?: "USD" }
+        val resolvedSortCode = sortCode.ifBlank { existingSecret?.sortCode.orEmpty() }
+        val resolvedSwift = swiftBic.ifBlank { existingSecret?.swiftBic.orEmpty() }
+        val resolvedIban = iban.ifBlank { existingSecret?.iban.orEmpty() }
+        val resolvedRouting = routingNumber.ifBlank { existingSecret?.routingNumber.orEmpty() }
+        val resolvedBsb = bsb.ifBlank { existingSecret?.bsb.orEmpty() }
+        val resolvedBranch = branchName.ifBlank { existingSecret?.branchName.orEmpty() }
+        val resolvedNotes = notes ?: existingSecret?.notes
+        val resolvedCardId = linkedCardId ?: existingSecret?.linkedCardId
+        val resolvedCardSummary = linkedCardSummary ?: existingSecret?.linkedCardSummary
+
         val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.BANK_ACCOUNT, id)
         val aad = VaultRules.constructItemAad(id, VaultCategory.BANK_ACCOUNT, targetVersion)
 
-        val payloadBytes = "$bankName\u0000$accountHolderName\u0000$accountNumber\u0000$accountType\u0000$sortCode\u0000$swiftBic\u0000$iban\u0000$routingNumber\u0000$bsb\u0000$branchName\u0000${notes ?: ""}\u0000${linkedCardId ?: ""}\u0000${linkedCardSummary ?: ""}".toByteArray(Charsets.UTF_8)
+        val payloadBytes = "$resolvedBankName\u0000$resolvedHolder\u0000$resolvedAccNum\u0000$resolvedType\u0000$resolvedSortCode\u0000$resolvedSwift\u0000$resolvedIban\u0000$resolvedRouting\u0000$resolvedBsb\u0000$resolvedBranch\u0000${resolvedNotes ?: ""}\u0000${resolvedCardId ?: ""}\u0000${resolvedCardSummary ?: ""}\u0000$resolvedCurrency".toByteArray(Charsets.UTF_8)
         val encrypted = cryptoEngine.encrypt(payloadBytes, itemKey, aad)
         payloadBytes.fill(0)
         itemKey.fill(0)
 
-        val cardSuffix = if (!linkedCardSummary.isNullOrBlank()) " • Card: $linkedCardSummary" else ""
-        val displayRef = "$bankName •••• ${accountNumber.takeLast(4).ifBlank { "----" }}$cardSuffix"
+        val cardSuffix = if (!resolvedCardSummary.isNullOrBlank()) " • Card: $resolvedCardSummary" else ""
+        val typeSuffix = if (resolvedType.isNotBlank()) " ($resolvedType, $resolvedCurrency)" else " ($resolvedCurrency)"
+        val lastFour = if (resolvedAccNum.length >= 4) resolvedAccNum.takeLast(4) else resolvedAccNum.ifBlank { "----" }
+        val displayRef = "$resolvedBankName$typeSuffix •••• $lastFour$cardSuffix"
 
         val entity = VaultItemEntity(
             id = id,
             personId = personId,
             category = VaultCategory.BANK_ACCOUNT,
-            title = bankName.trim(),
+            title = resolvedBankName.trim(),
             accountIdentifier = displayRef,
             encryptedPayload = encrypted.combinedCiphertextWithTag,
             encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
-            notes = notes,
+            notes = resolvedNotes,
             updatedAt = System.currentTimeMillis()
         )
         vaultDao.insertOrUpdate(entity)
@@ -736,7 +809,7 @@ class SaveBankAccountUseCase @Inject constructor(
             eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
             entityType = "VaultItem",
             entityId = id,
-            description = "Stored bank account '$bankName'"
+            description = "Stored bank account '$resolvedBankName'"
         )
         return id
     }
@@ -785,7 +858,8 @@ class ReadBankAccountUseCase @Inject constructor(
             branchName = parts.getOrElse(9) { "" },
             notes = parts.getOrNull(10)?.takeIf { it.isNotBlank() },
             linkedCardId = parts.getOrNull(11)?.takeIf { it.isNotBlank() },
-            linkedCardSummary = parts.getOrNull(12)?.takeIf { it.isNotBlank() }
+            linkedCardSummary = parts.getOrNull(12)?.takeIf { it.isNotBlank() },
+            currency = parts.getOrNull(13)?.takeIf { it.isNotBlank() } ?: "USD"
         )
     }
 }

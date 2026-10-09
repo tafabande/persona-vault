@@ -13,6 +13,10 @@
 | 6 | **M6 Sharing & Pairing** | Selective disclosure, QR, P2P sync | `Planned` | — | 2026-11 | 5 |
 | 7 | **M7 Hardening** | Adversarial tests, R8, SBOM, release | `Planned` | — | 2026-12 | 6 |
 
+### Active integrity work
+
+- [ ] Audit and harden Persona/Firebase identity mapping, optional profile-field serialization, person-scoped note/avatar recovery, and encrypted financial display metadata. This work is additive and uses stable Room/Firestore record IDs; it does not perform a production bulk migration.
+
 ## Current Focus (Planning Phase)
 
 - [x] Create `AGENTS.md` (root) + `app/AGENTS.md`

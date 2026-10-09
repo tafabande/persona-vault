@@ -48,6 +48,7 @@ class GetDocumentsUseCase @Inject constructor(
                     issueDate = item.document.issueDate,
                     expirationDate = item.document.expirationDate,
                     securityClassification = item.document.securityClassification,
+                    isLocked = item.document.isLocked,
                     notes = item.document.notes,
                     createdAt = item.document.createdAt,
                     updatedAt = item.document.updatedAt

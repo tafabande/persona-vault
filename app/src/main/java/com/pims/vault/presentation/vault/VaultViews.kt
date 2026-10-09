@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalLayoutApi::class)
+
 package com.pims.vault.presentation.vault
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -87,6 +90,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -105,6 +109,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.material3.VerticalDivider
@@ -223,6 +228,7 @@ private sealed class VaultScreenRoute {
     object Home : VaultScreenRoute()
     object PasswordsKeys : VaultScreenRoute()
     data class CardDetail(val card: VaultItemHeader) : VaultScreenRoute()
+    data class BankAccountDetail(val account: VaultItemHeader) : VaultScreenRoute()
     data class KeyDetail(val item: VaultItemHeader) : VaultScreenRoute()
     data class RecoveryCodes(val item: VaultItemHeader) : VaultScreenRoute()
     object ImportRestore : VaultScreenRoute()
@@ -341,7 +347,7 @@ fun VaultDashboardView(
                         VaultHomeScreen(
                             vaultItems = uiState.vaultItems,
                             onOpenCard = { card -> currentRoute = VaultScreenRoute.CardDetail(card) },
-                            onOpenBankAccount = { acct -> currentRoute = VaultScreenRoute.CardDetail(acct) },
+                            onOpenBankAccount = { acct -> currentRoute = VaultScreenRoute.BankAccountDetail(acct) },
                             onOpenPasswordsAndKeys = { currentRoute = VaultScreenRoute.PasswordsKeys },
                             onOpenIdCategory = { cat -> currentRoute = VaultScreenRoute.IdMembershipList(cat) },
                             onOpenImportRestore = { currentRoute = VaultScreenRoute.ImportRestore },
@@ -356,8 +362,11 @@ fun VaultDashboardView(
                             items = uiState.vaultItems,
                             onOpenItem = { item ->
                                 when (item.category) {
-                                    VaultCategory.PAYMENT_REFERENCE, VaultCategory.BANK_ACCOUNT -> {
+                                    VaultCategory.PAYMENT_REFERENCE -> {
                                         currentRoute = VaultScreenRoute.CardDetail(item)
+                                    }
+                                    VaultCategory.BANK_ACCOUNT -> {
+                                        currentRoute = VaultScreenRoute.BankAccountDetail(item)
                                     }
                                     VaultCategory.RECOVERY_CODE -> {
                                         currentRoute = VaultScreenRoute.RecoveryCodes(item)
@@ -393,6 +402,19 @@ fun VaultDashboardView(
                                 viewModel.deleteItem(route.card.id)
                                 currentRoute = VaultScreenRoute.Home
                             }
+                        )
+                    }
+                    is VaultScreenRoute.BankAccountDetail -> {
+                        BankAccountDetailScreen(
+                            account = route.account,
+                            availableCards = uiState.vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE },
+                            uiState = uiState,
+                            viewModel = viewModel,
+                            onBack = {
+                                viewModel.closeActiveItem()
+                                currentRoute = VaultScreenRoute.Home
+                            },
+                            onSelectAccount = { currentRoute = VaultScreenRoute.BankAccountDetail(it) }
                         )
                     }
                     is VaultScreenRoute.KeyDetail -> {
@@ -648,7 +670,7 @@ fun VaultDashboardView(
     }
 
     // Fallback item detail dialog for generic passwords/notes if opened directly
-    if (uiState.activeItemId != null && !uiState.isEditing && currentRoute !is VaultScreenRoute.CardDetail && currentRoute !is VaultScreenRoute.KeyDetail && currentRoute !is VaultScreenRoute.RecoveryCodes && currentRoute !is VaultScreenRoute.IdCredentialDetail) {
+    if (uiState.activeItemId != null && !uiState.isEditing && currentRoute !is VaultScreenRoute.CardDetail && currentRoute !is VaultScreenRoute.BankAccountDetail && currentRoute !is VaultScreenRoute.KeyDetail && currentRoute !is VaultScreenRoute.RecoveryCodes && currentRoute !is VaultScreenRoute.IdCredentialDetail) {
         val activeItem = uiState.vaultItems.find { it.id == uiState.activeItemId }
         if (activeItem != null && activeItem.category != VaultCategory.PAYMENT_REFERENCE && activeItem.category != VaultCategory.BANK_ACCOUNT && activeItem.category != VaultCategory.IDENTITY_CREDENTIAL) {
             VaultItemDetailDialog(
@@ -675,13 +697,22 @@ fun VaultDashboardView(
                 )
             }
         } else if (uiState.editorCategory == VaultCategory.PAYMENT_REFERENCE) {
+            val initialPayment = if (uiState.activeItemId != null) uiState.activeDecryptedPayment else null
             androidx.compose.ui.window.Dialog(
                 onDismissRequest = { viewModel.closeEditor() },
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
                 com.pims.vault.presentation.vault.card.AddCardScreen(
                     onNavigateBack = { viewModel.closeEditor() },
-                    onSaveCard = { bankName, holder, number, expiry, cvv ->
+                    initialBankName = initialPayment?.provider.orEmpty(),
+                    initialCardHolder = initialPayment?.cardholderName.orEmpty(),
+                    initialCardNumber = initialPayment?.fullCardNumber.orEmpty(),
+                    initialExpiryDate = if (!initialPayment?.expiryMonth.isNullOrBlank() && !initialPayment?.expiryYear.isNullOrBlank()) "${initialPayment.expiryMonth}${initialPayment.expiryYear.takeLast(2)}" else "",
+                    initialCvv = initialPayment?.cvv.orEmpty(),
+                    initialLinkedBankAccountId = initialPayment?.linkedBankAccountId ?: uiState.proposedLinkedBankAccountId,
+                    initialLinkedBankAccountName = initialPayment?.linkedBankAccountName ?: uiState.proposedLinkedBankAccountName,
+                    initialCardType = initialPayment?.cardType ?: "PHYSICAL",
+                    onSaveCard = { bankName, holder, number, expiry, cvv, linkedAccId, linkedAccName, cardType ->
                         val cleanExpiry = expiry.filter { it.isDigit() }
                         val rawMonth = if (expiry.contains("/")) {
                             expiry.split("/").getOrNull(0)?.filter { it.isDigit() } ?: ""
@@ -702,32 +733,58 @@ fun VaultDashboardView(
                         }
 
                         val cleanNum = number.filter { it.isDigit() }
-                        val last4 = if (cleanNum.length >= 4) cleanNum.takeLast(4) else cleanNum.padStart(4, '0')
+                        val hasMaskedChars = number.any { it == '*' || it == '•' || it == 'X' || it == 'x' }
                         val detectedBrand = detectCardBrand(cleanNum)
-                        val provider = bankName.trim().ifBlank { detectedBrand }
+                        val trimmedBank = bankName.trim()
+                        val trimmedHolder = holder.trim()
+
                         val nickname = when {
-                            bankName.isNotBlank() && holder.isNotBlank() -> "$bankName — $holder"
-                            bankName.isNotBlank() -> bankName.trim()
-                            holder.isNotBlank() -> "$holder ($detectedBrand)"
+                            trimmedBank.isNotBlank() && trimmedHolder.isNotBlank() -> "$trimmedBank — $trimmedHolder"
+                            trimmedBank.isNotBlank() -> trimmedBank
+                            trimmedHolder.isNotBlank() -> "$trimmedHolder ($detectedBrand)"
                             else -> detectedBrand
+                        }
+
+                        val fullNumberToSave = when {
+                            cleanNum.length in 12..19 -> cleanNum
+                            cleanNum.isEmpty() || hasMaskedChars -> initialPayment?.fullCardNumber
+                            else -> cleanNum.takeIf { it.isNotBlank() } ?: initialPayment?.fullCardNumber
+                        }
+
+                        val cvvToSave = if (cvv.any { it == '*' || it == '•' }) initialPayment?.cvv else cvv.trim().ifBlank { initialPayment?.cvv }
+                        val last4 = when {
+                            cleanNum.length >= 4 -> cleanNum.takeLast(4)
+                            !fullNumberToSave.isNullOrBlank() && fullNumberToSave.length >= 4 -> fullNumberToSave.takeLast(4)
+                            else -> initialPayment?.lastFourDigits ?: cleanNum.padStart(4, '0')
                         }
 
                         viewModel.savePaymentReference(
                             nickname = nickname.ifBlank { "Personal Card" },
-                            provider = provider,
-                            cardholderName = holder.ifBlank { null },
+                            provider = trimmedBank.ifBlank { detectedBrand },
+                            cardholderName = holder.ifBlank { initialPayment?.cardholderName },
                             lastFour = last4,
                             month = month,
                             year = year,
-                            notes = "",
+                            notes = initialPayment?.notes ?: "",
                             existingId = uiState.activeItemId,
-                            fullCardNumber = cleanNum.ifBlank { null },
-                            cvv = cvv.trim().ifBlank { null }
+                            status = initialPayment?.status ?: CardStatus.IN_USE,
+                            fullCardNumber = fullNumberToSave,
+                            cvv = cvvToSave,
+                            linkedBankAccountId = linkedAccId ?: initialPayment?.linkedBankAccountId ?: uiState.proposedLinkedBankAccountId,
+                            linkedBankAccountName = linkedAccName ?: initialPayment?.linkedBankAccountName ?: uiState.proposedLinkedBankAccountName,
+                            cardType = cardType
                         )
                     }
                 )
             }
         } else if (uiState.editorCategory == VaultCategory.BANK_ACCOUNT) {
+            val isEditingAccount = uiState.activeItemId != null
+            val initialBanking = if (isEditingAccount) uiState.activeDecryptedBanking else null
+            val isAccountLoading = isEditingAccount && initialBanking == null && uiState.isLoading
+            val accountError = if (isEditingAccount && initialBanking == null) uiState.errorMessage else null
+            val prefilledBankName = initialBanking?.bankName
+                ?: (if (isEditingAccount) uiState.vaultItems.find { it.id == uiState.activeItemId }?.title.orEmpty() else uiState.proposedLinkedBankAccountName.orEmpty())
+
             androidx.compose.ui.window.Dialog(
                 onDismissRequest = { viewModel.closeEditor() },
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
@@ -735,12 +792,30 @@ fun VaultDashboardView(
                 com.pims.vault.presentation.vault.banking.AddBankAccountScreen(
                     availableCards = uiState.vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE },
                     onNavigateBack = { viewModel.closeEditor() },
+                    isEditing = isEditingAccount,
+                    isLoading = isAccountLoading,
+                    errorMessage = accountError,
+                    initialBankName = prefilledBankName,
+                    initialAccountHolder = initialBanking?.accountHolderName.orEmpty(),
+                    initialAccountNumber = initialBanking?.accountNumber.orEmpty(),
+                    initialAccountType = initialBanking?.accountType.orEmpty(),
+                    initialCurrency = initialBanking?.currency ?: "USD",
+                    initialSortCode = initialBanking?.sortCode.orEmpty(),
+                    initialSwiftBic = initialBanking?.swiftBic.orEmpty(),
+                    initialIban = initialBanking?.iban.orEmpty(),
+                    initialRoutingNumber = initialBanking?.routingNumber.orEmpty(),
+                    initialBsb = initialBanking?.bsb.orEmpty(),
+                    initialBranchName = initialBanking?.branchName.orEmpty(),
+                    initialNotes = initialBanking?.notes.orEmpty(),
+                    initialLinkedCardId = initialBanking?.linkedCardId,
+                    initialLinkedCardSummary = initialBanking?.linkedCardSummary,
                     onSaveAccount = { result ->
                         viewModel.saveBankAccount(
                             bankName = result.bankName,
                             accountHolderName = result.accountHolderName,
                             accountNumber = result.accountNumber,
                             accountType = result.accountType,
+                            currency = result.currency,
                             sortCode = result.sortCode,
                             swiftBic = result.swiftBic,
                             iban = result.iban,
@@ -759,13 +834,15 @@ fun VaultDashboardView(
             val existingItem = uiState.vaultItems.find { it.id == uiState.activeItemId }
             val initialTitle = existingItem?.title ?: ""
             val initialContent = uiState.activeDecryptedNote?.noteContent ?: ""
+            val initialTags = uiState.activeDecryptedNote?.tags ?: emptyList()
 
             SecureNoteEditorModal(
                 initialTitle = initialTitle,
                 initialContent = initialContent,
+                initialTags = initialTags,
                 isEditingExisting = uiState.activeItemId != null,
-                onSave = { noteTitle, noteContent ->
-                    viewModel.saveSecureNote(noteTitle, noteContent, uiState.activeItemId)
+                onSave = { noteTitle, noteContent, noteTags ->
+                    viewModel.saveSecureNote(noteTitle, noteContent, uiState.activeItemId, noteTags)
                 },
                 onDismiss = { viewModel.closeEditor() }
             )
@@ -1743,14 +1820,46 @@ private fun GoogleNoteCardItem(
                 color = if (isDark) Color.White else Color(0xFF202020)
             )
             Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = item.accountIdentifier ?: "Secure encrypted content stored safely in vault...",
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                color = if (isDark) Color(0xFFB0B0B0) else Color(0xFF424242),
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
+            val tagList = item.accountIdentifier?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+            if (!tagList.isNullOrEmpty()) {
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    tagList.take(3).forEach { tag ->
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = if (isDark) Color(0xFF404040) else Color(0xFFE0E0E0),
+                        ) {
+                            Text(
+                                text = "#$tag",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isDark) Color(0xFFCCCCCC) else Color(0xFF606060),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (tagList.size > 3) {
+                        Text(
+                            text = "+${tagList.size - 3}",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isDark) Color(0xFF909090) else Color(0xFF808080),
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = "Secure encrypted content stored safely in vault...",
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    color = if (isDark) Color(0xFFB0B0B0) else Color(0xFF424242),
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -2699,7 +2808,8 @@ private fun BankingSection(
             availableCards = availableCards,
             uiState = uiState,
             viewModel = viewModel,
-            onBack = { selectedBankAccount = null }
+            onBack = { selectedBankAccount = null },
+            onSelectAccount = { selectedBankAccount = it }
         )
     } else {
         val bankItems = remember(items, searchQuery) {
@@ -2848,27 +2958,19 @@ private fun BankingSection(
                     onActionClick = onAddNew
                 )
             } else {
-                bankItems.forEach { account ->
-                    val linkedCards = availableCards.filter { card ->
-                        val cardTitle = card.title.lowercase()
-                        val accTitle = account.title.lowercase()
-                        (cardTitle.contains(accTitle) || accTitle.contains(cardTitle)) && cardTitle.isNotBlank()
-                    }
+                val institutions = remember(bankItems) {
+                    bankItems.groupBy { it.title.trim().ifBlank { "Unspecified Institution" } }
+                }
 
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedBankAccount = account },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-                        )
+                institutions.forEach { (instName, accounts) ->
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // Institution Header
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2877,7 +2979,7 @@ private fun BankingSection(
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                     Box(
                                         modifier = Modifier
-                                            .size(44.dp)
+                                            .size(42.dp)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(MaterialTheme.colorScheme.primaryContainer),
                                         contentAlignment = Alignment.Center
@@ -2892,66 +2994,128 @@ private fun BankingSection(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
                                         Text(
-                                            text = account.title,
+                                            text = instName,
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp,
+                                            fontSize = 16.sp,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
-                                            text = account.accountIdentifier ?: "Bank Account",
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontFamily = FontFamily.Monospace
+                                            text = "${accounts.size} account${if (accounts.size > 1) "s" else ""} registered",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    account.accountIdentifier?.let { rawId ->
-                                        IconButton(
-                                            onClick = {
-                                                val cleanNum = rawId.filter { it.isLetterOrDigit() }
-                                                viewModel.copyToClipboard(context, label = "Account Number", text = cleanNum)
-                                            }
-                                        ) {
-                                            Icon(
-                                                Icons.Default.ContentCopy,
-                                                contentDescription = "Copy account number",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
+                                Surface(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { viewModel.openBankAccountEditorForInstitution(instName) },
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Add Account",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Add Account",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
                                     }
-                                    Icon(
-                                        Icons.Default.ChevronRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(20.dp)
-                                    )
                                 }
                             }
 
-                            if (linkedCards.isNotEmpty()) {
-                                Row(
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+                            // List of accounts under this institution
+                            accounts.forEach { account ->
+                                val linkedCards = availableCards.filter { card ->
+                                    account.accountIdentifier?.contains(card.title, ignoreCase = true) == true && card.title.isNotBlank()
+                                }
+
+                                Surface(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        .fillMaxWidth()
+                                        .clickable { selectedBankAccount = account },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                                 ) {
-                                    Icon(
-                                        Icons.Default.CreditCard,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Text(
-                                        text = "${linkedCards.size} linked card(s)",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = account.accountIdentifier ?: "Bank Account",
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                account.accountIdentifier?.let { rawId ->
+                                                    IconButton(
+                                                        onClick = {
+                                                            val cleanNum = rawId.filter { it.isLetterOrDigit() }
+                                                            viewModel.copyToClipboard(context, label = "Account Identifier", text = cleanNum)
+                                                        },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.ContentCopy,
+                                                            contentDescription = "Copy account number",
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Icon(
+                                                    Icons.Default.ChevronRight,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+
+                                        if (linkedCards.isNotEmpty()) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.CreditCard,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "${linkedCards.size} linked card(s)",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3004,7 +3168,8 @@ private fun BankAccountDetailScreen(
     availableCards: List<VaultItemHeader>,
     uiState: VaultUiState,
     viewModel: VaultViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSelectAccount: ((VaultItemHeader) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var showDeleteConfirmation by remember { mutableStateOf(false) }
@@ -3014,7 +3179,19 @@ private fun BankAccountDetailScreen(
         viewModel.openItem(account)
     }
 
-    val activeBanking = uiState.activeDecryptedBanking
+    val isCurrentAccountLoaded = uiState.activeItemId == account.id && uiState.activeDecryptedBanking != null
+    val isAccountLoading = uiState.isLoading && uiState.activeItemId == account.id && !isCurrentAccountLoaded
+    val accountError = if (uiState.activeItemId == account.id && !isCurrentAccountLoaded) uiState.errorMessage else null
+    val activeBanking = if (uiState.activeItemId == account.id) uiState.activeDecryptedBanking else null
+
+    // Sibling accounts belonging to the same institution
+    val siblingAccounts = remember(uiState.vaultItems, account.id, account.title) {
+        uiState.vaultItems.filter {
+            it.category == VaultCategory.BANK_ACCOUNT &&
+            it.id != account.id &&
+            it.title.equals(account.title, ignoreCase = true)
+        }
+    }
 
     if (showDeleteConfirmation) {
         androidx.compose.material3.AlertDialog(
@@ -3095,278 +3272,608 @@ private fun BankAccountDetailScreen(
             }
         }
 
-        // Bank Title & Type Banner
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.padding(18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(54.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = BankIcon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = activeBanking?.bankName?.ifBlank { account.title } ?: account.title,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    val accountType = activeBanking?.accountType?.ifBlank { "Personal Checking" } ?: "Bank Account"
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Text(
-                            text = accountType,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
-            }
-        }
-
-        // Account Number Card with Show/Hide & 1-Tap Copy
-        val rawAccNum = activeBanking?.accountNumber ?: account.accountIdentifier ?: ""
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
+        if (isAccountLoading) {
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .height(260.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "ACCOUNT NUMBER",
-                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (isNumberVisible || rawAccNum.length <= 4) rawAccNum else "•••• •••• •••• ${rawAccNum.takeLast(4)}",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { isNumberVisible = !isNumberVisible }) {
-                        Icon(
-                            imageVector = if (isNumberVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (isNumberVisible) "Hide" else "Show",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(onClick = { viewModel.copyToClipboard(context, label = "Account Number", text = rawAccNum) }) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-
-        // Transfer & Identification Details List
-        Text(
-            text = "TRANSFER & ROUTING DETAILS",
-            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                val holderName = activeBanking?.accountHolderName ?: ""
-                if (holderName.isNotBlank()) {
-                    BankDetailRowItem(
-                        label = "Account Holder",
-                        value = holderName,
-                        onCopy = { viewModel.copyToClipboard(context, label = "Account Holder", text = holderName) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                }
-
-                val routingNum = activeBanking?.routingNumber ?: ""
-                if (routingNum.isNotBlank()) {
-                    BankDetailRowItem(
-                        label = "Routing Number (ABA)",
-                        value = routingNum,
-                        onCopy = { viewModel.copyToClipboard(context, label = "Routing Number", text = routingNum) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                }
-
-                val sortCode = activeBanking?.sortCode ?: ""
-                if (sortCode.isNotBlank()) {
-                    BankDetailRowItem(
-                        label = "Sort Code",
-                        value = sortCode,
-                        onCopy = { viewModel.copyToClipboard(context, label = "Sort Code", text = sortCode) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                }
-
-                val swiftBic = activeBanking?.swiftBic ?: ""
-                if (swiftBic.isNotBlank()) {
-                    BankDetailRowItem(
-                        label = "SWIFT / BIC Code",
-                        value = swiftBic,
-                        onCopy = { viewModel.copyToClipboard(context, label = "SWIFT/BIC", text = swiftBic) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                }
-
-                val iban = activeBanking?.iban ?: ""
-                if (iban.isNotBlank()) {
-                    BankDetailRowItem(
-                        label = "IBAN",
-                        value = iban,
-                        onCopy = { viewModel.copyToClipboard(context, label = "IBAN", text = iban) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                }
-
-                val branchName = activeBanking?.branchName ?: ""
-                if (branchName.isNotBlank()) {
-                    BankDetailRowItem(
-                        label = "Branch Name",
-                        value = branchName,
-                        onCopy = { viewModel.copyToClipboard(context, label = "Branch Name", text = branchName) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                }
-
-                val notes = activeBanking?.notes ?: ""
-                if (notes.isNotBlank()) {
-                    BankDetailRowItem(
-                        label = "Additional Notes",
-                        value = notes,
-                        onCopy = { viewModel.copyToClipboard(context, label = "Bank Notes", text = notes) }
-                    )
-                }
-            }
-        }
-
-        // Linked Cards Section
-        val linkedCard = availableCards.find { it.id == activeBanking?.linkedCardId } ?: availableCards.find {
-            val t = it.title.lowercase()
-            val b = (activeBanking?.bankName ?: account.title).lowercase()
-            (t.contains(b) || b.contains(t)) && b.isNotBlank()
-        }
-
-        if (linkedCard != null) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "LINKED PAYMENT CARD",
-                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(36.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 3.dp
+                    )
+                    Text(
+                        text = "Decrypting account details...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else if (accountError != null) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Failed to load account details",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Text(
+                        text = accountError ?: "Unknown error",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Button(
+                        onClick = { viewModel.openItem(account) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        )
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
+                        Text("Retry Decryption")
+                    }
+                }
+            }
+        } else {
+            // Bank Title & Type Banner
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = BankIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = activeBanking?.bankName?.ifBlank { account.title } ?: account.title,
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            val accountType = activeBanking?.accountType?.ifBlank { "Bank Account" } ?: "Bank Account"
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.CreditCard,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(20.dp)
+                                Text(
+                                    text = accountType,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
+
+                            val currency = activeBanking?.currency?.ifBlank { "USD" } ?: "USD"
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
+                            ) {
                                 Text(
-                                    text = linkedCard.title,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = linkedCard.accountIdentifier ?: "Linked Debit/Credit Card",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = currency,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
                                 )
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Copy All Details Button
-        Button(
-            onClick = {
-                val details = buildString {
-                    appendLine("Bank: ${activeBanking?.bankName ?: account.title}")
-                    if (!activeBanking?.accountHolderName.isNullOrBlank()) appendLine("Account Holder: ${activeBanking?.accountHolderName}")
-                    if (rawAccNum.isNotBlank()) appendLine("Account Number: $rawAccNum")
-                    if (!activeBanking?.routingNumber.isNullOrBlank()) appendLine("Routing: ${activeBanking?.routingNumber}")
-                    if (!activeBanking?.sortCode.isNullOrBlank()) appendLine("Sort Code: ${activeBanking?.sortCode}")
-                    if (!activeBanking?.swiftBic.isNullOrBlank()) appendLine("SWIFT/BIC: ${activeBanking?.swiftBic}")
-                    if (!activeBanking?.iban.isNullOrBlank()) appendLine("IBAN: ${activeBanking?.iban}")
-                    if (!activeBanking?.branchName.isNullOrBlank()) appendLine("Branch: ${activeBanking?.branchName}")
+            // Account Number Card with Show/Hide & 1-Tap Copy
+            val rawAccNum = activeBanking?.accountNumber ?: account.accountIdentifier ?: ""
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "ACCOUNT NUMBER",
+                            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (isNumberVisible || rawAccNum.length <= 4) rawAccNum else "•••• •••• •••• ${rawAccNum.takeLast(4)}",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { isNumberVisible = !isNumberVisible }) {
+                            Icon(
+                                imageVector = if (isNumberVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (isNumberVisible) "Hide" else "Show",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { viewModel.copyToClipboard(context, label = "Account Number", text = rawAccNum) }) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
-                viewModel.copyToClipboard(context, label = "All Bank Details", text = details.trim())
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            }
+
+            // Transfer & Identification Details List
+            Text(
+                text = "TRANSFER & ROUTING DETAILS",
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary
             )
-        ) {
-            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Copy All Wire / Transfer Details", fontWeight = FontWeight.Bold)
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    val holderName = activeBanking?.accountHolderName ?: ""
+                    if (holderName.isNotBlank()) {
+                        BankDetailRowItem(
+                            label = "Account Holder",
+                            value = holderName,
+                            onCopy = { viewModel.copyToClipboard(context, label = "Account Holder", text = holderName) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    }
+
+                    val routingNum = activeBanking?.routingNumber ?: ""
+                    if (routingNum.isNotBlank()) {
+                        BankDetailRowItem(
+                            label = "Routing Number (ABA)",
+                            value = routingNum,
+                            onCopy = { viewModel.copyToClipboard(context, label = "Routing Number", text = routingNum) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    }
+
+                    val sortCode = activeBanking?.sortCode ?: ""
+                    if (sortCode.isNotBlank()) {
+                        BankDetailRowItem(
+                            label = "Sort Code",
+                            value = sortCode,
+                            onCopy = { viewModel.copyToClipboard(context, label = "Sort Code", text = sortCode) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    }
+
+                    val swiftBic = activeBanking?.swiftBic ?: ""
+                    if (swiftBic.isNotBlank()) {
+                        BankDetailRowItem(
+                            label = "SWIFT / BIC Code",
+                            value = swiftBic,
+                            onCopy = { viewModel.copyToClipboard(context, label = "SWIFT/BIC", text = swiftBic) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    }
+
+                    val iban = activeBanking?.iban ?: ""
+                    if (iban.isNotBlank()) {
+                        BankDetailRowItem(
+                            label = "IBAN",
+                            value = iban,
+                            onCopy = { viewModel.copyToClipboard(context, label = "IBAN", text = iban) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    }
+
+                    val bsb = activeBanking?.bsb ?: ""
+                    if (bsb.isNotBlank()) {
+                        BankDetailRowItem(
+                            label = "BSB Number",
+                            value = bsb,
+                            onCopy = { viewModel.copyToClipboard(context, label = "BSB", text = bsb) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    }
+
+                    val branchName = activeBanking?.branchName ?: ""
+                    if (branchName.isNotBlank()) {
+                        BankDetailRowItem(
+                            label = "Branch Name",
+                            value = branchName,
+                            onCopy = { viewModel.copyToClipboard(context, label = "Branch Name", text = branchName) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    }
+
+                    val notes = activeBanking?.notes ?: ""
+                    if (notes.isNotBlank()) {
+                        BankDetailRowItem(
+                            label = "Additional Notes",
+                            value = notes,
+                            onCopy = { viewModel.copyToClipboard(context, label = "Bank Notes", text = notes) }
+                        )
+                    }
+                }
+            }
+
+            // Sibling Accounts at this Institution Section
+            if (siblingAccounts.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "OTHER ACCOUNTS AT THIS INSTITUTION",
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            siblingAccounts.forEachIndexed { idx, sibling ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (onSelectAccount != null) {
+                                                onSelectAccount(sibling)
+                                            } else {
+                                                viewModel.openItem(sibling)
+                                            }
+                                        }
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = BankIcon,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = sibling.accountIdentifier ?: sibling.title,
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            sibling.accountIdentifier?.let {
+                                                Text(
+                                                    text = it,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowForward,
+                                        contentDescription = "Open account",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                if (idx < siblingAccounts.size - 1) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Linked Cards Section
+            val linkedCard = availableCards.find { it.id == activeBanking?.linkedCardId }
+            var showLinkCardDialog by remember { mutableStateOf(false) }
+
+            if (linkedCard != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "LINKED PAYMENT CARD",
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CreditCard,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = linkedCard.title,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = linkedCard.accountIdentifier ?: "Linked Debit/Credit Card",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { viewModel.unlinkBankAccountFromCard(account.id) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Unlink card",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "LINKED PAYMENT CARD",
+                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showLinkCardDialog = true }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CreditCard,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Link Payment Card",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Associate an existing or brand-new card",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Link card",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (showLinkCardDialog) {
+                AlertDialog(
+                    onDismissRequest = { showLinkCardDialog = false },
+                    title = { Text("Link Payment Card", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // Option 1: Add New Card
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showLinkCardDialog = false
+                                        viewModel.openCardEditorForBankAccount(
+                                            account.id,
+                                            activeBanking?.bankName?.ifBlank { account.title } ?: account.title
+                                        )
+                                    },
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            "+ Add New Card",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                        Text(
+                                            "Create a new card and link it to this account",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Option 2: Link Existing Card
+                            if (availableCards.isNotEmpty()) {
+                                Text(
+                                    "Or select an existing card:",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                                availableCards.forEach { cardItem ->
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                showLinkCardDialog = false
+                                                viewModel.linkBankAccountToCard(account.id, cardItem.id, cardItem.title)
+                                            },
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.CreditCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(cardItem.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                                cardItem.accountIdentifier?.let {
+                                                    Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showLinkCardDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
+            // Copy All Details Button
+            Button(
+                onClick = {
+                    val details = buildString {
+                        appendLine("Bank: ${activeBanking?.bankName ?: account.title}")
+                        if (!activeBanking?.accountHolderName.isNullOrBlank()) appendLine("Account Holder: ${activeBanking?.accountHolderName}")
+                        if (rawAccNum.isNotBlank()) appendLine("Account Number: $rawAccNum")
+                        if (!activeBanking?.routingNumber.isNullOrBlank()) appendLine("Routing: ${activeBanking?.routingNumber}")
+                        if (!activeBanking?.sortCode.isNullOrBlank()) appendLine("Sort Code: ${activeBanking?.sortCode}")
+                        if (!activeBanking?.swiftBic.isNullOrBlank()) appendLine("SWIFT/BIC: ${activeBanking?.swiftBic}")
+                        if (!activeBanking?.iban.isNullOrBlank()) appendLine("IBAN: ${activeBanking?.iban}")
+                        if (!activeBanking?.bsb.isNullOrBlank()) appendLine("BSB: ${activeBanking?.bsb}")
+                        if (!activeBanking?.branchName.isNullOrBlank()) appendLine("Branch: ${activeBanking?.branchName}")
+                    }
+                    viewModel.copyToClipboard(context, label = "All Bank Details", text = details.trim())
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Copy All Wire / Transfer Details", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -4330,12 +4837,15 @@ fun detectCardBrand(cardNumber: String): String {
 internal fun SecureNoteEditorModal(
     initialTitle: String = "",
     initialContent: String = "",
+    initialTags: List<String> = emptyList(),
     isEditingExisting: Boolean = false,
-    onSave: (String, String) -> Unit,
+    onSave: (String, String, List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
     var title by remember(initialTitle) { mutableStateOf(initialTitle) }
     var content by remember(initialContent) { mutableStateOf(initialContent) }
+    var tags by remember(initialTags) { mutableStateOf(initialTags.toMutableList()) }
+    var tagInput by remember { mutableStateOf("") }
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
@@ -4470,6 +4980,92 @@ internal fun SecureNoteEditorModal(
                         .weight(1f)
                 )
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Tags Section
+                Text(
+                    text = "Tags",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Tag chips flow
+                if (tags.isNotEmpty()) {
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        tags.forEach { tag ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = tag,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove tag",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clickable {
+                                                tags = tags.toMutableList().apply { remove(tag) }
+                                            }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
+                // Tag input field
+                OutlinedTextField(
+                    value = tagInput,
+                    onValueChange = { newVal ->
+                        if (newVal.endsWith(",") || newVal.endsWith("\n")) {
+                            val newTag = newVal.trimEnd(',', '\n', ' ').trim()
+                            if (newTag.isNotBlank() && !tags.contains(newTag)) {
+                                tags = (tags + newTag).toMutableList()
+                            }
+                            tagInput = ""
+                        } else {
+                            tagInput = newVal
+                        }
+                    },
+                    placeholder = {
+                        Text(
+                            "Add tags (type & press comma)...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                        )
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.06f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // Bottom Action Bar: Cancel & Save Note
@@ -4496,7 +5092,13 @@ internal fun SecureNoteEditorModal(
                     androidx.compose.material3.Button(
                         onClick = {
                             if (title.isNotBlank() || content.isNotBlank()) {
-                                onSave(title.ifBlank { "Untitled Note" }, content)
+                                // Add any remaining tag input
+                                val finalTags = if (tagInput.trim().isNotBlank() && !tags.contains(tagInput.trim())) {
+                                    tags + tagInput.trim()
+                                } else {
+                                    tags
+                                }
+                                onSave(title.ifBlank { "Untitled Note" }, content, finalTags)
                             }
                         },
                         enabled = title.isNotBlank() || content.isNotBlank(),

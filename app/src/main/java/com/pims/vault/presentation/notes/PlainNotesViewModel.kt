@@ -100,12 +100,14 @@ class PlainNotesViewModel @Inject constructor(
 
     fun save(
         id: String? = null,
+        ownerPersonId: String = CANONICAL_PRIMARY_OWNER_ID,
         title: String,
         format: NoteFormat = NoteFormat.PLAIN,
         content: String,
         reminderAt: Long? = null,
         reminderTag: String? = null,
         reminderRepeat: String? = null,
+        isLocked: Boolean = false,
         onComplete: () -> Unit = {}
     ) {
         if (!isSavingInProgress.compareAndSet(false, true)) {
@@ -117,13 +119,14 @@ class PlainNotesViewModel @Inject constructor(
             try {
                 repository.save(
                     id = id,
-                    ownerPersonId = CANONICAL_PRIMARY_OWNER_ID,
+                    ownerPersonId = ownerPersonId,
                     title = title,
                     format = format,
                     content = content,
                     reminderAt = reminderAt,
                     reminderTag = reminderTag,
-                    reminderRepeat = reminderRepeat
+                    reminderRepeat = reminderRepeat,
+                    isLocked = isLocked
                 )
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     onComplete()
@@ -140,12 +143,14 @@ class PlainNotesViewModel @Inject constructor(
 
     fun saveWithAttachment(
         id: String? = null,
+        ownerPersonId: String = CANONICAL_PRIMARY_OWNER_ID,
         title: String,
         format: NoteFormat = NoteFormat.PLAIN,
         content: String,
         reminderAt: Long? = null,
         reminderTag: String? = null,
         reminderRepeat: String? = null,
+        isLocked: Boolean = false,
         attachmentBytes: ByteArray? = null,
         displayName: String = "Attachment",
         mimeType: String = "image/jpeg",
@@ -160,13 +165,14 @@ class PlainNotesViewModel @Inject constructor(
             try {
                 val saved = repository.save(
                     id = id,
-                    ownerPersonId = CANONICAL_PRIMARY_OWNER_ID,
+                    ownerPersonId = ownerPersonId,
                     title = title,
                     format = format,
                     content = content,
                     reminderAt = reminderAt,
                     reminderTag = reminderTag,
-                    reminderRepeat = reminderRepeat
+                    reminderRepeat = reminderRepeat,
+                    isLocked = isLocked
                 )
                 if (attachmentBytes != null && attachmentBytes.isNotEmpty()) {
                     repository.addAttachment(
@@ -191,13 +197,15 @@ class PlainNotesViewModel @Inject constructor(
 
     fun saveWithMultipleAttachments(
         id: String? = null,
+        ownerPersonId: String = CANONICAL_PRIMARY_OWNER_ID,
         title: String,
         format: NoteFormat = NoteFormat.PLAIN,
         content: String,
         reminderAt: Long? = null,
         reminderTag: String? = null,
         reminderRepeat: String? = null,
-        attachments: List<Pair<ByteArray, String>> = emptyList(),
+        isLocked: Boolean = false,
+        attachments: List<Triple<ByteArray, String, String>> = emptyList(), // bytes, displayName, mimeType
         onComplete: () -> Unit = {}
     ) {
         if (!isSavingInProgress.compareAndSet(false, true)) {
@@ -209,13 +217,14 @@ class PlainNotesViewModel @Inject constructor(
             try {
                 val saved = repository.save(
                     id = id,
-                    ownerPersonId = CANONICAL_PRIMARY_OWNER_ID,
+                    ownerPersonId = ownerPersonId,
                     title = title,
                     format = format,
                     content = content,
                     reminderAt = reminderAt,
                     reminderTag = reminderTag,
-                    reminderRepeat = reminderRepeat
+                    reminderRepeat = reminderRepeat,
+                    isLocked = isLocked
                 )
                 for (att in attachments) {
                     if (att.first.isNotEmpty()) {
@@ -223,7 +232,7 @@ class PlainNotesViewModel @Inject constructor(
                             noteId = saved.id,
                             displayName = att.second,
                             bytes = att.first,
-                            mimeType = "image/jpeg"
+                            mimeType = att.third.ifBlank { "image/jpeg" }
                         )
                     }
                 }
@@ -236,6 +245,49 @@ class PlainNotesViewModel @Inject constructor(
             } finally {
                 isSavingInProgress.set(false)
                 _uiState.update { it.copy(isSaving = false) }
+            }
+        }
+    }
+
+    @JvmName("saveWithMultipleAttachmentsPairs")
+    fun saveWithMultipleAttachments(
+        id: String? = null,
+        ownerPersonId: String = CANONICAL_PRIMARY_OWNER_ID,
+        title: String,
+        format: NoteFormat = NoteFormat.PLAIN,
+        content: String,
+        reminderAt: Long? = null,
+        reminderTag: String? = null,
+        reminderRepeat: String? = null,
+        isLocked: Boolean = false,
+        attachments: List<Pair<ByteArray, String>>,
+        onComplete: () -> Unit = {}
+    ) {
+        val triples = attachments.map { (bytes, name) ->
+            val mime = if (name.endsWith(".pdf", ignoreCase = true)) "application/pdf" else "image/jpeg"
+            Triple(bytes, name, mime)
+        }
+        saveWithMultipleAttachments(
+            id = id,
+            ownerPersonId = ownerPersonId,
+            title = title,
+            format = format,
+            content = content,
+            reminderAt = reminderAt,
+            reminderTag = reminderTag,
+            reminderRepeat = reminderRepeat,
+            isLocked = isLocked,
+            attachments = triples,
+            onComplete = onComplete
+        )
+    }
+
+    fun toggleLock(note: PlainNote) {
+        viewModelScope.launch {
+            try {
+                repository.toggleLock(note.id, !note.isLocked)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.localizedMessage ?: "Failed to toggle lock") }
             }
         }
     }

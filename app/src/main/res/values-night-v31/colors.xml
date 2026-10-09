@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="persona_background">@android:color/system_neutral1_900</color>
+    <color name="persona_surface">@android:color/system_neutral1_800</color>
+    <color name="persona_primary_text">@android:color/system_neutral1_50</color>
+    <color name="persona_accent">@android:color/system_accent1_200</color>
+
+    <!-- Splash Screen Themed Tokens (Dynamic Dark Mode) -->
+    <color name="persona_splash_background">@android:color/system_neutral1_900</color>
+    <color name="persona_splash_container">@android:color/system_accent1_700</color>
+    <color name="persona_splash_glyph">@android:color/system_accent1_50</color>
+
+    <!-- App Launcher Icon Themed Tokens (Dynamic Dark Mode) -->
+    <color name="persona_icon_background">@android:color/system_neutral1_900</color>
+    <color name="persona_icon_foreground">@android:color/system_accent1_200</color>
+</resources>

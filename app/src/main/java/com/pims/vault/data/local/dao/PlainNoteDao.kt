@@ -57,4 +57,16 @@ interface PlainNoteDao {
 
     @Query("UPDATE plain_notes SET reminder_at = NULL, reminder_tag = NULL, reminder_repeat = NULL, is_reminder_done = 0, updated_at = :updatedAt WHERE id = :id")
     suspend fun clearReminder(id: String, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE plain_notes SET is_locked = :isLocked, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setNoteLocked(id: String, isLocked: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM plain_notes ORDER BY updated_at DESC")
+    fun observeAllNotes(): Flow<List<PlainNoteEntity>>
+
+    @Query("SELECT * FROM plain_note_attachments ORDER BY created_at DESC")
+    fun observeAllAttachments(): Flow<List<PlainNoteAttachmentEntity>>
+
+    @Query("SELECT COUNT(*) FROM plain_notes WHERE owner_person_id = :personId")
+    suspend fun countNotesForPerson(personId: String): Int
 }

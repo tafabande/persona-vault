@@ -46,7 +46,8 @@ data class RecoveryCodeSetSecret(
 
 data class SecureNoteSecret(
     val title: String,
-    val noteContent: String
+    val noteContent: String,
+    val tags: List<String> = emptyList()
 )
 
 /**
@@ -63,8 +64,15 @@ data class PaymentReferenceSecret(
     val fullCardNumber: String? = null,
     val cvv: String? = null,
     val notes: String? = null,
-    val status: CardStatus = CardStatus.IN_USE
+    val status: CardStatus = CardStatus.IN_USE,
+    val linkedBankAccountId: String? = null,
+    val linkedBankAccountName: String? = null,
+    val cardType: String = "PHYSICAL", // PHYSICAL, VIRTUAL
+    val isVirtual: Boolean = false
 ) {
+    val isVirtualCard: Boolean
+        get() = isVirtual || cardType.equals("VIRTUAL", ignoreCase = true)
+
     val displayReference: String
         get() = "$provider ending in •••• $lastFourDigits"
 }
@@ -83,10 +91,11 @@ data class BankingDetailsSecret(
     val linkedCardLastFour: List<String> = emptyList(),
     val notes: String? = null,
     val linkedCardId: String? = null,
-    val linkedCardSummary: String? = null
+    val linkedCardSummary: String? = null,
+    val currency: String = "USD"
 ) {
     val displayReference: String
-        get() = "$bankName •••• ${accountNumber.takeLast(4).ifBlank { "----" }}"
+        get() = "$bankName ($accountType, $currency) •••• ${accountNumber.takeLast(4).ifBlank { "----" }}"
 }
 
 data class LiveTotpToken(

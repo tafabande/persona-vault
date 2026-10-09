@@ -17,8 +17,11 @@ interface PlainNotesRepository {
         reminderAt: Long? = null,
         reminderTag: String? = null,
         reminderRepeat: String? = null,
-        isReminderDone: Boolean = false
+        isReminderDone: Boolean = false,
+        isLocked: Boolean = false
     ): PlainNote
+
+    suspend fun toggleLock(noteId: String, isLocked: Boolean)
 
     suspend fun setReminder(
         noteId: String,

@@ -30,6 +30,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,17 +73,31 @@ import com.pims.vault.presentation.vault.detectCardBrand
 @Composable
 fun AddCardScreen(
     onNavigateBack: () -> Unit,
-    onSaveCard: (bankName: String, holder: String, number: String, expiry: String, cvv: String) -> Unit,
-    modifier: Modifier = Modifier
+    onSaveCard: (bankName: String, holder: String, number: String, expiry: String, cvv: String, linkedBankAccountId: String?, linkedBankAccountName: String?, cardType: String) -> Unit,
+    modifier: Modifier = Modifier,
+    initialBankName: String = "",
+    initialCardHolder: String = "",
+    initialCardNumber: String = "",
+    initialExpiryDate: String = "",
+    initialCvv: String = "",
+    initialLinkedBankAccountId: String? = null,
+    initialLinkedBankAccountName: String? = null,
+    initialCardType: String = "PHYSICAL"
 ) {
-    var bankName by remember { mutableStateOf("") }
-    var cardHolder by remember { mutableStateOf("") }
-    var cardNumber by remember { mutableStateOf("") }
-    var expiryDate by remember { mutableStateOf("") }
-    var cvv by remember { mutableStateOf("") }
+    var bankName by remember(initialBankName, initialLinkedBankAccountName) { 
+        mutableStateOf(initialBankName.ifBlank { initialLinkedBankAccountName.orEmpty() }) 
+    }
+    var cardHolder by remember(initialCardHolder) { mutableStateOf(initialCardHolder) }
+    var cardNumber by remember(initialCardNumber) { mutableStateOf(initialCardNumber) }
+    var expiryDate by remember(initialExpiryDate) { mutableStateOf(initialExpiryDate) }
+    var cvv by remember(initialCvv) { mutableStateOf(initialCvv) }
+    var cardType by remember(initialCardType) { mutableStateOf(if (initialCardType.contains("VIRTUAL", ignoreCase = true)) "VIRTUAL" else "PHYSICAL") }
+    var linkedBankAccountId by remember(initialLinkedBankAccountId) { mutableStateOf(initialLinkedBankAccountId) }
+    var linkedBankAccountName by remember(initialLinkedBankAccountName) { mutableStateOf(initialLinkedBankAccountName) }
     var showOptionsMenu by remember { mutableStateOf(false) }
     var showSecurityInfoDialog by remember { mutableStateOf(false) }
 
+    val isEditing = initialBankName.isNotBlank() || initialCardNumber.isNotBlank() || initialCardHolder.isNotBlank()
     val cleanNumber = cardNumber.filter { it.isDigit() }
     val detectedBrand = detectCardBrand(cleanNumber)
     val expectedDigits = when (detectedBrand) {
@@ -98,7 +113,7 @@ fun AddCardScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Add New Card",
+                        text = if (isEditing) "Edit Card" else "Add New Card",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -167,12 +182,67 @@ fun AddCardScreen(
             ) {
                 Spacer(modifier = Modifier.height(4.dp))
 
+                if (!linkedBankAccountName.isNullOrBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "🔗 Will link to: $linkedBankAccountName",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = {
+                                    linkedBankAccountId = null
+                                    linkedBankAccountName = null
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Unlink",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Card Physicality Selector
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = cardType == "PHYSICAL",
+                        onClick = { cardType = "PHYSICAL" },
+                        label = { Text("💳 Physical Card") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = cardType == "VIRTUAL",
+                        onClick = { cardType = "VIRTUAL" },
+                        label = { Text("📱 Virtual Card") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
                 // 1. Live Interactive Card Preview Component
                 CardLivePreview(
                     bankName = bankName,
                     holderName = cardHolder,
                     cardNumber = cardNumber,
-                    expiryDate = expiryDate
+                    expiryDate = expiryDate,
+                    cardType = cardType
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -203,7 +273,7 @@ fun AddCardScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     CleanCardTextField(
                         value = cardNumber,
-                        onValueChange = { if (it.length <= 16) cardNumber = it.filter { ch -> ch.isDigit() } },
+                        onValueChange = { if (it.length <= 19) cardNumber = it.filter { ch -> ch.isDigit() } },
                         label = "Card Number",
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         visualTransformation = CardNumberVisualTransformation()
@@ -245,11 +315,11 @@ fun AddCardScreen(
                         Text(
                             text = when {
                                 cleanNumber.isEmpty() -> "Visa / Mastercard / Amex"
-                                isNumberFormatCorrect -> "✓ Correct format ($expectedDigits digits)"
-                                else -> "ℹ ${cleanNumber.length}/$expectedDigits digits • Accepted nevertheless"
+                                cleanNumber.length in 12..19 -> "✓ Valid length (${cleanNumber.length} digits)"
+                                else -> "ℹ ${cleanNumber.length} digits • Must be 12-19 digits"
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isNumberFormatCorrect) MaterialTheme.colorScheme.primary
+                            color = if (cleanNumber.length in 12..19) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -297,7 +367,7 @@ fun AddCardScreen(
                     val finalNumber = cardNumber.trim().ifBlank { "0000" }
                     val finalExpiry = expiryDate.trim().ifBlank { "1228" }
                     val finalCvv = cvv.trim()
-                    onSaveCard(finalBank, finalHolder, finalNumber, finalExpiry, finalCvv)
+                    onSaveCard(finalBank, finalHolder, finalNumber, finalExpiry, finalCvv, linkedBankAccountId, linkedBankAccountName, cardType)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -308,10 +378,10 @@ fun AddCardScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                enabled = true
+                enabled = cleanNumber.length in 12..19 || (isEditing && (bankName.isNotBlank() || cardHolder.isNotBlank() || cardNumber.isNotBlank()))
             ) {
                 Text(
-                    text = "Add Card",
+                    text = if (isEditing) "Save Changes" else "Add Card",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -349,8 +419,10 @@ private fun CardLivePreview(
     bankName: String,
     holderName: String,
     cardNumber: String,
-    expiryDate: String
+    expiryDate: String,
+    cardType: String = "PHYSICAL"
 ) {
+    val isVirtual = cardType.equals("VIRTUAL", ignoreCase = true)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -358,7 +430,11 @@ private fun CardLivePreview(
             .clip(RoundedCornerShape(20.dp))
             .background(
                 Brush.linearGradient(
-                    colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A)),
+                    colors = if (isVirtual) {
+                        listOf(Color(0xFF0F172A), Color(0xFF1E1B4B), Color(0xFF0284C7))
+                    } else {
+                        listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+                    },
                     start = Offset(0f, 0f),
                     end = Offset(800f, 600f)
                 )
@@ -387,31 +463,50 @@ private fun CardLivePreview(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header Row: Card Type & Contactless Wave Icon
+            // Header Row: Card Type & Indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = bankName.ifBlank { detectCardBrand(cardNumber) },
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = bankName.ifBlank { detectCardBrand(cardNumber) },
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (isVirtual) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF38BDF8).copy(alpha = 0.25f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "VIRTUAL",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF38BDF8)
+                            )
+                        }
+                    }
+                }
 
-                // Contactless Icon Vector
-                Canvas(modifier = Modifier.size(20.dp)) {
-                    for (i in 1..3) {
-                        drawArc(
-                            color = Color.White.copy(alpha = 0.85f),
-                            startAngle = -45f,
-                            sweepAngle = 90f,
-                            useCenter = false,
-                            topLeft = Offset(size.width * (0.15f * i), 0f),
-                            size = androidx.compose.ui.geometry.Size(size.width * 0.8f, size.height),
-                            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-                        )
+                if (!isVirtual) {
+                    // Contactless Icon Vector
+                    Canvas(modifier = Modifier.size(20.dp)) {
+                        for (i in 1..3) {
+                            drawArc(
+                                color = Color.White.copy(alpha = 0.85f),
+                                startAngle = -45f,
+                                sweepAngle = 90f,
+                                useCenter = false,
+                                topLeft = Offset(size.width * (0.15f * i), 0f),
+                                size = androidx.compose.ui.geometry.Size(size.width * 0.8f, size.height),
+                                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                        }
                     }
                 }
             }

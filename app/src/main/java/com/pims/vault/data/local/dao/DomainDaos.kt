@@ -78,6 +78,12 @@ interface DocumentDao {
     @Delete
     suspend fun deleteVersion(version: DocumentVersionEntity)
 
+    @Query("UPDATE documents SET is_locked = :isLocked WHERE id = :id")
+    suspend fun setDocumentLocked(id: String, isLocked: Boolean)
+
+    @Query("SELECT COUNT(*) FROM documents WHERE person_id = :personId")
+    suspend fun countDocumentsForPerson(personId: String): Int
+
     @Query("DELETE FROM document_versions WHERE id = :id")
     suspend fun deleteVersionById(id: String)
 

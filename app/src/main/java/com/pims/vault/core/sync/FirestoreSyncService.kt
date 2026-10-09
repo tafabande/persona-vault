@@ -95,7 +95,7 @@ class FirestoreSyncService @Inject constructor(
     ) {
         if (localValue.trim() == remoteValue.trim()) return
         try {
-            val existing = syncConflictDao.getExistingUnresolved(entityType, entityId)
+            val existing = syncConflictDao.getExistingUnresolvedByField(entityType, entityId, fieldName)
             if (existing == null) {
                 syncConflictDao.insert(
                     SyncConflictEntity(
@@ -151,31 +151,36 @@ class FirestoreSyncService @Inject constructor(
     suspend fun syncPerson(userId: String?, person: PersonEntity) = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
-            val personData = hashMapOf(
+            // Sparse updates are intentional: an uncollected optional field is
+            // not an instruction to overwrite a previously backed-up value.
+            val personData = hashMapOf<String, Any>(
                 "personId" to person.id,
                 "accountUid" to uid,
                 "isPrimaryOwner" to person.isPrimaryOwner,
                 "firstName" to person.firstName,
-                "middleName" to (person.middleName ?: ""),
                 "lastName" to person.lastName,
-                "preferredName" to (person.preferredName ?: ""),
                 "displayName" to "${person.firstName} ${person.lastName}".trim(),
-                "occupation" to (person.occupation ?: ""),
-                "nationality" to (person.nationality ?: ""),
-                "country" to (person.countryOfResidence ?: ""),
-                "countryOfResidence" to (person.countryOfResidence ?: ""),
-                "gender" to (person.gender ?: ""),
-                "dateOfBirth" to (person.dateOfBirth ?: ""),
-                "religion" to (person.religion ?: ""),
-                "ethnicity" to (person.ethnicity ?: ""),
-                "nationalIdNumber" to (person.nationalIdNumber ?: ""),
-                "previousNames" to (person.previousNames ?: ""),
-                "notes" to (person.notes ?: ""),
                 "securityClassification" to person.securityClassification.name,
                 "createdAt" to person.createdAt,
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
+            fun putOptional(key: String, value: String?) {
+                value?.takeIf { it.isNotBlank() }?.let { personData[key] = it }
+            }
+            putOptional("middleName", person.middleName)
+            putOptional("preferredName", person.preferredName)
+            putOptional("occupation", person.occupation)
+            putOptional("nationality", person.nationality)
+            putOptional("country", person.countryOfResidence)
+            putOptional("countryOfResidence", person.countryOfResidence)
+            putOptional("gender", person.gender)
+            putOptional("dateOfBirth", person.dateOfBirth)
+            putOptional("religion", person.religion)
+            putOptional("ethnicity", person.ethnicity)
+            putOptional("nationalIdNumber", person.nationalIdNumber)
+            putOptional("previousNames", person.previousNames)
+            putOptional("notes", person.notes)
             firestore.collection("accounts").document(uid)
                 .collection("people").document(person.id)
                 .set(personData, SetOptions.merge()).await()
@@ -1810,20 +1815,9 @@ class FirestoreSyncService @Inject constructor(
                                     localVersion = existing.updatedAt,
                                     serverVersion = remoteUpdated
                                 )
-                                // Clash: Withhold overwriting local item, create remote as next entry n+1
-                                val nPlusOneItem = VaultItemEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    personId = targetPersonId,
-                                    category = category,
-                                    title = "$remoteTitle (2)",
-                                    accountIdentifier = remoteAccount,
-                                    encryptedPayload = payloadBytes,
-                                    encryptionIv = doc.getString("encryptionIv") ?: "",
-                                    notes = doc.getString("notes")?.takeIf { it.isNotBlank() },
-                                    updatedAt = remoteUpdated
-                                )
-                                vaultDao.insertOrUpdate(nPlusOneItem)
-                                count++
+                            // Preserve the stable ID and surface the conflict.  A
+                            // generated “(2)” record is neither an upsert nor a
+                            // user-approved duplicate financial record.
                             }
                             // Local is king — preserve local vault item!
                             continue
@@ -1848,7 +1842,7 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling vault items: ${e.message}", e)
             }
 
-            // 8. Plain Notes & Attachments (Local is king — preserve local notes, create n+1 on clash)
+            // 8. Plain Notes & Attachments (stable note IDs; conflicts are explicit)
             try {
                 val notesSnap = accountDocRef.collection("notes").get().await()
                 for (doc in notesSnap.documents) {
@@ -1889,24 +1883,10 @@ class FirestoreSyncService @Inject constructor(
                                 localVersion = existingNote.updatedAt,
                                 serverVersion = updatedAt
                             )
-                            // Clash: Withhold overwriting local note, make remote note the next entry n+1!
-                            val baseTitle = title.trim().ifBlank { "Untitled Note" }
-                            val existingNotes = plainNoteDao.getAllNotes()
-                            val similarCount = existingNotes.count { it.title.startsWith(baseTitle) }
-                            val nPlusOneTitle = "$baseTitle (${similarCount + 1})"
-                            effectiveNoteId = UUID.randomUUID().toString()
-                            val nPlusOneNote = PlainNoteEntity(
-                                id = effectiveNoteId,
-                                ownerPersonId = targetOwner,
-                                title = nPlusOneTitle,
-                                content = content,
-                                format = format,
-                                createdAt = createdAt,
-                                updatedAt = updatedAt
-                            )
-                            plainNoteDao.upsert(nPlusOneNote)
-                            count++
-                            VaultLogger.i("FirestoreSync", "Note clash resolved: preserved local note $noteId, created n+1 note $effectiveNoteId ($nPlusOneTitle)")
+                            // Do not invent a second note. Keep the stable local
+                            // record and leave the conflict available for an
+                            // explicit resolution in the sync UI.
+                            continue
                         } else {
                             effectiveNoteId = existingNote.id
                         }

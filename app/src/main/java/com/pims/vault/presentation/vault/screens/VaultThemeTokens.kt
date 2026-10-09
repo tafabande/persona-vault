@@ -70,7 +70,8 @@ object VaultDesignTokens {
     val CardDebit = Color(0xFF1A5336)
     val CardCredit = Color(0xFF0284C7)
     val CardVirtual = Color(0xFF7A0C2E)
-    val CardEcocash = Color(0xFF750E2B)
+    val CardEcocash = Color(0xFF790D2D)
+    val CardCabs = Color(0xFF1E2A3A)
     val AccentGreen = Color(0xFF10B981)
 }
 
