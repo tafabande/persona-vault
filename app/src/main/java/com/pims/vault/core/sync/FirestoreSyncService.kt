@@ -54,6 +54,7 @@ import com.pims.vault.data.local.entity.VaultItemEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -309,18 +310,24 @@ class FirestoreSyncService @Inject constructor(
 
     suspend fun deleteRemoteNoteAttachment(noteId: String, attachmentId: String) =
         withContext(Dispatchers.IO) {
+            if (!networkMonitor.isCurrentlyConnected()) {
+                VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore delete for note attachment $attachmentId")
+                return@withContext
+            }
             val uid = getEffectiveUserId(null) ?: return@withContext
             try {
-                val ref = firestore.collection("accounts").document(uid)
-                    .collection("notes").document(noteId)
-                    .collection("attachments").document(attachmentId)
-                try {
-                    val snap = ref.get().await()
-                    val remotePath = snap.getString("b2RemotePath")
-                        ?: snap.getString("objectKey") ?: ""
-                    if (remotePath.isNotBlank()) storageUploadService.delete(remotePath)
-                } catch (_: Exception) {}
-                ref.delete().await()
+                withTimeoutOrNull(4000L) {
+                    val ref = firestore.collection("accounts").document(uid)
+                        .collection("notes").document(noteId)
+                        .collection("attachments").document(attachmentId)
+                    try {
+                        val snap = ref.get().await()
+                        val remotePath = snap.getString("b2RemotePath")
+                            ?: snap.getString("objectKey") ?: ""
+                        if (remotePath.isNotBlank()) storageUploadService.delete(remotePath)
+                    } catch (_: Exception) {}
+                    ref.delete().await()
+                }
                 VaultLogger.i("FirestoreSync", "Attachment $attachmentId deleted from Firestore (+storage)")
             } catch (e: Exception) {
                 VaultLogger.w("FirestoreSync", "Failed to delete remote attachment: ${e.message}")
@@ -630,6 +637,10 @@ class FirestoreSyncService @Inject constructor(
     }
 
     suspend fun syncRelationshipNote(userId: String?, note: RelationshipNoteEntity) = withContext(Dispatchers.IO) {
+        if (!networkMonitor.isCurrentlyConnected()) {
+            VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore sync for relationship note ${note.id}")
+            return@withContext
+        }
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
             val noteData = hashMapOf(
@@ -642,9 +653,11 @@ class FirestoreSyncService @Inject constructor(
                 "updatedAt" to note.updatedAt,
                 "version" to 1L
             )
-            firestore.collection("accounts").document(uid)
-                .collection("relationshipNotes").document(note.id)
-                .set(noteData, SetOptions.merge()).await()
+            withTimeoutOrNull(4000L) {
+                firestore.collection("accounts").document(uid)
+                    .collection("relationshipNotes").document(note.id)
+                    .set(noteData, SetOptions.merge()).await()
+            }
             VaultLogger.i("FirestoreSync", "Relationship note ${note.id} synced to Firestore")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync relationship note: ${e.message}", e)
@@ -652,6 +665,10 @@ class FirestoreSyncService @Inject constructor(
     }
 
     suspend fun syncVaultItem(userId: String?, item: VaultItemEntity) = withContext(Dispatchers.IO) {
+        if (!networkMonitor.isCurrentlyConnected()) {
+            VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore sync for vault item ${item.id}")
+            return@withContext
+        }
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
             val payloadBase64 = Base64.encodeToString(item.encryptedPayload, Base64.NO_WRAP)
@@ -667,9 +684,11 @@ class FirestoreSyncService @Inject constructor(
                 "version" to 1L,
                 "updatedAt" to item.updatedAt
             )
-            firestore.collection("accounts").document(uid)
-                .collection("vault").document(item.id)
-                .set(vaultData, SetOptions.merge()).await()
+            withTimeoutOrNull(4000L) {
+                firestore.collection("accounts").document(uid)
+                    .collection("vault").document(item.id)
+                    .set(vaultData, SetOptions.merge()).await()
+            }
             VaultLogger.i("FirestoreSync", "Vault item ${item.id} (${item.title}) synced to Firestore")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync vault item: ${e.message}", e)
@@ -677,11 +696,17 @@ class FirestoreSyncService @Inject constructor(
     }
 
     suspend fun deleteVaultItem(userId: String?, itemId: String) = withContext(Dispatchers.IO) {
+        if (!networkMonitor.isCurrentlyConnected()) {
+            VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore delete for vault item $itemId")
+            return@withContext
+        }
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
-            firestore.collection("accounts").document(uid)
-                .collection("vault").document(itemId)
-                .delete().await()
+            withTimeoutOrNull(4000L) {
+                firestore.collection("accounts").document(uid)
+                    .collection("vault").document(itemId)
+                    .delete().await()
+            }
             VaultLogger.i("FirestoreSync", "Vault item $itemId deleted from Firestore")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to delete vault item from Firestore: ${e.message}", e)
@@ -689,6 +714,10 @@ class FirestoreSyncService @Inject constructor(
     }
 
     suspend fun syncNote(userId: String?, note: PlainNoteEntity, isDeleted: Boolean = false) = withContext(Dispatchers.IO) {
+        if (!networkMonitor.isCurrentlyConnected()) {
+            VaultLogger.d("FirestoreSync", "Device is offline; skipping immediate Firestore sync for note ${note.id}")
+            return@withContext
+        }
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
             val noteData = hashMapOf(
@@ -707,9 +736,11 @@ class FirestoreSyncService @Inject constructor(
                 "isDeleted" to isDeleted,
                 "version" to 1L
             )
-            firestore.collection("accounts").document(uid)
-                .collection("notes").document(note.id)
-                .set(noteData, SetOptions.merge()).await()
+            withTimeoutOrNull(4000L) {
+                firestore.collection("accounts").document(uid)
+                    .collection("notes").document(note.id)
+                    .set(noteData, SetOptions.merge()).await()
+            }
             VaultLogger.i("FirestoreSync", "Note ${note.id} synced to Firestore (isDeleted: $isDeleted)")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync note: ${e.message}", e)
@@ -717,25 +748,31 @@ class FirestoreSyncService @Inject constructor(
     }
 
     suspend fun deleteNote(userId: String?, noteId: String) = withContext(Dispatchers.IO) {
+        if (!networkMonitor.isCurrentlyConnected()) {
+            VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore delete for note $noteId")
+            return@withContext
+        }
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
             val noteRef = firestore.collection("accounts").document(uid)
                 .collection("notes").document(noteId)
 
-            // Purge remote attachments from storage and Firestore
-            try {
-                val atts = noteRef.collection("attachments").get().await()
-                for (attDoc in atts.documents) {
-                    val remotePath = attDoc.getString("b2RemotePath") ?: attDoc.getString("objectKey") ?: ""
-                    if (remotePath.isNotBlank()) {
-                        try { storageUploadService.delete(remotePath) } catch (_: Exception) {}
+            withTimeoutOrNull(5000L) {
+                // Purge remote attachments from storage and Firestore
+                try {
+                    val atts = noteRef.collection("attachments").get().await()
+                    for (attDoc in atts.documents) {
+                        val remotePath = attDoc.getString("b2RemotePath") ?: attDoc.getString("objectKey") ?: ""
+                        if (remotePath.isNotBlank()) {
+                            try { storageUploadService.delete(remotePath) } catch (_: Exception) {}
+                        }
+                        try { attDoc.reference.delete().await() } catch (_: Exception) {}
                     }
-                    try { attDoc.reference.delete().await() } catch (_: Exception) {}
-                }
-            } catch (_: Exception) {}
+                } catch (_: Exception) {}
 
-            // Delete note doc from Firestore
-            noteRef.delete().await()
+                // Delete note doc from Firestore
+                noteRef.delete().await()
+            }
             VaultLogger.i("FirestoreSync", "Note $noteId deleted everywhere from Firestore and storage")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to delete note from Firestore: ${e.message}", e)
@@ -747,6 +784,10 @@ class FirestoreSyncService @Inject constructor(
         noteId: String,
         attachment: PlainNoteAttachmentEntity
     ) = withContext(Dispatchers.IO) {
+        if (!networkMonitor.isCurrentlyConnected()) {
+            VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore sync for note attachment ${attachment.id}")
+            return@withContext
+        }
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
             var b2DownloadUrl = ""
@@ -822,10 +863,12 @@ class FirestoreSyncService @Inject constructor(
                 "caption" to attachment.caption,
                 "createdAt" to attachment.createdAt
             )
-            firestore.collection("accounts").document(uid)
-                .collection("notes").document(noteId)
-                .collection("attachments").document(attachment.id)
-                .set(attachmentData, SetOptions.merge()).await()
+            withTimeoutOrNull(6000L) {
+                firestore.collection("accounts").document(uid)
+                    .collection("notes").document(noteId)
+                    .collection("attachments").document(attachment.id)
+                    .set(attachmentData, SetOptions.merge()).await()
+            }
             VaultLogger.i("FirestoreSync", "Attachment ${attachment.id} for note $noteId synced to Firestore")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync note attachment: ${e.message}", e)

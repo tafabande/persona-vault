@@ -130,6 +130,20 @@ fun PlainNoteEditorScreen(
     var localIsSaving by remember { mutableStateOf(false) }
     val isBusy = state.isSaving || localIsSaving
 
+    LaunchedEffect(state.error) {
+        state.error?.let { err ->
+            localIsSaving = false
+            Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+            viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(state.isSaving) {
+        if (!state.isSaving && localIsSaving) {
+            localIsSaving = false
+        }
+    }
+
     BackHandler(enabled = !isBusy, onBack = onBack)
 
     var isUnlocked by remember(noteId, existingNote?.isLocked) { 
@@ -755,7 +769,10 @@ fun PlainNoteEditorScreen(
                                         reminderRepeat = reminderRepeat,
                                         isLocked = isLocked,
                                         attachments = pendingAttachments.toList(),
-                                        onComplete = onBack
+                                        onComplete = {
+                                            localIsSaving = false
+                                            onBack()
+                                        }
                                     )
                                 } else {
                                     viewModel.save(
@@ -767,7 +784,10 @@ fun PlainNoteEditorScreen(
                                         reminderTag = finalTagsToStore,
                                         reminderRepeat = reminderRepeat,
                                         isLocked = isLocked,
-                                        onComplete = onBack
+                                        onComplete = {
+                                            localIsSaving = false
+                                            onBack()
+                                        }
                                     )
                                 }
                             },
