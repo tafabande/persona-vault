@@ -254,6 +254,7 @@ fun VaultDashboardView(
     val vaultTextSecondary = if (isDark) Color(0xFFE2E8F0) else PimsTextSecondary
 
     var currentRoute by remember { mutableStateOf<VaultScreenRoute>(VaultScreenRoute.Home) }
+    var previousRoute by remember { mutableStateOf<VaultScreenRoute>(VaultScreenRoute.Home) }
     var activeSheetType by remember { mutableStateOf<SecretPickerType?>(null) }
     var showTypePicker by remember { mutableStateOf(false) }
     var showIdCredentialSheet by remember { mutableStateOf(false) }
@@ -274,6 +275,9 @@ fun VaultDashboardView(
         } else if (currentRoute !is VaultScreenRoute.Home) {
             if (currentRoute is VaultScreenRoute.IdCredentialDetail) {
                 currentRoute = VaultScreenRoute.IdMembershipList()
+            } else if (currentRoute is VaultScreenRoute.KeyDetail) {
+                viewModel.closeActiveItem()
+                currentRoute = if (previousRoute is VaultScreenRoute.Home) VaultScreenRoute.Home else VaultScreenRoute.PasswordsKeys
             } else {
                 currentRoute = VaultScreenRoute.Home
             }
@@ -361,6 +365,7 @@ fun VaultDashboardView(
                         PasswordsKeysListScreen(
                             items = uiState.vaultItems,
                             onOpenItem = { item ->
+                                previousRoute = currentRoute
                                 when (item.category) {
                                     VaultCategory.PAYMENT_REFERENCE -> {
                                         currentRoute = VaultScreenRoute.CardDetail(item)
@@ -430,14 +435,14 @@ fun VaultDashboardView(
                             viewModel = viewModel,
                             onBack = {
                                 viewModel.closeActiveItem()
-                                currentRoute = VaultScreenRoute.PasswordsKeys
+                                currentRoute = if (previousRoute is VaultScreenRoute.Home) VaultScreenRoute.Home else VaultScreenRoute.PasswordsKeys
                             },
                             onEdit = {
                                 viewModel.openEditor(route.item.category, route.item.id)
                             },
                             onDelete = {
                                 viewModel.deleteItem(route.item.id)
-                                currentRoute = VaultScreenRoute.PasswordsKeys
+                                currentRoute = if (previousRoute is VaultScreenRoute.Home) VaultScreenRoute.Home else VaultScreenRoute.PasswordsKeys
                             }
                         )
                     }
@@ -675,16 +680,45 @@ fun VaultDashboardView(
         )
     }
 
-    // Fallback item detail dialog for generic passwords/notes if opened directly
-    if (uiState.activeItemId != null && !uiState.isEditing && currentRoute !is VaultScreenRoute.CardDetail && currentRoute !is VaultScreenRoute.BankAccountDetail && currentRoute !is VaultScreenRoute.KeyDetail && currentRoute !is VaultScreenRoute.RecoveryCodes && currentRoute !is VaultScreenRoute.IdCredentialDetail) {
-        val activeItem = uiState.vaultItems.find { it.id == uiState.activeItemId }
-        if (activeItem != null && activeItem.category != VaultCategory.PAYMENT_REFERENCE && activeItem.category != VaultCategory.BANK_ACCOUNT && activeItem.category != VaultCategory.IDENTITY_CREDENTIAL) {
-            VaultItemDetailDialog(
-                item = activeItem,
-                uiState = uiState,
-                viewModel = viewModel,
-                onDismiss = { viewModel.closeActiveItem() }
-            )
+    // Directly route to the full detail screen when an item is selected from local database, avoiding empty popup dialog
+    LaunchedEffect(uiState.activeItemId, uiState.isEditing) {
+        val activeId = uiState.activeItemId
+        if (activeId != null && !uiState.isEditing) {
+            val activeItem = uiState.vaultItems.find { it.id == activeId }
+            if (activeItem != null) {
+                when (activeItem.category) {
+                    VaultCategory.PAYMENT_REFERENCE -> {
+                        if (currentRoute !is VaultScreenRoute.CardDetail) {
+                            previousRoute = currentRoute
+                            currentRoute = VaultScreenRoute.CardDetail(activeItem)
+                        }
+                    }
+                    VaultCategory.BANK_ACCOUNT -> {
+                        if (currentRoute !is VaultScreenRoute.BankAccountDetail) {
+                            previousRoute = currentRoute
+                            currentRoute = VaultScreenRoute.BankAccountDetail(activeItem)
+                        }
+                    }
+                    VaultCategory.RECOVERY_CODE -> {
+                        if (currentRoute !is VaultScreenRoute.RecoveryCodes) {
+                            previousRoute = currentRoute
+                            currentRoute = VaultScreenRoute.RecoveryCodes(activeItem)
+                        }
+                    }
+                    VaultCategory.IDENTITY_CREDENTIAL -> {
+                        if (currentRoute !is VaultScreenRoute.IdCredentialDetail) {
+                            previousRoute = currentRoute
+                            currentRoute = VaultScreenRoute.IdCredentialDetail(activeItem)
+                        }
+                    }
+                    else -> {
+                        if (currentRoute !is VaultScreenRoute.KeyDetail) {
+                            previousRoute = currentRoute
+                            currentRoute = VaultScreenRoute.KeyDetail(activeItem)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -4145,6 +4179,10 @@ private fun VaultItemDetailDialog(
     val context = LocalContext.current
     val isRevealed = uiState.revealedSecretIds.contains(item.id)
 
+    LaunchedEffect(item.id) {
+        viewModel.openItem(item)
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         PimsCard(
             modifier = Modifier
@@ -4176,6 +4214,46 @@ private fun VaultItemDetailDialog(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
+
+                if (uiState.isLoading) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Decrypting from secure storage...",
+                            fontSize = 13.sp,
+                            color = PimsTextSecondary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                if (uiState.errorMessage != null) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                    ) {
+                        Text(
+                            text = uiState.errorMessage,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
 
                 // Detail content according to category
                 when (item.category) {
@@ -4447,6 +4525,285 @@ private fun VaultItemDetailDialog(
                             bank.linkedCardSummary?.let { cardSummary ->
                                 Spacer(modifier = Modifier.height(6.dp))
                                 DetailRow(label = "Linked Card", value = cardSummary, onCopy = null)
+                            }
+                        }
+                    }
+
+                    VaultCategory.API_KEY -> {
+                        val apiKey = uiState.activeDecryptedApiKey
+                        if (apiKey != null) {
+                            apiKey.service?.let { DetailRow(label = "Service", value = it, onCopy = null) }
+                            apiKey.environment?.let {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Environment", value = it, onCopy = null)
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .border(1.dp, PimsBorder, RoundedCornerShape(6.dp))
+                                    .background(PimsBackground)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = "API KEY", color = PimsTextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (isRevealed) apiKey.key else "••••••••••••••••",
+                                        color = PimsTextPrimary,
+                                        fontSize = 14.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Row {
+                                    IconButton(
+                                        onClick = { viewModel.toggleRevealSecret(item.id) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "Reveal",
+                                            tint = PimsTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { viewModel.copyToClipboard(context, apiKey.key, "API Key", true) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy API Key",
+                                            tint = PimsTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            apiKey.endpoint?.let { endpoint ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Endpoint", value = endpoint, onCopy = { viewModel.copyToClipboard(context, endpoint, "Endpoint", false) })
+                            }
+                            apiKey.expires?.let { expires ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Expires", value = expires, onCopy = null)
+                            }
+                            apiKey.notes?.let { note ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Notes", value = note, onCopy = null)
+                            }
+                        }
+                    }
+
+                    VaultCategory.SSH_KEY -> {
+                        val ssh = uiState.activeDecryptedSshKey
+                        if (ssh != null) {
+                            listOfNotNull(ssh.username, ssh.host).joinToString("@").takeIf { it.isNotBlank() }?.let {
+                                DetailRow(label = "Target", value = it, onCopy = { viewModel.copyToClipboard(context, it, "SSH Target", false) })
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                            ssh.fingerprint?.let { fp ->
+                                DetailRow(label = "Fingerprint", value = fp, onCopy = { viewModel.copyToClipboard(context, fp, "Fingerprint", false) })
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                            val keyToDisplay = ssh.privateKey ?: ssh.publicKey.orEmpty()
+                            if (keyToDisplay.isNotBlank()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .border(1.dp, PimsBorder, RoundedCornerShape(6.dp))
+                                        .background(PimsBackground)
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = if (ssh.privateKey != null) "PRIVATE KEY" else "PUBLIC KEY", color = PimsTextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = if (isRevealed) keyToDisplay else "••••••••••••••••",
+                                            color = PimsTextPrimary,
+                                            fontSize = 13.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                    Row {
+                                        IconButton(
+                                            onClick = { viewModel.toggleRevealSecret(item.id) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = "Reveal",
+                                                tint = PimsTextSecondary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.copyToClipboard(context, keyToDisplay, "SSH Key", true) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = "Copy SSH Key",
+                                                tint = PimsTextSecondary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            ssh.notes?.let { note ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Notes", value = note, onCopy = null)
+                            }
+                        }
+                    }
+
+                    VaultCategory.ACCESS_TOKEN -> {
+                        val tokenSecret = uiState.activeDecryptedAccessToken
+                        if (tokenSecret != null) {
+                            tokenSecret.service?.let { DetailRow(label = "Service", value = it, onCopy = null) }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .border(1.dp, PimsBorder, RoundedCornerShape(6.dp))
+                                    .background(PimsBackground)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = "ACCESS TOKEN", color = PimsTextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (isRevealed) tokenSecret.token else "••••••••••••••••",
+                                        color = PimsTextPrimary,
+                                        fontSize = 14.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Row {
+                                    IconButton(
+                                        onClick = { viewModel.toggleRevealSecret(item.id) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "Reveal",
+                                            tint = PimsTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { viewModel.copyToClipboard(context, tokenSecret.token, "Access Token", true) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy Token",
+                                            tint = PimsTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            tokenSecret.scopes?.takeIf { it.isNotEmpty() }?.let { scopes ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Scopes", value = scopes.joinToString(", "), onCopy = null)
+                            }
+                            tokenSecret.expires?.let { expires ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Expires", value = expires, onCopy = null)
+                            }
+                            tokenSecret.notes?.let { note ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Notes", value = note, onCopy = null)
+                            }
+                        }
+                    }
+
+                    VaultCategory.GENERIC_SECRET -> {
+                        val generic = uiState.activeDecryptedGeneric
+                        if (generic != null) {
+                            generic.provider?.let { DetailRow(label = "Provider", value = it, onCopy = null) }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .border(1.dp, PimsBorder, RoundedCornerShape(6.dp))
+                                    .background(PimsBackground)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = (generic.secretType ?: "SECRET").uppercase(), color = PimsTextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (isRevealed) generic.secretValue else "••••••••••••••••",
+                                        color = PimsTextPrimary,
+                                        fontSize = 14.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Row {
+                                    IconButton(
+                                        onClick = { viewModel.toggleRevealSecret(item.id) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = "Reveal",
+                                            tint = PimsTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { viewModel.copyToClipboard(context, generic.secretValue, "Secret", true) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy Secret",
+                                            tint = PimsTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            generic.notes?.let { note ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Notes", value = note, onCopy = null)
+                            }
+                        }
+                    }
+
+                    VaultCategory.IDENTITY_CREDENTIAL -> {
+                        val idCred = uiState.activeDecryptedIdentity
+                        if (idCred != null) {
+                            DetailRow(label = "Type", value = idCred.idType, onCopy = null)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            DetailRow(label = "Full Name", value = idCred.fullName, onCopy = { viewModel.copyToClipboard(context, idCred.fullName, "Full Name", false) })
+                            Spacer(modifier = Modifier.height(8.dp))
+                            DetailRow(label = "ID Number", value = idCred.identifierNumber, onCopy = { viewModel.copyToClipboard(context, idCred.identifierNumber, "ID Number", true) })
+                            idCred.issuingAuthority?.let {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Authority", value = it, onCopy = null)
+                            }
+                            idCred.expiryDate?.let {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Expires", value = it, onCopy = null)
+                            }
+                            idCred.notes?.let { note ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                DetailRow(label = "Notes", value = note, onCopy = null)
                             }
                         }
                     }

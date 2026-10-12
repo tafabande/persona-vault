@@ -60,6 +60,7 @@ fun VaultHomeScreen(
     onOpenCard: (VaultItemHeader) -> Unit,
     onOpenBankAccount: (VaultItemHeader) -> Unit,
     onOpenPasswordsAndKeys: () -> Unit,
+    onOpenSecret: (VaultItemHeader) -> Unit = {},
     onOpenIdCategory: (String) -> Unit,
     onOpenImportRestore: () -> Unit,
     onAddSecret: () -> Unit,
@@ -320,6 +321,18 @@ fun VaultHomeScreen(
                     Spacer(modifier = Modifier.height(28.dp))
 
                     // SECTION 2: Passwords & keys
+                    val credentialCategories = setOf(
+                        VaultCategory.PASSWORD,
+                        VaultCategory.API_KEY,
+                        VaultCategory.SSH_KEY,
+                        VaultCategory.ACCESS_TOKEN,
+                        VaultCategory.RECOVERY_CODE,
+                        VaultCategory.GENERIC_SECRET,
+                        VaultCategory.SECURE_NOTE,
+                        VaultCategory.TOTP_2FA
+                    )
+                    val savedCredentials = vaultItems.filter { it.category in credentialCategories }
+
                     Text(
                         text = "Passwords & keys",
                         fontSize = 15.sp,
@@ -330,41 +343,132 @@ fun VaultHomeScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     VaultGroupedCard {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = onOpenPasswordsAndKeys)
-                                .tactilePress()
-                                .padding(horizontal = 16.dp, vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Key,
-                                contentDescription = null,
-                                tint = getVaultTextPrimary(),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Passwords & keys",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = getVaultTextPrimary()
+                        if (savedCredentials.isEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(onClick = onOpenPasswordsAndKeys)
+                                    .tactilePress()
+                                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Key,
+                                    contentDescription = null,
+                                    tint = getVaultTextPrimary(),
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "$passwordsAndKeysCount saved",
-                                    fontSize = 13.sp,
-                                    color = getVaultTextSecondary()
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Passwords & keys",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = getVaultTextPrimary()
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "0 saved · Tap to add",
+                                        fontSize = 13.sp,
+                                        color = getVaultTextSecondary()
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = getVaultTextSecondary().copy(alpha = 0.5f),
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = getVaultTextSecondary().copy(alpha = 0.5f),
-                                modifier = Modifier.size(16.dp)
-                            )
+                        } else {
+                            val previewCredentials = savedCredentials.take(4)
+                            previewCredentials.forEachIndexed { idx, item ->
+                                val itemIcon = when (item.category) {
+                                    VaultCategory.PASSWORD -> Icons.Default.Key
+                                    VaultCategory.SECURE_NOTE -> Icons.Default.Key
+                                    else -> Icons.Default.Key
+                                }
+                                val subtitleText = when (item.category) {
+                                    VaultCategory.PASSWORD -> item.accountIdentifier ?: "Login"
+                                    VaultCategory.API_KEY -> item.accountIdentifier ?: "API key"
+                                    VaultCategory.SSH_KEY -> item.accountIdentifier ?: "SSH key"
+                                    VaultCategory.ACCESS_TOKEN -> item.accountIdentifier ?: "Access token"
+                                    VaultCategory.RECOVERY_CODE -> item.accountIdentifier ?: "Recovery codes"
+                                    VaultCategory.SECURE_NOTE -> "Encrypted note"
+                                    VaultCategory.GENERIC_SECRET -> item.accountIdentifier ?: "Secret"
+                                    else -> item.accountIdentifier ?: "Credential"
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onOpenSecret(item) }
+                                        .tactilePress()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = itemIcon,
+                                        contentDescription = null,
+                                        tint = getVaultTextPrimary(),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = item.title,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = getVaultTextPrimary()
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = subtitleText,
+                                            fontSize = 13.sp,
+                                            color = getVaultTextSecondary()
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        tint = getVaultTextSecondary().copy(alpha = 0.5f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+
+                                if (idx < previewCredentials.size - 1 || savedCredentials.size > previewCredentials.size) {
+                                    HorizontalDivider(
+                                        thickness = 0.5.dp,
+                                        color = getVaultBorder().copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+
+                            if (savedCredentials.size > 4) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(onClick = onOpenPasswordsAndKeys)
+                                        .tactilePress()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = "View all ${savedCredentials.size} passwords & keys",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = getVaultTextPrimary()
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        tint = getVaultTextPrimary(),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                         }
                     }
 

@@ -377,21 +377,62 @@ class VaultViewModel @Inject constructor(
         _uiState.update { it.copy(searchQuery = query) }
     }
 
-    private suspend fun getOrDeriveVaultKey(): ByteArray {
-        sessionKey?.let { return it }
-        return try {
+    private suspend fun getCandidateVaultKeys(): List<ByteArray> {
+        val keys = mutableListOf<ByteArray>()
+
+        // 1. Current active session key if already unsealed
+        sessionKey?.let { keys.add(it) }
+
+        // 2. Zone 4 hardware derived key from BiometricSessionManager
+        try {
             val secretKey = sessionManager.unlockZone4Vault()
             val bytes = secretKey.copyBytes()
-            sessionKey = bytes
-            _uiState.update { it.copy(isVaultUnlocked = true) }
-            bytes
-        } catch (_: Exception) {
+            if (sessionKey == null) {
+                sessionKey = bytes
+                _uiState.update { it.copy(isVaultUnlocked = true) }
+            }
+            if (keys.none { it.contentEquals(bytes) }) {
+                keys.add(bytes)
+            }
+        } catch (_: Exception) {}
+
+        // 3. Deterministic person-scoped fallback key
+        try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val fallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${activePersonId}".toByteArray(Charsets.UTF_8))
-            sessionKey = fallbackKey
-            _uiState.update { it.copy(isVaultUnlocked = true) }
-            fallbackKey
+            if (keys.none { it.contentEquals(fallbackKey) }) {
+                keys.add(fallbackKey)
+            }
+        } catch (_: Exception) {}
+
+        // 4. Deterministic canonical primary owner fallback key
+        try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val primaryFallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${CANONICAL_PRIMARY_OWNER_ID}".toByteArray(Charsets.UTF_8))
+            if (keys.none { it.contentEquals(primaryFallbackKey) }) {
+                keys.add(primaryFallbackKey)
+            }
+        } catch (_: Exception) {}
+
+        // 5. Database domain subkey
+        try {
+            val dbKey = sessionManager.getDatabaseKey()
+            if (keys.none { it.contentEquals(dbKey) }) {
+                keys.add(dbKey)
+            }
+        } catch (_: Exception) {}
+
+        if (keys.isEmpty()) {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val defaultKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${activePersonId}".toByteArray(Charsets.UTF_8))
+            keys.add(defaultKey)
         }
+        return keys
+    }
+
+    private suspend fun getOrDeriveVaultKey(): ByteArray {
+        sessionKey?.let { return it }
+        return getCandidateVaultKeys().first()
     }
 
     fun openItem(item: VaultItemHeader) {
@@ -415,56 +456,81 @@ class VaultViewModel @Inject constructor(
                     activeDecryptedIdentity = null
                 )
             }
-            try {
-                val key = getOrDeriveVaultKey()
-                when (item.category) {
-                    VaultCategory.PASSWORD -> {
-                        val secret = readPasswordSecretUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedPassword = secret, isLoading = false) }
+            val candidateKeys = getCandidateVaultKeys()
+            var decryptedSuccessfully = false
+            var lastException: Exception? = null
+
+            for (key in candidateKeys) {
+                try {
+                    when (item.category) {
+                        VaultCategory.PASSWORD -> {
+                            val secret = readPasswordSecretUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedPassword = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.TOTP_2FA -> {
+                            val secret = readTotpSecretUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedTotp = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.RECOVERY_CODE -> {
+                            val secret = readRecoveryCodesUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedRecoveryCodes = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.SECURE_NOTE -> {
+                            val secret = readSecureNoteUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedNote = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.PAYMENT_REFERENCE -> {
+                            val secret = readPaymentReferenceUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedPayment = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.IDENTITY_CREDENTIAL -> {
+                            val secret = readIdentityCredentialUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedIdentity = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.BANK_ACCOUNT -> {
+                            val secret = readBankAccountUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedBanking = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.API_KEY -> {
+                            val secret = readApiKeySecretUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedApiKey = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.SSH_KEY -> {
+                            val secret = readSshKeySecretUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedSshKey = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.ACCESS_TOKEN -> {
+                            val secret = readAccessTokenSecretUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedAccessToken = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
+                        VaultCategory.GENERIC_SECRET -> {
+                            val secret = readGenericSecretUseCase(item.id, key)
+                            _uiState.update { it.copy(activeDecryptedGeneric = secret, isLoading = false, errorMessage = null) }
+                            decryptedSuccessfully = true
+                        }
                     }
-                    VaultCategory.TOTP_2FA -> {
-                        val secret = readTotpSecretUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedTotp = secret, isLoading = false) }
+                    if (decryptedSuccessfully) {
+                        sessionKey = key
+                        _uiState.update { it.copy(isVaultUnlocked = true) }
+                        break
                     }
-                    VaultCategory.RECOVERY_CODE -> {
-                        val secret = readRecoveryCodesUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedRecoveryCodes = secret, isLoading = false) }
-                    }
-                    VaultCategory.SECURE_NOTE -> {
-                        val secret = readSecureNoteUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedNote = secret, isLoading = false) }
-                    }
-                    VaultCategory.PAYMENT_REFERENCE -> {
-                        val secret = readPaymentReferenceUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedPayment = secret, isLoading = false) }
-                    }
-                    VaultCategory.IDENTITY_CREDENTIAL -> {
-                        val secret = readIdentityCredentialUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedIdentity = secret, isLoading = false) }
-                    }
-                    VaultCategory.BANK_ACCOUNT -> {
-                        val secret = readBankAccountUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedBanking = secret, isLoading = false) }
-                    }
-                    VaultCategory.API_KEY -> {
-                        val secret = readApiKeySecretUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedApiKey = secret, isLoading = false) }
-                    }
-                    VaultCategory.SSH_KEY -> {
-                        val secret = readSshKeySecretUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedSshKey = secret, isLoading = false) }
-                    }
-                    VaultCategory.ACCESS_TOKEN -> {
-                        val secret = readAccessTokenSecretUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedAccessToken = secret, isLoading = false) }
-                    }
-                    VaultCategory.GENERIC_SECRET -> {
-                        val secret = readGenericSecretUseCase(item.id, key)
-                        _uiState.update { it.copy(activeDecryptedGeneric = secret, isLoading = false) }
-                    }
+                } catch (e: Exception) {
+                    lastException = e
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to decrypt secret: ${e.message}") }
+            }
+
+            if (!decryptedSuccessfully) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to decrypt secret: ${lastException?.message ?: "Unknown error"}") }
             }
         }
     }

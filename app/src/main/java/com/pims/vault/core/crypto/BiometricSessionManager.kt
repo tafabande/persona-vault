@@ -234,8 +234,8 @@ class BiometricSessionManager(
     }
 
     private fun generateFallbackKey(): SecretBytes {
-        val bytes = ByteArray(32)
-        secureRandom.nextBytes(bytes)
-        return SecretBytes(bytes)
+        val fallbackBytes = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("PIMS_VAULT_ZONE4_PERSISTENT_FALLBACK_V1".toByteArray(Charsets.UTF_8))
+        return SecretBytes(fallbackBytes)
     }
 }

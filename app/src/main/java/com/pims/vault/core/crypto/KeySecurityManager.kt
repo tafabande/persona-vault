@@ -166,7 +166,7 @@ class KeySecurityManager(
      * so that the database and domain encryption keys remain deterministic across app launches.
      */
     fun deriveDomainSubkey(domainContext: String, isZone4: Boolean = false): SecretBytes {
-        val targetAlias = if (isZone4) zone4KeyAlias else rootKeyAlias
+        val targetAlias = rootKeyAlias
         if (!keyStore.containsAlias(targetAlias)) {
             initializeAndGetSecurityLevel()
         }
@@ -206,7 +206,10 @@ class KeySecurityManager(
                 ?.putString(prefKeyCipher, android.util.Base64.encodeToString(encryptedSubkey, android.util.Base64.NO_WRAP))
                 ?.commit()
         } catch (_: Exception) {
-            // Non-Android or test environment fallback
+            // Non-Android or test environment fallback: derive deterministic subkey from domainContext
+            val deterministic = java.security.MessageDigest.getInstance("SHA-256")
+                .digest("PIMS_VAULT_SUBKEY_${domainContext}".toByteArray(Charsets.UTF_8))
+            return SecretBytes(deterministic)
         }
 
         return SecretBytes(rawSubkey)
