@@ -318,20 +318,24 @@ class PlainNotesRepositoryImpl @Inject constructor(
     }
 
     private fun entityToJson(entity: PlainNoteEntity): String {
-        val json = org.json.JSONObject()
-        json.put("id", entity.id)
-        json.put("ownerPersonId", entity.ownerPersonId)
-        json.put("title", entity.title)
-        json.put("content", entity.content)
-        json.put("format", entity.format)
-        json.put("createdAt", entity.createdAt)
-        json.put("updatedAt", entity.updatedAt)
-        entity.reminderAt?.let { json.put("reminderAt", it) }
-        entity.reminderTag?.let { json.put("reminderTag", it) }
-        entity.reminderRepeat?.let { json.put("reminderRepeat", it) }
-        json.put("isReminderDone", entity.isReminderDone)
-        json.put("isLocked", entity.isLocked)
-        return json.toString()
+        return try {
+            val json = org.json.JSONObject()
+            json.put("id", entity.id)
+            json.put("ownerPersonId", entity.ownerPersonId)
+            json.put("title", entity.title)
+            json.put("content", entity.content)
+            json.put("format", entity.format)
+            json.put("createdAt", entity.createdAt)
+            json.put("updatedAt", entity.updatedAt)
+            entity.reminderAt?.let { json.put("reminderAt", it) }
+            entity.reminderTag?.let { json.put("reminderTag", it) }
+            entity.reminderRepeat?.let { json.put("reminderRepeat", it) }
+            json.put("isReminderDone", entity.isReminderDone)
+            json.put("isLocked", entity.isLocked)
+            (json.toString() as String?) ?: "{}"
+        } catch (_: Throwable) {
+            "{}"
+        }
     }
 
     private fun toDomain(

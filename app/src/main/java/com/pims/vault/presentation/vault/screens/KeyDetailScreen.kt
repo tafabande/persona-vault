@@ -2,6 +2,9 @@ package com.pims.vault.presentation.vault.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,6 +32,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
@@ -109,6 +113,7 @@ fun KeyDetailScreen(
     var isSecretRevealed by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showExportConfirmDialog by remember { mutableStateOf(false) }
 
     // Dynamic screenshot protection: Active when sensitive secret is revealed or for private keys
     val isPrivateKey = currentItem.category == VaultCategory.SSH_KEY
@@ -221,6 +226,167 @@ fun KeyDetailScreen(
         else -> "Copy secret"
     }
 
+    val exportDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        if (uri == null) {
+            // User cancelled destination selection
+            return@rememberLauncherForActivityResult
+        }
+        try {
+            context.contentResolver.openOutputStream(uri, "wt")?.use { os ->
+                os.bufferedWriter().use { writer ->
+                    val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                    val sb = StringBuilder()
+                    sb.append("==================================================\n")
+                    sb.append("PIMS PERSONAL VAULT — PLAINTEXT SECRET EXPORT\n")
+                    sb.append("Title: ${currentItem.title}\n")
+                    sb.append("Type: $typeLabel\n")
+                    sb.append("Exported: $timestamp\n")
+                    sb.append("==================================================\n\n")
+
+                    sb.append("SECRET VALUE:\n")
+                    sb.append(secretValue)
+                    sb.append("\n\n")
+
+                    when (currentItem.category) {
+                        VaultCategory.PASSWORD -> {
+                            passSecret?.username?.takeIf { it.isNotBlank() }?.let { sb.append("Username: $it\n") }
+                            passSecret?.websiteUrl?.takeIf { it.isNotBlank() }?.let { sb.append("Website: $it\n") }
+                            passSecret?.notes?.takeIf { it.isNotBlank() }?.let { sb.append("Notes: $it\n") }
+                        }
+                        VaultCategory.API_KEY -> {
+                            apiKeySecret?.service?.takeIf { it.isNotBlank() }?.let { sb.append("Service: $it\n") }
+                            apiKeySecret?.environment?.takeIf { it.isNotBlank() }?.let { sb.append("Environment: $it\n") }
+                            apiKeySecret?.notes?.takeIf { it.isNotBlank() }?.let { sb.append("Notes: $it\n") }
+                        }
+                        VaultCategory.SSH_KEY -> {
+                            sshSecret?.username?.takeIf { it.isNotBlank() }?.let { sb.append("Username: $it\n") }
+                            sshSecret?.host?.takeIf { it.isNotBlank() }?.let { sb.append("Host: $it\n") }
+                            sshSecret?.publicKey?.takeIf { it.isNotBlank() }?.let { sb.append("Public Key:\n$it\n") }
+                            sshSecret?.notes?.takeIf { it.isNotBlank() }?.let { sb.append("Notes: $it\n") }
+                        }
+                        VaultCategory.ACCESS_TOKEN -> {
+                            tokenSecret?.service?.takeIf { it.isNotBlank() }?.let { sb.append("Service: $it\n") }
+                            tokenSecret?.scopes?.takeIf { it.isNotEmpty() }?.let { sb.append("Scopes: ${it.joinToString(", ")}\n") }
+                            tokenSecret?.expires?.takeIf { it.isNotBlank() }?.let { sb.append("Expires: $it\n") }
+                            tokenSecret?.notes?.takeIf { it.isNotBlank() }?.let { sb.append("Notes: $it\n") }
+                        }
+                        VaultCategory.TOTP_2FA -> {
+                            totpSecret?.issuer?.takeIf { it.isNotBlank() }?.let { sb.append("Issuer: $it\n") }
+                            totpSecret?.account?.takeIf { it.isNotBlank() }?.let { sb.append("Account: $it\n") }
+                        }
+                        VaultCategory.GENERIC_SECRET -> {
+                            genericSecret?.secretType?.takeIf { it.isNotBlank() }?.let { sb.append("Classification: $it\n") }
+                            genericSecret?.provider?.takeIf { it.isNotBlank() }?.let { sb.append("Provider: $it\n") }
+                            genericSecret?.notes?.takeIf { it.isNotBlank() }?.let { sb.append("Notes: $it\n") }
+                        }
+                        VaultCategory.RECOVERY_CODE -> {
+                            recoverySecret?.accountReference?.takeIf { it.isNotBlank() }?.let { sb.append("Account: $it\n") }
+                        }
+                        else -> {}
+                    }
+
+                    sb.append("==================================================\n")
+                    sb.append("SECURITY WARNING: This file is unencrypted plaintext.\n")
+                    sb.append("Store securely or securely delete after use.\n")
+                    sb.append("==================================================\n")
+
+                    writer.write(sb.toString())
+                    writer.flush()
+                }
+            }
+            Toast.makeText(context, "Secret exported successfully", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Export failed: ${e.localizedMessage ?: "Write error"}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val onTriggerExport: () -> Unit = {
+        val activity = context as? androidx.fragment.app.FragmentActivity
+        val sanitizedTitle = currentItem.title.replace(Regex("[^a-zA-Z0-9_-]"), "_").ifBlank { "secret" }
+        val defaultFileName = "${sanitizedTitle}_secret.txt"
+
+        if (activity != null) {
+            val executor = androidx.core.content.ContextCompat.getMainExecutor(activity)
+            val prompt = androidx.biometric.BiometricPrompt(
+                activity,
+                executor,
+                object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                        super.onAuthenticationSucceeded(result)
+                        exportDocumentLauncher.launch(defaultFileName)
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        super.onAuthenticationError(errorCode, errString)
+                        Toast.makeText(context, "Export cancelled: $errString", Toast.LENGTH_SHORT).show()
+                    }
+
+                    override fun onAuthenticationFailed() {
+                        super.onAuthenticationFailed()
+                        Toast.makeText(context, "Authentication failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+
+            val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Authenticate to Export Secret")
+                .setSubtitle("Confirm identity to export unencrypted plaintext secret")
+                .setAllowedAuthenticators(
+                    androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                )
+                .build()
+
+            prompt.authenticate(promptInfo)
+        } else {
+            exportDocumentLauncher.launch(defaultFileName)
+        }
+    }
+
+    // Export confirmation dialog
+    if (showExportConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportConfirmDialog = false },
+            containerColor = getVaultCardSurface(),
+            titleContentColor = getVaultTextPrimary(),
+            textContentColor = getVaultTextSecondary(),
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.FileDownload,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(text = "Export Plaintext Secret?", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text(
+                    text = "Exporting will save this secret as an unencrypted plain text file using the system file picker. Anyone with access to the exported file or device storage will be able to read it.\n\nBiometric authentication will be required before the file is saved.",
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExportConfirmDialog = false
+                        onTriggerExport()
+                    }
+                ) {
+                    Text("Authenticate & Export", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportConfirmDialog = false }) {
+                    Text("Cancel", color = getVaultTextPrimary())
+                }
+            }
+        )
+    }
+
     // Delete confirmation dialog
     if (showDeleteConfirmDialog) {
         AlertDialog(
@@ -303,6 +469,14 @@ fun KeyDetailScreen(
                             onClick = {
                                 showMenu = false
                                 onEdit()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Export Secret (Plaintext)") },
+                            leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                showExportConfirmDialog = true
                             }
                         )
                         DropdownMenuItem(
@@ -656,6 +830,34 @@ fun KeyDetailScreen(
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
                             text = copyButtonText,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = getVaultTextPrimary()
+                        )
+                    }
+
+                    HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
+
+                    // Export Secret Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                showExportConfirmDialog = true
+                            }
+                            .tactilePress()
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FileDownload,
+                            contentDescription = null,
+                            tint = getVaultTextPrimary(),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Export plaintext secret",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Normal,
                             color = getVaultTextPrimary()

@@ -24,11 +24,22 @@ import javax.inject.Singleton
  * PFK at rest (prefs) is ALWAYS AES-GCM wrapped by the Keystore master key —
  * never plaintext.
  */
+/**
+ * Thrown when wrapped portable file key material exists in preferences but cannot be unwrapped
+ * or authenticated (e.g. tag mismatch, corrupted ciphertext, or wrong Keystore master key).
+ * Callers MUST fail closed and MUST NOT regenerate or overwrite the wrapped key.
+ */
+class WrappedPortableKeyDecryptionException(
+    message: String = "Existing wrapped portable file key could not be decrypted or authenticated",
+    cause: Throwable? = null
+) : java.security.GeneralSecurityException(message, cause)
+
 @Singleton
 class PortableFileKeyManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val keySecurityManager: KeySecurityManager,
-    private val cryptoEngine: CryptoEngine
+    private val cryptoEngine: CryptoEngine,
+    private val sharedPreferences: android.content.SharedPreferences? = null
 ) {
     companion object {
         private const val PREFS = "pims_portable_filekey_prefs"
@@ -38,10 +49,28 @@ class PortableFileKeyManager @Inject constructor(
         private const val AAD = "PIMS/portable-filekey/v1"
     }
 
-    private val prefs get() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val prefs get() = sharedPreferences ?: context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     @Volatile
     private var cachedPfk: SecretBytes? = null
+
+    private fun base64Decode(str: String): ByteArray {
+        return try {
+            val res = android.util.Base64.decode(str, android.util.Base64.NO_WRAP)
+            if (res != null && res.isNotEmpty()) res else java.util.Base64.getDecoder().decode(str)
+        } catch (_: Throwable) {
+            java.util.Base64.getDecoder().decode(str)
+        }
+    }
+
+    private fun base64Encode(bytes: ByteArray): String {
+        return try {
+            val res = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            if (!res.isNullOrEmpty()) res else java.util.Base64.getEncoder().encodeToString(bytes)
+        } catch (_: Throwable) {
+            java.util.Base64.getEncoder().encodeToString(bytes)
+        }
+    }
 
     /** Returns the PFK, generating + persisting it on first use. */
     @Synchronized
@@ -52,6 +81,7 @@ class PortableFileKeyManager @Inject constructor(
             cachedPfk = existing
             return existing
         }
+        // First-time initialization only: no prior wrapped key material exists
         val fresh = FileRecoveryCrypto.generatePortableKey()
         val secret = SecretBytes(fresh)
         java.util.Arrays.fill(fresh, 0)
@@ -62,8 +92,10 @@ class PortableFileKeyManager @Inject constructor(
 
     /** True when a locally-unwrappable PFK exists (normal unlocked device). */
     fun hasLocalKey(): Boolean = try {
-        tryUnwrapLocal()?.close()
-        tryUnwrapLocal() != null
+        val unwrapped = tryUnwrapLocal()
+        val exists = unwrapped != null
+        unwrapped?.close()
+        exists
     } catch (_: Exception) {
         false
     }
@@ -96,13 +128,27 @@ class PortableFileKeyManager @Inject constructor(
     // ---- internals ----
 
     private fun tryUnwrapLocal(): SecretBytes? {
-        val ivB64 = prefs.getString(KEY_IV, null) ?: return null
-        val cipherB64 = prefs.getString(KEY_CIPHER, null) ?: return null
+        val hasIv = prefs.contains(KEY_IV)
+        val hasCipher = prefs.contains(KEY_CIPHER)
+
+        if (!hasIv && !hasCipher) {
+            return null // True first-time initialization
+        }
+
+        val ivB64 = prefs.getString(KEY_IV, null)
+        val cipherB64 = prefs.getString(KEY_CIPHER, null)
+
+        if (ivB64.isNullOrEmpty() || cipherB64.isNullOrEmpty()) {
+            throw WrappedPortableKeyDecryptionException(
+                "Incomplete wrapped portable key material found in preferences (missing IV or ciphertext)"
+            )
+        }
+
         return try {
             val master = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
             try {
-                val iv = Base64.decode(ivB64, Base64.NO_WRAP)
-                val cipherBytes = Base64.decode(cipherB64, Base64.NO_WRAP)
+                val iv = base64Decode(ivB64)
+                val cipherBytes = base64Decode(cipherB64)
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                 cipher.init(Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(master.bytes, "AES"), GCMParameterSpec(128, iv))
                 cipher.updateAAD(AAD.toByteArray(Charsets.UTF_8))
@@ -111,8 +157,11 @@ class PortableFileKeyManager @Inject constructor(
             } finally {
                 master.close()
             }
-        } catch (_: Exception) {
-            null
+        } catch (e: Exception) {
+            throw WrappedPortableKeyDecryptionException(
+                "Existing wrapped portable file key failed to decrypt or authenticate",
+                cause = e
+            )
         }
     }
 
@@ -124,8 +173,8 @@ class PortableFileKeyManager @Inject constructor(
             cipher.updateAAD(AAD.toByteArray(Charsets.UTF_8))
             val wrapped = cipher.doFinal(secret.bytes)
             prefs.edit()
-                .putString(KEY_IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-                .putString(KEY_CIPHER, Base64.encodeToString(wrapped, Base64.NO_WRAP))
+                .putString(KEY_IV, base64Encode(cipher.iv))
+                .putString(KEY_CIPHER, base64Encode(wrapped))
                 .apply()
             if (keyId != null) prefs.edit().putString(KEY_ID, keyId).apply()
         } finally {

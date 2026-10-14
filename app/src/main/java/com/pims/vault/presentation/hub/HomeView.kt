@@ -169,20 +169,28 @@ fun HomeView(
                 com.pims.vault.presentation.wallpaper.GenerativeArtworkVisual(seed = 3)
             }
 
-            // Top Subtle Gradient Scrim & Floating Top Identity Bar
+            // Seamless top fade — symmetrical to bottom fade, matching dynamic theme background
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(96.dp)
                     .align(Alignment.TopCenter)
                     .background(
                         brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                             colorStops = arrayOf(
-                                0.0f to homeBgColor.copy(alpha = 0.35f),
-                                0.60f to homeBgColor.copy(alpha = 0.08f),
+                                0.0f to homeBgColor,
+                                0.40f to homeBgColor.copy(alpha = 0.50f),
                                 1.0f to Color.Transparent
                             )
                         )
                     )
+            )
+
+            // Floating Top Identity Bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
                     .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {

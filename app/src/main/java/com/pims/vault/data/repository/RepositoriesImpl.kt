@@ -4,7 +4,7 @@ import com.pims.vault.core.crypto.BiometricSessionManager
 import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.crypto.EncryptedPayload
 import com.pims.vault.core.crypto.HardenedAuditLogger
-import com.pims.vault.core.crypto.SecretBytes
+import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.model.AuditEventType
 import com.pims.vault.core.model.DocumentType
 import com.pims.vault.core.model.MedicalRecordType
@@ -73,6 +73,15 @@ class PersonRepositoryImpl(
     }
 
     override suspend fun deletePerson(personId: String) {
+        if (personId == "primary_owner") {
+            VaultLogger.w("RepositoriesImpl", "Refusing to delete primary_owner person profile")
+            throw IllegalArgumentException("Cannot delete primary owner person record 'primary_owner'")
+        }
+        val person = personDao.getPersonById(personId)
+        if (person?.isPrimaryOwner == true) {
+            VaultLogger.w("RepositoriesImpl", "Refusing to delete primary owner person record")
+            throw IllegalArgumentException("Cannot delete primary owner person record '$personId'")
+        }
         personDao.deleteById(personId)
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,

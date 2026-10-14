@@ -1,6 +1,7 @@
 package com.pims.vault.core.crypto
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
@@ -19,6 +20,20 @@ enum class KeySecurityLevel(val levelName: String, val isHardwareBacked: Boolean
 }
 
 /**
+ * Thrown when wrapped subkey material exists in persistent storage for [domainContext],
+ * but cannot be unwrapped or authenticated (e.g. tag mismatch, corrupted ciphertext,
+ * or mismatched Keystore master key alias).
+ *
+ * This distinguishes existing-key authentication failure from first-time initialization.
+ * Callers MUST fail closed and MUST NOT regenerate or overwrite the wrapped key.
+ */
+class WrappedKeyDecryptionException(
+    val domainContext: String,
+    message: String = "Existing wrapped subkey for domain '$domainContext' could not be decrypted or authenticated",
+    cause: Throwable? = null
+) : java.security.GeneralSecurityException(message, cause)
+
+/**
  * Manages the root cryptographic keys in Android Keystore, detects hardware security levels
  * (StrongBox -> TEE -> Software), and facilitates secure domain key derivation.
  *
@@ -27,13 +42,15 @@ enum class KeySecurityLevel(val levelName: String, val isHardwareBacked: Boolean
 class KeySecurityManager(
     private val context: Context? = null,
     private val rootKeyAlias: String = "PIMS_ROOT_MASTER_KEY_V1",
-    private val zone4KeyAlias: String = "PIMS_ZONE4_VAULT_KEY_V1"
+    private val zone4KeyAlias: String = "PIMS_ZONE4_VAULT_KEY_V1",
+    private val keyStoreProvider: String = "AndroidKeyStore",
+    private val keyStoreInstance: KeyStore? = null,
+    private val sharedPreferences: SharedPreferences? = null
 ) {
-    private val keyStoreProvider = "AndroidKeyStore"
     private var cachedSecurityLevel: KeySecurityLevel? = null
 
     private val keyStore: KeyStore by lazy {
-        KeyStore.getInstance(keyStoreProvider).apply { load(null) }
+        keyStoreInstance ?: KeyStore.getInstance(keyStoreProvider).apply { load(null) }
     }
 
     /**
@@ -67,7 +84,11 @@ class KeySecurityManager(
         try {
             generateKeyWithStrongBox(alias, useStrongBox = false, requireUserAuth = requireUserAuth)
         } catch (_: Exception) {
-            generateSoftwareFallbackKey(alias)
+            try {
+                generateSoftwareFallbackKey(alias)
+            } catch (_: Exception) {
+                // Non-Android environment fallback
+            }
         }
     }
 
@@ -160,10 +181,36 @@ class KeySecurityManager(
         }
     }
 
+    private fun base64Decode(str: String): ByteArray {
+        return try {
+            val res = android.util.Base64.decode(str, android.util.Base64.NO_WRAP)
+            if (res != null && res.isNotEmpty()) res else java.util.Base64.getDecoder().decode(str)
+        } catch (_: Throwable) {
+            java.util.Base64.getDecoder().decode(str)
+        }
+    }
+
+    private fun base64Encode(bytes: ByteArray): String {
+        return try {
+            val res = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            if (!res.isNullOrEmpty()) res else java.util.Base64.getEncoder().encodeToString(bytes)
+        } catch (_: Throwable) {
+            java.util.Base64.getEncoder().encodeToString(bytes)
+        }
+    }
+
     /**
-     * Derives / unwrap domain-specific subkeys.
+     * Derives / unwraps domain-specific subkeys.
      * Encrypted by the Android Keystore master key and securely persisted in private preferences
      * so that the database and domain encryption keys remain deterministic across app launches.
+     *
+     * Invariants:
+     * 1. If no wrapped subkey exists, performs first-time initialization: generates a fresh 32-byte
+     *    random key, wraps it with the master key, persists to preferences, and returns it.
+     * 2. If wrapped subkey material exists and decrypts successfully, returns the unsealed subkey.
+     * 3. If wrapped subkey material exists but decryption fails (e.g. tag mismatch, corrupted ciphertext,
+     *    or wrong Keystore master key alias), throws [WrappedKeyDecryptionException]. It NEVER generates
+     *    a replacement key and NEVER overwrites or clears existing preferences.
      */
     fun deriveDomainSubkey(domainContext: String, isZone4: Boolean = false): SecretBytes {
         val targetAlias = rootKeyAlias
@@ -173,24 +220,42 @@ class KeySecurityManager(
         val masterKey = keyStore.getKey(targetAlias, null) as? SecretKey
             ?: throw IllegalStateException("Master Key '$targetAlias' not found in Android Keystore")
 
-        val prefs = context?.getSharedPreferences("pims_keystore_wrapped_subkeys", Context.MODE_PRIVATE)
+        val prefs = sharedPreferences ?: context?.getSharedPreferences("pims_keystore_wrapped_subkeys", Context.MODE_PRIVATE)
         val prefKeyIv = "${domainContext}_iv"
         val prefKeyCipher = "${domainContext}_cipher"
 
-        if (prefs != null && prefs.contains(prefKeyIv) && prefs.contains(prefKeyCipher)) {
+        val hasWrappedEntry = prefs != null && (prefs.contains(prefKeyIv) || prefs.contains(prefKeyCipher))
+
+        if (hasWrappedEntry) {
+            val ivStr = prefs.getString(prefKeyIv, null)
+            val cipherStr = prefs.getString(prefKeyCipher, null)
+
+            if (ivStr.isNullOrEmpty() || cipherStr.isNullOrEmpty()) {
+                throw WrappedKeyDecryptionException(
+                    domainContext = domainContext,
+                    message = "Incomplete wrapped key material found for domain '$domainContext' (missing IV or ciphertext)"
+                )
+            }
+
             try {
-                val iv = android.util.Base64.decode(prefs.getString(prefKeyIv, ""), android.util.Base64.NO_WRAP)
-                val cipherBytes = android.util.Base64.decode(prefs.getString(prefKeyCipher, ""), android.util.Base64.NO_WRAP)
+                val iv = base64Decode(ivStr)
+                val cipherBytes = base64Decode(cipherStr)
                 val decryptCipher = Cipher.getInstance("AES/GCM/NoPadding")
                 decryptCipher.init(Cipher.DECRYPT_MODE, masterKey, javax.crypto.spec.GCMParameterSpec(128, iv))
                 val rawSubkey = decryptCipher.doFinal(cipherBytes)
                 return SecretBytes(rawSubkey)
-            } catch (_: Exception) {
-                // Key corrupted or Keystore regenerated, fall through to regenerate
+            } catch (e: Exception) {
+                // Key material exists but cannot be decrypted (e.g. tag mismatch, corrupted ciphertext, wrong master key alias).
+                // CRITICAL SAFETY RULE: Never generate a replacement key, and never overwrite/delete existing preferences!
+                throw WrappedKeyDecryptionException(
+                    domainContext = domainContext,
+                    message = "Existing wrapped subkey for domain '$domainContext' failed to decrypt",
+                    cause = e
+                )
             }
         }
 
-        // Generate high-entropy 32-byte subkey
+        // Generate high-entropy 32-byte subkey (first-time initialization path)
         val rawSubkey = ByteArray(32)
         java.security.SecureRandom().nextBytes(rawSubkey)
 
@@ -202,8 +267,8 @@ class KeySecurityManager(
             val iv = encryptCipher.iv
 
             prefs?.edit()
-                ?.putString(prefKeyIv, android.util.Base64.encodeToString(iv, android.util.Base64.NO_WRAP))
-                ?.putString(prefKeyCipher, android.util.Base64.encodeToString(encryptedSubkey, android.util.Base64.NO_WRAP))
+                ?.putString(prefKeyIv, base64Encode(iv))
+                ?.putString(prefKeyCipher, base64Encode(encryptedSubkey))
                 ?.commit()
         } catch (_: Exception) {
             // Non-Android or test environment fallback: derive deterministic subkey from domainContext

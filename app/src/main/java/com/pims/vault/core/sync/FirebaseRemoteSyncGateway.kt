@@ -33,11 +33,26 @@ class FirebaseRemoteSyncGateway @Inject constructor(
 
     companion object {
         const val MAX_DOCUMENT_FILE_SIZE_BYTES = 25L * 1024L * 1024L // 25 MB
+        const val CANONICAL_PRIMARY_OWNER_ID = "primary_owner"
+    }
+
+    private fun isPrimaryOwner(entityId: String): Boolean {
+        return entityId.equals(CANONICAL_PRIMARY_OWNER_ID, ignoreCase = true) ||
+               entityId.equals("primary", ignoreCase = true)
+    }
+
+    private fun isPayloadPrimaryOwner(payloadJson: String?): Boolean {
+        if (payloadJson.isNullOrBlank()) return false
+        return payloadJson.contains("\"isPrimaryOwner\":true", ignoreCase = true) ||
+               payloadJson.contains("\"is_primary_owner\":true", ignoreCase = true) ||
+               payloadJson.contains("\"isPrimaryOwner\": true", ignoreCase = true) ||
+               payloadJson.contains("\"is_primary_owner\": true", ignoreCase = true)
     }
 
     private fun isFirebaseAvailable(): Boolean {
         return try {
-            com.google.firebase.FirebaseApp.getInstance() != null
+            com.google.firebase.FirebaseApp.getInstance()
+            true
         } catch (_: Throwable) {
             false
         }
@@ -58,6 +73,15 @@ class FirebaseRemoteSyncGateway @Inject constructor(
 
         if (userId.isBlank()) {
             return GatewayCommitResult.Unauthorized
+        }
+
+        if ((operation.entityType.equals("PERSON", ignoreCase = true) ||
+             operation.entityType.equals("PROFILE", ignoreCase = true)) &&
+            operation.action == SyncAction.DELETE &&
+            (isPrimaryOwner(operation.entityId) || isPayloadPrimaryOwner(operation.payloadJson))
+        ) {
+            VaultLogger.w("RemoteSync", "Blocked attempt to commit deletion for primary owner: ${operation.entityId}")
+            return GatewayCommitResult.Failure("Cannot delete primary owner record '${operation.entityId}'")
         }
 
         if (!isFirebaseAvailable()) {

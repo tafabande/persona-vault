@@ -62,10 +62,14 @@ interface PersonDao {
         return rowId
     }
 
-    @Query("DELETE FROM persons WHERE id = :id")
+    @Query("DELETE FROM persons WHERE id = :id AND id != 'primary_owner' AND is_primary_owner = 0")
     suspend fun deleteById(id: String)
 
-    suspend fun delete(person: PersonEntity) = deleteById(person.id)
+    suspend fun delete(person: PersonEntity) {
+        if (person.id != "primary_owner" && !person.isPrimaryOwner) {
+            deleteById(person.id)
+        }
+    }
 }
 
 @Dao

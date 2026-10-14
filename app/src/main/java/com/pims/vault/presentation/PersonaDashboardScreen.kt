@@ -190,6 +190,7 @@ import com.pims.vault.presentation.hub.StorageManagementSheet
 import com.pims.vault.presentation.hub.DataBackupHubSheet
 import com.pims.vault.presentation.hub.PeopleView
 import com.pims.vault.presentation.hub.PersonDetailSheet
+import com.pims.vault.presentation.hub.PersonDetailScreen
 import com.pims.vault.presentation.hub.ConnectPersonScreen
 import com.pims.vault.presentation.notes.PlainNotesScreen
 import com.pims.vault.presentation.notes.PlainNoteEditorScreen
@@ -470,7 +471,6 @@ fun PersonaDashboardScreen(
     val docsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val uploadDocSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val vaultSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val personDetailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val conflictSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val sessionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val notificationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1072,6 +1072,97 @@ fun PersonaDashboardScreen(
                 )
                 return
             }
+            "PERSON_DETAIL" -> {
+                val currentPerson = profileState.relationships.find { it.id == selectedPersonForDetail?.id } ?: selectedPersonForDetail
+                if (currentPerson != null) {
+                    BackHandler(enabled = true) {
+                        if (personToEditForDialog != null) {
+                            personToEditForDialog = null
+                        } else {
+                            fullScreenOverlay = null
+                            selectedPersonForDetail = null
+                        }
+                    }
+                    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                        PersonDetailScreen(
+                            person = currentPerson,
+                            relationshipNotes = relationshipState.relationshipNotes,
+                            onBack = {
+                                fullScreenOverlay = null
+                                selectedPersonForDetail = null
+                            },
+                            onEditPerson = { p ->
+                                personToEditForDialog = p
+                            },
+                            onDeletePerson = { p ->
+                                profileViewModel.onEvent(ProfileEvent.DeleteRelationship(p.id, p.targetPersonId))
+                                recentActivityManager.recordActivity("Removed person from People", "Disconnected ${p.fullName}")
+                                fullScreenOverlay = null
+                                selectedPersonForDetail = null
+                            },
+                            onAddNote = { topic, content, format, isPrivate ->
+                                relationshipViewModel.onEvent(
+                                    RelationshipEvent.SaveNote(
+                                        relationshipId = currentPerson.id,
+                                        topic = topic,
+                                        content = content,
+                                        format = format,
+                                        isPrivate = isPrivate
+                                    )
+                                )
+                                soundManager.success()
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Note saved to memory dossier")
+                                }
+                            },
+                            onUpdateNote = { noteId, topic, content, format, isPrivate ->
+                                relationshipViewModel.onEvent(
+                                    RelationshipEvent.SaveNote(
+                                        relationshipId = currentPerson.id,
+                                        topic = topic,
+                                        content = content,
+                                        format = format,
+                                        isPrivate = isPrivate,
+                                        noteId = noteId
+                                    )
+                                )
+                                soundManager.success()
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Note updated")
+                                }
+                            },
+                            onDeleteNote = { noteId ->
+                                relationshipViewModel.onEvent(RelationshipEvent.DeleteNote(noteId))
+                                soundManager.delete()
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Note deleted")
+                                }
+                            },
+                            onToggleTrusted = { _ ->
+                            },
+                            onToggleNotePrivacy = { noteId, makePrivate ->
+                                relationshipViewModel.onEvent(RelationshipEvent.ToggleNotePrivacy(noteId, makePrivate))
+                            }
+                        )
+
+                        if (personToEditForDialog != null) {
+                            EditManagedPersonSheet(
+                                person = personToEditForDialog,
+                                relationshipState = relationshipState,
+                                profileViewModel = profileViewModel,
+                                recentActivityManager = recentActivityManager,
+                                soundManager = soundManager,
+                                haptics = haptics,
+                                toastController = toastController,
+                                onDismissRequest = { personToEditForDialog = null }
+                            )
+                        }
+                    }
+                    return
+                } else {
+                    fullScreenOverlay = null
+                }
+            }
             "VAULT" -> {
                 Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenEnterRise()) {
                     VaultDashboardView(
@@ -1470,6 +1561,7 @@ fun PersonaDashboardScreen(
                         onSelectPerson = { person ->
                             relationshipViewModel.onEvent(RelationshipEvent.LoadNotes(person.id))
                             selectedPersonForDetail = person
+                            fullScreenOverlay = "PERSON_DETAIL"
                         }
                     )
 
@@ -1796,72 +1888,6 @@ fun PersonaDashboardScreen(
             sheetState = vaultSheetState,
             onDismissRequest = { hideSheet("vault") },
             onOpenFullVault = { fullScreenOverlay = "VAULT" }
-        )
-    }
-
-    // 7. PERSON DETAIL SHEET
-    selectedPersonForDetail?.let { person ->
-        PersonDetailSheet(
-            person = person,
-            sheetState = personDetailSheetState,
-            onDismissRequest = { selectedPersonForDetail = null },
-            onDeletePerson = { p -> relationshipToDelete = p },
-            onEditPerson = { p ->
-                selectedPersonForDetail = null
-                personToEditForDialog = p
-            },
-            relationshipNotes = relationshipState.relationshipNotes,
-            isVaultUnlocked = relationshipState.isVaultUnlocked,
-            onAddNote = { topic, content, format, isPrivate ->
-                relationshipViewModel.onEvent(
-                    RelationshipEvent.SaveNote(
-                        relationshipId = person.id,
-                        topic = topic,
-                        content = content,
-                        format = format,
-                        isPrivate = isPrivate
-                    )
-                )
-                soundManager.success()
-                scope.launch {
-                    snackbarHostState.showSnackbar("Note saved to memory dossier")
-                }
-            },
-            onEditNote = { note ->
-                relationshipViewModel.onEvent(
-                    RelationshipEvent.SaveNote(
-                        relationshipId = person.id,
-                        topic = note.topic,
-                        content = note.content,
-                        format = note.format,
-                        isPrivate = note.isPrivate,
-                        noteId = note.id
-                    )
-                )
-                soundManager.success()
-                scope.launch {
-                    snackbarHostState.showSnackbar("Note updated")
-                }
-            },
-            onDeleteNote = { note ->
-                relationshipViewModel.onEvent(RelationshipEvent.DeleteNote(note.id))
-                soundManager.delete()
-                scope.launch {
-                    snackbarHostState.showSnackbar("Note deleted")
-                }
-            },
-            onToggleNotePrivacy = { noteId, makePrivate ->
-                relationshipViewModel.onEvent(RelationshipEvent.ToggleNotePrivacy(noteId, makePrivate))
-            },
-            onUnlockVaultSession = {
-                requestGatedAccess(
-                    SecurityTier.LEVEL_3_VAULT,
-                    "Unlock Private Memory Notes",
-                    "Authenticate to view confidential relationship notes"
-                ) {
-                    relationshipViewModel.onEvent(RelationshipEvent.UnlockVaultSession)
-                }
-            }
         )
     }
 
@@ -2203,7 +2229,9 @@ fun PersonaDashboardScreen(
             vaultState = vaultState,
             onSelectPerson = { person ->
                 hideSheet("search")
+                relationshipViewModel.onEvent(RelationshipEvent.LoadNotes(person.id))
                 selectedPersonForDetail = person
+                fullScreenOverlay = "PERSON_DETAIL"
             },
             onSelectDocument = { doc ->
                 hideSheet("search")

@@ -373,201 +373,116 @@ private fun PersonListItem(
     photosVersion: Long = 0L,
     onClick: () -> Unit
 ) {
-    Surface(
+    val context = LocalContext.current
+    val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
+    val contactPhoto = remember(person.id, photosVersion) { avatarManager.getPersonPhotoPath(person.id) }
+    val contactBitmap = remember(contactPhoto) {
+        contactPhoto?.let { path ->
+            try {
+                val f = File(path)
+                if (f.exists()) BitmapFactory.decodeFile(path) else null
+            } catch (_: Exception) { null }
+        }
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .tactilePress(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 1.5.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            .clickable(onClick = onClick)
     ) {
-        val context = LocalContext.current
-        val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
-        val contactPhoto = remember(person.id, photosVersion) { avatarManager.getPersonPhotoPath(person.id) }
-        val contactBitmap = remember(contactPhoto) {
-            contactPhoto?.let { path ->
-                try {
-                    val f = File(path)
-                    if (f.exists()) BitmapFactory.decodeFile(path) else null
-                } catch (_: Exception) { null }
-            }
-        }
-
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 4.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Header Row: Avatar + Name & Relationship Role
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                if (contactBitmap != null) {
-                    Image(
-                        bitmap = contactBitmap.asImageBitmap(),
-                        contentDescription = person.fullName,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(CircleShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                    )
-                } else {
-                    DefaultAvatar(
-                        name = person.fullName,
-                        size = 52.dp
-                    )
-                }
+            if (contactBitmap != null) {
+                Image(
+                    bitmap = contactBitmap.asImageBitmap(),
+                    contentDescription = person.fullName,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                )
+            } else {
+                DefaultAvatar(
+                    name = person.fullName,
+                    size = 48.dp
+                )
+            }
 
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
                         text = person.fullName,
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.5.sp
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.5.sp
                         ),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    if (person.isNextOfKin) {
+                        Icon(
+                            imageVector = PersonaIcons.Success,
+                            contentDescription = "Trusted contact",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = person.relationRole.lowercase().replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+                    if (person.dateOfBirth.isNotBlank()) {
                         Text(
-                            text = person.relationRole.lowercase().replaceFirstChar { it.uppercase() },
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "• ${person.dateOfBirth}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                         )
-                        if (person.isNextOfKin) {
-                            Icon(
-                                imageVector = PersonaIcons.Success,
-                                contentDescription = "Trusted contact",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
                     }
+                }
+
+                if (person.notes.isNotBlank()) {
+                    Text(
+                        text = person.notes.replace('\n', ' ').take(45),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
                 }
             }
 
-            // Lower Info Row: Display Birthday & Notes OR Add Birthday/Notes Chips
-            val hasDob = person.dateOfBirth.isNotBlank()
-            val hasNotes = person.notes.isNotBlank()
-
-            if (hasDob || hasNotes) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(start = 2.dp)
-                ) {
-                    if (hasDob) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = PersonaIcons.Calendar,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = person.dateOfBirth,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    if (hasNotes) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = PersonaIcons.Comment,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = person.notes.replace('\n', ' ').take(50),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            } else {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier.tactilePress(targetScale = 0.94f) { onClick() }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = PersonaIcons.Add,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = "Add birthday",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        modifier = Modifier.tactilePress(targetScale = 0.94f) { onClick() }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = PersonaIcons.Add,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = "Add notes",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            }
+            Icon(
+                imageVector = PersonaIcons.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                modifier = Modifier.size(18.dp)
+            )
         }
+
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+            thickness = 0.5.dp
+        )
     }
 }
 

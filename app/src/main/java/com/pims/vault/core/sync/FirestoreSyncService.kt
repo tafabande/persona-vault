@@ -239,8 +239,22 @@ class FirestoreSyncService @Inject constructor(
      * helper here, otherwise the next pull resurrects the record (the
      * "can't delete relationship tabs / notes" bug after restore).
      */
+    suspend fun isPrimaryOwner(personId: String): Boolean {
+        if (personId.equals(CANONICAL_PRIMARY_OWNER_ID, ignoreCase = true) ||
+            personId.equals("primary", ignoreCase = true) ||
+            personId.equals("primary_owner", ignoreCase = true)) {
+            return true
+        }
+        val local = try { personDao.getPersonById(personId) } catch (_: Exception) { null }
+        return local?.isPrimaryOwner == true
+    }
+
     private suspend fun deleteRemoteDoc(collection: String, docId: String) {
         if (docId.isBlank()) return
+        if ((collection == "people" || collection == "persons") && isPrimaryOwner(docId)) {
+            VaultLogger.w("FirestoreSync", "Blocked attempt to delete primary owner document in collection $collection: $docId")
+            throw IllegalArgumentException("Cannot delete primary owner document '$docId' in $collection")
+        }
         val uid = getEffectiveUserId(null) ?: return
         try {
             firestore.collection("accounts").document(uid)
@@ -268,8 +282,13 @@ class FirestoreSyncService @Inject constructor(
         deleteRemoteDoc("relationshipNotes", noteId)
     }
 
-    suspend fun deleteRemotePerson(personId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteRemotePerson(personId: String): Boolean = withContext(Dispatchers.IO) {
+        if (isPrimaryOwner(personId)) {
+            VaultLogger.w("FirestoreSync", "Refusing to delete primary owner profile from remote: $personId")
+            throw IllegalArgumentException("Cannot delete primary owner record '$personId'")
+        }
         deleteRemoteDoc("people", personId)
+        true
     }
 
     suspend fun deleteRemoteEducation(eduId: String) = withContext(Dispatchers.IO) {
@@ -642,13 +661,19 @@ class FirestoreSyncService @Inject constructor(
             return@withContext
         }
         val uid = getEffectiveUserId(userId) ?: return@withContext
+        // Enforce established device-local privacy policy:
+        // Private relationship notes are encrypted locally with device master keys and are NEVER uploaded to cloud.
+        if (note.isPrivate) {
+            VaultLogger.d("FirestoreSync", "Skipping cloud sync for private relationship note ${note.id} (device-local privacy policy)")
+            return@withContext
+        }
         try {
             val noteData = hashMapOf(
                 "id" to note.id,
                 "relationshipId" to note.relationshipId,
                 "topic" to (note.topic ?: ""),
                 "content" to (note.contentPlaintext ?: ""),
-                "isPrivate" to note.isPrivate,
+                "isPrivate" to false,
                 "createdAt" to note.createdAt,
                 "updatedAt" to note.updatedAt,
                 "version" to 1L
@@ -1953,23 +1978,25 @@ class FirestoreSyncService @Inject constructor(
                                     serverVersion = remoteUpdated
                                 )
                             }
-                            if (existing.updatedAt >= remoteUpdated) {
-                                // Local is king — preserve local note
-                                continue
-                            }
                         }
 
-                        val note = RelationshipNoteEntity(
-                            id = doc.id,
-                            relationshipId = relId,
-                            topic = remoteTopic,
-                            contentPlaintext = remoteContent,
-                            isPrivate = doc.getBoolean("isPrivate") ?: false,
-                            createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
-                            updatedAt = remoteUpdated
+                        val resolved = resolveRelationshipNoteMerge(
+                            existing = existing,
+                            remoteId = doc.id,
+                            remoteRelationshipId = relId,
+                            remoteTopic = remoteTopic,
+                            remoteContent = remoteContent,
+                            remoteIsPrivate = doc.getBoolean("isPrivate") ?: false,
+                            remotePayloadBase64 = doc.getString("encryptedPayload"),
+                            remoteIv = doc.getString("encryptionIv"),
+                            remoteCreatedAt = doc.getLong("createdAt") ?: System.currentTimeMillis(),
+                            remoteUpdatedAt = remoteUpdated
                         )
-                        relationshipNoteDao.insertOrUpdate(note)
-                        count++
+
+                        if (resolved != null) {
+                            relationshipNoteDao.insertOrUpdate(resolved)
+                            count++
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -1987,45 +2014,26 @@ class FirestoreSyncService @Inject constructor(
                         try { Base64.decode(payloadBase64, Base64.NO_WRAP) } catch (_: Exception) { ByteArray(0) }
                     } else ByteArray(0)
 
-                    if (payloadBytes.isNotEmpty()) {
-                        val catStr = doc.getString("category") ?: "PASSWORD"
-                        val category = try { VaultCategory.valueOf(catStr) } catch (_: Exception) { VaultCategory.PASSWORD }
-                        val remoteTitle = doc.getString("title") ?: "Untitled Item"
-                        val remoteAccount = doc.getString("accountIdentifier")?.takeIf { it.isNotBlank() }
-                        val remoteUpdated = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+                    val remoteIv = doc.getString("encryptionIv") ?: ""
+                    val catStr = doc.getString("category") ?: "PASSWORD"
+                    val category = try { VaultCategory.valueOf(catStr) } catch (_: Exception) { VaultCategory.PASSWORD }
+                    val remoteTitle = doc.getString("title") ?: "Untitled Item"
+                    val remoteAccount = doc.getString("accountIdentifier")?.takeIf { it.isNotBlank() }
+                    val remoteUpdated = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+                    val notes = doc.getString("notes")?.takeIf { it.isNotBlank() }
 
-                        val existing = vaultDao.getItemById(doc.id)
-                        if (existing != null) {
-                            if (existing.title.trim() != remoteTitle.trim()) {
-                                recordConflictIfNeeded(
-                                    entityType = "VaultItem",
-                                    entityId = doc.id,
-                                    fieldName = "Title (${existing.category.name})",
-                                    localValue = "${existing.title} (${existing.accountIdentifier.orEmpty()})",
-                                    remoteValue = "$remoteTitle (${remoteAccount.orEmpty()})",
-                                    localVersion = existing.updatedAt,
-                                    serverVersion = remoteUpdated
-                                )
-                            // Preserve the stable ID and surface the conflict.  A
-                            // generated “(2)” record is neither an upsert nor a
-                            // user-approved duplicate financial record.
-                            }
-                            // Local is king — preserve local vault item!
-                            continue
-                        }
-
-                        val item = VaultItemEntity(
-                            id = doc.id,
-                            personId = targetPersonId,
-                            category = category,
-                            title = remoteTitle,
-                            accountIdentifier = remoteAccount,
-                            encryptedPayload = payloadBytes,
-                            encryptionIv = doc.getString("encryptionIv") ?: "",
-                            notes = doc.getString("notes")?.takeIf { it.isNotBlank() },
-                            updatedAt = remoteUpdated
-                        )
-                        vaultDao.insertOrUpdate(item)
+                    val action = reconcileVaultItem(
+                        docId = doc.id,
+                        targetPersonId = targetPersonId,
+                        payloadBytes = payloadBytes,
+                        remoteIv = remoteIv,
+                        remoteTitle = remoteTitle,
+                        remoteAccount = remoteAccount,
+                        category = category,
+                        notes = notes,
+                        remoteUpdated = remoteUpdated
+                    )
+                    if (action == VaultDownsyncAction.APPLY_INSERT_OR_UPDATE) {
                         count++
                     }
                 }
@@ -2142,7 +2150,11 @@ class FirestoreSyncService @Inject constructor(
                                 }
                             }
 
-                            if (!fileExistsLocally && b2DownloadUrl.isNullOrBlank() && ciphertextBase64.isNullOrBlank()) {
+                            if (!fileExistsLocally) {
+                                VaultLogger.w(
+                                    "FirestoreSync",
+                                    "Skipping attachment $attId for note $effectiveNoteId: binary not available locally"
+                                )
                                 continue
                             }
 
@@ -2246,10 +2258,10 @@ class FirestoreSyncService @Inject constructor(
                                 }
                             }
 
-                            if (!fileExistsLocally && b2DownloadUrl.isNullOrBlank() && ciphertextBase64.isNullOrBlank()) {
+                            if (!fileExistsLocally) {
                                 VaultLogger.w(
                                     "FirestoreSync",
-                                    "Skipping dead document version $vId for doc $docId"
+                                    "Skipping document version $vId for doc $docId: binary not available locally"
                                 )
                                 continue
                             }
@@ -2658,5 +2670,186 @@ class FirestoreSyncService @Inject constructor(
      * Alias for pullRemoteChanges to conform with remote synchronization requirements.
      */
     suspend fun syncAllFromRemote(userId: String?): SyncResult = pullRemoteChanges(userId)
+
+    enum class VaultDownsyncAction {
+        APPLY_INSERT_OR_UPDATE,
+        PRESERVE_LOCAL_AND_SKIP,
+        REJECT_MALFORMED
+    }
+
+    /**
+     * Reconciles a single remote vault item with local storage:
+     * 1. Rejects malformed records (invalid IV or truncated ciphertext) and records a conflict without altering local data.
+     * 2. Preserves existing local records byte-for-byte ("local is king"), highlighting title differences as conflicts.
+     * 3. Inserts valid new records.
+     */
+    suspend fun reconcileVaultItem(
+        docId: String,
+        targetPersonId: String,
+        payloadBytes: ByteArray,
+        remoteIv: String,
+        remoteTitle: String,
+        remoteAccount: String?,
+        category: VaultCategory,
+        notes: String?,
+        remoteUpdated: Long
+    ): VaultDownsyncAction {
+        val isStructurallyValid = shouldDownsyncVaultItem(payloadBytes, remoteIv)
+        if (!isStructurallyValid) {
+            if (payloadBytes.isNotEmpty() || remoteIv.isNotBlank()) {
+                VaultLogger.w(
+                    "FirestoreSync",
+                    "Skipping malformed remote vault item $docId: invalid IV or payload (< $MIN_GCM_CIPHERTEXT_BYTES bytes)"
+                )
+                val existing = vaultDao.getItemById(docId)
+                if (existing != null) {
+                    recordConflictIfNeeded(
+                        entityType = "VaultItem",
+                        entityId = docId,
+                        fieldName = "EncryptedPayload",
+                        localValue = "ValidLocal(size=${existing.encryptedPayload.size})",
+                        remoteValue = "MalformedRemote(payloadSize=${payloadBytes.size}, ivLength=${remoteIv.length})",
+                        localVersion = existing.updatedAt,
+                        serverVersion = remoteUpdated
+                    )
+                }
+            }
+            return VaultDownsyncAction.REJECT_MALFORMED
+        }
+
+        val existing = vaultDao.getItemById(docId)
+        if (existing != null) {
+            if (existing.title.trim() != remoteTitle.trim()) {
+                recordConflictIfNeeded(
+                    entityType = "VaultItem",
+                    entityId = docId,
+                    fieldName = "Title (${existing.category.name})",
+                    localValue = "${existing.title} (${existing.accountIdentifier.orEmpty()})",
+                    remoteValue = "$remoteTitle (${remoteAccount.orEmpty()})",
+                    localVersion = existing.updatedAt,
+                    serverVersion = remoteUpdated
+                )
+            }
+            // Local is king — preserve local vault item!
+            return VaultDownsyncAction.PRESERVE_LOCAL_AND_SKIP
+        }
+
+        val item = VaultItemEntity(
+            id = docId,
+            personId = targetPersonId,
+            category = category,
+            title = remoteTitle,
+            accountIdentifier = remoteAccount,
+            encryptedPayload = payloadBytes,
+            encryptionIv = remoteIv,
+            notes = notes,
+            updatedAt = remoteUpdated
+        )
+        vaultDao.insertOrUpdate(item)
+        return VaultDownsyncAction.APPLY_INSERT_OR_UPDATE
+    }
+
+    companion object {
+        /**
+         * Pure resolution function for merging a remote relationship note snapshot with an optional existing local entity.
+         * Enforces non-negotiable invariants:
+         * 1. A remote update that lacks encrypted content MUST NOT overwrite valid local encrypted content with null/empty fields.
+         * 2. Incomplete remote private placeholders (no ciphertext, no IV, no plaintext) are rejected and return null.
+         * 3. When existing is private and local is king (existing.updatedAt >= remoteUpdated), returns null (no-op).
+         * 4. When remote is newer, valid local encrypted payload and IV are preserved if remote lacks replacement ciphertext.
+         */
+        fun resolveRelationshipNoteMerge(
+            existing: RelationshipNoteEntity?,
+            remoteId: String,
+            remoteRelationshipId: String,
+            remoteTopic: String?,
+            remoteContent: String,
+            remoteIsPrivate: Boolean,
+            remotePayloadBase64: String?,
+            remoteIv: String?,
+            remoteCreatedAt: Long,
+            remoteUpdatedAt: Long
+        ): RelationshipNoteEntity? {
+            val remotePayloadBytes = if (!remotePayloadBase64.isNullOrBlank()) {
+                try {
+                    java.util.Base64.getDecoder().decode(remotePayloadBase64)
+                } catch (_: Throwable) {
+                    try { Base64.decode(remotePayloadBase64, Base64.NO_WRAP) } catch (_: Throwable) { null }
+                }
+            } else null
+
+            val remoteHasEncryptedContent = remotePayloadBytes != null && remotePayloadBytes.isNotEmpty() && !remoteIv.isNullOrBlank()
+
+            if (existing == null) {
+                // Incomplete remote private placeholder with no ciphertext and no content must not be created as an empty stub
+                if (remoteIsPrivate && !remoteHasEncryptedContent && remoteContent.isBlank()) {
+                    return null
+                }
+                return RelationshipNoteEntity(
+                    id = remoteId,
+                    relationshipId = remoteRelationshipId,
+                    topic = remoteTopic,
+                    contentPlaintext = if (remoteIsPrivate) null else remoteContent,
+                    encryptedPayload = remotePayloadBytes,
+                    encryptionIv = remoteIv,
+                    format = com.pims.vault.domain.model.NoteFormat.PLAIN,
+                    isPrivate = remoteIsPrivate,
+                    createdAt = remoteCreatedAt,
+                    updatedAt = remoteUpdatedAt
+                )
+            }
+
+            val existingHasEncryptedContent = existing.isPrivate && existing.encryptedPayload != null && existing.encryptedPayload.isNotEmpty()
+
+            // Invariant 1: If existing is a private encrypted note, and remote update has NO valid encrypted payload and IV,
+            // we MUST NOT wipe the local encrypted content!
+            if (existingHasEncryptedContent && !remoteHasEncryptedContent) {
+                return null
+            }
+
+            // Normal timestamp precedence: Local is king if local is newer or equal
+            if (existing.updatedAt >= remoteUpdatedAt) {
+                return null
+            }
+
+            val finalIsPrivate = if (remoteHasEncryptedContent) true else remoteIsPrivate
+            val finalPayload = remotePayloadBytes ?: if (finalIsPrivate) existing.encryptedPayload else null
+            val finalIv = if (!remoteIv.isNullOrBlank()) remoteIv else if (finalIsPrivate) existing.encryptionIv else null
+
+            return RelationshipNoteEntity(
+                id = remoteId,
+                relationshipId = remoteRelationshipId,
+                topic = remoteTopic ?: existing.topic,
+                contentPlaintext = if (finalIsPrivate) null else remoteContent,
+                encryptedPayload = finalPayload,
+                encryptionIv = finalIv,
+                format = existing.format,
+                isPrivate = finalIsPrivate,
+                createdAt = existing.createdAt,
+                updatedAt = remoteUpdatedAt
+            )
+        }
+
+        val HEX_IV_REGEX = Regex("^[0-9a-fA-F]{24}$")
+        const val MIN_GCM_CIPHERTEXT_BYTES = 16 // 128-bit authentication tag
+
+        /**
+         * Structurally validates remote encrypted vault item payload and IV before insertion into Room.
+         * Enforces:
+         * 1. IV must be a non-null, non-blank hex string of exactly 24 hex characters (12-byte GCM IV).
+         * 2. Ciphertext payload must be non-empty and at least 16 bytes (minimum size for AES-GCM authentication tag).
+         *
+         * Note: Structural validation confirms format validity; it does not claim to prove cryptographic authenticity.
+         */
+        fun shouldDownsyncVaultItem(payloadBytes: ByteArray, remoteIv: String?): Boolean {
+            if (remoteIv.isNullOrBlank() || !HEX_IV_REGEX.matches(remoteIv.trim())) {
+                return false
+            }
+            if (payloadBytes.size < MIN_GCM_CIPHERTEXT_BYTES) {
+                return false
+            }
+            return true
+        }
+    }
 }
 

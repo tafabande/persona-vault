@@ -33,6 +33,7 @@ class PlainNotesOfflineTest {
 
             // Simulate device is OFFLINE
             whenever(networkMonitor.isCurrentlyConnected()).thenReturn(false)
+            whenever(dao.getAttachments(any())).thenReturn(emptyList())
 
             val repository = PlainNotesRepositoryImpl(
                 dao = dao,
@@ -92,6 +93,7 @@ class PlainNotesOfflineTest {
 
             // Simulate device is ONLINE
             whenever(networkMonitor.isCurrentlyConnected()).thenReturn(true)
+            whenever(dao.getAttachments(any())).thenReturn(emptyList())
 
             val repository = PlainNotesRepositoryImpl(
                 dao = dao,

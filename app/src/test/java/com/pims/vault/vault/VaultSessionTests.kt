@@ -50,6 +50,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
+import kotlinx.coroutines.test.advanceUntilIdle
+import com.pims.vault.core.crypto.CryptoIntegrityException
+import com.pims.vault.domain.rules.VaultRules
+import com.pims.vault.domain.model.VaultItemHeader
+import java.security.MessageDigest
+import java.util.UUID
 import org.junit.Before
 import org.junit.Test
 
@@ -196,5 +204,89 @@ class VaultSessionTests {
         testDispatcher.scheduler.advanceTimeBy(2_000L)
         testDispatcher.scheduler.runCurrent()
         assertFalse(viewModel.uiState.value.revealedSecretIds.contains(itemId))
+    }
+
+    @Test
+    fun testFallbackDecryptionDoesNotContaminateAuthoritativeWriteKey() = runTest(testDispatcher) {
+        val authoritativeKey = ByteArray(32) { 0x77.toByte() }
+        viewModel.unlockVault(authoritativeKey)
+        assertTrue(viewModel.uiState.value.isVaultUnlocked)
+
+        // Create an existing vault item encrypted with the deterministic fallback key
+        val digest = MessageDigest.getInstance("SHA-256")
+        val fallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID}".toByteArray(Charsets.UTF_8))
+
+        val savePasswordUseCase = SavePasswordUseCase(fakeVaultDao, cryptoEngine, auditLogger)
+        val readPasswordSecretUseCase = ReadPasswordSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger)
+
+        val fallbackItemId = savePasswordUseCase(
+            personId = com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID,
+            title = "Legacy Vault Item",
+            username = "legacy_user",
+            passwordPlain = "legacy_secret_pwd",
+            websiteUrl = "https://legacy.example.com",
+            notes = "Saved with fallback key",
+            vaultRootKey = fallbackKey
+        )
+
+        // Confirm that the legacy item CANNOT be decrypted with authoritativeKey directly
+        assertThrows(CryptoIntegrityException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                readPasswordSecretUseCase(fallbackItemId, authoritativeKey)
+            }
+        }
+
+        // Open the legacy item via VaultViewModel.openItem()
+        // It should attempt candidate keys, decrypt successfully with the fallback key,
+        // but MUST NOT contaminate sessionKey.
+        val header = VaultItemHeader(
+            id = fallbackItemId,
+            personId = com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID,
+            title = "Legacy Vault Item",
+            accountIdentifier = "legacy_user",
+            category = VaultCategory.PASSWORD,
+            updatedAt = System.currentTimeMillis()
+        )
+        viewModel.openItem(header)
+        var attempts = 0
+        while (viewModel.uiState.value.activeDecryptedPassword == null && viewModel.uiState.value.errorMessage == null && attempts < 50) {
+            Thread.sleep(20)
+            testDispatcher.scheduler.runCurrent()
+            attempts++
+        }
+
+        // Verify that the item was successfully decrypted for viewing
+        assertEquals("legacy_secret_pwd", viewModel.uiState.value.activeDecryptedPassword?.passwordPlaintext)
+
+        // Now save a brand new item through VaultViewModel
+        viewModel.savePassword(
+            title = "New Authoritative Item",
+            username = "authoritative_user",
+            passwordPlain = "new_secret_pwd",
+            websiteUrl = "https://new.example.com",
+            notes = "Must be encrypted with authoritative key"
+        )
+        var saveAttempts = 0
+        while (fakeVaultDao.getAllVaultItems().size < 2 && saveAttempts < 50) {
+            Thread.sleep(20)
+            testDispatcher.scheduler.runCurrent()
+            saveAttempts++
+        }
+
+        // Fetch the new item from the DAO
+        val allItems = fakeVaultDao.getAllVaultItems()
+        val newItem = allItems.firstOrNull { it.id != fallbackItemId }
+        assertNotNull("New vault item should have been saved", newItem)
+
+        // Assert: New item decrypts successfully with authoritativeKey
+        val decryptedWithAuthKey = readPasswordSecretUseCase(newItem!!.id, authoritativeKey)
+        assertEquals("new_secret_pwd", decryptedWithAuthKey.passwordPlaintext)
+
+        // Assert: New item FAILS decryption with fallbackKey (proves it was NOT encrypted with the fallback key)
+        assertThrows(CryptoIntegrityException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                readPasswordSecretUseCase(newItem.id, fallbackKey)
+            }
+        }
     }
 }

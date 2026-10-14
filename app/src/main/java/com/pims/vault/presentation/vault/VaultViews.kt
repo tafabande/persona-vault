@@ -353,6 +353,16 @@ fun VaultDashboardView(
                             onOpenCard = { card -> currentRoute = VaultScreenRoute.CardDetail(card) },
                             onOpenBankAccount = { acct -> currentRoute = VaultScreenRoute.BankAccountDetail(acct) },
                             onOpenPasswordsAndKeys = { currentRoute = VaultScreenRoute.PasswordsKeys },
+                            onOpenSecret = { item ->
+                                previousRoute = currentRoute
+                                when (item.category) {
+                                    VaultCategory.PAYMENT_REFERENCE -> currentRoute = VaultScreenRoute.CardDetail(item)
+                                    VaultCategory.BANK_ACCOUNT -> currentRoute = VaultScreenRoute.BankAccountDetail(item)
+                                    VaultCategory.RECOVERY_CODE -> currentRoute = VaultScreenRoute.RecoveryCodes(item)
+                                    VaultCategory.IDENTITY_CREDENTIAL -> currentRoute = VaultScreenRoute.IdCredentialDetail(item)
+                                    else -> currentRoute = VaultScreenRoute.KeyDetail(item)
+                                }
+                            },
                             onOpenIdCategory = { cat -> currentRoute = VaultScreenRoute.IdMembershipList(cat) },
                             onOpenImportRestore = { currentRoute = VaultScreenRoute.ImportRestore },
                             onAddSecret = { showTypePicker = true },

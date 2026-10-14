@@ -432,7 +432,13 @@ class VaultViewModel @Inject constructor(
 
     private suspend fun getOrDeriveVaultKey(): ByteArray {
         sessionKey?.let { return it }
-        return getCandidateVaultKeys().first()
+        // Fail closed for writes: only the authoritative hardware-backed session key may be used for writes and edits.
+        // Never fall back to candidate/legacy/deterministic keys for write operations.
+        val secretKey = sessionManager.unlockZone4Vault()
+        val bytes = secretKey.copyBytes()
+        sessionKey = bytes
+        _uiState.update { it.copy(isVaultUnlocked = true) }
+        return bytes
     }
 
     fun openItem(item: VaultItemHeader) {
@@ -520,8 +526,10 @@ class VaultViewModel @Inject constructor(
                         }
                     }
                     if (decryptedSuccessfully) {
-                        sessionKey = key
-                        _uiState.update { it.copy(isVaultUnlocked = true) }
+                        // Scope candidate keys strictly to reading this item.
+                        // A candidate/fallback key that decrypts an existing record must NEVER
+                        // mutate or contaminate the authoritative sessionKey used for new writes and edits.
+                        _uiState.update { it.copy(isVaultUnlocked = sessionKey != null) }
                         break
                     }
                 } catch (e: Exception) {
