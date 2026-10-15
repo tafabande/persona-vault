@@ -399,7 +399,7 @@ fun KeyDetailScreen(
             },
             text = {
                 Text(
-                    text = "This will permanently remove this encrypted secret from your local hardware vault. This action cannot be undone.",
+                    text = "This will permanently delete this item from your vault. This action cannot be undone.",
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 )
@@ -530,14 +530,16 @@ fun KeyDetailScreen(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = subtitle,
-                            fontSize = 14.sp,
-                            color = getVaultTextSecondary(),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        if (subtitle.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = subtitle,
+                                fontSize = 14.sp,
+                                color = getVaultTextSecondary(),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 
@@ -949,7 +951,7 @@ fun KeyDetailScreen(
                                             color = getVaultTextPrimary()
                                         )
                                         Text(
-                                            text = "Username / Email (tap to copy)",
+                                            text = "Username / Email",
                                             fontSize = 12.sp,
                                             color = getVaultTextSecondary()
                                         )
@@ -1004,7 +1006,7 @@ fun KeyDetailScreen(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "Website (tap to open)",
+                                            text = "Website",
                                             fontSize = 12.sp,
                                             color = getVaultTextSecondary()
                                         )
@@ -1041,7 +1043,7 @@ fun KeyDetailScreen(
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = "Notes (tap to copy)",
+                                            text = "Notes",
                                             fontSize = 12.sp,
                                             color = getVaultTextSecondary()
                                         )
@@ -1484,19 +1486,12 @@ fun KeyDetailScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(14.dp))
-                        Column {
-                            Text(
-                                text = "AES-256-GCM Hardware Encrypted",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = getVaultTextPrimary()
-                            )
-                            Text(
-                                text = "Isolated Zone 4 Android Keystore protection",
-                                fontSize = 12.sp,
-                                color = getVaultTextSecondary()
-                            )
-                        }
+                        Text(
+                            text = "Protected Record",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = getVaultTextPrimary()
+                        )
                     }
 
                     HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))

@@ -230,8 +230,17 @@ class MainViewModel @Inject constructor(
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
+    companion object {
+        const val EXTRA_QUICK_ACTION = "com.pims.vault.action.QUICK_ACTION"
+        const val ACTION_DOCUMENTS = "DOCUMENTS"
+        const val ACTION_PEOPLE = "PEOPLE"
+        const val ACTION_VAULT = "VAULT"
+        const val ACTION_NOTES = "NOTES"
+    }
+
     private val viewModel: MainViewModel by viewModels()
     private val pendingOpenNoteIdState = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    private val pendingQuickActionState = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -239,12 +248,16 @@ class MainActivity : FragmentActivity() {
         intent?.getStringExtra(com.pims.vault.core.reminder.NoteReminderReceiver.EXTRA_OPEN_NOTE_ID)?.let {
             pendingOpenNoteIdState.value = it
         }
+        intent?.getStringExtra(EXTRA_QUICK_ACTION)?.let {
+            pendingQuickActionState.value = it
+        }
 
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
             val currentMood by viewModel.currentMood.collectAsState()
             val isReducedMotion by viewModel.isReducedMotion.collectAsState()
             val openNoteId by pendingOpenNoteIdState.collectAsState()
+            val quickAction by pendingQuickActionState.collectAsState()
 
             PimsVaultTheme(
                 themeMode = themeMode,
@@ -385,6 +398,8 @@ class MainActivity : FragmentActivity() {
                                     PersonaDashboardScreen(
                                         securityLevel = curState.securityLevel,
                                         initialOpenNoteId = openNoteId,
+                                        initialQuickAction = quickAction,
+                                        onQuickActionHandled = { pendingQuickActionState.value = null },
                                         onLockClicked = { viewModel.lock() },
                                         onSignOutClicked = { viewModel.signOut() },
                                         onRequestBiometricAuth = { title, subtitle, onSuccess, onError ->
@@ -409,6 +424,9 @@ class MainActivity : FragmentActivity() {
         setIntent(intent)
         intent.getStringExtra(com.pims.vault.core.reminder.NoteReminderReceiver.EXTRA_OPEN_NOTE_ID)?.let {
             pendingOpenNoteIdState.value = it
+        }
+        intent.getStringExtra(EXTRA_QUICK_ACTION)?.let {
+            pendingQuickActionState.value = it
         }
     }
 

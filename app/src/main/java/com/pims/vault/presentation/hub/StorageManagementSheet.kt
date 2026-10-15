@@ -224,7 +224,7 @@ fun StorageManagementSheet(
                     StorageBreakdownRow(
                         icon = Icons.Default.Description,
                         title = "Downloaded Documents",
-                        description = "$totalDocumentsCount files · AES-256 encrypted on disk",
+                        description = "$totalDocumentsCount files",
                         sizeText = docsFormatted
                     )
                 }

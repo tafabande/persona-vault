@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center"
+    android:baselineAligned="false"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    android:background="@drawable/bg_widget_container">
+
+    <!-- Action 1: Documents -->
+    <LinearLayout
+        android:id="@+id/widget_action_documents"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@string/widget_action_documents_desc"
+        android:background="@drawable/bg_widget_action_item_ripple"
+        android:padding="4dp">
+
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_widget_icon_pill">
+
+            <ImageView
+                android:id="@+id/widget_icon_documents"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_persona_documents" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/widget_label_documents"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/widget_action_documents"
+            android:textColor="@color/widget_text_label"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <!-- Action 2: People -->
+    <LinearLayout
+        android:id="@+id/widget_action_people"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@string/widget_action_people_desc"
+        android:background="@drawable/bg_widget_action_item_ripple"
+        android:padding="4dp">
+
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_widget_icon_pill">
+
+            <ImageView
+                android:id="@+id/widget_icon_people"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_persona_people" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/widget_label_people"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/widget_action_people"
+            android:textColor="@color/widget_text_label"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <!-- Action 3: Vault -->
+    <LinearLayout
+        android:id="@+id/widget_action_vault"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@string/widget_action_vault_desc"
+        android:background="@drawable/bg_widget_action_item_ripple"
+        android:padding="4dp">
+
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_widget_icon_pill">
+
+            <ImageView
+                android:id="@+id/widget_icon_vault"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_persona_vault" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/widget_label_vault"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/widget_action_vault"
+            android:textColor="@color/widget_text_label"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <!-- Action 4: Notes -->
+    <LinearLayout
+        android:id="@+id/widget_action_notes"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@string/widget_action_notes_desc"
+        android:background="@drawable/bg_widget_action_item_ripple"
+        android:padding="4dp">
+
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_widget_icon_pill">
+
+            <ImageView
+                android:id="@+id/widget_icon_notes"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_persona_notes" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/widget_label_notes"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/widget_action_notes"
+            android:textColor="@color/widget_text_label"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+</LinearLayout>

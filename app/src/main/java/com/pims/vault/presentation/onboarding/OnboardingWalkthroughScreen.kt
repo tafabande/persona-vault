@@ -47,6 +47,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -166,7 +167,7 @@ fun OnboardingWalkthroughScreen(
                             0 -> ConcentricOrbitalVisual()
                             1 -> IdentityLayersVisual()
                             2 -> ConnectedNodesVisual()
-                            3 -> ShieldEmblemVisual()
+                            3 -> NotepadPenVisual()
                         }
                     }
 
@@ -457,22 +458,23 @@ private fun ConnectedNodesVisual(color: Color = MaterialTheme.colorScheme.primar
 }
 
 @Composable
-private fun ShieldEmblemVisual(color: Color = MaterialTheme.colorScheme.primary) {
-    Canvas(modifier = Modifier.size(140.dp)) {
-        val w = size.width
-        val h = size.height
-
-        val path = Path().apply {
-            moveTo(w * 0.5f, h * 0.2f)
-            lineTo(w * 0.78f, h * 0.32f)
-            lineTo(w * 0.78f, h * 0.58f)
-            cubicTo(w * 0.78f, h * 0.75f, w * 0.5f, h * 0.85f, w * 0.5f, h * 0.85f)
-            cubicTo(w * 0.5f, h * 0.85f, w * 0.22f, h * 0.75f, w * 0.22f, h * 0.58f)
-            lineTo(w * 0.22f, h * 0.32f)
-            close()
+private fun NotepadPenVisual() {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    Surface(
+        modifier = Modifier.size(136.dp),
+        shape = RoundedCornerShape(32.dp),
+        color = if (isDark) Color(0xFF1E2228) else Color(0xFFF1F3F5),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF2E343E) else Color(0xFFE2E5E9))
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.pims.vault.R.drawable.ic_splash_logo),
+                contentDescription = "Personal Identity Vault Journal",
+                modifier = Modifier.size(96.dp)
+            )
         }
-
-        drawPath(path = path, color = color.copy(alpha = 0.25f), style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
-        drawCircle(color = color, radius = 7.dp.toPx(), center = Offset(w * 0.5f, h * 0.5f))
     }
 }

@@ -11,6 +11,14 @@
     <color name="persona_splash_glyph">#FFFFFF</color>
 
     <!-- App Launcher Icon Themed Tokens (Light Mode) -->
-    <color name="persona_icon_background">#B65F3A</color>
-    <color name="persona_icon_foreground">#FFFFFF</color>
+    <color name="persona_icon_background">#1E2022</color>
+    <color name="persona_icon_foreground">#F8F9FA</color>
+
+    <!-- Home Screen Quick Actions Widget Tokens (Light Mode) -->
+    <color name="widget_container_bg">#F5F6F8</color>
+    <color name="widget_item_bg">#FFFFFF</color>
+    <color name="widget_item_stroke">#E2E5EA</color>
+    <color name="widget_icon_tint">#2C323D</color>
+    <color name="widget_text_label">#374151</color>
+    <color name="widget_ripple_color">#202C323D</color>
 </resources>

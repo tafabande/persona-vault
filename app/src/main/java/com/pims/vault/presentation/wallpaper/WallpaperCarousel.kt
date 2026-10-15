@@ -42,8 +42,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -62,8 +64,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.absoluteValue
 import kotlin.math.sin
 
 /**
@@ -90,7 +95,6 @@ fun WallpaperCarousel(
     carouselHeight: Dp? = null
 ) {
     val haptics = rememberPimsHaptics()
-    val backgroundColor = MaterialTheme.colorScheme.background
     val scope = rememberCoroutineScope()
 
     if (wallpapers.isEmpty()) {
@@ -132,14 +136,22 @@ fun WallpaperCarousel(
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = "Tap to add your photograph or select ambient artwork",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
         return
+    }
+
+    LaunchedEffect(wallpapers) {
+        withContext(Dispatchers.IO) {
+            wallpapers.forEach { wp ->
+                if (wp.type == WallpaperType.LOCAL_IMAGE && wp.localFilePath != null) {
+                    val path = wp.localFilePath
+                    if (!WallpaperBitmapCache.contains(path)) {
+                        WallpaperBitmapCache.getOrDecode(path)
+                    }
+                }
+            }
+        }
     }
 
     val pagerState = rememberPagerState(
@@ -147,18 +159,19 @@ fun WallpaperCarousel(
         pageCount = { wallpapers.size }
     )
 
-    // Synchronize explicit external selection changes with the pager.
-    // Auto-rotation and free swiping only change what is DISPLAYED here;
-    // they never touch the persisted "active" wallpaper (that is sheet-only).
+    val carouselEasing = remember { androidx.compose.animation.core.CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
+
     LaunchedEffect(activeIndex) {
         if (pagerState.currentPage != activeIndex && activeIndex in wallpapers.indices) {
-            pagerState.animateScrollToPage(activeIndex)
+            pagerState.animateScrollToPage(
+                page = activeIndex,
+                animationSpec = tween(durationMillis = 550, easing = carouselEasing)
+            )
         }
     }
 
     val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
 
-    // Active, fluid auto-advance carousel (4.5s loop with smooth transition)
     LaunchedEffect(pagerState, isDragged, wallpapers.size) {
         if (wallpapers.size > 1 && !isDragged) {
             while (true) {
@@ -167,18 +180,17 @@ fun WallpaperCarousel(
                     val nextPage = (pagerState.currentPage + 1) % wallpapers.size
                     pagerState.animateScrollToPage(
                         page = nextPage,
-                        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing)
+                        animationSpec = tween(durationMillis = 650, easing = carouselEasing)
                     )
                 }
             }
         }
     }
 
-    // Subtle breathing motion: gentle 1.00 -> 1.02 scale
     val infiniteTransition = rememberInfiniteTransition(label = "KenBurns")
-    val kenBurnsScale by infiniteTransition.animateFloat(
+    val kenBurnsAnim = infiniteTransition.animateFloat(
         initialValue = 1.00f,
-        targetValue = 1.02f,
+        targetValue = 1.025f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 6000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
@@ -202,7 +214,7 @@ fun WallpaperCarousel(
                         scope.launch {
                             pagerState.animateScrollToPage(
                                 page = next,
-                                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                                animationSpec = tween(durationMillis = 500, easing = carouselEasing)
                             )
                         }
                     }
@@ -215,28 +227,40 @@ fun WallpaperCarousel(
     ) {
         HorizontalPager(
             state = pagerState,
+            beyondViewportPageCount = 2,
             modifier = Modifier.fillMaxSize()
         ) { page ->
             val wallpaper = wallpapers.getOrNull(page)
             if (wallpaper != null) {
-                Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
-                    // Sharp visual artwork with subtle scale
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                            val absOffset = pageOffset.absoluteValue.coerceIn(0f, 1f)
+
+                            translationX = pageOffset * size.width * 0.22f
+                            alpha = (1f - (absOffset * 0.65f)).coerceIn(0f, 1f)
+                            val scale = 1f - (absOffset * 0.04f)
+                            scaleX = scale
+                            scaleY = scale
+                            compositingStrategy = CompositingStrategy.Auto
+                        }
+                ) {
                     WallpaperPageArtwork(
                         wallpaper = wallpaper,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clipToBounds()
                             .graphicsLayer {
-                                scaleX = kenBurnsScale
-                                scaleY = kenBurnsScale
-                                clip = true
+                                val s = kenBurnsAnim.value
+                                scaleX = s
+                                scaleY = s
                             }
                     )
                 }
             }
         }
 
-        // Subtle Page Indicator Dots
         if (wallpapers.size > 1) {
             androidx.compose.foundation.layout.Row(
                 modifier = Modifier
@@ -266,6 +290,85 @@ fun WallpaperCarousel(
     }
 }
 
+object WallpaperBitmapCache {
+    private val maxCacheMemoryKb = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+    // Allocate 1/8th of available runtime memory for wallpaper caching, clamped between 4MB and 32MB
+    private val cacheSizeKb = (maxCacheMemoryKb / 8).coerceIn(4096, 32768)
+
+    private val lruCache = object : android.util.LruCache<String, android.graphics.Bitmap>(cacheSizeKb) {
+        override fun sizeOf(key: String, bitmap: android.graphics.Bitmap): Int {
+            val bytes = bitmap.byteCount
+            return if (bytes > 0) bytes / 1024 else 1
+        }
+    }
+
+    fun get(path: String): android.graphics.Bitmap? {
+        return synchronized(lruCache) {
+            lruCache.get(path)
+        }
+    }
+
+    fun put(path: String, bitmap: android.graphics.Bitmap) {
+        synchronized(lruCache) {
+            lruCache.put(path, bitmap)
+        }
+    }
+
+    fun contains(path: String): Boolean {
+        return synchronized(lruCache) {
+            lruCache.get(path) != null
+        }
+    }
+
+    fun getOrDecode(path: String): android.graphics.Bitmap {
+        get(path)?.let { return it }
+        val decoded = decodeWallpaperBitmap(path)
+        put(path, decoded)
+        return decoded
+    }
+}
+
+private fun decodeWallpaperBitmap(path: String): android.graphics.Bitmap {
+    return try {
+        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, boundsOptions)
+        val targetWidth = 1080
+        val targetHeight = 1920
+        var sampleSize = 1
+        if (boundsOptions.outHeight > targetHeight || boundsOptions.outWidth > targetWidth) {
+            val halfHeight = boundsOptions.outHeight / 2
+            val halfWidth = boundsOptions.outWidth / 2
+            while ((halfHeight / sampleSize) >= targetHeight && (halfWidth / sampleSize) >= targetWidth) {
+                sampleSize *= 2
+            }
+        }
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+        }
+        val srcBitmap = BitmapFactory.decodeFile(path, decodeOptions)
+            ?: return android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+        val exif = android.media.ExifInterface(path)
+        val orientation = exif.getAttributeInt(
+            android.media.ExifInterface.TAG_ORIENTATION,
+            android.media.ExifInterface.ORIENTATION_NORMAL
+        )
+        val matrix = android.graphics.Matrix()
+        when (orientation) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+        }
+        if (!matrix.isIdentity) {
+            android.graphics.Bitmap.createBitmap(srcBitmap, 0, 0, srcBitmap.width, srcBitmap.height, matrix, true)
+        } else {
+            srcBitmap
+        }
+    } catch (_: Exception) {
+        android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+    }
+}
+
 @Composable
 private fun WallpaperPageArtwork(
     wallpaper: WallpaperItem,
@@ -277,32 +380,22 @@ private fun WallpaperPageArtwork(
                 GenerativeArtworkVisual(seed = wallpaper.artSeed)
             }
             WallpaperType.LOCAL_IMAGE -> {
-                val bitmap = remember(wallpaper.localFilePath) {
-                    wallpaper.localFilePath?.let { path ->
-                        try {
-                            val srcBitmap = BitmapFactory.decodeFile(path)
-                            if (srcBitmap != null) {
-                                val exif = android.media.ExifInterface(path)
-                                val orientation = exif.getAttributeInt(
-                                    android.media.ExifInterface.TAG_ORIENTATION,
-                                    android.media.ExifInterface.ORIENTATION_NORMAL
-                                )
-                                val matrix = android.graphics.Matrix()
-                                when (orientation) {
-                                    android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
-                                    android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
-                                    android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-                                }
-                                android.graphics.Bitmap.createBitmap(srcBitmap, 0, 0, srcBitmap.width, srcBitmap.height, matrix, true)
-                            } else null
-                        } catch (_: Exception) {
-                            BitmapFactory.decodeFile(path)
+                val path = wallpaper.localFilePath
+                var bitmap by remember(path) {
+                    mutableStateOf(path?.let { WallpaperBitmapCache.get(it) })
+                }
+                LaunchedEffect(path) {
+                    if (bitmap == null && path != null) {
+                        val decoded = withContext(Dispatchers.IO) {
+                            WallpaperBitmapCache.getOrDecode(path)
                         }
+                        bitmap = decoded
                     }
                 }
-                if (bitmap != null) {
+                val currentBitmap = bitmap
+                if (currentBitmap != null && currentBitmap.width > 1) {
                     Image(
-                        bitmap = bitmap.asImageBitmap(),
+                        bitmap = currentBitmap.asImageBitmap(),
                         contentDescription = wallpaper.title,
                         contentScale = ContentScale.Crop,
                         alignment = BiasAlignment(0f, wallpaper.alignmentY),
@@ -329,7 +422,7 @@ internal fun GenerativeArtworkVisual(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "GenerativeHarmonics")
 
-    val drift by infiniteTransition.animateFloat(
+    val driftAnim = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = (2 * Math.PI).toFloat(),
         animationSpec = infiniteRepeatable(
@@ -340,6 +433,7 @@ internal fun GenerativeArtworkVisual(
     )
 
     Canvas(modifier = modifier.fillMaxSize()) {
+        val drift = driftAnim.value
         val w = size.width
         val h = size.height
 

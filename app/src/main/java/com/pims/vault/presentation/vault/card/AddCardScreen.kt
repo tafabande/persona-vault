@@ -478,14 +478,14 @@ fun AddCardScreen(
         AlertDialog(
             onDismissRequest = { showSecurityInfoDialog = false },
             title = {
-                Text("Card Security & Isolation", fontWeight = FontWeight.Bold)
+                Text("Card Security", fontWeight = FontWeight.Bold)
             },
             text = {
                 Text(
-                    "Your payment cards are protected under Zone 4 (Critical Vault) security.\n\n" +
-                    "• Full card numbers and CVVs are encrypted at rest with hardware-backed AES-256-GCM.\n" +
-                    "• Biometric or PIN authentication is required to unseal card numbers.\n" +
-                    "• No financial telemetry or unencrypted card data ever leaves your device.",
+                    "Your payment cards are stored securely in your private vault.\n\n" +
+                    "• Full card details remain encrypted on your device.\n" +
+                    "• Biometric or PIN authentication is required to view details.\n" +
+                    "• Card data is never shared or transmitted.",
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 )

@@ -47,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,6 +65,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
 /**
@@ -174,12 +177,21 @@ fun WallpaperOptionsSheet(
                             )
                         }
                         WallpaperType.LOCAL_IMAGE -> {
-                            val bitmap = remember(activeItem.localFilePath) {
-                                activeItem.localFilePath?.let { BitmapFactory.decodeFile(it) }
+                            var previewBitmap by remember(activeItem.localFilePath) {
+                                mutableStateOf(activeItem.localFilePath?.let { WallpaperBitmapCache.get(it) })
                             }
-                            if (bitmap != null) {
+                            LaunchedEffect(activeItem.localFilePath) {
+                                if (previewBitmap == null && activeItem.localFilePath != null) {
+                                    val decoded = withContext(Dispatchers.IO) {
+                                        WallpaperBitmapCache.getOrDecode(activeItem.localFilePath)
+                                    }
+                                    previewBitmap = decoded
+                                }
+                            }
+                            val bmp = previewBitmap
+                            if (bmp != null && bmp.width > 1) {
                                 Image(
-                                    bitmap = bitmap.asImageBitmap(),
+                                    bitmap = bmp.asImageBitmap(),
                                     contentDescription = activeItem.title,
                                     contentScale = ContentScale.Crop,
                                     alignment = BiasAlignment(0f, activeItem.alignmentY),
@@ -278,12 +290,12 @@ fun WallpaperOptionsSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Recenter & Vertical Position",
+                                text = "Vertical Position",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Reset Center",
+                                text = "Reset",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.clickable {
@@ -292,11 +304,6 @@ fun WallpaperOptionsSheet(
                                 }
                             )
                         }
-                        Text(
-                            text = "Shift image up or down (${(activeItem.alignmentY * 100).toInt()}%)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         Slider(
                             value = activeItem.alignmentY,
                             onValueChange = { newY ->
@@ -397,12 +404,21 @@ fun WallpaperOptionsSheet(
                                     GenerativeArtworkVisual(seed = wp.artSeed, modifier = Modifier.fillMaxSize())
                                 }
                                 WallpaperType.LOCAL_IMAGE -> {
-                                    val bitmap = remember(wp.localFilePath) {
-                                        wp.localFilePath?.let { BitmapFactory.decodeFile(it) }
+                                    var thumbBitmap by remember(wp.localFilePath) {
+                                        mutableStateOf(wp.localFilePath?.let { WallpaperBitmapCache.get(it) })
                                     }
-                                    if (bitmap != null) {
+                                    LaunchedEffect(wp.localFilePath) {
+                                        if (thumbBitmap == null && wp.localFilePath != null) {
+                                            val decoded = withContext(Dispatchers.IO) {
+                                                WallpaperBitmapCache.getOrDecode(wp.localFilePath)
+                                            }
+                                            thumbBitmap = decoded
+                                        }
+                                    }
+                                    val bmp = thumbBitmap
+                                    if (bmp != null && bmp.width > 1) {
                                         Image(
-                                            bitmap = bitmap.asImageBitmap(),
+                                            bitmap = bmp.asImageBitmap(),
                                             contentDescription = wp.title,
                                             contentScale = ContentScale.Crop,
                                             modifier = Modifier.fillMaxSize()

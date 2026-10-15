@@ -147,8 +147,6 @@ fun HomeView(
             .fillMaxSize()
             .background(homeBgColor)
     ) {
-        // 1 & 2: EXTENDED HERO PHOTO AREA WITH OVERLAYING FLOATING TOP BAR
-        // Fills the upper section and extends down under the identity card for a seamless magazine bleed
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -156,7 +154,6 @@ fun HomeView(
                 .clipToBounds()
                 .align(Alignment.TopCenter)
         ) {
-            // Wallpaper Background
             if (wallpapers.isNotEmpty()) {
                 com.pims.vault.presentation.wallpaper.WallpaperCarousel(
                     wallpapers = wallpapers,
@@ -169,7 +166,6 @@ fun HomeView(
                 com.pims.vault.presentation.wallpaper.GenerativeArtworkVisual(seed = 3)
             }
 
-            // Seamless top fade — symmetrical to bottom fade, matching dynamic theme background
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -186,7 +182,6 @@ fun HomeView(
                     )
             )
 
-            // Floating Top Identity Bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -208,7 +203,6 @@ fun HomeView(
                 )
             }
 
-            // Seamless bottom fade — compact and gentle so it only covers the bottom edge right behind the identity card
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -226,8 +220,6 @@ fun HomeView(
             )
         }
 
-        // Lower Content Section: Sits seamlessly over the extended hero bleed
-        // Always positioned above the bottom dock with guaranteed visibility
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -787,16 +779,11 @@ private fun IdentityDetailsEditorSheet(
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(36.dp)
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Tap to upload or photograph ID",
+                            text = "Upload or photograph ID",
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Driver license, national card, or passport",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

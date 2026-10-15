@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
@@ -53,6 +54,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -755,46 +758,230 @@ fun PlainNotesScreen(
             onNoteClick = { note ->
                 showCumulativeOverview = false
                 handleNoteClick(note)
+            },
+            onNewNote = {
+                showCumulativeOverview = false
+                onOpenEditor(null)
+            },
+            onOpenSearch = {
+                showCumulativeOverview = false
+                isSearchVisible = true
             }
         )
     }
 }
 
+private enum class TimelineFilter(val label: String) {
+    ALL("All"),
+    PROTECTED("Protected"),
+    REMINDERS("Reminders"),
+    PHOTOS("Photos")
+}
+
 @Composable
-private fun OverviewMetricCard(
-    title: String,
+private fun TimelineFilterChip(
+    label: String,
     count: Int,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: androidx.compose.ui.graphics.vector.ImageVector?,
+    isSelected: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptics = rememberPimsHaptics()
     Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = modifier
+        shape = RoundedCornerShape(20.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        border = BorderStroke(
+            width = if (isSelected) 1.dp else 0.5.dp,
+            color = if (isSelected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        ),
+        modifier = modifier.clickable {
+            haptics.selection()
+            onClick()
+        }
     ) {
-        Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
             Text(
-                text = "$count",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurface
             )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            Surface(
+                shape = CircleShape,
+                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                else MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Text(
+                    text = "$count",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTimelineNoteRow(
+    note: PlainNote,
+    timeStr: String,
+    onClick: () -> Unit
+) {
+    val haptics = rememberPimsHaptics()
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                haptics.light()
+                onClick()
+            }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Minimalist status accent indicator
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(26.dp)
+                    .clip(RoundedCornerShape(1.5.dp))
+                    .background(
+                        if (note.isLocked) MaterialTheme.colorScheme.primary
+                        else if (note.reminderAt != null) MaterialTheme.colorScheme.tertiary
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    )
             )
+
+            // Main Info
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                // Row 1: Title + Lock + Time
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(
+                            text = note.title.ifBlank { "Untitled" },
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (note.isLocked) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Protected",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = timeStr,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+
+                // Row 2: Preview snippet + Tags + Photos / Reminders badges
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val previewSnippet = if (note.isLocked) {
+                        "Protected content"
+                    } else {
+                        note.content.replace('\n', ' ').trim().ifBlank { "No text content" }
+                    }
+
+                    Text(
+                        text = previewSnippet,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    // Inline micro-badges
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(start = 6.dp)
+                    ) {
+                        if (note.reminderAt != null) {
+                            Icon(
+                                imageVector = Icons.Default.Alarm,
+                                contentDescription = "Reminder",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                        if (note.attachments.isNotEmpty()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AddPhotoAlternate,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                if (note.attachments.size > 1) {
+                                    Text(
+                                        text = "${note.attachments.size}",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -805,24 +992,66 @@ fun CumulativeNotesOverviewSheet(
     notes: List<PlainNote>,
     isVisible: Boolean,
     onDismiss: () -> Unit,
-    onNoteClick: (PlainNote) -> Unit
+    onNoteClick: (PlainNote) -> Unit,
+    onNewNote: () -> Unit = {},
+    onOpenSearch: () -> Unit = {}
 ) {
     if (!isVisible) return
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val dateFormat = remember { SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault()) }
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
 
-    // Group chronologically by date
-    val groupedNotes = remember(notes) {
-        notes.sortedByDescending { it.updatedAt }
-            .groupBy { dateFormat.format(Date(it.updatedAt)) }
-    }
+    var selectedFilter by remember { mutableStateOf(TimelineFilter.ALL) }
+    var inSheetSearchQuery by remember { mutableStateOf("") }
+    var isSearchActive by remember { mutableStateOf(false) }
 
     val totalNotesCount = notes.size
-    val lockedNotesCount = notes.count { it.isLocked }
-    val reminderNotesCount = notes.count { it.reminderAt != null }
-    val photoNotesCount = notes.count { it.attachments.isNotEmpty() }
+    val lockedNotesCount = remember(notes) { notes.count { it.isLocked } }
+    val reminderNotesCount = remember(notes) { notes.count { it.reminderAt != null } }
+    val photoNotesCount = remember(notes) { notes.count { it.attachments.isNotEmpty() } }
+
+    val filteredNotes = remember(notes, selectedFilter, inSheetSearchQuery) {
+        notes.filter { note ->
+            val matchesFilter = when (selectedFilter) {
+                TimelineFilter.ALL -> true
+                TimelineFilter.PROTECTED -> note.isLocked
+                TimelineFilter.REMINDERS -> note.reminderAt != null
+                TimelineFilter.PHOTOS -> note.attachments.isNotEmpty()
+            }
+            val matchesSearch = if (inSheetSearchQuery.isBlank()) true else {
+                val q = inSheetSearchQuery.trim()
+                val tagQ = if (q.startsWith("#")) q.drop(1).trim() else q
+                note.title.contains(q, ignoreCase = true) ||
+                    note.content.contains(q, ignoreCase = true) ||
+                    note.tags.any { it.contains(tagQ, ignoreCase = true) || it.contains(q, ignoreCase = true) }
+            }
+            matchesFilter && matchesSearch
+        }
+    }
+
+    // Format clean relative / concise date labels
+    val calendar = remember { Calendar.getInstance() }
+    val currentYear = remember { calendar.get(Calendar.YEAR) }
+    val currentDayOfYear = remember { calendar.get(Calendar.DAY_OF_YEAR) }
+
+    fun formatGroupDate(timestamp: Long): String {
+        val noteCal = Calendar.getInstance().apply { timeInMillis = timestamp }
+        val isSameYear = noteCal.get(Calendar.YEAR) == currentYear
+        val dayDiff = currentDayOfYear - noteCal.get(Calendar.DAY_OF_YEAR)
+
+        return when {
+            isSameYear && dayDiff == 0 -> "Today"
+            isSameYear && dayDiff == 1 -> "Yesterday"
+            isSameYear -> SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(timestamp))
+            else -> SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(timestamp))
+        }
+    }
+
+    // Group chronologically
+    val groupedNotes = remember(filteredNotes) {
+        filteredNotes.sortedByDescending { it.updatedAt }
+            .groupBy { formatGroupDate(it.updatedAt) }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -831,11 +1060,11 @@ fun CumulativeNotesOverviewSheet(
         dragHandle = {
             Box(
                 modifier = Modifier
-                    .padding(vertical = 10.dp)
-                    .width(36.dp)
+                    .padding(vertical = 8.dp)
+                    .width(32.dp)
                     .height(4.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
             )
         }
     ) {
@@ -843,76 +1072,198 @@ fun CumulativeNotesOverviewSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp)
         ) {
-            // Header Row
+            // Level 0: Top Header & Close
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        text = "Notes & Timeline Overview",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Cumulative audit and chronological history",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Notes Overview",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = "$totalNotesCount notes",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
-                IconButton(onClick = onDismiss) {
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         imageVector = PersonaIcons.Close,
-                        contentDescription = "Close overview",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentDescription = "Close",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Metrics Grid
+            // Level 1: Primary Action Buttons (Clear Call to Action)
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OverviewMetricCard(
-                    title = "Total Notes",
-                    count = totalNotesCount,
-                    icon = PersonaIcons.Edit,
+                Button(
+                    onClick = onNewNote,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1.4f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "New Note",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        isSearchActive = !isSearchActive
+                        if (!isSearchActive) inSheetSearchQuery = ""
+                    },
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f)
-                )
-                OverviewMetricCard(
-                    title = "Protected",
-                    count = lockedNotesCount,
-                    icon = Icons.Default.Lock,
-                    modifier = Modifier.weight(1f)
-                )
-                OverviewMetricCard(
-                    title = "Reminders",
-                    count = reminderNotesCount,
-                    icon = Icons.Default.Alarm,
-                    modifier = Modifier.weight(1f)
-                )
-                OverviewMetricCard(
-                    title = "Photos",
-                    count = photoNotesCount,
-                    icon = Icons.Default.AddPhotoAlternate,
-                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isSearchActive) "Close" else "Search",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium)
+                    )
+                }
+            }
+
+            // Quick in-sheet search bar
+            AnimatedVisibility(visible = isSearchActive) {
+                OutlinedTextField(
+                    value = inSheetSearchQuery,
+                    onValueChange = { inSheetSearchQuery = it },
+                    placeholder = { Text("Filter timeline...", style = MaterialTheme.typography.bodySmall) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            // Level 2: Categorization & Status Filter Chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                TimelineFilterChip(
+                    label = "All",
+                    count = totalNotesCount,
+                    icon = null,
+                    isSelected = selectedFilter == TimelineFilter.ALL,
+                    onClick = { selectedFilter = TimelineFilter.ALL }
+                )
+                TimelineFilterChip(
+                    label = "Protected",
+                    count = lockedNotesCount,
+                    icon = Icons.Default.Lock,
+                    isSelected = selectedFilter == TimelineFilter.PROTECTED,
+                    onClick = { selectedFilter = TimelineFilter.PROTECTED }
+                )
+                TimelineFilterChip(
+                    label = "Reminders",
+                    count = reminderNotesCount,
+                    icon = Icons.Default.Alarm,
+                    isSelected = selectedFilter == TimelineFilter.REMINDERS,
+                    onClick = { selectedFilter = TimelineFilter.REMINDERS }
+                )
+                TimelineFilterChip(
+                    label = "Photos",
+                    count = photoNotesCount,
+                    icon = Icons.Default.AddPhotoAlternate,
+                    isSelected = selectedFilter == TimelineFilter.PHOTOS,
+                    onClick = { selectedFilter = TimelineFilter.PHOTOS }
+                )
+            }
 
-            if (notes.isEmpty()) {
+            // Level 3: Section Title for Content Feed
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Timeline Activity (${filteredNotes.size})",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+                if (selectedFilter != TimelineFilter.ALL || inSheetSearchQuery.isNotBlank()) {
+                    Text(
+                        text = "Reset filter",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier
+                            .clickable {
+                                selectedFilter = TimelineFilter.ALL
+                                inSheetSearchQuery = ""
+                                isSearchActive = false
+                            }
+                            .padding(4.dp)
+                    )
+                }
+            }
+
+            // Level 4: Timeline Feed
+            if (filteredNotes.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 40.dp),
+                        .padding(vertical = 32.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -922,156 +1273,65 @@ fun CumulativeNotesOverviewSheet(
                         Icon(
                             imageVector = PersonaIcons.Edit,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.size(36.dp)
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(28.dp)
                         )
                         Text(
-                            text = "No notes recorded yet",
+                            text = if (notes.isEmpty()) "No notes recorded yet" else "No matching notes found",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (notes.isEmpty()) {
+                            Button(
+                                onClick = onNewNote,
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Write your first note")
+                            }
+                        }
                     }
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    groupedNotes.forEach { (dateStr, dateNotes) ->
-                        item(key = "date_$dateStr") {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.padding(bottom = 6.dp)
+                    groupedNotes.forEach { (dateLabel, dateNotes) ->
+                        item(key = "timeline_date_$dateLabel") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Schedule,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Text(
-                                        text = dateStr,
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = "• ${dateNotes.size} ${if (dateNotes.size == 1) "entry" else "entries"}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                                Text(
+                                    text = dateLabel,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.5.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "· ${dateNotes.size}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.weight(1f),
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                )
                             }
                         }
 
-                        items(dateNotes, key = { "overview_${it.id}" }) { note ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onNoteClick(note) }
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(38.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(
-                                                if (note.isLocked) MaterialTheme.colorScheme.primaryContainer
-                                                else MaterialTheme.colorScheme.surfaceVariant
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (note.isLocked) Icons.Default.Lock else PersonaIcons.Edit,
-                                            contentDescription = null,
-                                            tint = if (note.isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Text(
-                                                text = note.title.ifBlank { "Untitled" },
-                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            if (note.isLocked) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Lock,
-                                                    contentDescription = "Locked",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(13.dp)
-                                                )
-                                            }
-                                        }
-
-                                        val previewText = if (note.isLocked) "🔒 Protected note content"
-                                        else note.content.replace('\n', ' ').trim().take(50).ifBlank { "No text content" }
-
-                                        Text(
-                                            text = previewText,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-
-                                        Row(
-                                            modifier = Modifier.padding(top = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Text(
-                                                text = timeFormat.format(Date(note.updatedAt)),
-                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                                            )
-                                            if (note.reminderAt != null) {
-                                                Text(
-                                                    text = "⏰ Reminder",
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                                    color = MaterialTheme.colorScheme.primary
-                                                )
-                                            }
-                                            if (note.attachments.isNotEmpty()) {
-                                                Text(
-                                                    text = "📷 ${note.attachments.size} ${if (note.attachments.size == 1) "photo" else "photos"}",
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                                    color = MaterialTheme.colorScheme.secondary
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Icon(
-                                        imageVector = PersonaIcons.ChevronRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                        items(dateNotes, key = { "timeline_note_${it.id}" }) { note ->
+                            CompactTimelineNoteRow(
+                                note = note,
+                                timeStr = timeFormat.format(Date(note.updatedAt)),
+                                onClick = { onNoteClick(note) }
+                            )
                         }
                     }
                 }

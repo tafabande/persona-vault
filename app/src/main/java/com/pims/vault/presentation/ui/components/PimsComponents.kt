@@ -472,41 +472,53 @@ fun PimsButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isSecondary: Boolean = false,
     enabled: Boolean = true
 ) {
+    val isDark = LocalPimsDarkTheme.current
+    val containerColor = when {
+        isSecondary && isDark -> Color(0xFF20232B)
+        isSecondary && !isDark -> Color(0xFFF1F3F5)
+        isDark -> Color(0xFF2C323D)
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val contentColor = when {
+        isSecondary && isDark -> Color(0xFF94A3B8)
+        isSecondary && !isDark -> Color(0xFF4B5563)
+        isDark -> Color(0xFFF9FAFB)
+        else -> MaterialTheme.colorScheme.onPrimary
+    }
+    val borderStroke = when {
+        isSecondary && isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333846))
+        isSecondary && !isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+        isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF454E5F))
+        else -> null
+    }
+
     Button(
         onClick = onClick,
-        modifier = modifier
-            .shadow(
-                elevation = 6.dp,
-                shape = RoundedCornerShape(14.dp),
-                spotColor = PersonaAccent.copy(alpha = 0.25f)
-            ),
         enabled = enabled,
         shape = RoundedCornerShape(14.dp),
+        border = borderStroke,
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
+            containerColor = containerColor,
+            contentColor = contentColor,
+            disabledContainerColor = containerColor.copy(alpha = 0.5f),
+            disabledContentColor = contentColor.copy(alpha = 0.5f)
         ),
-        contentPadding = ButtonDefaults.ContentPadding
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
+        contentPadding = ButtonDefaults.ContentPadding,
+        modifier = modifier
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
-                        )
-                    )
-                )
                 .padding(ButtonDefaults.ContentPadding),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = text,
-                fontWeight = FontWeight.Bold,
+                fontWeight = if (isSecondary) FontWeight.Medium else FontWeight.SemiBold,
                 letterSpacing = 0.3.sp
             )
         }

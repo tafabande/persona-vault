@@ -939,15 +939,14 @@ fun MoreView(
     if (showPrivacyDialog) {
         AlertDialog(
             onDismissRequest = { showPrivacyDialog = false },
-            title = { Text("Local Cryptographic Isolation", fontWeight = FontWeight.Bold) },
+            title = { Text("Privacy & Security", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "Persona Vault is designed around zero-knowledge personal data sovereignty:\n\n" +
-                        "• Hardware TEE/StrongBox: Master keys never leave the hardware security module.\n" +
-                        "• SQLCipher Encrypted DB: All tables and indices are encrypted at rest with AES-256.\n" +
-                        "• Four-Zone Isolation: Public, Private, Sensitive, and Critical data are stored in separated cryptographic realms.\n" +
-                        "• Zero Third-Party Trackers: Zero analytical SDKs, advertising IDs, or telemetry.",
+                        "Persona Vault is designed around on-device data sovereignty:\n\n" +
+                        "• Device-first storage: Your data is stored locally on your device.\n" +
+                        "• Protected access: Biometric or PIN authentication is required to access sensitive records.\n" +
+                        "• Zero third-party trackers: No tracking SDKs, advertising IDs, or telemetry.",
                         fontSize = 13.5.sp,
                         lineHeight = 19.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

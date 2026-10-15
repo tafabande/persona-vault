@@ -302,7 +302,7 @@ fun IdMembershipListScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Save your $selectedCategory credential with zero-knowledge, encrypted protection.",
+                            text = "Add and store your $selectedCategory cards.",
                             fontSize = 13.sp,
                             color = getVaultTextSecondary(),
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center

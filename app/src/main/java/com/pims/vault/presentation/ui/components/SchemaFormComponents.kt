@@ -255,7 +255,7 @@ fun PersonaDropdownSelector(
                             tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .size(18.dp)
-                                .graphicsLayer(rotationZ = if (expanded) 180f else 0f)
+                                .graphicsLayer { rotationZ = if (expanded) 180f else 0f }
                         )
                     }
                 }
@@ -432,7 +432,7 @@ fun PersonaSearchableCombobox(
                                 tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
                                     .size(18.dp)
-                                    .graphicsLayer(rotationZ = if (expanded) 180f else 0f)
+                                    .graphicsLayer { rotationZ = if (expanded) 180f else 0f }
                             )
                         }
                     }

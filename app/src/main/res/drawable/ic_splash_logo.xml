@@ -5,31 +5,123 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Minimalist Persona Vault Shield (Clean, slender, elegant lines) -->
-    <path
-        android:strokeColor="@color/persona_splash_container"
-        android:strokeWidth="2.8"
-        android:fillColor="#00000000"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M54,23 C67,23 78,28 80,34 L80,53 C80,70 68,81 54,87 C40,81 28,70 28,53 L28,34 C30,28 41,23 54,23 Z" />
+    <!-- Cute Minimalism: Friendly, thoughtful, understated, and quietly playful -->
+    <!-- Centered strictly within 66dp safe zone (X: 21..87, Y: 21..87) -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54">
 
-    <!-- Minimalist Person Silhouette Inside -->
-    <path
-        android:strokeColor="@color/persona_splash_container"
-        android:strokeWidth="2.4"
-        android:fillColor="#00000000"
-        android:pathData="M54,36 A6,6 0 1,0 54.01,36 Z" />
+        <!-- 1. Ambient Soft Ground Shadow -->
+        <path
+            android:fillColor="#22000000"
+            android:pathData="M35,35 A7,7 0 0,1 42,28 L65,28 A7,7 0 0,1 72,35 L72,69 L61,80 L42,80 A7,7 0 0,1 35,73 Z" />
 
-    <path
-        android:strokeColor="@color/persona_splash_container"
-        android:strokeWidth="2.4"
-        android:fillColor="#00000000"
-        android:strokeLineCap="round"
-        android:pathData="M39,66 C43,56 48,55 54,55 C60,55 65,56 69,66" />
+        <!-- 2. Notepad Body: Gently Rounded Geometry with Curled Page Corner -->
+        <path
+            android:fillColor="#FAF8F5"
+            android:strokeColor="#252A31"
+            android:strokeWidth="2.8"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M33,33 A7,7 0 0,1 40,26 L63,26 A7,7 0 0,1 70,33 L70,67 L59,78 L40,78 A7,7 0 0,1 33,71 Z" />
 
-    <!-- Delicate Geometric Spark -->
-    <path
-        android:fillColor="@color/persona_splash_container"
-        android:pathData="M82,18 L83.5,22.5 L88,24 L83.5,25.5 L82,30 L80.5,25.5 L76,24 L80.5,22.5 Z" />
+        <!-- 3. Expressive Feature: Gently Curled Bottom-Right Page Corner -->
+        <path
+            android:fillColor="#E8DFD1"
+            android:strokeColor="#252A31"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M59,78 L59,70 A3,3 0 0,1 62,67 L70,67 Z" />
+
+        <!-- 4. Cute Rounded Binding Tabs (Warm Terracotta Accent) -->
+        <path
+            android:fillColor="#E07A5F"
+            android:strokeColor="#252A31"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M28,36 A3.5,3.5 0 0,1 28,43 L34,43 A1,1 0 0,0 34,36 Z" />
+
+        <path
+            android:fillColor="#E07A5F"
+            android:strokeColor="#252A31"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M28,48 A3.5,3.5 0 0,1 28,55 L34,55 A1,1 0 0,0 34,48 Z" />
+
+        <path
+            android:fillColor="#E07A5F"
+            android:strokeColor="#252A31"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M28,60 A3.5,3.5 0 0,1 28,67 L34,67 A1,1 0 0,0 34,60 Z" />
+
+        <!-- 5. Understated Ruled Note Lines with Rounded Caps -->
+        <path
+            android:strokeColor="#CCD2DB"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M41,38 L57,38" />
+
+        <path
+            android:strokeColor="#CCD2DB"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M41,47 L62,47" />
+
+        <path
+            android:strokeColor="#CCD2DB"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M41,56 L53,56" />
+
+        <!-- 6. Expressive Feature: Pencil/Pen Caught Mid-Scribble with a Joyful Little Loop -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#E07A5F"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M52,71 C48,74 44,72 44,69 C44,66 47,65 49,67 C51,69 50,73 45,75" />
+
+        <!-- 7. Cute Chubby Pen Resting Casually at Approachable Angle -->
+        <!-- Pen Drop Shadow -->
+        <path
+            android:fillColor="#22000000"
+            android:pathData="M58,72 L75,55 A3.5,3.5 0 0,1 80,60 L63,77 Z" />
+
+        <!-- Pen Barrel (Warm Terracotta Accent) -->
+        <path
+            android:fillColor="#E07A5F"
+            android:strokeColor="#252A31"
+            android:strokeWidth="2.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M56,70 L73,53 A3.5,3.5 0 0,1 78,58 L61,75 Z" />
+
+        <!-- Pen Nib Section -->
+        <path
+            android:fillColor="#FAF8F5"
+            android:strokeColor="#252A31"
+            android:strokeWidth="2.4"
+            android:strokeLineJoin="round"
+            android:pathData="M56,70 L51,74 L61,75 Z" />
+
+        <!-- Pen Nib Point Accent -->
+        <path
+            android:strokeColor="#252A31"
+            android:strokeWidth="1.8"
+            android:strokeLineCap="round"
+            android:pathData="M52,73 L50,75" />
+
+        <!-- Pen Cap Clip (Quietly Playful) -->
+        <path
+            android:strokeColor="#252A31"
+            android:strokeWidth="2.4"
+            android:strokeLineCap="round"
+            android:pathData="M74,52 L69,57" />
+
+    </group>
 </vector>

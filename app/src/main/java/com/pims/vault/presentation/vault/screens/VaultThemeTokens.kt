@@ -61,10 +61,10 @@ object VaultDesignTokens {
     val TextSecondaryDark = Color(0xFF9CA3AF)
 
     val PillButtonLight = Color(0xFF18181B)
-    val PillButtonDark = Color(0xFFFFFFFF)
+    val PillButtonDark = Color(0xFF2C323D)
 
     val PillTextLight = Color(0xFFFFFFFF)
-    val PillTextDark = Color(0xFF18181B)
+    val PillTextDark = Color(0xFFF9FAFB)
 
     // Card background brand gradients
     val CardDebit = Color(0xFF1A5336)
@@ -184,26 +184,51 @@ fun VaultTopBar(
 }
 
 /**
- * Full-width Black Pill Action Button (Save, Edit, Copy remaining).
+ * Full-width Pill Action Button with distinct primary and secondary styles.
+ * Primary is solid, clear, and calm (never glaring or eye-straining).
+ * Secondary is subtly bordered and subdued.
  */
 @Composable
 fun VaultPillActionButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isSecondary: Boolean = false,
     leadingDot: Boolean = false,
     enabled: Boolean = true
 ) {
+    val isDark = LocalPimsDarkTheme.current
+    val containerColor = when {
+        isSecondary && isDark -> Color(0xFF20232B)
+        isSecondary && !isDark -> Color(0xFFF1F3F5)
+        isDark -> VaultDesignTokens.PillButtonDark
+        else -> VaultDesignTokens.PillButtonLight
+    }
+    val contentColor = when {
+        isSecondary && isDark -> Color(0xFF94A3B8)
+        isSecondary && !isDark -> Color(0xFF4B5563)
+        isDark -> VaultDesignTokens.PillTextDark
+        else -> VaultDesignTokens.PillTextLight
+    }
+    val borderStroke = when {
+        isSecondary && isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333846))
+        isSecondary && !isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+        isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF454E5F))
+        else -> null
+    }
+
     Button(
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(26.dp),
+        border = borderStroke,
         colors = ButtonDefaults.buttonColors(
-            containerColor = getVaultPillButtonColor(),
-            contentColor = getVaultPillTextColor(),
-            disabledContainerColor = getVaultPillButtonColor().copy(alpha = 0.4f),
-            disabledContentColor = getVaultPillTextColor().copy(alpha = 0.5f)
+            containerColor = containerColor,
+            contentColor = contentColor,
+            disabledContainerColor = containerColor.copy(alpha = 0.4f),
+            disabledContentColor = contentColor.copy(alpha = 0.5f)
         ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
         modifier = modifier
             .fillMaxWidth()
             .height(52.dp)
@@ -214,14 +239,14 @@ fun VaultPillActionButton(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(getVaultPillTextColor())
+                        .background(contentColor)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Text(
                 text = text,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = if (isSecondary) FontWeight.Medium else FontWeight.SemiBold
             )
         }
     }

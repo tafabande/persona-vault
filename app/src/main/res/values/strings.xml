@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Persona</string>
+
+    <!-- Quick Actions Widget -->
+    <string name="widget_quick_actions_label">Persona Actions</string>
+    <string name="widget_quick_actions_description">Quick access to Documents, People, Vault, and Notes</string>
+    <string name="widget_action_documents">Documents</string>
+    <string name="widget_action_documents_desc">Open documents and file import</string>
+    <string name="widget_action_people">People</string>
+    <string name="widget_action_people_desc">Open people directory and kinship</string>
+    <string name="widget_action_vault">Vault</string>
+    <string name="widget_action_vault_desc">Unlock and open security vault</string>
+    <string name="widget_action_notes">Notes</string>
+    <string name="widget_action_notes_desc">Create or view encrypted notes</string>
 </resources>

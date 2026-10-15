@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,11 +26,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,51 +93,38 @@ fun PimsVaultSplashScreen() {
                 .background(bgColor),
             contentAlignment = Alignment.Center
         ) {
-            // Subtle ambient halo behind the logo
-            Box(
-                modifier = Modifier
-                    .size(220.dp)
-                    .scale(pulseAnim.value)
-                    .alpha(alphaAnim.value * if (isDark) 0.18f else 0.25f)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                primaryColor,
-                                primaryColor.copy(alpha = 0.4f),
-                                Color.Transparent
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-            )
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
-                modifier = Modifier
-                    .scale(scaleAnim.value)
-                    .alpha(alphaAnim.value)
+                modifier = Modifier.graphicsLayer {
+                    scaleX = scaleAnim.value
+                    scaleY = scaleAnim.value
+                    alpha = alphaAnim.value
+                }
             ) {
-                // Persona Minimalist Brand Emblem
+                // Persona Minimalist Brand Emblem (Vector-Scaled for All Densities)
                 Box(
                     modifier = Modifier
-                        .size(72.dp)
-                        .clip(RoundedCornerShape(22.dp))
+                        .size(96.dp)
+                        .clip(RoundedCornerShape(28.dp))
                         .background(
-                            color = primaryColor.copy(alpha = if (isDark) 0.15f else 0.08f)
+                            color = if (isDark) Color(0xFF1E2228) else Color(0xFFF1F3F5)
                         )
                         .border(
                             width = 1.dp,
-                            color = primaryColor.copy(alpha = if (isDark) 0.35f else 0.20f),
-                            shape = RoundedCornerShape(22.dp)
+                            color = if (isDark) Color(0xFF2E343E) else Color(0xFFE2E5E9),
+                            shape = RoundedCornerShape(28.dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    androidx.compose.material3.Icon(
+                    androidx.compose.foundation.Image(
                         painter = androidx.compose.ui.res.painterResource(id = com.pims.vault.R.drawable.ic_splash_logo),
                         contentDescription = "Persona Logo",
-                        tint = primaryColor,
-                        modifier = Modifier.size(44.dp)
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp)
                     )
                 }
 
@@ -148,7 +136,9 @@ fun PimsVaultSplashScreen() {
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 3.sp,
-                    modifier = Modifier.alpha(textAlphaAnim.value)
+                    modifier = Modifier.graphicsLayer {
+                        alpha = textAlphaAnim.value
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -159,7 +149,9 @@ fun PimsVaultSplashScreen() {
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = 0.5.sp,
-                    modifier = Modifier.alpha(textAlphaAnim.value)
+                    modifier = Modifier.graphicsLayer {
+                        alpha = textAlphaAnim.value
+                    }
                 )
             }
         }

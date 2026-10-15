@@ -5,32 +5,87 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Minimalist Persona Vault Shield (Clean, elegant, lightweight stroke) -->
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2.8"
-        android:fillColor="#00000000"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M54,23 C67,23 78,28 80,34 L80,53 C80,70 68,81 54,87 C40,81 28,70 28,53 L28,34 C30,28 41,23 54,23 Z" />
+    <!-- Cute Minimalism: Monochrome First for Material You dynamic theming -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54">
 
-    <!-- Minimalist Person Head -->
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2.4"
-        android:fillColor="#00000000"
-        android:pathData="M54,36 A6,6 0 1,0 54.01,36 Z" />
+        <!-- 1. Notepad Body -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:strokeColor="#00000000"
+            android:pathData="M33,33 A7,7 0 0,1 40,26 L63,26 A7,7 0 0,1 70,33 L70,67 L59,78 L40,78 A7,7 0 0,1 33,71 Z" />
 
-    <!-- Minimalist Person Shoulders -->
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2.4"
-        android:fillColor="#00000000"
-        android:strokeLineCap="round"
-        android:pathData="M39,66 C43,56 48,55 54,55 C60,55 65,56 69,66" />
+        <!-- 2. Expressive Curled Page Corner (Contrasting Silhouette) -->
+        <path
+            android:fillColor="#B3000000"
+            android:pathData="M59,78 L59,70 A3,3 0 0,1 62,67 L70,67 Z" />
 
-    <!-- Delicate Geometric Spark -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M82,18 L83.5,22.5 L88,24 L83.5,25.5 L82,30 L80.5,25.5 L76,24 L80.5,22.5 Z" />
+        <!-- 3. Cute Binding Loops -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:strokeColor="#B3000000"
+            android:strokeWidth="1.8"
+            android:pathData="M28,36 A3.5,3.5 0 0,1 28,43 L34,43 A1,1 0 0,0 34,36 Z" />
+
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:strokeColor="#B3000000"
+            android:strokeWidth="1.8"
+            android:pathData="M28,48 A3.5,3.5 0 0,1 28,55 L34,55 A1,1 0 0,0 34,48 Z" />
+
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:strokeColor="#B3000000"
+            android:strokeWidth="1.8"
+            android:pathData="M28,60 A3.5,3.5 0 0,1 28,67 L34,67 A1,1 0 0,0 34,60 Z" />
+
+        <!-- 4. Understated Note Lines -->
+        <path
+            android:strokeColor="#66000000"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M41,38 L57,38" />
+
+        <path
+            android:strokeColor="#66000000"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M41,47 L62,47" />
+
+        <path
+            android:strokeColor="#66000000"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M41,56 L53,56" />
+
+        <!-- 5. Expressive Mid-Scribble Loop -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#E6000000"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M52,71 C48,74 44,72 44,69 C44,66 47,65 49,67 C51,69 50,73 45,75" />
+
+        <!-- 6. Cute Chubby Pen -->
+        <!-- Pen Barrel -->
+        <path
+            android:fillColor="#E6000000"
+            android:pathData="M56,70 L73,53 A3.5,3.5 0 0,1 78,58 L61,75 Z" />
+
+        <!-- Pen Nib Section -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:strokeColor="#E6000000"
+            android:strokeWidth="2.0"
+            android:pathData="M56,70 L51,74 L61,75 Z" />
+
+        <!-- Pen Clip -->
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M74,52 L69,57" />
+
+    </group>
 </vector>

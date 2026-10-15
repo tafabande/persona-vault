@@ -47,6 +47,9 @@ class ThemeManager @Inject constructor(
         synchronized(lock) {
             sharedThemeFlow?.value = mode
         }
+        try {
+            com.pims.vault.presentation.widget.PersonaQuickActionsWidgetProvider.updateAllWidgets(context)
+        } catch (_: Exception) {}
     }
 
     companion object {

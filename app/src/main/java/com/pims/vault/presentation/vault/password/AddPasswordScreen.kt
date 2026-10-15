@@ -393,7 +393,7 @@ fun AddPasswordScreen(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Cryptographic Generator",
+                                        text = "Password Generator",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         color = textPrimary

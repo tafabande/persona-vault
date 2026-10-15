@@ -1448,7 +1448,7 @@ private fun GooglePasswordsSection(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (passwordItems.isEmpty()) "No credentials saved yet" else "${passwordItems.size} passwords secured with hardware encryption",
+                            text = if (passwordItems.isEmpty()) "No credentials saved" else "${passwordItems.size} passwords monitored",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1617,9 +1617,9 @@ private fun PasswordCheckupModal(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = if (passwordCount > 0)
-                        "All $passwordCount saved credentials in your vault are secured with hardware-backed AES-256-GCM encryption and local-first cloud backup."
+                        "$passwordCount saved credentials in your vault."
                     else
-                        "No credentials stored yet. Add passwords to your vault to monitor breach exposures and safeguard your accounts.",
+                        "No credentials stored yet.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1671,6 +1671,7 @@ private fun PasswordCheckupModal(
                     PimsButton(
                         text = "CLOSE",
                         onClick = onDismiss,
+                        isSecondary = true,
                         modifier = Modifier.weight(1f)
                     )
                     PimsButton(
@@ -1723,7 +1724,7 @@ private fun PasskeyInfoModal(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Passkeys replace passwords with biometric cryptographic keys stored in your device's Secure Enclave. Sign-in is seamless, phishing-proof, and unlocked with your biometric screen lock.",
+                    text = "Passkeys let you sign in quickly and securely using your screen lock or biometrics.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -2150,7 +2151,7 @@ internal fun GoogleWalletMainScreen(
                                 imageVector = Icons.Default.Wifi,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp).graphicsLayer(rotationZ = 90f)
+                                modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = 90f }
                             )
                             Text(
                                 text = "Hold to reader",
@@ -3020,7 +3021,7 @@ private fun BankingSection(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "${bankItems.size} account(s) encrypted with AES-256-GCM hardware keys with instant copy for transfer details.",
+                            text = "${bankItems.size} account(s) saved",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -4821,7 +4822,7 @@ private fun VaultItemDetailDialog(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                PimsButton(text = "CLOSE", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+                PimsButton(text = "CLOSE", onClick = onDismiss, isSecondary = true, modifier = Modifier.fillMaxWidth())
             }
         }
     }
@@ -5046,7 +5047,7 @@ private fun VaultEditorDialog(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                PimsButton(text = "CANCEL", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+                PimsButton(text = "CANCEL", onClick = onDismiss, isSecondary = true, modifier = Modifier.fillMaxWidth())
             }
         }
     }

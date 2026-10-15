@@ -84,8 +84,8 @@ enum class PersonaIconSize(val dp: Dp) {
 object PersonaIcons {
     // Filled = selected/active. Outlined = unselected/idle.
     // Naming preserved; no new icon library introduced.
-    val Vault: ImageVector = Icons.Default.Shield
-    val VaultOutlined: ImageVector = Icons.Outlined.Shield
+    val Vault: ImageVector = Icons.Default.Description
+    val VaultOutlined: ImageVector = Icons.Outlined.Description
     val Lock: ImageVector = Icons.Default.Lock
     val LockOutlined: ImageVector = Icons.Outlined.Lock
     val Key: ImageVector = Icons.Default.Key
@@ -144,6 +144,29 @@ object PersonaIcons {
     /** Returns filled icon when selected, outlined when idle. Falls back to filled if no outlined variant. */
     fun navIcon(selected: Boolean, filled: ImageVector, outlined: ImageVector): ImageVector =
         if (selected) filled else outlined
+
+    // Cute Minimalist Vector Resources (Used across Widget and In-App Hub)
+    @androidx.annotation.DrawableRes val CuteDocumentsRes: Int = com.pims.vault.R.drawable.ic_persona_documents
+    @androidx.annotation.DrawableRes val CutePeopleRes: Int = com.pims.vault.R.drawable.ic_persona_people
+    @androidx.annotation.DrawableRes val CuteVaultRes: Int = com.pims.vault.R.drawable.ic_persona_vault
+    @androidx.annotation.DrawableRes val CuteNotesRes: Int = com.pims.vault.R.drawable.ic_persona_notes
+}
+
+@Composable
+fun CutePersonaIcon(
+    @androidx.annotation.DrawableRes resId: Int,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    size: PersonaIconSize = PersonaIconSize.Medium,
+    tint: Color? = null
+) {
+    val targetTint = tint ?: LocalContentColor.current
+    Icon(
+        painter = androidx.compose.ui.res.painterResource(id = resId),
+        contentDescription = contentDescription,
+        modifier = modifier.size(size.dp),
+        tint = targetTint
+    )
 }
 
 @Composable
@@ -212,18 +235,18 @@ fun PersonaBrandEmblem(
     size: Dp = 72.dp,
     iconSize: PersonaIconSize = PersonaIconSize.Hero
 ) {
+    val isDark = LocalPimsDarkTheme.current
     Surface(
         modifier = modifier.size(size),
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        color = if (isDark) Color(0xFF1E2228) else Color(0xFFF1F3F5),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF2E343E) else Color(0xFFE2E5E9))
     ) {
         Box(contentAlignment = Alignment.Center) {
-            PersonaIcon(
-                imageVector = PersonaIcons.Vault,
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.pims.vault.R.drawable.ic_splash_logo),
                 contentDescription = "Persona Emblem",
-                size = iconSize,
-                tint = MaterialTheme.colorScheme.primary
+                modifier = Modifier.size(size * 0.72f)
             )
         }
     }
