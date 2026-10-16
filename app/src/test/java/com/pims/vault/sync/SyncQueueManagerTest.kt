@@ -47,8 +47,8 @@ class SyncQueueManagerTest {
         }
         Mockito.`when`(syncConflictDao.getUnresolvedCountFlow()).thenReturn(flowOf(0))
         Mockito.`when`(syncConflictDao.getUnresolvedConflictsFlow()).thenReturn(flowOf(emptyList()))
-        Mockito.`when`(networkMonitor.networkState).thenReturn(flowOf(NetworkState.ONLINE))
-        Mockito.`when`(networkMonitor.isCurrentlyConnected()).thenReturn(true)
+        Mockito.`when`(networkMonitor.networkState).thenReturn(flowOf(NetworkState.OFFLINE))
+        Mockito.`when`(networkMonitor.isCurrentlyConnected()).thenReturn(false)
 
         syncQueueManager = SyncQueueManager(
             syncQueueDao = syncQueueDao,
