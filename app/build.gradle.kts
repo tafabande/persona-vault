@@ -68,12 +68,11 @@ android {
     }
 
     signingConfigs {
-        create("debugConfig") {
-            val rootKeystore = file("${rootDir}/debug.keystore")
-            storeFile = if (rootKeystore.exists()) rootKeystore else file("${System.getProperty("user.home")}/.android/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        val rootKeystore = file("${rootDir}/debug.keystore")
+        getByName("debug") {
+            if (rootKeystore.exists()) {
+                storeFile = rootKeystore
+            }
         }
 
         val releaseKeystorePath = resolveSecret("RELEASE_KEYSTORE_PATH")
@@ -93,7 +92,7 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             buildConfigField("Boolean", "IS_DEBUG_CRYPTO_ALLOWED", "true")
             buildConfigField("Boolean", "ENABLE_STRICT_SECURITY_LOGS", "true")
@@ -101,7 +100,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debugConfig")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
