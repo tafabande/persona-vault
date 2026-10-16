@@ -415,13 +415,13 @@ fun PimsOutlinedInput(
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
             singleLine = singleLine,
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(12.dp),
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.20f),
                 cursorColor = MaterialTheme.colorScheme.primary,
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface
@@ -447,23 +447,14 @@ fun PimsCard(
     content: @Composable () -> Unit
 ) {
     val isDark = LocalPimsDarkTheme.current
+    val surfaceColor = if (isDark) com.pims.vault.presentation.ui.theme.DarkSurfaceGrouped else MaterialTheme.colorScheme.surface
     Surface(
-        modifier = modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = shape,
-                ambientColor = if (isDark) Color.Black.copy(alpha = 0.35f) else PersonaAccent.copy(alpha = 0.04f),
-                spotColor = if (isDark) Color.Black.copy(alpha = 0.40f) else PersonaAccent.copy(alpha = 0.08f)
-            ),
+        modifier = modifier.fillMaxWidth(),
         shape = shape,
-        color = Color.Transparent,
-        border = pimsGlassMicroBorder(isDark = isDark)
+        color = surfaceColor,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     ) {
-        Box(
-            modifier = Modifier.background(brush = pimsGlassSurfaceBrush(isDark = isDark))
-        ) {
-            content()
-        }
+        content()
     }
 }
 

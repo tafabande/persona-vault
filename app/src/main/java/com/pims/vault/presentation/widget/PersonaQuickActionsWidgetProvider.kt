@@ -106,6 +106,24 @@ class PersonaQuickActionsWidgetProvider : AppWidgetProvider() {
             val pendingNotes = createActionPendingIntent(context, ACTION_NOTES, REQUEST_CODE_NOTES)
             views.setOnClickPendingIntent(R.id.widget_action_notes, pendingNotes)
 
+            // Optional theme / wallpaper customization for widget surface
+            try {
+                val widgetPrefs = context.getSharedPreferences("persona_widget_prefs", Context.MODE_PRIVATE)
+                val bgType = widgetPrefs.getString("widget_bg_type", null)
+                if (bgType == "GENERATIVE_ARTWORK") {
+                    val seed = widgetPrefs.getInt("widget_bg_seed", 0)
+                    val color = when (seed) {
+                        1 -> 0xFF0F172A.toInt() // Deep Lake
+                        2 -> 0xFF431407.toInt() // Terracotta
+                        3 -> 0xFF022C22.toInt() // Forest Green
+                        else -> 0xFF18181B.toInt()
+                    }
+                    views.setInt(R.id.widget_root, "setBackgroundColor", color)
+                } else if (bgType == "LOCAL_IMAGE") {
+                    views.setInt(R.id.widget_root, "setBackgroundColor", 0xEE18181B.toInt())
+                }
+            } catch (_: Exception) {}
+
             return views
         }
     }

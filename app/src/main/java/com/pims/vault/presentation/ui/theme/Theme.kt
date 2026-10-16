@@ -239,9 +239,37 @@ val PimsTypography = Typography(
     )
 )
 
+@androidx.compose.runtime.Immutable
+data class PimsTonalSurfaces(
+    val canvas: Color,
+    val grouped: Color,
+    val elevated: Color,
+    val selected: Color,
+    val borderSubtle: Color
+) {
+    val surfaceGrouped: Color get() = grouped
+    val surfaceElevated: Color get() = elevated
+    val surfaceSelected: Color get() = selected
+}
+
 val LocalPimsDarkTheme = staticCompositionLocalOf { false }
 val LocalPersonaMood = staticCompositionLocalOf { PersonaMood.WARM }
 val LocalPersonaBackground = staticCompositionLocalOf { Color(0xFFF7F5F0) }
+val LocalPimsTonalSurfaces = staticCompositionLocalOf {
+    PimsTonalSurfaces(
+        canvas = LightCanvas,
+        grouped = LightSurfaceGrouped,
+        elevated = LightSurfaceElevated,
+        selected = LightSurfaceSelected,
+        borderSubtle = LightBorderSubtle
+    )
+}
+
+object PimsTheme {
+    val tonalSurfaces: PimsTonalSurfaces
+        @Composable
+        get() = LocalPimsTonalSurfaces.current
+}
 
 /**
  * Creates dynamic Material3 color scheme reflecting the active PersonaMood.
@@ -333,8 +361,8 @@ fun animatedPersonaColorScheme(
             outlineVariant = outline,
             surfaceTint = Color.Transparent,
             surfaceContainer = surface,
-            surfaceContainerHigh = surface,
-            surfaceContainerHighest = surfaceVariant,
+            surfaceContainerHigh = surfaceVariant,
+            surfaceContainerHighest = if (mood == PersonaMood.MONOCHROME) DarkSurfaceSelected else surfaceVariant,
             surfaceContainerLow = surface,
             surfaceContainerLowest = background,
             surfaceDim = surface,
@@ -366,10 +394,10 @@ fun animatedPersonaColorScheme(
             outlineVariant = outline,
             surfaceTint = Color.Transparent,
             surfaceContainer = surface,
-            surfaceContainerHigh = surface,
-            surfaceContainerHighest = surfaceVariant,
+            surfaceContainerHigh = surfaceVariant,
+            surfaceContainerHighest = LightSurfaceSelected,
             surfaceContainerLow = surface,
-            surfaceContainerLowest = surface,
+            surfaceContainerLowest = background,
             surfaceDim = surfaceVariant,
             surfaceBright = surface,
             error = StateError,
@@ -404,11 +432,40 @@ fun PimsVaultTheme(
     val bgTarget = if (isDark) mood.darkBackgroundColor else mood.backgroundColor
     val animatedBackground by androidx.compose.animation.animateColorAsState(bgTarget, colorSpec, label = "localBackground")
 
+    val tonalSurfaces = if (isDark) {
+        if (mood == PersonaMood.MONOCHROME) {
+            PimsTonalSurfaces(
+                canvas = DarkCanvas,
+                grouped = DarkSurfaceGrouped,
+                elevated = DarkSurfaceElevated,
+                selected = DarkSurfaceSelected,
+                borderSubtle = DarkBorderSubtle
+            )
+        } else {
+            PimsTonalSurfaces(
+                canvas = mood.darkBackgroundColor,
+                grouped = mood.darkSurfaceColor,
+                elevated = mood.darkSurfaceVariantColor,
+                selected = DarkSurfaceSelected,
+                borderSubtle = mood.darkDividerColor.copy(alpha = 0.5f)
+            )
+        }
+    } else {
+        PimsTonalSurfaces(
+            canvas = mood.backgroundColor,
+            grouped = mood.surfaceColor,
+            elevated = mood.surfaceVariantColor,
+            selected = LightSurfaceSelected,
+            borderSubtle = mood.dividerColor.copy(alpha = 0.5f)
+        )
+    }
+
     CompositionLocalProvider(
         LocalPimsDarkTheme provides isDark,
         LocalPersonaMood provides mood,
         LocalReducedMotion provides isReducedMotion,
-        LocalPersonaBackground provides animatedBackground
+        LocalPersonaBackground provides animatedBackground,
+        LocalPimsTonalSurfaces provides tonalSurfaces
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

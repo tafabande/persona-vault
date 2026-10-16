@@ -299,36 +299,44 @@ fun PersonDetailScreen(
                 }
 
                 // Trusted Contact Toggle Chip
+                val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
                 Surface(
                     shape = RoundedCornerShape(20.dp),
-                    color = if (person.isNextOfKin) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    color = if (person.isNextOfKin) tonalSurfaces.surfaceSelected else tonalSurfaces.surfaceGrouped,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (person.isNextOfKin) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else tonalSurfaces.borderSubtle
+                    ),
                     modifier = Modifier.clickable {
                         haptics.selection()
                         onToggleTrusted(!person.isNextOfKin)
                     }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
                             imageVector = PersonaIcons.Success,
                             contentDescription = null,
-                            tint = if (person.isNextOfKin) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
+                            tint = if (person.isNextOfKin) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
                         )
                         Text(
                             text = if (person.isNextOfKin) "Trusted Contact" else "Mark as Trusted Contact",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (person.isNextOfKin) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (person.isNextOfKin) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // CONTACT DETAILS SECTION
+                // UNIFIED CONTACT DETAILS TONAL GROUP
+                val hasContactInfo = person.phone.isNotBlank() || person.email.isNotBlank() ||
+                    person.address.isNotBlank() || person.dateOfBirth.isNotBlank() || person.anniversary.isNotBlank()
+
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -339,76 +347,106 @@ fun PersonDetailScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    if (person.phone.isNotBlank()) {
-                        DetailRowItem(
-                            icon = PersonaIcons.Phone,
-                            title = person.phone,
-                            subtitle = "Phone • Tap to call",
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${person.phone}"))
-                                context.startActivity(intent)
-                            }
-                        )
-                    }
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = tonalSurfaces.surfaceGrouped,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column {
+                            var itemIndex = 0
 
-                    if (person.email.isNotBlank()) {
-                        DetailRowItem(
-                            icon = PersonaIcons.Email,
-                            title = person.email,
-                            subtitle = "Email • Tap to send",
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${person.email}"))
-                                context.startActivity(intent)
+                            if (person.phone.isNotBlank()) {
+                                if (itemIndex > 0) {
+                                    HorizontalDivider(color = tonalSurfaces.borderSubtle, modifier = Modifier.padding(horizontal = 14.dp))
+                                }
+                                DetailRowItem(
+                                    icon = PersonaIcons.Phone,
+                                    value = person.phone,
+                                    label = "Phone",
+                                    onClick = {
+                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${person.phone}"))
+                                        context.startActivity(intent)
+                                    }
+                                )
+                                itemIndex++
                             }
-                        )
-                    }
 
-                    if (person.address.isNotBlank()) {
-                        DetailRowItem(
-                            icon = PersonaIcons.Home,
-                            title = person.address,
-                            subtitle = "Address",
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Address", person.address))
-                                Toast.makeText(context, "Address copied", Toast.LENGTH_SHORT).show()
+                            if (person.email.isNotBlank()) {
+                                if (itemIndex > 0) {
+                                    HorizontalDivider(color = tonalSurfaces.borderSubtle, modifier = Modifier.padding(horizontal = 14.dp))
+                                }
+                                DetailRowItem(
+                                    icon = PersonaIcons.Email,
+                                    value = person.email,
+                                    label = "Email",
+                                    onClick = {
+                                        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${person.email}"))
+                                        context.startActivity(intent)
+                                    }
+                                )
+                                itemIndex++
                             }
-                        )
-                    }
 
-                    if (person.dateOfBirth.isNotBlank()) {
-                        DetailRowItem(
-                            icon = PersonaIcons.Calendar,
-                            title = person.dateOfBirth,
-                            subtitle = "Date of Birth • Tap to copy",
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Date of Birth", person.dateOfBirth))
-                                Toast.makeText(context, "Date of birth copied", Toast.LENGTH_SHORT).show()
+                            if (person.address.isNotBlank()) {
+                                if (itemIndex > 0) {
+                                    HorizontalDivider(color = tonalSurfaces.borderSubtle, modifier = Modifier.padding(horizontal = 14.dp))
+                                }
+                                DetailRowItem(
+                                    icon = PersonaIcons.Home,
+                                    value = person.address,
+                                    label = "Address",
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Address", person.address))
+                                        Toast.makeText(context, "Address copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                                itemIndex++
                             }
-                        )
-                    }
 
-                    if (person.anniversary.isNotBlank()) {
-                        DetailRowItem(
-                            icon = PersonaIcons.Calendar,
-                            title = person.anniversary,
-                            subtitle = "Anniversary • Tap to copy",
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Anniversary", person.anniversary))
-                                Toast.makeText(context, "Anniversary copied", Toast.LENGTH_SHORT).show()
+                            if (person.dateOfBirth.isNotBlank()) {
+                                if (itemIndex > 0) {
+                                    HorizontalDivider(color = tonalSurfaces.borderSubtle, modifier = Modifier.padding(horizontal = 14.dp))
+                                }
+                                DetailRowItem(
+                                    icon = PersonaIcons.Calendar,
+                                    value = person.dateOfBirth,
+                                    label = "Date of Birth",
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Date of Birth", person.dateOfBirth))
+                                        Toast.makeText(context, "Date of birth copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                                itemIndex++
                             }
-                        )
-                    }
 
-                    if (person.phone.isBlank() && person.email.isBlank() && person.address.isBlank()) {
-                        DetailRowItem(
-                            icon = PersonaIcons.Add,
-                            title = "Add contact info",
-                            subtitle = "Phone, email, or address",
-                            onClick = { onEditPerson(person) }
-                        )
+                            if (person.anniversary.isNotBlank()) {
+                                if (itemIndex > 0) {
+                                    HorizontalDivider(color = tonalSurfaces.borderSubtle, modifier = Modifier.padding(horizontal = 14.dp))
+                                }
+                                DetailRowItem(
+                                    icon = PersonaIcons.Calendar,
+                                    value = person.anniversary,
+                                    label = "Anniversary",
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Anniversary", person.anniversary))
+                                        Toast.makeText(context, "Anniversary copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                                itemIndex++
+                            }
+
+                            if (!hasContactInfo) {
+                                DetailRowItem(
+                                    icon = PersonaIcons.Add,
+                                    value = "Add contact info",
+                                    label = "Phone, email, or address",
+                                    onClick = { onEditPerson(person) }
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -436,38 +474,32 @@ fun PersonDetailScreen(
 
                 // Fallback note snippet from person record if no structured notes yet
                 if (relationshipNotes.isEmpty() && person.notes.isNotBlank()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = tonalSurfaces.surfaceGrouped,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "Additional Info",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = person.notes,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Additional Notes",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = person.notes,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Bottom actions
-                Button(
-                    onClick = { onEditPerson(person) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("Edit Contact Details")
-                }
-
+                // Bottom actions: edit is in top app bar, only quiet remove button here
                 TextButton(
                     onClick = { showDeleteConfirmDialog = true },
                     colors = ButtonDefaults.textButtonColors(contentColor = StateError)
@@ -633,53 +665,38 @@ fun PersonDetailScreen(
 @Composable
 private fun DetailRowItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
+    value: String,
+    label: String,
     onClick: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp, horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
 
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (label.isNotBlank()) {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = subtitle,
+                    text = label,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-            thickness = 0.5.dp
-        )
     }
 }

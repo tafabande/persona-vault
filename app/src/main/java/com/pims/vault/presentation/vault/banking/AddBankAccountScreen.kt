@@ -265,75 +265,159 @@ fun AddBankAccountScreen(
                 }
             }
 
+            // Account Classification Selector
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                CleanBankTextField(
-                    value = accountType,
-                    onValueChange = { accountType = it },
-                    label = "Account Classification / Type *",
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        keyboardType = KeyboardType.Text
-                    )
+                Text(
+                    text = "Account Classification *",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                val standardTypes = remember { listOf("Checking", "Savings", "Local Account", "Nostro / USD", "Business", "Fixed Deposit") }
+                var showCustomType by remember { mutableStateOf(accountType.isNotBlank() && accountType !in standardTypes) }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("Checking", "Savings", "Local Account", "Nostro / USD", "Business", "Fixed Deposit").forEach { preset ->
-                        val isSelected = accountType.equals(preset, ignoreCase = true)
+                    standardTypes.forEach { preset ->
+                        val isSelected = !showCustomType && accountType.equals(preset, ignoreCase = true)
+                        val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier.clickable { accountType = preset }
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) tonalSurfaces.surfaceSelected else tonalSurfaces.surfaceGrouped,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else tonalSurfaces.borderSubtle
+                            ),
+                            modifier = Modifier.clickable {
+                                showCustomType = false
+                                accountType = preset
+                            }
                         ) {
                             Text(
                                 text = preset,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                             )
                         }
                     }
+                    val isCustomSelected = showCustomType || (accountType.isNotBlank() && accountType !in standardTypes)
+                    val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isCustomSelected) tonalSurfaces.surfaceSelected else tonalSurfaces.surfaceGrouped,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isCustomSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else tonalSurfaces.borderSubtle
+                        ),
+                        modifier = Modifier.clickable {
+                            showCustomType = true
+                            if (accountType in standardTypes) accountType = ""
+                        }
+                    ) {
+                        Text(
+                            text = "Other…",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isCustomSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isCustomSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+
+                if (showCustomType) {
+                    CleanBankTextField(
+                        value = accountType,
+                        onValueChange = { accountType = it },
+                        label = "Custom Classification *",
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Words,
+                            keyboardType = KeyboardType.Text
+                        )
+                    )
                 }
             }
 
+            // Currency Selector
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                CleanBankTextField(
-                    value = currency,
-                    onValueChange = { currency = it.uppercase() },
-                    label = "Account Currency *",
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Characters,
-                        keyboardType = KeyboardType.Text
-                    )
+                Text(
+                    text = "Account Currency *",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                val standardCurrencies = remember { listOf("USD", "ZWG", "EUR", "GBP", "ZAR", "AUD", "CAD") }
+                var showCustomCurrency by remember { mutableStateOf(currency.isNotBlank() && currency !in standardCurrencies) }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("USD", "ZWG", "EUR", "GBP", "ZAR", "AUD", "CAD").forEach { curr ->
-                        val isSelected = currency.equals(curr, ignoreCase = true)
+                    standardCurrencies.forEach { curr ->
+                        val isSelected = !showCustomCurrency && currency.equals(curr, ignoreCase = true)
+                        val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier.clickable { currency = curr }
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) tonalSurfaces.surfaceSelected else tonalSurfaces.surfaceGrouped,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else tonalSurfaces.borderSubtle
+                            ),
+                            modifier = Modifier.clickable {
+                                showCustomCurrency = false
+                                currency = curr
+                            }
                         ) {
                             Text(
                                 text = curr,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                             )
                         }
                     }
+                    val isCustomCurrSelected = showCustomCurrency || (currency.isNotBlank() && currency !in standardCurrencies)
+                    val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isCustomCurrSelected) tonalSurfaces.surfaceSelected else tonalSurfaces.surfaceGrouped,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isCustomCurrSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else tonalSurfaces.borderSubtle
+                        ),
+                        modifier = Modifier.clickable {
+                            showCustomCurrency = true
+                            if (currency in standardCurrencies) currency = ""
+                        }
+                    ) {
+                        Text(
+                            text = "Other…",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isCustomCurrSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isCustomCurrSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+
+                if (showCustomCurrency) {
+                    CleanBankTextField(
+                        value = currency,
+                        onValueChange = { currency = it.uppercase() },
+                        label = "Custom Currency Code (e.g. JPY) *",
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            keyboardType = KeyboardType.Text
+                        )
+                    )
                 }
             }
 
@@ -445,23 +529,22 @@ fun AddBankAccountScreen(
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    text = "Link an existing card to this bank account for easy tracking.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
                     availableCards.forEach { card ->
                         val isSelected = selectedLinkedCardId == card.id
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            color = if (isSelected) tonalSurfaces.surfaceSelected else tonalSurfaces.surfaceGrouped,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else tonalSurfaces.borderSubtle
+                            ),
                             modifier = Modifier.clickable {
                                 if (isSelected) {
                                     selectedLinkedCardId = null
@@ -558,18 +641,19 @@ private fun CleanBankTextField(
     label: String,
     keyboardOptions: KeyboardOptions
 ) {
+    val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label, fontSize = 13.sp) },
         singleLine = true,
         keyboardOptions = keyboardOptions,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            focusedContainerColor = tonalSurfaces.surfaceElevated,
+            unfocusedContainerColor = tonalSurfaces.surfaceGrouped,
+            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+            unfocusedBorderColor = tonalSurfaces.borderSubtle,
             focusedLabelColor = MaterialTheme.colorScheme.primary,
             unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
         ),

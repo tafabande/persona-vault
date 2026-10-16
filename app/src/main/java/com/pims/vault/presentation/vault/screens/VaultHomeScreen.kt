@@ -349,7 +349,7 @@ fun VaultHomeScreen(
                                     .fillMaxWidth()
                                     .clickable(onClick = onOpenPasswordsAndKeys)
                                     .tactilePress()
-                                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
@@ -359,25 +359,24 @@ fun VaultHomeScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(14.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Passwords & keys",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = getVaultTextPrimary()
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "0 saved · Tap to add",
-                                        fontSize = 13.sp,
-                                        color = getVaultTextSecondary()
-                                    )
-                                }
+                                Text(
+                                    text = "Passwords & keys",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = getVaultTextPrimary(),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "0 saved",
+                                    fontSize = 12.sp,
+                                    color = getVaultTextSecondary().copy(alpha = 0.7f)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Icon(
                                     imageVector = Icons.Default.ChevronRight,
                                     contentDescription = null,
-                                    tint = getVaultTextSecondary().copy(alpha = 0.5f),
-                                    modifier = Modifier.size(16.dp)
+                                    tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
                         } else {
@@ -772,39 +771,40 @@ private fun IdMembershipRow(
     statusText: String,
     onClick: () -> Unit
 ) {
+    val isNotAdded = statusText.equals("Not added", ignoreCase = true)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .tactilePress()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IdCategoryThemedBadge(
             categoryName = title,
-            size = 38.dp,
-            iconSize = 20.dp
+            size = 34.dp,
+            iconSize = 18.dp
         )
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = getVaultTextPrimary()
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = statusText,
-                fontSize = 12.5.sp,
-                color = if (statusText != "Not added") VaultDesignTokens.AccentGreen else getVaultTextSecondary()
-            )
-        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = title,
+            fontSize = 14.5.sp,
+            fontWeight = FontWeight.Medium,
+            color = getVaultTextPrimary(),
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = statusText,
+            fontSize = 12.sp,
+            fontWeight = if (isNotAdded) FontWeight.Normal else FontWeight.SemiBold,
+            color = if (!isNotAdded) VaultDesignTokens.AccentGreen else getVaultTextSecondary().copy(alpha = 0.7f)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,
-            tint = getVaultTextSecondary().copy(alpha = 0.5f),
-            modifier = Modifier.size(16.dp)
+            tint = getVaultTextSecondary().copy(alpha = 0.4f),
+            modifier = Modifier.size(15.dp)
         )
     }
 }

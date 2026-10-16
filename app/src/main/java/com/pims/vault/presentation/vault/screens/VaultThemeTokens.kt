@@ -42,17 +42,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.ui.theme.DarkCanvas
+import com.pims.vault.presentation.ui.theme.DarkSurfaceGrouped
+import com.pims.vault.presentation.ui.theme.DarkBorderSubtle
+import com.pims.vault.presentation.ui.theme.LightCanvas
+import com.pims.vault.presentation.ui.theme.LightSurfaceGrouped
+import com.pims.vault.presentation.ui.theme.LightBorderSubtle
+import com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import androidx.compose.foundation.BorderStroke
 
 object VaultDesignTokens {
-    val BackgroundLight = Color(0xFFF9FAFB)
-    val BackgroundDark = Color(0xFF111418)
+    val BackgroundLight = LightCanvas
+    val BackgroundDark = DarkCanvas
 
-    val CardSurfaceLight = Color(0xFFFFFFFF)
-    val CardSurfaceDark = Color(0xFF1E2229)
+    val CardSurfaceLight = LightSurfaceGrouped
+    val CardSurfaceDark = DarkSurfaceGrouped
 
-    val BorderLight = Color(0xFFE5E7EB)
-    val BorderDark = Color(0xFF2C323D)
+    val BorderLight = LightBorderSubtle
+    val BorderDark = DarkBorderSubtle
 
     val TextPrimaryLight = Color(0xFF111827)
     val TextPrimaryDark = Color(0xFFF9FAFB)
@@ -77,23 +85,23 @@ object VaultDesignTokens {
 
 @Composable
 fun getVaultBackground(): Color =
-    if (LocalPimsDarkTheme.current) VaultDesignTokens.BackgroundDark else VaultDesignTokens.BackgroundLight
+    LocalPimsTonalSurfaces.current.canvas
 
 @Composable
 fun getVaultCardSurface(): Color =
-    if (LocalPimsDarkTheme.current) VaultDesignTokens.CardSurfaceDark else VaultDesignTokens.CardSurfaceLight
+    LocalPimsTonalSurfaces.current.grouped
 
 @Composable
 fun getVaultBorder(): Color =
-    if (LocalPimsDarkTheme.current) VaultDesignTokens.BorderDark else VaultDesignTokens.BorderLight
+    LocalPimsTonalSurfaces.current.borderSubtle
 
 @Composable
 fun getVaultTextPrimary(): Color =
-    if (LocalPimsDarkTheme.current) VaultDesignTokens.TextPrimaryDark else VaultDesignTokens.TextPrimaryLight
+    MaterialTheme.colorScheme.onSurface
 
 @Composable
 fun getVaultTextSecondary(): Color =
-    if (LocalPimsDarkTheme.current) VaultDesignTokens.TextSecondaryDark else VaultDesignTokens.TextSecondaryLight
+    MaterialTheme.colorScheme.onSurfaceVariant
 
 @Composable
 fun getVaultPillButtonColor(): Color =
@@ -104,7 +112,7 @@ fun getVaultPillTextColor(): Color =
     if (LocalPimsDarkTheme.current) VaultDesignTokens.PillTextDark else VaultDesignTokens.PillTextLight
 
 /**
- * Grouped White Container (iOS / executive style) matching the reference screenshots.
+ * Grouped Container using tonal surface differentiation without loud outlines.
  */
 @Composable
 fun VaultGroupedCard(
@@ -114,10 +122,10 @@ fun VaultGroupedCard(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, getVaultBorder(), RoundedCornerShape(16.dp)),
+            .clip(RoundedCornerShape(16.dp)),
         color = getVaultCardSurface(),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f))
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             content()
@@ -315,8 +323,8 @@ fun VaultUnderlineField(
         }
         Spacer(modifier = Modifier.height(6.dp))
         HorizontalDivider(
-            thickness = 1.dp,
-            color = getVaultBorder()
+            thickness = 0.5.dp,
+            color = getVaultBorder().copy(alpha = 0.4f)
         )
     }
 }

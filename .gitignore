@@ -83,3 +83,16 @@ __pycache__/
 venv/
 env/
 .pytest_cache/
+
+# Backup and temporary files
+*.orig
+*.bak
+*.tmp
+*.rej
+out/
+.fleet/
+.settings/
+.project
+.classpath
+lint-results*.html
+lint-results*.xml

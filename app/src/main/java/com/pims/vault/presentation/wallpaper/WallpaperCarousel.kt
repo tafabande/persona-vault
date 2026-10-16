@@ -39,13 +39,19 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.pims.vault.presentation.ui.components.carousel.PersonaCarousel
+import com.pims.vault.presentation.ui.components.carousel.PersonaCarouselConfig
+import com.pims.vault.presentation.ui.components.carousel.CarouselEndBehaviour
+import com.pims.vault.presentation.ui.components.carousel.CarouselIndicatorStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -97,50 +103,6 @@ fun WallpaperCarousel(
     val haptics = rememberPimsHaptics()
     val scope = rememberCoroutineScope()
 
-    if (wallpapers.isEmpty()) {
-        val emptyModifier = if (carouselHeight != null) {
-            modifier.fillMaxWidth().height(carouselHeight)
-        } else {
-            modifier.fillMaxSize()
-        }
-        Box(
-            modifier = emptyModifier
-                .padding(horizontal = 24.dp, vertical = 12.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                .combinedClickable(
-                    onClick = {
-                        haptics.selection()
-                        onOpenOptions()
-                    },
-                    onLongClick = {
-                        haptics.warning()
-                        onOpenOptions()
-                    }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AddPhotoAlternate,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(40.dp)
-                )
-                Text(
-                    text = "No photos yet",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
-        return
-    }
-
     LaunchedEffect(wallpapers) {
         withContext(Dispatchers.IO) {
             wallpapers.forEach { wp ->
@@ -149,39 +111,6 @@ fun WallpaperCarousel(
                     if (!WallpaperBitmapCache.contains(path)) {
                         WallpaperBitmapCache.getOrDecode(path)
                     }
-                }
-            }
-        }
-    }
-
-    val pagerState = rememberPagerState(
-        initialPage = activeIndex.coerceIn(0, (wallpapers.size - 1).coerceAtLeast(0)),
-        pageCount = { wallpapers.size }
-    )
-
-    val carouselEasing = remember { androidx.compose.animation.core.CubicBezierEasing(0.22f, 1f, 0.36f, 1f) }
-
-    LaunchedEffect(activeIndex) {
-        if (pagerState.currentPage != activeIndex && activeIndex in wallpapers.indices) {
-            pagerState.animateScrollToPage(
-                page = activeIndex,
-                animationSpec = tween(durationMillis = 550, easing = carouselEasing)
-            )
-        }
-    }
-
-    val isDragged by pagerState.interactionSource.collectIsDraggedAsState()
-
-    LaunchedEffect(pagerState, isDragged, wallpapers.size) {
-        if (wallpapers.size > 1 && !isDragged) {
-            while (true) {
-                delay(4500L)
-                if (!isDragged && wallpapers.isNotEmpty()) {
-                    val nextPage = (pagerState.currentPage + 1) % wallpapers.size
-                    pagerState.animateScrollToPage(
-                        page = nextPage,
-                        animationSpec = tween(durationMillis = 650, easing = carouselEasing)
-                    )
                 }
             }
         }
@@ -204,89 +133,87 @@ fun WallpaperCarousel(
         modifier.fillMaxSize()
     }
 
-    Box(
-        modifier = boxModifier
-            .combinedClickable(
-                onClick = {
-                    haptics.selection()
-                    if (wallpapers.isNotEmpty()) {
-                        val next = (pagerState.currentPage + 1) % wallpapers.size
-                        scope.launch {
-                            pagerState.animateScrollToPage(
-                                page = next,
-                                animationSpec = tween(durationMillis = 500, easing = carouselEasing)
-                            )
-                        }
-                    }
-                },
-                onLongClick = {
-                    haptics.warning()
-                    onOpenOptions()
-                }
-            )
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            beyondViewportPageCount = 2,
-            modifier = Modifier.fillMaxSize()
-        ) { page ->
-            val wallpaper = wallpapers.getOrNull(page)
-            if (wallpaper != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
-                            val absOffset = pageOffset.absoluteValue.coerceIn(0f, 1f)
+    val carouselConfig = remember {
+        PersonaCarouselConfig(
+            autoplay = true,
+            autoplayIntervalMs = 6000L,
+            endBehaviour = CarouselEndBehaviour.CONTINUOUS_LOOP,
+            indicatorStyle = CarouselIndicatorStyle.NONE,
+            slideDurationMs = 280,
+            swipeSettlingDurationMs = 220,
+            showNavigationArrows = false
+        )
+    }
 
-                            translationX = pageOffset * size.width * 0.22f
-                            alpha = (1f - (absOffset * 0.65f)).coerceIn(0f, 1f)
-                            val scale = 1f - (absOffset * 0.04f)
-                            scaleX = scale
-                            scaleY = scale
-                            compositingStrategy = CompositingStrategy.Auto
-                        }
-                ) {
-                    WallpaperPageArtwork(
-                        wallpaper = wallpaper,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                val s = kenBurnsAnim.value
-                                scaleX = s
-                                scaleY = s
-                            }
-                    )
-                }
+    PersonaCarousel(
+        items = wallpapers,
+        key = { it.id },
+        initialIndex = activeIndex,
+        config = carouselConfig,
+        modifier = boxModifier,
+        onItemSelected = { _, idx ->
+            onActiveIndexChanged(idx)
+        },
+        onItemClick = { _, _ ->
+            haptics.selection()
+        },
+        onItemLongClick = { _, _ ->
+            haptics.warning()
+            onOpenOptions()
+        },
+        emptyContent = {
+            val emptyModifier = if (carouselHeight != null) {
+                modifier.fillMaxWidth().height(carouselHeight)
+            } else {
+                modifier.fillMaxSize()
             }
-        }
-
-        if (wallpapers.size > 1) {
-            androidx.compose.foundation.layout.Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp)
-                    .background(
-                        color = Color.Black.copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Box(
+                modifier = emptyModifier
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                    .combinedClickable(
+                        onClick = {
+                            haptics.selection()
+                            onOpenOptions()
+                        },
+                        onLongClick = {
+                            haptics.warning()
+                            onOpenOptions()
+                        }
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                wallpapers.indices.forEach { index ->
-                    val isSelected = pagerState.currentPage == index
-                    Box(
-                        modifier = Modifier
-                            .size(if (isSelected) 16.dp else 6.dp, 6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(
-                                if (isSelected) Color.White else Color.White.copy(alpha = 0.45f)
-                            )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AddPhotoAlternate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Text(
+                        text = "No photos yet",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
         }
+    ) { wallpaper, _ ->
+        WallpaperPageArtwork(
+            wallpaper = wallpaper,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val s = kenBurnsAnim.value
+                    scaleX = s
+                    scaleY = s
+                }
+        )
     }
 }
 
@@ -398,8 +325,13 @@ private fun WallpaperPageArtwork(
                         bitmap = currentBitmap.asImageBitmap(),
                         contentDescription = wallpaper.title,
                         contentScale = ContentScale.Crop,
-                        alignment = BiasAlignment(0f, wallpaper.alignmentY),
-                        modifier = Modifier.fillMaxSize()
+                        alignment = BiasAlignment(wallpaper.alignmentX, wallpaper.alignmentY),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = wallpaper.zoomScale,
+                                scaleY = wallpaper.zoomScale
+                            )
                     )
                 } else {
                     GenerativeArtworkVisual(seed = 2)

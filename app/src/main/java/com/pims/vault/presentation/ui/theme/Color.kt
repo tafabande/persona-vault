@@ -114,16 +114,28 @@ val SlateLightTextPrimary = PersonaTextPrimary
 val SlateLightTextSecondary = PersonaTextSecondary
 val SlateLightTextTertiary = PersonaTextMuted
 
-// --- Core Dark Theme Palette (Soft Warm Dark) ---
-val DarkBackground = Color(0xFF1A1917)            // Warm near-black background
-val DarkSurface = Color(0xFF232220)               // Slightly elevated warm surface
-val DarkSurfaceVariant = Color(0xFF2E2C29)        // Card/container surface
+// --- Core Dark Theme Palette (Monochromatic Tonal Hierarchy) ---
+val DarkCanvas = Color(0xFF0E1115)           // Base canvas (#0E1115)
+val DarkSurfaceGrouped = Color(0xFF161A20)    // Standard interactive surface (#161A20)
+val DarkSurfaceElevated = Color(0xFF1E232B)   // Elevated or active surface (#1E232B)
+val DarkSurfaceSelected = Color(0xFF252B35)   // Selected chip surface (#252B35)
+val DarkBorderSubtle = Color(0xFF252B35).copy(alpha = 0.5f)
+
+val LightCanvas = PersonaBackground          // Modern clean neutral canvas (#F8F9FA)
+val LightSurfaceGrouped = PersonaSurface     // Crisp pure white grouped surface (#FFFFFF)
+val LightSurfaceElevated = PersonaSurfaceVariant // Clean neutral container (#F1F3F5)
+val LightSurfaceSelected = Color(0xFFE2E8F0) // Subtle clean selection surface
+val LightBorderSubtle = PersonaDivider.copy(alpha = 0.6f)
+
+val DarkBackground = DarkCanvas                   // Base dark canvas
+val DarkSurface = DarkSurfaceGrouped              // Slightly elevated surface
+val DarkSurfaceVariant = DarkSurfaceElevated      // Card/container surface
 val DarkTextPrimary = Color(0xFFFFFFFF)           // Crisp white text (pure high contrast)
 val DarkTextSecondary = Color(0xFFE2E8F0)         // High-contrast readable silver off-white
 val DarkTextMuted = Color(0xFFA1A1AA)             // Clean muted labels & timestamps
 val DarkAccent = Color(0xFFD4845E)               // Brightened terracotta for dark bg contrast
 val DarkSoftAccent = Color(0xFF3D2E26)            // Deep terracotta wash
-val DarkDivider = Color(0xFF3A3733)               // Subtle warm dark border
+val DarkDivider = Color(0xFF252B35)               // Subtle dark border (#252B35)
 
 // --- Dark Semantic Colors (adjusted for dark bg legibility) ---
 val DarkStateSuccess = Color(0xFF7A9E82)           // Lighter sage for dark bg

@@ -84,8 +84,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -131,6 +133,7 @@ fun PlainNotesScreen(
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     val haptics = rememberPimsHaptics()
     val focusManager = LocalFocusManager.current
+    val tonalSurfaces = LocalPimsTonalSurfaces.current
 
     var noteToDelete by remember { mutableStateOf<PlainNote?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -174,37 +177,26 @@ fun PlainNotesScreen(
         }
     }
 
-    // Calculate start & end of current week
-    val (weekStartMillis, weekEndMillis) = remember {
-        val cal = Calendar.getInstance().apply {
-            firstDayOfWeek = Calendar.MONDAY
-            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+    // Rolling 3-day window: Today (0), Yesterday (-1), Day before yesterday (-2)
+    val recentDays = remember(filteredNotes) {
+        val todayCal = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-        val start = cal.timeInMillis
-        val end = start + (7 * 86400000L)
-        start to end
-    }
 
-    // 7 days of the current week
-    val weekDays = remember(filteredNotes, weekStartMillis) {
-        val todayCal = Calendar.getInstance()
-        val currentYear = todayCal.get(Calendar.YEAR)
-        val currentDayOfYear = todayCal.get(Calendar.DAY_OF_YEAR)
-
-        val cal = Calendar.getInstance().apply {
-            timeInMillis = weekStartMillis
-        }
-
-        (0..6).map { dayOffset ->
-            val dayCal = (cal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
-            val label = dayFormat.format(dayCal.time)
-            val isToday = dayCal.get(Calendar.YEAR) == currentYear && dayCal.get(Calendar.DAY_OF_YEAR) == currentDayOfYear
+        listOf(0, -1, -2).map { offset ->
+            val dayCal = (todayCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, offset) }
             val dayStart = dayCal.timeInMillis
             val dayEnd = dayStart + 86400000L
+
+            val label = when (offset) {
+                0 -> "Today"
+                -1 -> "Yesterday"
+                else -> dayFormat.format(dayCal.time)
+            }
+            val isToday = (offset == 0)
 
             val dayNotes = filteredNotes.filter { note ->
                 note.updatedAt in dayStart until dayEnd
@@ -213,41 +205,31 @@ fun PlainNotesScreen(
         }
     }
 
-    // Notes earlier than this week but within current month
-    val monthStartMillis = remember {
+    // Historical notes prior to the 3-day rolling window
+    val twoDaysAgoStart = remember {
         Calendar.getInstance().apply {
-            set(Calendar.DAY_OF_MONTH, 1)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
+            add(Calendar.DAY_OF_YEAR, -2)
         }.timeInMillis
     }
 
-    val earlierThisMonthNotes = remember(filteredNotes, weekStartMillis, monthStartMillis) {
+    val historicalNotes = remember(filteredNotes, twoDaysAgoStart) {
         filteredNotes.filter { note ->
-            note.updatedAt in monthStartMillis until weekStartMillis
+            note.updatedAt < twoDaysAgoStart
         }
     }
 
-    // Notes prior to current month
-    val olderNotes = remember(filteredNotes, monthStartMillis) {
-        filteredNotes.filter { note ->
-            note.updatedAt < monthStartMillis
-        }
+    val initialExpandedDay = remember(recentDays) {
+        recentDays.firstOrNull { it.isToday }?.dayLabel
+            ?: recentDays.firstOrNull()?.dayLabel
     }
 
-    val initialExpandedDay = remember(weekDays) {
-        weekDays.firstOrNull { it.isToday }?.dayLabel
-            ?: weekDays.firstOrNull { it.notes.isNotEmpty() }?.dayLabel
-            ?: weekDays.firstOrNull()?.dayLabel
-    }
-
-    var expandedDayLabels by remember(weekDays) {
+    var expandedDayLabels by remember(recentDays) {
         mutableStateOf(setOfNotNull(initialExpandedDay))
     }
-    var earlierMonthExpanded by remember { mutableStateOf(true) }
-    var olderExpanded by remember { mutableStateOf(false) }
 
     val isSearchOrFilterActive = searchQuery.isNotBlank() || activeFilter != NoteFilter.ALL
 
@@ -474,65 +456,93 @@ fun PlainNotesScreen(
                         }
                     }
                 } else {
-                    // Weekly structured timeline
-                    weekDays.forEach { daySection ->
+                    // Rolling 3-day recent timeline
+                    recentDays.forEach { daySection ->
                         val isExpanded = daySection.dayLabel in expandedDayLabels
 
                         item(key = "header_${daySection.dayLabel}") {
-                            Row(
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (daySection.isToday) tonalSurfaces.surfaceElevated else Color.Transparent,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .tactilePress(targetScale = 0.98f) {
-                                        expandedDayLabels = if (isExpanded) {
-                                            expandedDayLabels - daySection.dayLabel
-                                        } else {
-                                            expandedDayLabels + daySection.dayLabel
-                                        }
-                                    }
-                                    .padding(vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .padding(vertical = 4.dp)
                             ) {
-                                Text(
-                                    text = daySection.dayLabel,
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.5.sp
-                                    ),
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-
-                                if (isExpanded) {
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowDown,
-                                        contentDescription = "Collapse",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                } else {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .tactilePress(targetScale = 0.98f) {
+                                            expandedDayLabels = if (isExpanded) {
+                                                expandedDayLabels - daySection.dayLabel
+                                            } else {
+                                                expandedDayLabels + daySection.dayLabel
+                                            }
+                                        }
+                                        .padding(horizontal = if (daySection.isToday) 12.dp else 4.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Text(
-                                            text = "${daySection.displayCount}",
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            text = daySection.dayLabel,
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 16.5.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onBackground
                                         )
+                                        if (daySection.isToday) {
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                            ) {
+                                                Text(
+                                                    text = "Today",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (isExpanded) {
                                         Icon(
-                                            imageVector = PersonaIcons.ChevronRight,
-                                            contentDescription = "Expand",
+                                            imageVector = Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "Collapse",
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
+                                            modifier = Modifier.size(20.dp)
                                         )
+                                    } else {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "${daySection.displayCount}",
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Icon(
+                                                imageVector = PersonaIcons.ChevronRight,
+                                                contentDescription = "Expand",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
 
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant,
-                                thickness = 0.5.dp
-                            )
+                            if (!daySection.isToday) {
+                                HorizontalDivider(
+                                    color = tonalSurfaces.borderSubtle,
+                                    thickness = 0.5.dp
+                                )
+                            }
                         }
 
                         if (isExpanded) {
@@ -550,7 +560,7 @@ fun PlainNotesScreen(
                                         }
                                     )
                                     HorizontalDivider(
-                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        color = tonalSurfaces.borderSubtle,
                                         thickness = 0.5.dp
                                     )
                                 }
@@ -581,137 +591,41 @@ fun PlainNotesScreen(
                         }
                     }
 
-                    // Earlier This Month Section
-                    if (earlierThisMonthNotes.isNotEmpty()) {
-                        item(key = "header_earlier_month") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .tactilePress(targetScale = 0.98f) {
-                                        earlierMonthExpanded = !earlierMonthExpanded
-                                    }
-                                    .padding(vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "Earlier This Month",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.5.sp
-                                    ),
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Text(
-                                        text = "${earlierThisMonthNotes.size}",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Icon(
-                                        imageVector = if (earlierMonthExpanded) Icons.Default.KeyboardArrowDown else PersonaIcons.ChevronRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                    // Historical notes displayed directly beneath recent days without gatekeeper
+                    if (historicalNotes.isNotEmpty()) {
+                        item(key = "header_historical_notes") {
+                            Text(
+                                text = "Previous Notes",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.5.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
+                            )
                             HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant,
+                                color = tonalSurfaces.borderSubtle,
                                 thickness = 0.5.dp
                             )
                         }
 
-                        if (earlierMonthExpanded) {
-                            items(earlierThisMonthNotes, key = { it.id }) { note ->
-                                NoteListRow(
-                                    note = note,
-                                    timeStr = timeFormat.format(Date(note.updatedAt)),
-                                    onClick = { handleNoteClick(note) },
-                                    onDelete = { noteToDelete = note },
-                                    viewModel = viewModel,
-                                    onTagClick = { tag ->
-                                        searchQuery = "#$tag"
-                                        isSearchVisible = true
-                                    },
-                                    onRequestAuth = onRequestAuth
-                                )
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    thickness = 0.5.dp
-                                )
-                            }
-                        }
-                    }
-
-                    // Older Notes Section
-                    if (olderNotes.isNotEmpty()) {
-                        item(key = "header_older_notes") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .tactilePress(targetScale = 0.98f) {
-                                        olderExpanded = !olderExpanded
-                                    }
-                                    .padding(vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "Older Notes",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.5.sp
-                                    ),
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Text(
-                                        text = "${olderNotes.size}",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Icon(
-                                        imageVector = if (olderExpanded) Icons.Default.KeyboardArrowDown else PersonaIcons.ChevronRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                        items(historicalNotes, key = { it.id }) { note ->
+                            NoteListRow(
+                                note = note,
+                                timeStr = dayFormat.format(Date(note.updatedAt)),
+                                onClick = { handleNoteClick(note) },
+                                onDelete = { noteToDelete = note },
+                                viewModel = viewModel,
+                                onTagClick = { tag ->
+                                    searchQuery = "#$tag"
+                                    isSearchVisible = true
+                                },
+                                onRequestAuth = onRequestAuth
+                            )
                             HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant,
+                                color = tonalSurfaces.borderSubtle,
                                 thickness = 0.5.dp
                             )
-                        }
-
-                        if (olderExpanded) {
-                            items(olderNotes, key = { it.id }) { note ->
-                                NoteListRow(
-                                    note = note,
-                                    timeStr = timeFormat.format(Date(note.updatedAt)),
-                                    onClick = { handleNoteClick(note) },
-                                    onDelete = { noteToDelete = note },
-                                    viewModel = viewModel,
-                                    onTagClick = { tag ->
-                                        searchQuery = "#$tag"
-                                        isSearchVisible = true
-                                    },
-                                    onRequestAuth = onRequestAuth
-                                )
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    thickness = 0.5.dp
-                                )
-                            }
                         }
                     }
                 }
@@ -1380,17 +1294,6 @@ fun NoteListRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(PimsDimensions.paddingMedium)
     ) {
-        // Leading accent strip
-        Box(
-            modifier = Modifier
-                .width(4.dp)
-                .height(34.dp)
-                .background(
-                    if (note.isReminderDone) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.primary,
-                    RoundedCornerShape(2.dp)
-                )
-        )
-
         // Thumbnail if photo attached
         if (!note.isLocked) {
             thumbnailBitmap?.let { bmp ->
@@ -1399,23 +1302,23 @@ fun NoteListRow(
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(44.dp)
                         .clip(RoundedCornerShape(8.dp))
                 )
             }
         } else {
             Box(
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(44.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Lock,
                     contentDescription = "Protected note",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
@@ -1443,9 +1346,7 @@ fun NoteListRow(
 
             val subtitleParts = buildList {
                 add(timeStr)
-                if (note.isLocked) {
-                    add("🔒 Protected entry")
-                } else {
+                if (!note.isLocked) {
                     val cleanContent = note.content
                         .replace('\n', ' ')
                         .trim()
@@ -1458,7 +1359,7 @@ fun NoteListRow(
                 }
             }
             Text(
-                text = subtitleParts.joinToString("  "),
+                text = subtitleParts.joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -1496,32 +1397,16 @@ fun NoteListRow(
                 }
             }
 
-            // Category & Hashtag Badges
+            // Category & Hashtags as clean single metadata line
             if (note.tags.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .padding(top = 4.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    note.tags.take(4).forEach { tag ->
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                            modifier = Modifier.clickable {
-                                onTagClick?.invoke(tag)
-                            }
-                        ) {
-                            Text(
-                                text = "#$tag",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = note.tags.joinToString("  ") { "#$it" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
         }
 

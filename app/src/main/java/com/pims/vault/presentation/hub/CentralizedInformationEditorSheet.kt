@@ -49,6 +49,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -378,21 +379,15 @@ fun CentralizedInformationEditorSheet(
                             )
                         }
                     ) {
-                        Text(
-                            text = "Add primary, work, home, or WhatsApp contact numbers.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
                         phones.forEachIndexed { index, item ->
                             val isInvalid = item.number.isNotBlank() && !isValidPhoneNumber(item.number)
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                                modifier = Modifier.fillMaxWidth()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (phones.size > 1) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -413,44 +408,51 @@ fun CentralizedInformationEditorSheet(
                                             Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                         }
                                     }
+                                }
 
-                                    InternationalPhoneInput(
-                                        value = item.number,
-                                        onValueChange = { phones[index] = item.copy(number = it) },
-                                        label = "Phone number"
+                                InternationalPhoneInput(
+                                    value = item.number,
+                                    onValueChange = { phones[index] = item.copy(number = it) },
+                                    label = if (phones.size == 1) "Phone number" else null
+                                )
+                                if (isInvalid) {
+                                    Text(
+                                        text = "⚠️ Please enter a valid phone number with digits",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error
                                     )
-                                    if (isInvalid) {
-                                        Text(
-                                            text = "⚠️ Please enter a valid phone number with digits",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                    }
+                                }
 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        PersonaDropdownSelector(
-                                            selectedOption = item.label,
-                                            options = listOf("Mobile", "Personal", "Work", "Home", "WhatsApp", "Other"),
-                                            onOptionSelected = { phones[index] = item.copy(label = it) },
-                                            label = "Label",
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        PersonaToggleRow(
-                                            title = "Primary",
-                                            checked = item.isPrimary,
-                                            onCheckedChange = { checked ->
-                                                phones.indices.forEach { i ->
-                                                    phones[i] = phones[i].copy(isPrimary = if (i == index) checked else false)
-                                                }
-                                            },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    PersonaDropdownSelector(
+                                        selectedOption = item.label,
+                                        options = listOf("Mobile", "Personal", "Work", "Home", "WhatsApp", "Other"),
+                                        onOptionSelected = { phones[index] = item.copy(label = it) },
+                                        label = null,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    PersonaToggleRow(
+                                        title = "Primary",
+                                        checked = item.isPrimary,
+                                        onCheckedChange = { checked ->
+                                            phones.indices.forEach { i ->
+                                                phones[i] = phones[i].copy(isPrimary = if (i == index) checked else false)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                if (index < phones.size - 1) {
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                        thickness = 0.5.dp,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
                                 }
                             }
                         }
@@ -488,13 +490,13 @@ fun CentralizedInformationEditorSheet(
                     ) {
                         emails.forEachIndexed { index, item ->
                             val isInvalid = item.address.isNotBlank() && !isValidEmailAddress(item.address)
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                                modifier = Modifier.fillMaxWidth()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (emails.size > 1) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -515,46 +517,53 @@ fun CentralizedInformationEditorSheet(
                                             Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                         }
                                     }
+                                }
 
-                                    PersonaTextInput(
-                                        value = item.address,
-                                        onValueChange = { emails[index] = item.copy(address = it) },
-                                        label = "Email address",
-                                        placeholder = "name@example.com",
-                                        keyboardType = KeyboardType.Email
+                                PersonaTextInput(
+                                    value = item.address,
+                                    onValueChange = { emails[index] = item.copy(address = it) },
+                                    label = if (emails.size == 1) "Email address" else null,
+                                    placeholder = "name@example.com",
+                                    keyboardType = KeyboardType.Email
+                                )
+                                if (isInvalid) {
+                                    Text(
+                                        text = "⚠️ Please enter a valid email address (e.g. name@domain.com)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error
                                     )
-                                    if (isInvalid) {
-                                        Text(
-                                            text = "⚠️ Please enter a valid email address (e.g. name@domain.com)",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                    }
+                                }
 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        PersonaDropdownSelector(
-                                            selectedOption = item.label,
-                                            options = listOf("Personal", "Work", "School", "Recovery", "Other"),
-                                            onOptionSelected = { emails[index] = item.copy(label = it) },
-                                            label = "Label",
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        PersonaToggleRow(
-                                            title = "Primary",
-                                            checked = item.isPrimary,
-                                            onCheckedChange = { checked ->
-                                                emails.indices.forEach { i ->
-                                                    emails[i] = emails[i].copy(isPrimary = if (i == index) checked else false)
-                                                }
-                                            },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    PersonaDropdownSelector(
+                                        selectedOption = item.label,
+                                        options = listOf("Personal", "Work", "School", "Recovery", "Other"),
+                                        onOptionSelected = { emails[index] = item.copy(label = it) },
+                                        label = null,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    PersonaToggleRow(
+                                        title = "Primary",
+                                        checked = item.isPrimary,
+                                        onCheckedChange = { checked ->
+                                            emails.indices.forEach { i ->
+                                                emails[i] = emails[i].copy(isPrimary = if (i == index) checked else false)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                if (index < emails.size - 1) {
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                        thickness = 0.5.dp,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
                                 }
                             }
                         }
@@ -591,13 +600,13 @@ fun CentralizedInformationEditorSheet(
                         }
                     ) {
                         addresses.forEachIndexed { index, item ->
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                                modifier = Modifier.fillMaxWidth()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (addresses.size > 1) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -618,48 +627,56 @@ fun CentralizedInformationEditorSheet(
                                             Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                         }
                                     }
+                                }
 
+                                PersonaTextInput(
+                                    value = item.street1,
+                                    onValueChange = { addresses[index] = item.copy(street1 = it) },
+                                    label = "Street line 1",
+                                    placeholder = "e.g. 124 Main Street"
+                                )
+                                PersonaTextInput(
+                                    value = item.street2,
+                                    onValueChange = { addresses[index] = item.copy(street2 = it) },
+                                    label = "Apt / Suite / Line 2",
+                                    placeholder = "Optional"
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     PersonaTextInput(
-                                        value = item.street1,
-                                        onValueChange = { addresses[index] = item.copy(street1 = it) },
-                                        label = "Street line 1",
-                                        placeholder = "e.g. 124 Main Street"
+                                        value = item.city,
+                                        onValueChange = { addresses[index] = item.copy(city = it) },
+                                        label = "City",
+                                        modifier = Modifier.weight(1f)
                                     )
                                     PersonaTextInput(
-                                        value = item.street2,
-                                        onValueChange = { addresses[index] = item.copy(street2 = it) },
-                                        label = "Apt / Suite / Line 2",
-                                        placeholder = "Optional"
+                                        value = item.state,
+                                        onValueChange = { addresses[index] = item.copy(state = it) },
+                                        label = "Province / State",
+                                        modifier = Modifier.weight(1f)
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        PersonaTextInput(
-                                            value = item.city,
-                                            onValueChange = { addresses[index] = item.copy(city = it) },
-                                            label = "City",
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        PersonaTextInput(
-                                            value = item.state,
-                                            onValueChange = { addresses[index] = item.copy(state = it) },
-                                            label = "Province / State",
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        PersonaTextInput(
-                                            value = item.postalCode,
-                                            onValueChange = { addresses[index] = item.copy(postalCode = it) },
-                                            label = "Postal Code",
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        PersonaDropdownSelector(
-                                            selectedOption = item.label,
-                                            options = listOf("Home", "Work", "Billing", "Shipping", "Other"),
-                                            onOptionSelected = { addresses[index] = item.copy(label = it) },
-                                            label = "Type",
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    PersonaTextInput(
+                                        value = item.postalCode,
+                                        onValueChange = { addresses[index] = item.copy(postalCode = it) },
+                                        label = "Postal Code",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    PersonaDropdownSelector(
+                                        selectedOption = item.label,
+                                        options = listOf("Home", "Work", "Billing", "Shipping", "Other"),
+                                        onOptionSelected = { addresses[index] = item.copy(label = it) },
+                                        label = "Type",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                if (index < addresses.size - 1) {
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                        thickness = 0.5.dp,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
                                 }
                             }
                         }

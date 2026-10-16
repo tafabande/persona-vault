@@ -225,6 +225,9 @@ import com.pims.vault.presentation.ui.theme.ThemeMode
 import com.pims.vault.presentation.ui.util.rememberPimsSoundManager
 import com.pims.vault.presentation.wallpaper.LocalWallpaperManager
 import com.pims.vault.presentation.wallpaper.WallpaperOptionsSheet
+import com.pims.vault.presentation.wallpaper.WallpaperSurface
+import com.pims.vault.presentation.wallpaper.PersonaMediaReferenceResolver
+import androidx.activity.result.PickVisualMediaRequest
 import com.pims.vault.presentation.vault.VaultDashboardView
 import com.pims.vault.presentation.vault.VaultViewModel
 import com.pims.vault.core.sync.SyncState
@@ -247,6 +250,8 @@ import java.util.Calendar
 fun PersonaDashboardScreen(
     securityLevel: KeySecurityLevel,
     initialOpenNoteId: String? = null,
+    initialQuickAction: String? = null,
+    onQuickActionHandled: (() -> Unit)? = null,
     onLockClicked: () -> Unit,
     onSignOutClicked: () -> Unit = onLockClicked,
     onRequestBiometricAuth: ((title: String, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit)? = null
@@ -340,7 +345,7 @@ fun PersonaDashboardScreen(
     var dismissedNotificationIds by remember { mutableStateOf(setOf<String>()) }
 
     val wallpaperPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -453,6 +458,18 @@ fun PersonaDashboardScreen(
     
     fun hideSheet(sheetName: String) {
         sheetStates.value = sheetStates.value.toMutableMap().apply { this[sheetName] = false }
+    }
+
+    LaunchedEffect(initialQuickAction) {
+        when (initialQuickAction) {
+            MainActivity.ACTION_DOCUMENTS -> showSheet("documents")
+            MainActivity.ACTION_PEOPLE -> selectedTab = 3
+            MainActivity.ACTION_VAULT -> fullScreenOverlay = "VAULT"
+            MainActivity.ACTION_NOTES -> selectedTab = 1
+        }
+        if (initialQuickAction != null) {
+            onQuickActionHandled?.invoke()
+        }
     }
 
     // Vault allows screenshots by default unless an explicit private key is revealed
@@ -1981,6 +1998,9 @@ fun PersonaDashboardScreen(
 
     // WALLPAPER OPTIONS BOTTOM SHEET
     if (sheetStates.value["wallpaperOptions"] == true) {
+        val mediaRefResolver = remember {
+            PersonaMediaReferenceResolver(context) { wallpaperManager }
+        }
         WallpaperOptionsSheet(
             sheetState = wallpaperOptionsSheetState,
             wallpapers = wallpapers,
@@ -1999,16 +2019,29 @@ fun PersonaDashboardScreen(
             onPickFromDevice = {
                 soundManager.navigation()
                 haptics.selection()
-                wallpaperPickerLauncher.launch("image/*")
+                wallpaperPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
             },
             onRemoveWallpaper = { item ->
-                val removed = wallpaperManager.removeWallpaperById(item.id)
-                if (removed) {
+                val result = wallpaperManager.removeFromPersona(listOf(item.id))
+                if (result.succeededIds.isNotEmpty()) {
                     recentActivityManager.recordActivity("Removed profile wallpaper")
                     soundManager.delete()
                     haptics.warning()
                     scope.launch {
-                        snackbarHostState.showSnackbar("Wallpaper removed")
+                        val snackResult = snackbarHostState.showSnackbar(
+                            message = "Wallpaper removed from Persona",
+                            actionLabel = "Undo",
+                            duration = androidx.compose.material3.SnackbarDuration.Short
+                        )
+                        if (snackResult == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                            val restored = wallpaperManager.undoLastRemoval()
+                            if (restored) {
+                                soundManager.success()
+                                haptics.selection()
+                            }
+                        }
                     }
                 }
             },
@@ -2024,7 +2057,70 @@ fun PersonaDashboardScreen(
             onUpdateAlignment = { id, alignY ->
                 wallpaperManager.updateWallpaperAlignment(id, alignY)
             },
-            onDismiss = { hideSheet("wallpaperOptions") }
+            onDismiss = { hideSheet("wallpaperOptions") },
+            onApplySurface = { surface, item, alignX, alignY, zoom ->
+                val result = wallpaperManager.applyWallpaperToSurface(surface, item, alignX, alignY, zoom)
+                if (result.isSuccess) {
+                    recentActivityManager.recordActivity("Applied wallpaper to ${surface.title}")
+                    soundManager.success()
+                    haptics.selection()
+                    scope.launch {
+                        snackbarHostState.showSnackbar("✓ Applied to ${surface.title}")
+                    }
+                    true
+                } else {
+                    soundManager.delete()
+                    haptics.warning()
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Failed to apply to ${surface.title}: ${result.exceptionOrNull()?.message ?: "Unknown error"}")
+                    }
+                    false
+                }
+            },
+            onRemoveWallpapersBulk = { ids ->
+                val result = wallpaperManager.removeFromPersona(ids)
+                if (result.succeededIds.isNotEmpty()) {
+                    recentActivityManager.recordActivity("Removed ${result.succeededIds.size} wallpaper(s)")
+                    soundManager.delete()
+                    haptics.warning()
+                    scope.launch {
+                        val snackResult = snackbarHostState.showSnackbar(
+                            message = "Removed ${result.succeededIds.size} wallpaper(s) from Persona",
+                            actionLabel = "Undo",
+                            duration = androidx.compose.material3.SnackbarDuration.Short
+                        )
+                        if (snackResult == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                            val restored = wallpaperManager.undoLastRemoval()
+                            if (restored) {
+                                soundManager.success()
+                                haptics.selection()
+                            }
+                        }
+                    }
+                }
+            },
+            onDeleteWallpapersBulk = { ids ->
+                val result = wallpaperManager.deleteFromStorage(ids, mediaRefResolver)
+                if (result.succeededIds.isNotEmpty()) {
+                    recentActivityManager.recordActivity("Deleted ${result.succeededIds.size} wallpaper(s)")
+                    soundManager.delete()
+                    haptics.warning()
+                    scope.launch {
+                        val msg = buildString {
+                            append("Deleted ${result.succeededIds.size} item(s)")
+                            if (result.preservedDueToReferences.isNotEmpty()) {
+                                append(" (${result.preservedDueToReferences.size} preserved due to profile references)")
+                            }
+                            if (result.failedIds.isNotEmpty()) {
+                                append(" (${result.failedIds.size} failed)")
+                            }
+                        }
+                        snackbarHostState.showSnackbar(msg)
+                    }
+                }
+            },
+            mediaReferenceResolver = mediaRefResolver,
+            activeSurfaceWallpaperId = { surface -> wallpaperManager.getActiveSurfaceWallpaperId(surface) }
         )
     }
 

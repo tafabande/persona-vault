@@ -717,153 +717,347 @@ fun KeyDetailScreen(
                     }
                 }
 
-                // PRIMARY CREDENTIAL ACTION CARD (Reveal / Conceal, Copy, and Value)
-                VaultGroupedCard {
-                    // Reveal / Hide Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { isSecretRevealed = !isSecretRevealed }
-                            .tactilePress()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = null,
-                            tint = getVaultTextPrimary(),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                // PRIMARY CREDENTIAL ACTION CARD
+                if (currentItem.category == VaultCategory.PASSWORD) {
+                    val username = passSecret?.username
+                    val website = passSecret?.websiteUrl
+                    val notes = passSecret?.notes
+                    val passwordPlain = passSecret?.passwordPlaintext.orEmpty()
+                    val strength = remember(passwordPlain) { evaluatePasswordStrength(passwordPlain) }
+
+                    VaultGroupedCard {
+                        // Username row (if present)
+                        if (!username.isNullOrBlank()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.copyToClipboard(context, username, "Username", isSecret = false)
+                                    }
+                                    .tactilePress()
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = getVaultTextSecondary(),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = username,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = getVaultTextPrimary()
+                                    )
+                                    Text(
+                                        text = "Username / Email",
+                                        fontSize = 12.sp,
+                                        color = getVaultTextSecondary()
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy username",
+                                    tint = getVaultTextSecondary(),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
+                        }
+
+                        // Password row with integrated actions & strength feedback
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = getVaultTextSecondary(),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (isSecretRevealed) passwordPlain.ifBlank { "••••••••" } else "••••••••",
+                                        fontSize = 15.sp,
+                                        fontFamily = if (isSecretRevealed) FontFamily.Monospace else FontFamily.Default,
+                                        fontWeight = FontWeight.Medium,
+                                        color = getVaultTextPrimary()
+                                    )
+                                    Text(
+                                        text = "Password",
+                                        fontSize = 12.sp,
+                                        color = getVaultTextSecondary()
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { isSecretRevealed = !isSecretRevealed },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (isSecretRevealed) "Hide password" else "Reveal password",
+                                        tint = getVaultTextSecondary(),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        viewModel.copyToClipboard(context, passwordPlain, currentItem.title, isSecret = true)
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy password",
+                                        tint = getVaultTextSecondary(),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            // Integrated password strength indicator
+                            if (passwordPlain.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Strength: ${strength.label}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = strength.color
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                LinearProgressIndicator(
+                                    progress = { strength.progress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp)),
+                                    color = strength.color,
+                                    trackColor = getVaultBorder()
+                                )
+                            }
+                        }
+
+                        // Website (if present)
+                        if (!website.isNullOrBlank()) {
+                            HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        try {
+                                            val uri = if (website.startsWith("http://") || website.startsWith("https://")) {
+                                                Uri.parse(website)
+                                            } else {
+                                                Uri.parse("https://$website")
+                                            }
+                                            val intent = Intent(Intent.ACTION_VIEW, uri)
+                                            context.startActivity(intent)
+                                        } catch (_: Exception) {
+                                            viewModel.copyToClipboard(context, website, "Website URL", isSecret = false)
+                                        }
+                                    }
+                                    .tactilePress()
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.OpenInBrowser,
+                                    contentDescription = null,
+                                    tint = getVaultTextSecondary(),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = website,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = getVaultTextPrimary(),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Website",
+                                        fontSize = 12.sp,
+                                        color = getVaultTextSecondary()
+                                    )
+                                }
+                            }
+                        }
+
+                        // Notes (if present)
+                        if (!notes.isNullOrBlank()) {
+                            HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.copyToClipboard(context, notes, "Notes", isSecret = false)
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = getVaultTextSecondary(),
+                                    modifier = Modifier.size(18.dp).padding(top = 2.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = notes,
+                                        fontSize = 14.sp,
+                                        color = getVaultTextPrimary(),
+                                        lineHeight = 20.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Notes",
+                                        fontSize = 12.sp,
+                                        color = getVaultTextSecondary()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Non-password credentials: Reveal / Conceal and Copy card
+                    VaultGroupedCard {
+                        // Reveal / Hide Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { isSecretRevealed = !isSecretRevealed }
+                                .tactilePress()
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null,
+                                tint = getVaultTextPrimary(),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = revealButtonText,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = getVaultTextPrimary()
+                                )
+                                if (isSecretRevealed) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    when (currentItem.category) {
+                                        VaultCategory.SECURE_NOTE -> {
+                                            Text(
+                                                text = secretValue.ifBlank { "(Empty note)" },
+                                                fontSize = 14.sp,
+                                                color = getVaultTextPrimary(),
+                                                lineHeight = 22.sp
+                                            )
+                                        }
+                                        VaultCategory.RECOVERY_CODE -> {
+                                            val codes = recoverySecret?.codes.orEmpty()
+                                            if (codes.isNotEmpty()) {
+                                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    codes.forEach { codeEntry ->
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .clip(RoundedCornerShape(6.dp))
+                                                                .background(getVaultBorder().copy(alpha = 0.4f))
+                                                                .clickable {
+                                                                    if (!codeEntry.isUsed) {
+                                                                        viewModel.consumeRecoveryCode(currentItem.id, codeEntry.code)
+                                                                    }
+                                                                }
+                                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                text = codeEntry.code,
+                                                                fontFamily = FontFamily.Monospace,
+                                                                fontSize = 13.sp,
+                                                                color = if (codeEntry.isUsed) getVaultTextSecondary() else getVaultTextPrimary(),
+                                                                textDecoration = if (codeEntry.isUsed) TextDecoration.LineThrough else TextDecoration.None
+                                                            )
+                                                            if (codeEntry.isUsed) {
+                                                                Text(text = "USED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = getVaultTextSecondary())
+                                                            } else {
+                                                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp), tint = getVaultTextSecondary())
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                Text(text = "No recovery codes recorded", fontSize = 13.sp, color = getVaultTextSecondary())
+                                            }
+                                        }
+                                        else -> {
+                                            Text(
+                                                text = secretValue.ifBlank { "••••••••" },
+                                                fontSize = 14.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = getVaultTextPrimary()
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSecretRevealed) getVaultTextPrimary() else getVaultTextSecondary().copy(alpha = 0.5f))
+                            )
+                        }
+
+                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
+
+                        // Copy Secret Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.copyToClipboard(context, secretValue, currentItem.title, isSecret = true)
+                                }
+                                .tactilePress()
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                tint = getVaultTextPrimary(),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
                             Text(
-                                text = revealButtonText,
+                                text = copyButtonText,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Normal,
                                 color = getVaultTextPrimary()
                             )
-                            if (isSecretRevealed) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                when (currentItem.category) {
-                                    VaultCategory.SECURE_NOTE -> {
-                                        Text(
-                                            text = secretValue.ifBlank { "(Empty note)" },
-                                            fontSize = 14.sp,
-                                            color = getVaultTextPrimary(),
-                                            lineHeight = 22.sp
-                                        )
-                                    }
-                                    VaultCategory.RECOVERY_CODE -> {
-                                        val codes = recoverySecret?.codes.orEmpty()
-                                        if (codes.isNotEmpty()) {
-                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                codes.forEach { codeEntry ->
-                                                    Row(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .clip(RoundedCornerShape(6.dp))
-                                                            .background(getVaultBorder().copy(alpha = 0.4f))
-                                                            .clickable {
-                                                                if (!codeEntry.isUsed) {
-                                                                    viewModel.consumeRecoveryCode(currentItem.id, codeEntry.code)
-                                                                }
-                                                            }
-                                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        Text(
-                                                            text = codeEntry.code,
-                                                            fontFamily = FontFamily.Monospace,
-                                                            fontSize = 13.sp,
-                                                            color = if (codeEntry.isUsed) getVaultTextSecondary() else getVaultTextPrimary(),
-                                                            textDecoration = if (codeEntry.isUsed) TextDecoration.LineThrough else TextDecoration.None
-                                                        )
-                                                        if (codeEntry.isUsed) {
-                                                            Text(text = "USED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = getVaultTextSecondary())
-                                                        } else {
-                                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp), tint = getVaultTextSecondary())
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            Text(text = "No recovery codes recorded", fontSize = 13.sp, color = getVaultTextSecondary())
-                                        }
-                                    }
-                                    else -> {
-                                        Text(
-                                            text = secretValue.ifBlank { "••••••••" },
-                                            fontSize = 14.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = getVaultTextPrimary()
-                                        )
-                                    }
-                                }
-                            }
                         }
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(if (isSecretRevealed) getVaultTextPrimary() else getVaultTextSecondary().copy(alpha = 0.5f))
-                        )
-                    }
-
-                    HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
-
-                    // Copy Secret Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                viewModel.copyToClipboard(context, secretValue, currentItem.title, isSecret = true)
-                            }
-                            .tactilePress()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            tint = getVaultTextPrimary(),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = copyButtonText,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = getVaultTextPrimary()
-                        )
-                    }
-
-                    HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
-
-                    // Export Secret Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showExportConfirmDialog = true
-                            }
-                            .tactilePress()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FileDownload,
-                            contentDescription = null,
-                            tint = getVaultTextPrimary(),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Export plaintext secret",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = getVaultTextPrimary()
-                        )
                     }
                 }
 
@@ -872,185 +1066,7 @@ fun KeyDetailScreen(
                 // CATEGORY-SPECIFIC METADATA CARDS FOR ALL SECRET TYPES
                 when (currentItem.category) {
                     VaultCategory.PASSWORD -> {
-                        val username = passSecret?.username
-                        val website = passSecret?.websiteUrl
-                        val notes = passSecret?.notes
-                        val passwordPlain = passSecret?.passwordPlaintext.orEmpty()
-                        val strength = remember(passwordPlain) { evaluatePasswordStrength(passwordPlain) }
-
-                        // Password Strength Card
-                        if (passwordPlain.isNotBlank()) {
-                            VaultGroupedCard(modifier = Modifier.padding(bottom = 16.dp)) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Default.Shield,
-                                                contentDescription = null,
-                                                tint = strength.color,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = "Security Strength",
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = getVaultTextPrimary()
-                                            )
-                                        }
-                                        Text(
-                                            text = strength.label,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = strength.color
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    LinearProgressIndicator(
-                                        progress = { strength.progress },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(5.dp)
-                                            .clip(RoundedCornerShape(3.dp)),
-                                        color = strength.color,
-                                        trackColor = getVaultBorder()
-                                    )
-                                }
-                            }
-                        }
-
-                        // Username, Website, Notes Details Card
-                        VaultGroupedCard {
-                            if (!username.isNullOrBlank()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.copyToClipboard(context, username, "Username", isSecret = false)
-                                        }
-                                        .tactilePress()
-                                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = null,
-                                        tint = getVaultTextSecondary(),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(14.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = username,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = getVaultTextPrimary()
-                                        )
-                                        Text(
-                                            text = "Username / Email",
-                                            fontSize = 12.sp,
-                                            color = getVaultTextSecondary()
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy username",
-                                        tint = getVaultTextSecondary(),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-
-                            if (!website.isNullOrBlank()) {
-                                if (!username.isNullOrBlank()) {
-                                    HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
-                                }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            try {
-                                                val uri = if (website.startsWith("http://") || website.startsWith("https://")) {
-                                                    Uri.parse(website)
-                                                } else {
-                                                    Uri.parse("https://$website")
-                                                }
-                                                val intent = Intent(Intent.ACTION_VIEW, uri)
-                                                context.startActivity(intent)
-                                            } catch (_: Exception) {
-                                                viewModel.copyToClipboard(context, website, "Website URL", isSecret = false)
-                                            }
-                                        }
-                                        .tactilePress()
-                                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.OpenInBrowser,
-                                        contentDescription = null,
-                                        tint = getVaultTextSecondary(),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(14.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = website,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = getVaultTextPrimary(),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "Website",
-                                            fontSize = 12.sp,
-                                            color = getVaultTextSecondary()
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (!notes.isNullOrBlank()) {
-                                if (!username.isNullOrBlank() || !website.isNullOrBlank()) {
-                                    HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
-                                }
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            viewModel.copyToClipboard(context, notes, "Notes", isSecret = false)
-                                        }
-                                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Description,
-                                        contentDescription = null,
-                                        tint = getVaultTextSecondary(),
-                                        modifier = Modifier.size(18.dp).padding(top = 2.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(14.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = notes,
-                                            fontSize = 14.sp,
-                                            color = getVaultTextPrimary(),
-                                            lineHeight = 20.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = "Notes",
-                                            fontSize = 12.sp,
-                                            color = getVaultTextSecondary()
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        // Already handled in unified card above
                     }
 
                     VaultCategory.SECURE_NOTE -> {
@@ -1469,63 +1485,16 @@ fun KeyDetailScreen(
                     else -> {}
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // SECURITY AND AUDIT TIMESTAMPS CARD
-                VaultGroupedCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = getVaultTextSecondary(),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Protected Record",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = getVaultTextPrimary()
-                        )
-                    }
-
-                    HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Timer,
-                            contentDescription = null,
-                            tint = getVaultTextSecondary(),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column {
-                            Text(
-                                text = formatTimestamp(currentItem.updatedAt),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = getVaultTextPrimary()
-                            )
-                            Text(
-                                text = "Last updated timestamp",
-                                fontSize = 12.sp,
-                                color = getVaultTextSecondary()
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
+                // Subtle timestamp footer outside of content cards
+                Text(
+                    text = "Updated ${formatTimestamp(currentItem.updatedAt)}",
+                    fontSize = 12.sp,
+                    color = getVaultTextSecondary(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp, bottom = 20.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             }
 
             // Bottom Action: "Edit details"
