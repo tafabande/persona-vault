@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Info
@@ -129,6 +130,7 @@ fun MoreView(
     onEmergencyCardClicked: () -> Unit = {},
     onDeleteAccountClicked: () -> Unit = {},
     onUpgradeAccount: (String) -> Unit = {},
+    onSignInClicked: () -> Unit = {},
     onRevisitWalkthrough: () -> Unit = {},
     onExplain: (ContextualExplanation) -> Unit = {},
     modifier: Modifier = Modifier
@@ -242,7 +244,58 @@ fun MoreView(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    if (isLocalOnly || userEmail.isBlank()) {
+                        Surface(
+                            onClick = {
+                                haptics.selection()
+                                onSignInClicked()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .tactilePress()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Cloud,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Log In / Sign In",
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Connect Persona Cloud for multi-device sync",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
 
                     // Manage Account Row
                     Row(
@@ -814,6 +867,8 @@ fun MoreView(
     if (showManageAccountSheet) {
         ManageAccountSheet(
             userEmail = userEmail,
+            isLocalOnly = isLocalOnly,
+            onSignInClicked = onSignInClicked,
             onSignOutClicked = onSignOutClicked,
             onDismissRequest = { showManageAccountSheet = false }
         )
@@ -1098,6 +1153,8 @@ private fun QuietSettingRow(
 @Composable
 fun ManageAccountSheet(
     userEmail: String,
+    isLocalOnly: Boolean = false,
+    onSignInClicked: () -> Unit = {},
     onSignOutClicked: () -> Unit,
     onDismissRequest: () -> Unit
 ) {
@@ -1167,17 +1224,15 @@ fun ManageAccountSheet(
                         }
                     }
 
-                    // 1. Reset Password via OTP
+                    // 0. Log In / Switch Account Tile
                     Surface(
                         onClick = {
                             haptics.selection()
-                            otpCode = ""
-                            newPassword = ""
-                            confirmPassword = ""
-                            currentView = "RESET"
+                            onDismissRequest()
+                            onSignInClicked()
                         },
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth().tactilePress()
                     ) {
@@ -1186,9 +1241,18 @@ fun ManageAccountSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Cloud,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                                 Text(
-                                    text = "Reset Password",
+                                    text = if (userEmail.isBlank() || isLocalOnly) "Log In / Sign In" else "Switch Account / Log In",
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -1199,7 +1263,41 @@ fun ManageAccountSheet(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // 2. Sign Out
+                    // 1. Reset Password via OTP (for accounts with email)
+                    if (userEmail.isNotBlank()) {
+                        Surface(
+                            onClick = {
+                                haptics.selection()
+                                otpCode = ""
+                                newPassword = ""
+                                confirmPassword = ""
+                                currentView = "RESET"
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth().tactilePress()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Reset Password",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    // 2. Sign Out (Muted calm tonal styling)
                     Surface(
                         onClick = {
                             haptics.warning()
@@ -1219,17 +1317,17 @@ fun ManageAccountSheet(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Sign Out",
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.error
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // 3. Delete Account
+                    // 3. Delete Account (Monochromatic calm tonal styling - no loud red border)
                     Surface(
                         onClick = {
                             haptics.warning()
@@ -1237,8 +1335,8 @@ fun ManageAccountSheet(
                             currentView = "DELETE"
                         },
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
                         modifier = Modifier.fillMaxWidth().tactilePress()
                     ) {
                         Row(
@@ -1248,12 +1346,12 @@ fun ManageAccountSheet(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Delete Account",
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.error
+                                    text = if (userEmail.isBlank() || isLocalOnly) "Delete Local Profile" else "Delete Account",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                                 )
                             }
-                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                         }
                     }
                 }
@@ -1341,16 +1439,16 @@ fun ManageAccountSheet(
                         Text(
                             text = "Authorize Account Deletion",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "This will permanently wipe your account. To proceed, enter the 6-digit OTP code sent to ${userEmail.ifBlank { "your email" }}:",
+                        text = "This will permanently wipe your account. To proceed, enter the 6-digit confirmation code sent to ${userEmail.ifBlank { "your email" }}:",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.9f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
 

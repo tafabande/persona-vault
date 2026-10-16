@@ -225,6 +225,17 @@ class MainViewModel @Inject constructor(
     fun registerUserActivity() {
         sessionManager.onUserActivity()
     }
+
+    private val _isExplicitSignInFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isExplicitSignInFlow: kotlinx.coroutines.flow.StateFlow<Boolean> get() = _isExplicitSignInFlow
+
+    fun openSignIn() {
+        _isExplicitSignInFlow.value = true
+    }
+
+    fun closeSignIn() {
+        _isExplicitSignInFlow.value = false
+    }
 }
 
 @AndroidEntryPoint
@@ -293,11 +304,13 @@ class MainActivity : FragmentActivity() {
                 }
 
                 val reducedMotion = LocalReducedMotion.current
+                val isExplicitSignIn by viewModel.isExplicitSignInFlow.collectAsState()
                 Box(modifier = Modifier.fillMaxSize()) {
                     AnimatedContent(
                     targetState = when {
                         showSplash -> "SPLASH"
                         !hasCompletedWalkthrough || isRevisitingWalkthrough -> "WALKTHROUGH"
+                        isExplicitSignIn -> "ACCOUNT_CHOICE"
                         accountMode == AccountMode.UNSET -> "ACCOUNT_CHOICE"
                         accountMode == AccountMode.CLOUD_SYNCED && authUser == null -> "ACCOUNT_CHOICE"
                         !hasCompletedInitialProfile -> "MINIMAL_SETUP"
@@ -334,8 +347,13 @@ class MainActivity : FragmentActivity() {
                             val authUiState by accountsViewModel.uiState.collectAsState()
                             val currentAct = androidx.compose.ui.platform.LocalContext.current as? androidx.fragment.app.FragmentActivity
 
+                            BackHandler(enabled = isExplicitSignIn) {
+                                viewModel.closeSignIn()
+                            }
+
                             LaunchedEffect(Unit) {
                                 accountsViewModel.signInSuccessEvent.collect {
+                                    viewModel.closeSignIn()
                                     viewModel.onAuthSuccess()
                                 }
                             }
@@ -355,6 +373,7 @@ class MainActivity : FragmentActivity() {
                                     accountsViewModel.sendPasswordReset(email)
                                 },
                                 onSkip = {
+                                    viewModel.closeSignIn()
                                     viewModel.startLocalMode()
                                 },
                                 onClearError = {
@@ -402,6 +421,7 @@ class MainActivity : FragmentActivity() {
                                         onQuickActionHandled = { pendingQuickActionState.value = null },
                                         onLockClicked = { viewModel.lock() },
                                         onSignOutClicked = { viewModel.signOut() },
+                                        onSignInClicked = { viewModel.openSignIn() },
                                         onRequestBiometricAuth = { title, subtitle, onSuccess, onError ->
                                             requestBiometricAuthentication(title, subtitle, onSuccess, onError)
                                         }

@@ -254,6 +254,7 @@ fun PersonaDashboardScreen(
     onQuickActionHandled: (() -> Unit)? = null,
     onLockClicked: () -> Unit,
     onSignOutClicked: () -> Unit = onLockClicked,
+    onSignInClicked: () -> Unit = {},
     onRequestBiometricAuth: ((title: String, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit)? = null
 ) {
     val profileViewModel: ProfileViewModel = hiltViewModel()
@@ -1616,6 +1617,7 @@ fun PersonaDashboardScreen(
                         onLockClicked = onLockClicked,
                         onChangePasswordClicked = { showDialog("changePassword") },
                         onSignOutClicked = onSignOutClicked,
+                        onSignInClicked = onSignInClicked,
                         onSecurityClicked = { fullScreenOverlay = "SECURITY_SETTINGS" },
                         onAppPinSecurityClicked = { fullScreenOverlay = "SECURITY_SETTINGS" },
                         onOpenInformationLibrary = { fullScreenOverlay = "INFORMATION_LIBRARY" },
