@@ -195,14 +195,9 @@ fun StorageManagementSheet(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "$totalDocumentsCount documents encrypted locally",
+                                    text = "$totalDocumentsCount documents stored",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "Zero cloud leak",
-                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                                    color = MaterialTheme.colorScheme.tertiary
                                 )
                             }
                         }
@@ -313,12 +308,6 @@ fun StorageManagementSheet(
                                     )
                                 }
                             }
-
-                            Icon(
-                                imageVector = if (isAdvancedExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
@@ -352,7 +341,7 @@ fun StorageManagementSheet(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Text("Vacuum & Defragment Encrypted Database")
+                                    Text("Vacuum & Defragment Database")
                                 }
                             }
                         }

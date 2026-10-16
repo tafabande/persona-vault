@@ -2,10 +2,12 @@ package com.pims.vault.presentation.medical
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,45 +28,29 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonalInjury
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,6 +62,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,7 +73,6 @@ import com.pims.vault.core.model.AllergySeverity
 import com.pims.vault.core.model.ConditionStatus
 import com.pims.vault.core.model.CoverageType
 import com.pims.vault.core.model.MedicationRoute
-import com.pims.vault.core.model.SecurityClassification
 import com.pims.vault.domain.model.AllergyItem
 import com.pims.vault.domain.model.BloodType
 import com.pims.vault.domain.model.ConditionState
@@ -97,17 +85,21 @@ import com.pims.vault.domain.model.MedicalConditionItem
 import com.pims.vault.domain.model.MedicalDoctorItem
 import com.pims.vault.domain.model.MedicalHubData
 import com.pims.vault.domain.model.MedicalProfile
-import com.pims.vault.domain.model.MedicalSeverity
 import com.pims.vault.domain.model.MedicalVisitItem
 import com.pims.vault.domain.model.MedicationItem
 import com.pims.vault.domain.model.PrescriptionItem
-import com.pims.vault.presentation.ui.components.PimsClassificationBadge
-import com.pims.vault.presentation.ui.components.PimsOutlinedInput
-import com.pims.vault.presentation.ui.components.PimsSkeletonAccordion
-import com.pims.vault.presentation.ui.theme.PimsDimensions
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.tactilePress
+import com.pims.vault.presentation.vault.screens.VaultDesignTokens
+import com.pims.vault.presentation.vault.screens.VaultGroupedCard
+import com.pims.vault.presentation.vault.screens.VaultPillActionButton
+import com.pims.vault.presentation.vault.screens.VaultUnderlineField
+import com.pims.vault.presentation.vault.screens.getVaultBackground
+import com.pims.vault.presentation.vault.screens.getVaultBorder
+import com.pims.vault.presentation.vault.screens.getVaultCardSurface
+import com.pims.vault.presentation.vault.screens.getVaultPillButtonColor
+import com.pims.vault.presentation.vault.screens.getVaultPillTextColor
+import com.pims.vault.presentation.vault.screens.getVaultTextPrimary
+import com.pims.vault.presentation.vault.screens.getVaultTextSecondary
 
 @Composable
 fun MedicalDossierView(
@@ -120,6 +112,7 @@ fun MedicalDossierView(
     val emergencyCard = uiState.emergencyProjection
     val profile = hubData?.profile ?: MedicalProfile(personId = uiState.activePersonId)
     val isUnlocked = uiState.isMedicalGateUnlocked
+    var showAddMenu by remember { mutableStateOf(false) }
 
     val hasOpenDialog = uiState.isEditingProfile ||
             uiState.isAddingAllergy ||
@@ -140,394 +133,342 @@ fun MedicalDossierView(
         }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
+            .background(getVaultBackground())
             .statusBarsPadding()
     ) {
-        // Dossier Header with Title & Dismiss
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = PimsDimensions.paddingMedium, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // ==========================================
+            // Clean Top Bar (No redundant subtitles)
+            // ==========================================
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (onDismiss != null) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .tactilePress()
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = getVaultTextPrimary(),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+
                 Text(
-                    text = "Medical Dossier",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "Medical",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.5).sp
+                    ),
+                    color = getVaultTextPrimary(),
+                    modifier = Modifier.weight(1f)
                 )
-            }
-            if (onDismiss != null) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close Medical Dossier",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
 
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = PimsDimensions.paddingMedium),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-        // ==========================================
-        // 2. Medical Privacy Gate Banner (only when locked)
-        // ==========================================
-        if (!isUnlocked) {
-            item {
-                MedicalPrivacyGateBanner(
-                    isUnlocked = false,
-                    onUnlockClick = { onEvent(MedicalEvent.UnlockMedicalGate) }
-                )
-            }
-        }
-
-        // ==========================================
-        // 3. Quick Stats & Medical Profile Baseline
-        // ==========================================
-        item {
-            MedicalQuickStatsCard(
-                profile = profile,
-                onEditClicked = { onEvent(MedicalEvent.OpenEditProfileDialog) }
-            )
-        }
-
-        // Only show clinical detail accordions when unlocked (or preview structure)
-        if (isUnlocked) {
-            // ==========================================
-            // 4. Health: Allergies & Conditions
-            // ==========================================
-            item {
-                PimsSkeletonAccordion(
-                    title = "Allergies & Sensitivities (${hubData?.allergies?.size ?: 0})",
-                    icon = Icons.Default.MedicalServices,
-                    initiallyExpanded = true
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
+                if (isUnlocked) {
+                    Box {
+                        IconButton(
+                            onClick = { showAddMenu = true },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .tactilePress()
                         ) {
-                            OutlinedButton(
-                                onClick = { onEvent(MedicalEvent.OpenAddAllergyDialog) },
-                                shape = RoundedCornerShape(20.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Add Allergy", style = MaterialTheme.typography.labelSmall)
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add",
+                                tint = getVaultTextPrimary(),
+                                modifier = Modifier.size(22.dp)
+                            )
                         }
 
+                        DropdownMenu(
+                            expanded = showAddMenu,
+                            onDismissRequest = { showAddMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Allergy") },
+                                onClick = {
+                                    showAddMenu = false
+                                    onEvent(MedicalEvent.OpenAddAllergyDialog)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Condition") },
+                                onClick = {
+                                    showAddMenu = false
+                                    onEvent(MedicalEvent.OpenAddConditionDialog)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Medication") },
+                                onClick = {
+                                    showAddMenu = false
+                                    onEvent(MedicalEvent.OpenAddMedicationDialog)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Prescription (Rx)") },
+                                onClick = {
+                                    showAddMenu = false
+                                    onEvent(MedicalEvent.OpenAddPrescriptionDialog)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Doctor") },
+                                onClick = {
+                                    showAddMenu = false
+                                    onEvent(MedicalEvent.OpenAddDoctorDialog)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Facility / Clinic") },
+                                onClick = {
+                                    showAddMenu = false
+                                    onEvent(MedicalEvent.OpenAddFacilityDialog)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Medical Aid / Insurance") },
+                                onClick = {
+                                    showAddMenu = false
+                                    onEvent(MedicalEvent.OpenAddCoverageDialog)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Visit History") },
+                                onClick = {
+                                    showAddMenu = false
+                                    onEvent(MedicalEvent.OpenAddVisitDialog)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ==========================================
+            // Unified Scrollable Content
+            // ==========================================
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 48.dp)
+            ) {
+                // Privacy gate lock banner if locked
+                if (!isUnlocked) {
+                    item {
+                        MedicalPrivacyGateCard(
+                            onUnlockClick = { onEvent(MedicalEvent.UnlockMedicalGate) }
+                        )
+                    }
+                }
+
+                // ICE Emergency Card
+                if (emergencyCard != null) {
+                    item {
+                        MinimalEmergencyProjectionCard(
+                            projection = emergencyCard,
+                            onConfigure = { onEvent(MedicalEvent.OpenEmergencyConfigDialog) },
+                            onRefresh = { onEvent(MedicalEvent.RefreshEmergencyCard) }
+                        )
+                    }
+                }
+
+                if (isUnlocked) {
+                    // Medical Profile (Baseline Stats)
+                    item {
+                        MinimalMedicalProfileCard(
+                            profile = profile,
+                            onEdit = { onEvent(MedicalEvent.OpenEditProfileDialog) }
+                        )
+                    }
+
+                    // Allergies Section
+                    item {
                         val allergies = hubData?.allergies ?: emptyList()
-                        if (allergies.isEmpty()) {
-                            Text(
-                                text = "No known drug or environmental allergies recorded.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            allergies.forEach { allergy ->
-                                AllergyCard(
-                                    allergy = allergy,
-                                    onDelete = { onEvent(MedicalEvent.DeleteRecord(allergy.id)) }
-                                )
+                        SectionGroup(
+                            title = "Allergies",
+                            count = allergies.size,
+                            onAdd = { onEvent(MedicalEvent.OpenAddAllergyDialog) }
+                        ) {
+                            if (allergies.isEmpty()) {
+                                EmptyRow(label = "No allergies added", onAdd = { onEvent(MedicalEvent.OpenAddAllergyDialog) })
+                            } else {
+                                allergies.forEachIndexed { index, allergy ->
+                                    AllergyItemRow(
+                                        allergy = allergy,
+                                        onDelete = { onEvent(MedicalEvent.DeleteRecord(allergy.id)) }
+                                    )
+                                    if (index < allergies.lastIndex) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.35f))
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            item {
-                PimsSkeletonAccordion(
-                    title = "Conditions & Medical History (${hubData?.conditions?.size ?: 0})",
-                    icon = Icons.Default.PersonalInjury,
-                    initiallyExpanded = false
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(
-                                onClick = { onEvent(MedicalEvent.OpenAddConditionDialog) },
-                                shape = RoundedCornerShape(20.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Add Condition", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-
+                    // Conditions Section
+                    item {
                         val conditions = hubData?.conditions ?: emptyList()
-                        if (conditions.isEmpty()) {
-                            Text(
-                                text = "No existing conditions registered.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            conditions.forEach { condition ->
-                                ConditionCard(
-                                    condition = condition,
-                                    onDelete = { onEvent(MedicalEvent.DeleteRecord(condition.id)) }
-                                )
+                        SectionGroup(
+                            title = "Conditions",
+                            count = conditions.size,
+                            onAdd = { onEvent(MedicalEvent.OpenAddConditionDialog) }
+                        ) {
+                            if (conditions.isEmpty()) {
+                                EmptyRow(label = "No conditions added", onAdd = { onEvent(MedicalEvent.OpenAddConditionDialog) })
+                            } else {
+                                conditions.forEachIndexed { index, condition ->
+                                    ConditionItemRow(
+                                        condition = condition,
+                                        onDelete = { onEvent(MedicalEvent.DeleteRecord(condition.id)) }
+                                    )
+                                    if (index < conditions.lastIndex) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.35f))
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            // ==========================================
-            // 5. Medications & Prescriptions
-            // ==========================================
-            item {
-                PimsSkeletonAccordion(
-                    title = "Medications & Prescriptions (${(hubData?.medications?.size ?: 0) + (hubData?.prescriptions?.size ?: 0)})",
-                    icon = Icons.Default.Medication,
-                    initiallyExpanded = false
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // Medications action row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(
-                                    onClick = { onEvent(MedicalEvent.OpenAddMedicationDialog) },
-                                    shape = RoundedCornerShape(20.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Med", style = MaterialTheme.typography.labelSmall)
-                                }
-                                OutlinedButton(
-                                    onClick = { onEvent(MedicalEvent.OpenAddPrescriptionDialog) },
-                                    shape = RoundedCornerShape(20.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Rx", style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-
+                    // Medications & Prescriptions Section
+                    item {
                         val medications = hubData?.medications ?: emptyList()
-                        if (medications.isEmpty()) {
-                            Text(
-                                text = "No active medications documented.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            medications.forEach { med ->
-                                MedicationCard(
-                                    medication = med,
-                                    onDiscontinue = { onEvent(MedicalEvent.DiscontinueMedication(med.id)) },
-                                    onDelete = { onEvent(MedicalEvent.DeleteRecord(med.id)) }
-                                )
-                            }
-                        }
-
-                        // Prescriptions Section
                         val prescriptions = hubData?.prescriptions ?: emptyList()
-                        if (prescriptions.isNotEmpty()) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                            Text(
-                                text = "Prescription Records (${prescriptions.size})",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            prescriptions.forEach { rx ->
-                                PrescriptionCard(
-                                    prescription = rx,
-                                    onDelete = { onEvent(MedicalEvent.DeleteRecord(rx.id)) }
-                                )
+                        SectionGroup(
+                            title = "Medications",
+                            count = medications.size + prescriptions.size,
+                            onAdd = { onEvent(MedicalEvent.OpenAddMedicationDialog) }
+                        ) {
+                            if (medications.isEmpty() && prescriptions.isEmpty()) {
+                                EmptyRow(label = "No medications added", onAdd = { onEvent(MedicalEvent.OpenAddMedicationDialog) })
+                            } else {
+                                medications.forEachIndexed { index, med ->
+                                    MedicationItemRow(
+                                        medication = med,
+                                        onDiscontinue = { onEvent(MedicalEvent.DiscontinueMedication(med.id)) },
+                                        onDelete = { onEvent(MedicalEvent.DeleteRecord(med.id)) }
+                                    )
+                                    if (index < medications.lastIndex || prescriptions.isNotEmpty()) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.35f))
+                                    }
+                                }
+                                prescriptions.forEachIndexed { index, rx ->
+                                    PrescriptionItemRow(
+                                        prescription = rx,
+                                        onDelete = { onEvent(MedicalEvent.DeleteRecord(rx.id)) }
+                                    )
+                                    if (index < prescriptions.lastIndex) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.35f))
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            // ==========================================
-            // 6. Doctors & Healthcare Facilities
-            // ==========================================
-            item {
-                PimsSkeletonAccordion(
-                    title = "Doctors & Facilities (${(hubData?.doctors?.size ?: 0) + (hubData?.facilities?.size ?: 0)})",
-                    icon = Icons.Default.LocalHospital,
-                    initiallyExpanded = false
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(
-                                    onClick = { onEvent(MedicalEvent.OpenAddDoctorDialog) },
-                                    shape = RoundedCornerShape(20.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Doctor", style = MaterialTheme.typography.labelSmall)
-                                }
-                                OutlinedButton(
-                                    onClick = { onEvent(MedicalEvent.OpenAddFacilityDialog) },
-                                    shape = RoundedCornerShape(20.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Facility", style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-
+                    // Doctors & Care Facilities
+                    item {
                         val doctors = hubData?.doctors ?: emptyList()
-                        doctors.forEach { doc ->
-                            DoctorCard(
-                                doctor = doc,
-                                onDelete = { onEvent(MedicalEvent.DeleteRecord(doc.id)) }
-                            )
-                        }
-
                         val facilities = hubData?.facilities ?: emptyList()
-                        if (facilities.isNotEmpty()) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-                            Text(
-                                text = "Clinics & Patient Numbers",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            facilities.forEach { facility ->
-                                FacilityCard(
-                                    facility = facility,
-                                    onDelete = { onEvent(MedicalEvent.DeleteRecord(facility.id)) }
-                                )
+                        SectionGroup(
+                            title = "Care Team",
+                            count = doctors.size + facilities.size,
+                            onAdd = { onEvent(MedicalEvent.OpenAddDoctorDialog) }
+                        ) {
+                            if (doctors.isEmpty() && facilities.isEmpty()) {
+                                EmptyRow(label = "No doctors or clinics added", onAdd = { onEvent(MedicalEvent.OpenAddDoctorDialog) })
+                            } else {
+                                doctors.forEachIndexed { index, doc ->
+                                    DoctorItemRow(
+                                        doctor = doc,
+                                        onDelete = { onEvent(MedicalEvent.DeleteRecord(doc.id)) }
+                                    )
+                                    if (index < doctors.lastIndex || facilities.isNotEmpty()) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.35f))
+                                    }
+                                }
+                                facilities.forEachIndexed { index, facility ->
+                                    FacilityItemRow(
+                                        facility = facility,
+                                        onDelete = { onEvent(MedicalEvent.DeleteRecord(facility.id)) }
+                                    )
+                                    if (index < facilities.lastIndex) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.35f))
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            // ==========================================
-            // 7. Coverage: Medical Aid & Insurance
-            // ==========================================
-            item {
-                PimsSkeletonAccordion(
-                    title = "Medical Aid & Insurance (${hubData?.coverages?.size ?: 0})",
-                    icon = Icons.Default.Shield,
-                    initiallyExpanded = false
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(
-                                onClick = { onEvent(MedicalEvent.OpenAddCoverageDialog) },
-                                shape = RoundedCornerShape(20.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Add Coverage", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-
+                    // Insurance / Medical Aid
+                    item {
                         val coverages = hubData?.coverages ?: emptyList()
-                        if (coverages.isEmpty()) {
-                            Text(
-                                text = "No insurance or medical aid plans recorded.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            coverages.forEach { coverage ->
-                                CoverageCard(
-                                    coverage = coverage,
-                                    onDelete = { onEvent(MedicalEvent.DeleteRecord(coverage.id)) }
-                                )
+                        SectionGroup(
+                            title = "Medical Aid & Insurance",
+                            count = coverages.size,
+                            onAdd = { onEvent(MedicalEvent.OpenAddCoverageDialog) }
+                        ) {
+                            if (coverages.isEmpty()) {
+                                EmptyRow(label = "No medical aid plans added", onAdd = { onEvent(MedicalEvent.OpenAddCoverageDialog) })
+                            } else {
+                                coverages.forEachIndexed { index, coverage ->
+                                    CoverageItemRow(
+                                        coverage = coverage,
+                                        onDelete = { onEvent(MedicalEvent.DeleteRecord(coverage.id)) }
+                                    )
+                                    if (index < coverages.lastIndex) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.35f))
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            // ==========================================
-            // 8. Health Visits / Medical History Timeline
-            // ==========================================
-            item {
-                PimsSkeletonAccordion(
-                    title = "Medical Visits Timeline (${hubData?.visits?.size ?: 0})",
-                    icon = Icons.Default.CalendarToday,
-                    initiallyExpanded = false
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(
-                                onClick = { onEvent(MedicalEvent.OpenAddVisitDialog) },
-                                shape = RoundedCornerShape(20.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Add Visit", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-
+                    // Medical Visits Timeline
+                    item {
                         val visits = hubData?.visits ?: emptyList()
-                        if (visits.isEmpty()) {
-                            Text(
-                                text = "No previous medical visits logged.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            visits.forEach { visit ->
-                                VisitCard(
-                                    visit = visit,
-                                    onDelete = { onEvent(MedicalEvent.DeleteRecord(visit.id)) }
-                                )
+                        SectionGroup(
+                            title = "Visits",
+                            count = visits.size,
+                            onAdd = { onEvent(MedicalEvent.OpenAddVisitDialog) }
+                        ) {
+                            if (visits.isEmpty()) {
+                                EmptyRow(label = "No visits logged", onAdd = { onEvent(MedicalEvent.OpenAddVisitDialog) })
+                            } else {
+                                visits.forEachIndexed { index, visit ->
+                                    VisitItemRow(
+                                        visit = visit,
+                                        onDelete = { onEvent(MedicalEvent.DeleteRecord(visit.id)) }
+                                    )
+                                    if (index < visits.lastIndex) {
+                                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.35f))
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
-
-        item { Spacer(modifier = Modifier.height(PimsDimensions.paddingExtraLarge)) }
-    }
     }
 
-    // ==========================================
-    // Dialogs & Sheets
-    // ==========================================
+    // Modal dialogs
     if (uiState.isEditingProfile) {
-        EditMedicalProfileDialog(
+        EditMedicalProfileSheet(
             initialProfile = profile,
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { onEvent(MedicalEvent.SaveProfile(it)) }
@@ -535,7 +476,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isAddingAllergy) {
-        AddAllergyDialog(
+        AddAllergySheet(
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { allergen, reaction, severity, notes ->
                 onEvent(MedicalEvent.AddAllergy(allergen, reaction, severity, notes))
@@ -544,7 +485,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isAddingCondition) {
-        AddConditionDialog(
+        AddConditionSheet(
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { name, desc, date, status, doctor, facility, notes ->
                 onEvent(MedicalEvent.AddCondition(name, desc, date, status, doctor, facility, notes))
@@ -553,7 +494,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isAddingMedication) {
-        AddMedicationDialog(
+        AddMedicationSheet(
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { name, dosage, freq, route, start, end, purpose, doctor, instructions, notes ->
                 onEvent(MedicalEvent.AddMedication(name, dosage, freq, route, start, end, purpose, doctor, instructions, notes))
@@ -562,7 +503,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isAddingPrescription) {
-        AddPrescriptionDialog(
+        AddPrescriptionSheet(
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { doc, date, instructions, photo, summary, notes ->
                 onEvent(MedicalEvent.AddPrescription(doc, date, instructions, photo, summary, notes))
@@ -571,7 +512,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isAddingDoctor) {
-        AddDoctorDialog(
+        AddDoctorSheet(
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { name, specialty, phone, email, facility, address, patientNum, notes ->
                 onEvent(MedicalEvent.AddDoctor(name, specialty, phone, email, facility, address, patientNum, notes))
@@ -580,7 +521,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isAddingFacility) {
-        AddFacilityDialog(
+        AddFacilitySheet(
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { name, num, phone, address, notes ->
                 onEvent(MedicalEvent.AddFacility(name, num, phone, address, notes))
@@ -589,7 +530,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isAddingCoverage) {
-        AddCoverageDialog(
+        AddCoverageSheet(
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { type, prov, policy, member, plan, valid, phone, notes, photo ->
                 onEvent(MedicalEvent.AddCoverage(type, prov, policy, member, plan, valid, phone, notes, photo))
@@ -598,7 +539,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isAddingVisit) {
-        AddVisitDialog(
+        AddVisitSheet(
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { date, reason, doc, facility, diag, treat, rxSummary, followUp, notes ->
                 onEvent(MedicalEvent.AddVisit(date, reason, doc, facility, diag, treat, rxSummary, followUp, notes))
@@ -607,7 +548,7 @@ fun MedicalDossierView(
     }
 
     if (uiState.isConfiguringEmergencyCard && emergencyCard != null) {
-        EmergencyCardConfigDialog(
+        EmergencyCardConfigSheet(
             projection = emergencyCard,
             onDismiss = { onEvent(MedicalEvent.DismissDialogs) },
             onSave = { onEvent(MedicalEvent.UpdateEmergencyFields(it)) }
@@ -616,125 +557,192 @@ fun MedicalDossierView(
 }
 
 // ===========================================================================
-// Reusable Components & Cards
+// Section Group Container (Replaces nested cards & accordions)
 // ===========================================================================
 
 @Composable
-private fun MedicalPrivacyGateBanner(
-    isUnlocked: Boolean,
+private fun SectionGroup(
+    title: String,
+    count: Int,
+    onAdd: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = getVaultTextPrimary()
+                )
+                if (count > 0) {
+                    Text(
+                        text = "$count",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = getVaultTextSecondary()
+                    )
+                }
+            }
+
+            Text(
+                text = "+ Add",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = getVaultTextPrimary(),
+                modifier = Modifier
+                    .clickable(onClick = onAdd)
+                    .tactilePress()
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+
+        VaultGroupedCard {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun EmptyRow(
+    label: String,
+    onAdd: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onAdd)
+            .tactilePress()
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = getVaultTextSecondary().copy(alpha = 0.7f)
+        )
+        Text(
+            text = "+ Add",
+            style = MaterialTheme.typography.labelSmall,
+            color = getVaultTextSecondary()
+        )
+    }
+}
+
+// ===========================================================================
+// Reusable Tonal Surface Cards & Rows (Shield Icon Removed)
+// ===========================================================================
+
+@Composable
+private fun MedicalPrivacyGateCard(
     onUnlockClick: () -> Unit
 ) {
-    if (isUnlocked) return
-    Surface(
-        shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-        color = if (isUnlocked) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-        else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    VaultGroupedCard {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(
-                            if (isUnlocked) StateSuccess.copy(alpha = 0.15f)
-                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        ),
+                        .background(getVaultTextPrimary().copy(alpha = 0.08f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = if (isUnlocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = if (isUnlocked) StateSuccess else MaterialTheme.colorScheme.primary,
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = getVaultTextPrimary(),
                         modifier = Modifier.size(18.dp)
                     )
                 }
 
-                Column {
-                    Text(
-                        text = if (isUnlocked) "Medical Hub Unlocked" else "Medical Privacy Gate",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = if (isUnlocked) "Clinical history & private records unsealed for this session"
-                        else "Protected with biometric & Keystore session",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = "Medical Locked",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = getVaultTextPrimary()
+                )
             }
 
-            if (!isUnlocked) {
-                Button(
-                    onClick = onUnlockClick,
-                    shape = RoundedCornerShape(16.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Text("Unlock", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                }
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = getVaultPillButtonColor(),
+                modifier = Modifier
+                    .clickable(onClick = onUnlockClick)
+                    .tactilePress()
+            ) {
+                Text(
+                    text = "Unlock",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = getVaultPillTextColor(),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MedicalQuickStatsCard(
+private fun MinimalMedicalProfileCard(
     profile: MedicalProfile,
-    onEditClicked: () -> Unit
+    onEdit: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    VaultGroupedCard {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Medical Profile",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "Identity Baseline",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = getVaultTextSecondary()
                 )
-                IconButton(onClick = onEditClicked, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit Profile",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
+
+                Text(
+                    text = "Edit",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = getVaultTextPrimary(),
+                    modifier = Modifier
+                        .clickable(onClick = onEdit)
+                        .tactilePress()
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                )
             }
 
+            // Stats grid
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                StatPill(
-                    label = "Blood Type",
+                TonalStatCell(
+                    label = "Blood",
                     value = profile.bloodType.displayLabel.substringBefore(" "),
+                    isHighlighted = true,
                     modifier = Modifier.weight(1f)
                 )
-                StatPill(
+                TonalStatCell(
                     label = "Height",
                     value = profile.heightCm?.let { "$it cm" } ?: "—",
                     modifier = Modifier.weight(1f)
                 )
-                StatPill(
+                TonalStatCell(
                     label = "Weight",
                     value = profile.weightKg?.let { "$it kg" } ?: "—",
                     modifier = Modifier.weight(1f)
@@ -743,16 +751,17 @@ private fun MedicalQuickStatsCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                StatPill(
-                    label = "Medical Aid",
+                TonalStatCell(
+                    label = "Scheme",
                     value = profile.primaryMedicalAidProvider ?: "None",
                     modifier = Modifier.weight(1f)
                 )
-                StatPill(
-                    label = "Emergency Contact (ICE)",
+                TonalStatCell(
+                    label = "ICE",
                     value = profile.emergencyContactName ?: "Not set",
+                    subValue = profile.emergencyContactPhone,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -761,187 +770,278 @@ private fun MedicalQuickStatsCard(
 }
 
 @Composable
-private fun StatPill(
+private fun TonalStatCell(
     label: String,
     value: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subValue: String? = null,
+    isHighlighted: Boolean = false
 ) {
     Surface(
         shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        color = if (isHighlighted) getVaultTextPrimary().copy(alpha = 0.06f) else getVaultBackground().copy(alpha = 0.5f),
+        border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.25f)),
         modifier = modifier
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                color = getVaultTextSecondary(),
+                fontSize = 10.5.sp
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = getVaultTextPrimary(),
                 maxLines = 1
+            )
+            if (subValue != null) {
+                Text(
+                    text = subValue,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = getVaultTextSecondary().copy(alpha = 0.7f),
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MinimalEmergencyProjectionCard(
+    projection: EmergencyCardProjection,
+    onConfigure: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    VaultGroupedCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "ICE Card",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = getVaultTextPrimary()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(VaultDesignTokens.AccentGreen.copy(alpha = 0.15f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "Ready",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = VaultDesignTokens.AccentGreen
+                        )
+                    }
+                }
+                Text(
+                    text = "Blood: ${projection.bloodType?.displayLabel?.substringBefore(" ") ?: "Unknown"}${if (projection.severeAllergies.isNotEmpty()) " · Allergies: ${projection.severeAllergies.joinToString()}" else ""}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary(),
+                    maxLines = 1
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                IconButton(onClick = onRefresh, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh",
+                        tint = getVaultTextSecondary(),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+                IconButton(onClick = onConfigure, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Configure",
+                        tint = getVaultTextSecondary(),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AllergyItemRow(
+    allergy: AllergyItem,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = allergy.allergen,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = getVaultTextPrimary()
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(getVaultTextPrimary().copy(alpha = 0.08f))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = allergy.severity.displayLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        color = getVaultTextSecondary()
+                    )
+                }
+            }
+
+            allergy.reaction?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary()
+                )
+            }
+        }
+
+        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Delete",
+                tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                modifier = Modifier.size(15.dp)
             )
         }
     }
 }
 
 @Composable
-private fun AllergyCard(
-    allergy: AllergyItem,
-    onDelete: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = allergy.allergen,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                allergy.reaction?.let {
-                    Text(
-                        text = "Reaction: $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConditionCard(
+private fun ConditionItemRow(
     condition: MedicalConditionItem,
     onDelete: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = condition.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = getVaultTextPrimary()
                 )
-
-                condition.diagnosedDate?.let {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(getVaultTextPrimary().copy(alpha = 0.08f))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
                     Text(
-                        text = "Diagnosed: $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                condition.description?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = condition.status.name.lowercase().replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        color = getVaultTextSecondary()
                     )
                 }
             }
 
-            IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
+            val detail = listOfNotNull(condition.diagnosedDate, condition.description).joinToString(" · ")
+            if (detail.isNotEmpty()) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary()
                 )
             }
+        }
+
+        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Delete",
+                tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                modifier = Modifier.size(15.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun MedicationCard(
+private fun MedicationItemRow(
     medication: MedicationItem,
     onDiscontinue: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = medication.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (medication.isActive) {
-                        OutlinedButton(
-                            onClick = onDiscontinue,
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text("Stop", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
-                        }
-                    }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
-
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "${medication.dosage} • ${medication.frequency} • Route: ${medication.route.displayLabel}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold
+                text = medication.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = getVaultTextPrimary()
             )
-
+            Text(
+                text = "${medication.dosage} • ${medication.frequency}",
+                style = MaterialTheme.typography.bodySmall,
+                color = getVaultTextSecondary()
+            )
             medication.instructions?.let {
                 Text(
-                    text = "Instructions: $it",
+                    text = it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = getVaultTextSecondary().copy(alpha = 0.7f)
+                )
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (medication.isActive) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = getVaultTextPrimary().copy(alpha = 0.08f),
+                    modifier = Modifier
+                        .clickable(onClick = onDiscontinue)
+                        .tactilePress()
+                ) {
+                    Text(
+                        text = "Stop",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.5.sp,
+                        color = getVaultTextPrimary(),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Delete",
+                    tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                    modifier = Modifier.size(15.dp)
                 )
             }
         }
@@ -949,384 +1049,245 @@ private fun MedicationCard(
 }
 
 @Composable
-private fun PrescriptionCard(
+private fun PrescriptionItemRow(
     prescription: PrescriptionItem,
     onDelete: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = prescription.doctorName,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = getVaultTextPrimary()
+            )
+            prescription.issueDate?.let {
                 Text(
-                    text = prescription.doctorName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary()
                 )
-                prescription.issueDate?.let {
-                    Text(
-                        text = "Issued: $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                prescription.instructions?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
             }
+            prescription.instructions?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary().copy(alpha = 0.8f)
+                )
+            }
+        }
 
-            IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
+        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Delete",
+                tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                modifier = Modifier.size(15.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun DoctorCard(
+private fun DoctorItemRow(
     doctor: MedicalDoctorItem,
     onDelete: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
+    val clipboard = LocalClipboardManager.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = doctor.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = getVaultTextPrimary()
+            )
+            Text(
+                text = "${doctor.specialty} • ${doctor.facility ?: "Independent"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = getVaultTextSecondary()
+            )
+            doctor.phone?.let { phone ->
                 Text(
-                    text = doctor.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+                    text = phone,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = getVaultTextSecondary().copy(alpha = 0.8f),
+                    modifier = Modifier.clickable { clipboard.setText(AnnotatedString(phone)) }
                 )
-                Text(
-                    text = "${doctor.specialty} • ${doctor.facility ?: "Independent"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                doctor.phone?.let {
-                    Text(
-                        text = "📞 $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
+        }
 
-            IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
+        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Delete",
+                tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                modifier = Modifier.size(15.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun FacilityCard(
+private fun FacilityItemRow(
     facility: HealthcareFacilityItem,
     onDelete: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = facility.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = getVaultTextPrimary()
+            )
+            facility.patientNumber?.let {
                 Text(
-                    text = facility.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+                    text = "Ref: $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary()
                 )
-                facility.patientNumber?.let {
-                    Text(
-                        text = "Patient No: $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                facility.address?.let {
-                    Text(
-                        text = "📍 $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
+            facility.address?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary().copy(alpha = 0.8f)
+                )
+            }
+        }
 
-            IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
+        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Delete",
+                tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                modifier = Modifier.size(15.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun CoverageCard(
+private fun CoverageItemRow(
     coverage: InsuranceCoverageItem,
     onDelete: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = coverage.provider,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = getVaultTextPrimary()
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(getVaultTextPrimary().copy(alpha = 0.08f))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
                 ) {
                     Text(
-                        text = coverage.provider,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = coverage.coverageType.displayLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-
-                coverage.policyNumber?.let {
-                    Text(
-                        text = "Policy: $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                coverage.membershipNumber?.let {
-                    Text(
-                        text = "Member No: $it",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = coverage.coverageType.displayLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        color = getVaultTextSecondary()
                     )
                 }
             }
 
-            IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
+            coverage.membershipNumber?.let {
+                Text(
+                    text = "Member: $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary()
                 )
             }
+            coverage.policyNumber?.let {
+                Text(
+                    text = "Policy: $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary().copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Delete",
+                tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                modifier = Modifier.size(15.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun VisitCard(
+private fun VisitItemRow(
     visit: MedicalVisitItem,
     onDelete: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = visit.visitDate,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-
-                IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "${visit.doctorName ?: "Doctor"} • ${visit.facilityName ?: "Clinic"}",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
+                text = "${visit.visitDate} • ${visit.reason}",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = getVaultTextPrimary()
             )
             Text(
-                text = "Reason: ${visit.reason}",
+                text = listOfNotNull(visit.doctorName, visit.facilityName).joinToString(" • "),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = getVaultTextSecondary()
             )
-
             visit.diagnosis?.let {
                 Text(
-                    text = "Diagnosis: $it",
+                    text = it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = getVaultTextSecondary().copy(alpha = 0.8f)
                 )
             }
+        }
+
+        IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Delete",
+                tint = getVaultTextSecondary().copy(alpha = 0.4f),
+                modifier = Modifier.size(15.dp)
+            )
         }
     }
 }
 
 // ===========================================================================
-// Emergency Card Projection Banner
+// Clean Dialogs & Form Sheets
 // ===========================================================================
 
 @Composable
-fun EmergencyCardBanner(
-    projection: EmergencyCardProjection,
-    onConfigureClicked: () -> Unit,
-    onRefreshClicked: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(PimsDimensions.paddingMedium),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(StateWarning.copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Emergency Card",
-                            tint = StateWarning,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    Column {
-                        Text(
-                            text = "ICE Emergency Projection",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Safe public projection for first responders",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Row {
-                    IconButton(onClick = onRefreshClicked) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", modifier = Modifier.size(18.dp))
-                    }
-                    IconButton(onClick = onConfigureClicked) {
-                        Icon(Icons.Default.Settings, contentDescription = "Configure", modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    text = "Blood Group: ${projection.bloodType?.displayLabel ?: "Not set"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = "Status: ${projection.status.name}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = StateSuccess
-                )
-            }
-
-            if (projection.severeAllergies.isNotEmpty()) {
-                Text(
-                    text = "Allergies: ${projection.severeAllergies.joinToString(", ")}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = StateError
-                )
-            }
-        }
-    }
-}
-
-// ===========================================================================
-// Modal Dialogs
-// ===========================================================================
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun EditMedicalProfileDialog(
+fun EditMedicalProfileSheet(
     initialProfile: MedicalProfile,
     onDismiss: () -> Unit,
     onSave: (MedicalProfile) -> Unit
@@ -1338,132 +1299,139 @@ fun EditMedicalProfileDialog(
     var icePhone by remember { mutableStateOf(initialProfile.emergencyContactPhone ?: "") }
     var medAidProvider by remember { mutableStateOf(initialProfile.primaryMedicalAidProvider ?: "") }
     var medAidNum by remember { mutableStateOf(initialProfile.medicalAidNumber ?: "") }
-    var bloodDropdownExpanded by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 580.dp)
+                    .heightIn(max = 600.dp)
                     .verticalScroll(rememberScrollState())
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Edit Medical Profile",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                // Blood Type Dropdown
-                ExposedDropdownMenuBox(
-                    expanded = bloodDropdownExpanded,
-                    onExpandedChange = { bloodDropdownExpanded = !bloodDropdownExpanded }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = bloodType.displayLabel,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Blood Type") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = bloodDropdownExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
+                    Text(
+                        text = "Edit Medical Identity",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
                     )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
+                    }
+                }
 
-                    ExposedDropdownMenu(
-                        expanded = bloodDropdownExpanded,
-                        onDismissRequest = { bloodDropdownExpanded = false }
+                // Blood Group Picker
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Blood Group",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = getVaultTextSecondary()
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         BloodType.values().forEach { bType ->
-                            DropdownMenuItem(
-                                text = { Text(bType.displayLabel) },
-                                onClick = {
-                                    bloodType = bType
-                                    bloodDropdownExpanded = false
-                                }
-                            )
+                            val isSel = bloodType == bType
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSel) getVaultPillButtonColor() else getVaultBackground(),
+                                border = if (isSel) null else BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
+                                modifier = Modifier
+                                    .clickable { bloodType = bType }
+                                    .tactilePress()
+                            ) {
+                                Text(
+                                    text = bType.displayLabel.substringBefore(" "),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (isSel) getVaultPillTextColor() else getVaultTextSecondary(),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
                         }
                     }
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PimsOutlinedInput(
-                        value = height,
-                        onValueChange = { height = it },
-                        label = "Height (cm)",
-                        placeholder = "e.g. 175",
-                        modifier = Modifier.weight(1f)
-                    )
-                    PimsOutlinedInput(
-                        value = weight,
-                        onValueChange = { weight = it },
-                        label = "Weight (kg)",
-                        placeholder = "e.g. 72",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                PimsOutlinedInput(
-                    value = iceName,
-                    onValueChange = { iceName = it },
-                    label = "Emergency Contact Name (ICE)",
-                    placeholder = "e.g. Tendai Doe"
+                VaultUnderlineField(
+                    label = "Height (cm)",
+                    value = height,
+                    onValueChange = { height = it },
+                    placeholder = "e.g. 175"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Weight (kg)",
+                    value = weight,
+                    onValueChange = { weight = it },
+                    placeholder = "e.g. 72"
+                )
+
+                VaultUnderlineField(
+                    label = "Emergency Contact Name (ICE)",
+                    value = iceName,
+                    onValueChange = { iceName = it },
+                    placeholder = "e.g. Tendai Moyo"
+                )
+
+                VaultUnderlineField(
+                    label = "Emergency Contact Phone",
                     value = icePhone,
                     onValueChange = { icePhone = it },
-                    label = "Emergency Contact Phone",
                     placeholder = "e.g. +263 77..."
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Medical Scheme / Insurer",
                     value = medAidProvider,
                     onValueChange = { medAidProvider = it },
-                    label = "Medical Aid Provider",
                     placeholder = "e.g. Discovery Health"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Medical Scheme Number",
                     value = medAidNum,
                     onValueChange = { medAidNum = it },
-                    label = "Medical Aid Number",
                     placeholder = "e.g. DH-928174"
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            onSave(
-                                initialProfile.copy(
-                                    bloodType = bloodType,
-                                    heightCm = height.takeIf { it.isNotBlank() },
-                                    weightKg = weight.takeIf { it.isNotBlank() },
-                                    emergencyContactName = iceName.takeIf { it.isNotBlank() },
-                                    emergencyContactPhone = icePhone.takeIf { it.isNotBlank() },
-                                    primaryMedicalAidProvider = medAidProvider.takeIf { it.isNotBlank() },
-                                    medicalAidNumber = medAidNum.takeIf { it.isNotBlank() }
-                                )
+                Spacer(modifier = Modifier.height(4.dp))
+
+                VaultPillActionButton(
+                    text = "Save",
+                    onClick = {
+                        onSave(
+                            initialProfile.copy(
+                                bloodType = bloodType,
+                                heightCm = height.takeIf { it.isNotBlank() },
+                                weightKg = weight.takeIf { it.isNotBlank() },
+                                emergencyContactName = iceName.takeIf { it.isNotBlank() },
+                                emergencyContactPhone = icePhone.takeIf { it.isNotBlank() },
+                                primaryMedicalAidProvider = medAidProvider.takeIf { it.isNotBlank() },
+                                medicalAidNumber = medAidNum.takeIf { it.isNotBlank() }
                             )
-                        }
-                    ) { Text("Save") }
-                }
+                        )
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AddAllergyDialog(
+fun AddAllergySheet(
     onDismiss: () -> Unit,
     onSave: (allergen: String, reaction: String?, severity: AllergySeverity, notes: String?) -> Unit
 ) {
@@ -1474,62 +1442,74 @@ fun AddAllergyDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Add Allergy",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Add Allergy",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
+                    }
+                }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Substance / Allergen",
                     value = allergen,
                     onValueChange = { allergen = it },
-                    label = "Allergen / Substance *",
                     placeholder = "e.g. Penicillin, Peanuts"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Reaction",
                     value = reaction,
                     onValueChange = { reaction = it },
-                    label = "Reaction",
-                    placeholder = "e.g. Anaphylaxis, Hives"
+                    placeholder = "e.g. Anaphylaxis, Rash",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Notes",
                     value = notes,
                     onValueChange = { notes = it },
-                    label = "Clinical Notes",
-                    placeholder = "e.g. Diagnosed in childhood"
+                    placeholder = "Optional notes",
+                    optional = true
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (allergen.isNotBlank()) {
-                                onSave(allergen, reaction.takeIf { it.isNotBlank() }, selectedSeverity, notes.takeIf { it.isNotBlank() })
-                            }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                VaultPillActionButton(
+                    text = "Save",
+                    enabled = allergen.isNotBlank(),
+                    onClick = {
+                        if (allergen.isNotBlank()) {
+                            onSave(allergen, reaction.takeIf { it.isNotBlank() }, selectedSeverity, notes.takeIf { it.isNotBlank() })
                         }
-                    ) { Text("Save") }
-                }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AddConditionDialog(
+fun AddConditionSheet(
     onDismiss: () -> Unit,
     onSave: (name: String, desc: String?, date: String?, status: ConditionStatus, doctor: String?, facility: String?, notes: String?) -> Unit
 ) {
@@ -1543,111 +1523,124 @@ fun AddConditionDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 580.dp)
+                    .heightIn(max = 600.dp)
                     .verticalScroll(rememberScrollState())
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Add Health Condition",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Add Condition",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
+                    }
+                }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Condition Name",
                     value = name,
                     onValueChange = { name = it },
-                    label = "Condition Name *",
-                    placeholder = "e.g. Asthma, Hypertension, Broken arm"
+                    placeholder = "e.g. Asthma, Hypertension"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Details",
                     value = desc,
                     onValueChange = { desc = it },
-                    label = "Description / Details",
-                    placeholder = "e.g. Mild persistent bronchial asthma"
+                    placeholder = "e.g. Mild persistent",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Diagnosis Date",
                     value = date,
                     onValueChange = { date = it },
-                    label = "Diagnosis Date (Optional)",
-                    placeholder = "e.g. 2019 or 12 Sep 2026"
+                    placeholder = "e.g. 2021",
+                    optional = true
                 )
 
-                // Status Selector
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(ConditionStatus.ACTIVE to "Ongoing", ConditionStatus.RESOLVED to "Resolved", ConditionStatus.CHRONIC to "Chronic").forEach { (st, label) ->
-                        FilterChip(
-                            selected = status == st,
-                            onClick = { status = st },
-                            label = { Text(label) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                selectedLabelColor = MaterialTheme.colorScheme.primary
+                        val isSel = status == st
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSel) getVaultPillButtonColor() else getVaultBackground(),
+                            border = if (isSel) null else BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
+                            modifier = Modifier
+                                .clickable { status = st }
+                                .tactilePress()
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                color = if (isSel) getVaultPillTextColor() else getVaultTextSecondary(),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
-                        )
+                        }
                     }
                 }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Doctor",
                     value = doctor,
                     onValueChange = { doctor = it },
-                    label = "Treating Doctor (Optional)",
-                    placeholder = "e.g. Dr. Tendai Moyo"
+                    placeholder = "e.g. Dr. Moyo",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Clinic",
                     value = facility,
                     onValueChange = { facility = it },
-                    label = "Hospital / Clinic (Optional)",
-                    placeholder = "e.g. Avenues Clinic"
+                    placeholder = "e.g. Avenues Clinic",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = "Notes",
-                    placeholder = "e.g. Inhaler prescribed as needed"
-                )
+                Spacer(modifier = Modifier.height(4.dp))
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (name.isNotBlank()) {
-                                onSave(
-                                    name,
-                                    desc.takeIf { it.isNotBlank() },
-                                    date.takeIf { it.isNotBlank() },
-                                    status,
-                                    doctor.takeIf { it.isNotBlank() },
-                                    facility.takeIf { it.isNotBlank() },
-                                    notes.takeIf { it.isNotBlank() }
-                                )
-                            }
+                VaultPillActionButton(
+                    text = "Save",
+                    enabled = name.isNotBlank(),
+                    onClick = {
+                        if (name.isNotBlank()) {
+                            onSave(
+                                name,
+                                desc.takeIf { it.isNotBlank() },
+                                date.takeIf { it.isNotBlank() },
+                                status,
+                                doctor.takeIf { it.isNotBlank() },
+                                facility.takeIf { it.isNotBlank() },
+                                notes.takeIf { it.isNotBlank() }
+                            )
                         }
-                    ) { Text("Save") }
-                }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AddMedicationDialog(
+fun AddMedicationSheet(
     onDismiss: () -> Unit,
     onSave: (name: String, dosage: String, freq: String, route: MedicationRoute, start: String?, end: String?, purpose: String?, doctor: String?, instructions: String?, notes: String?) -> Unit
 ) {
@@ -1657,116 +1650,128 @@ fun AddMedicationDialog(
     var route by remember { mutableStateOf(MedicationRoute.ORAL) }
     var start by remember { mutableStateOf("") }
     var end by remember { mutableStateOf("") }
-    var purpose by remember { mutableStateOf("") }
     var doctor by remember { mutableStateOf("") }
     var instructions by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 580.dp)
+                    .heightIn(max = 600.dp)
                     .verticalScroll(rememberScrollState())
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Add Medication",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Add Medication",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
+                    }
+                }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Medication Name",
                     value = name,
                     onValueChange = { name = it },
-                    label = "Medication Name *",
-                    placeholder = "e.g. Amoxicillin, Vitamin D"
+                    placeholder = "e.g. Amoxicillin"
                 )
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PimsOutlinedInput(
+                    VaultUnderlineField(
+                        label = "Dosage",
                         value = dosage,
                         onValueChange = { dosage = it },
-                        label = "Dosage *",
                         placeholder = "e.g. 500 mg",
                         modifier = Modifier.weight(1f)
                     )
-                    PimsOutlinedInput(
+                    VaultUnderlineField(
+                        label = "Frequency",
                         value = freq,
                         onValueChange = { freq = it },
-                        label = "Frequency *",
-                        placeholder = "e.g. 3 times daily",
+                        placeholder = "e.g. 3x daily",
                         modifier = Modifier.weight(1f)
                     )
                 }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Instructions",
                     value = instructions,
                     onValueChange = { instructions = it },
-                    label = "Instructions",
-                    placeholder = "e.g. Take after meals with full glass of water"
+                    placeholder = "e.g. Take with water",
+                    optional = true
                 )
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PimsOutlinedInput(
+                    VaultUnderlineField(
+                        label = "Start Date",
                         value = start,
                         onValueChange = { start = it },
-                        label = "Start Date",
-                        placeholder = "e.g. 12 Sep 2026",
+                        placeholder = "e.g. 10 Oct 2026",
+                        optional = true,
                         modifier = Modifier.weight(1f)
                     )
-                    PimsOutlinedInput(
+                    VaultUnderlineField(
+                        label = "End Date",
                         value = end,
                         onValueChange = { end = it },
-                        label = "End Date",
-                        placeholder = "e.g. 19 Sep 2026 / Ongoing",
+                        placeholder = "Ongoing",
+                        optional = true,
                         modifier = Modifier.weight(1f)
                     )
                 }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Prescribed By",
                     value = doctor,
                     onValueChange = { doctor = it },
-                    label = "Prescribed By",
-                    placeholder = "e.g. Dr. Tendai Moyo"
+                    placeholder = "e.g. Dr. Moyo",
+                    optional = true
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (name.isNotBlank() && dosage.isNotBlank()) {
-                                onSave(
-                                    name,
-                                    dosage,
-                                    freq.ifBlank { "Daily" },
-                                    route,
-                                    start.takeIf { it.isNotBlank() },
-                                    end.takeIf { it.isNotBlank() },
-                                    purpose.takeIf { it.isNotBlank() },
-                                    doctor.takeIf { it.isNotBlank() },
-                                    instructions.takeIf { it.isNotBlank() },
-                                    notes.takeIf { it.isNotBlank() }
-                                )
-                            }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                VaultPillActionButton(
+                    text = "Save",
+                    enabled = name.isNotBlank() && dosage.isNotBlank(),
+                    onClick = {
+                        if (name.isNotBlank() && dosage.isNotBlank()) {
+                            onSave(
+                                name,
+                                dosage,
+                                freq.ifBlank { "Daily" },
+                                route,
+                                start.takeIf { it.isNotBlank() },
+                                end.takeIf { it.isNotBlank() },
+                                null,
+                                doctor.takeIf { it.isNotBlank() },
+                                instructions.takeIf { it.isNotBlank() },
+                                null
+                            )
                         }
-                    ) { Text("Save") }
-                }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AddPrescriptionDialog(
+fun AddPrescriptionSheet(
     onDismiss: () -> Unit,
     onSave: (doc: String, date: String?, instructions: String?, photo: String?, summary: String?, notes: String?) -> Unit
 ) {
@@ -1774,183 +1779,197 @@ fun AddPrescriptionDialog(
     var date by remember { mutableStateOf("") }
     var instructions by remember { mutableStateOf("") }
     var summary by remember { mutableStateOf("") }
-    var photoUri by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Add Prescription Record",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Add Prescription (Rx)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
+                    }
+                }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Prescribing Doctor",
                     value = doctor,
                     onValueChange = { doctor = it },
-                    label = "Prescribing Doctor *",
-                    placeholder = "e.g. Dr. Tendai Moyo"
+                    placeholder = "e.g. Dr. Moyo"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Issue Date",
                     value = date,
                     onValueChange = { date = it },
-                    label = "Prescription Date",
-                    placeholder = "e.g. 12 September 2026"
+                    placeholder = "e.g. 15 Oct 2026",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Medications Prescribed",
                     value = summary,
                     onValueChange = { summary = it },
-                    label = "Medications Prescribed",
-                    placeholder = "e.g. Amoxicillin 500mg, Paracetamol"
+                    placeholder = "e.g. Amoxicillin 500mg",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Instructions",
                     value = instructions,
                     onValueChange = { instructions = it },
-                    label = "Instructions",
-                    placeholder = "e.g. Take one tablet three times daily after meals"
+                    placeholder = "e.g. 1 tablet 3x daily",
+                    optional = true
                 )
 
-                // Photo Attachment Pill
-                OutlinedButton(
-                    onClick = { photoUri = "content://media/external/images/prescription_${System.currentTimeMillis()}.jpg" },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (photoUri.isBlank()) "Attach Prescription Photo" else "Photo Attached: prescription.jpg")
-                }
+                Spacer(modifier = Modifier.height(4.dp))
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (doctor.isNotBlank()) {
-                                onSave(
-                                    doctor,
-                                    date.takeIf { it.isNotBlank() },
-                                    instructions.takeIf { it.isNotBlank() },
-                                    photoUri.takeIf { it.isNotBlank() },
-                                    summary.takeIf { it.isNotBlank() },
-                                    null
-                                )
-                            }
+                VaultPillActionButton(
+                    text = "Save",
+                    enabled = doctor.isNotBlank(),
+                    onClick = {
+                        if (doctor.isNotBlank()) {
+                            onSave(
+                                doctor,
+                                date.takeIf { it.isNotBlank() },
+                                instructions.takeIf { it.isNotBlank() },
+                                null,
+                                summary.takeIf { it.isNotBlank() },
+                                null
+                            )
                         }
-                    ) { Text("Save") }
-                }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AddDoctorDialog(
+fun AddDoctorSheet(
     onDismiss: () -> Unit,
     onSave: (name: String, specialty: String, phone: String?, email: String?, facility: String?, address: String?, patientNum: String?, notes: String?) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var specialty by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
     var facility by remember { mutableStateOf("") }
     var patientNum by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 560.dp)
+                    .heightIn(max = 600.dp)
                     .verticalScroll(rememberScrollState())
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Add Doctor / Specialist",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Add Doctor",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
+                    }
+                }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Doctor Name",
                     value = name,
                     onValueChange = { name = it },
-                    label = "Doctor Name *",
                     placeholder = "e.g. Dr. Tendai Moyo"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Specialty",
                     value = specialty,
                     onValueChange = { specialty = it },
-                    label = "Specialty *",
-                    placeholder = "e.g. General Practitioner, Dentist, Cardiologist"
+                    placeholder = "e.g. General Practitioner"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Phone Number",
                     value = phone,
                     onValueChange = { phone = it },
-                    label = "Phone Number",
-                    placeholder = "e.g. +263 77..."
+                    placeholder = "e.g. +263 77...",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Hospital / Practice",
                     value = facility,
                     onValueChange = { facility = it },
-                    label = "Hospital / Clinic",
-                    placeholder = "e.g. Avenues Clinic"
+                    placeholder = "e.g. Avenues Clinic",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Patient Reference Number",
                     value = patientNum,
                     onValueChange = { patientNum = it },
-                    label = "Patient Reference Number",
-                    placeholder = "e.g. REF-48291"
+                    placeholder = "e.g. REF-48291",
+                    optional = true
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (name.isNotBlank() && specialty.isNotBlank()) {
-                                onSave(
-                                    name,
-                                    specialty,
-                                    phone.takeIf { it.isNotBlank() },
-                                    email.takeIf { it.isNotBlank() },
-                                    facility.takeIf { it.isNotBlank() },
-                                    null,
-                                    patientNum.takeIf { it.isNotBlank() },
-                                    null
-                                )
-                            }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                VaultPillActionButton(
+                    text = "Save",
+                    enabled = name.isNotBlank() && specialty.isNotBlank(),
+                    onClick = {
+                        if (name.isNotBlank() && specialty.isNotBlank()) {
+                            onSave(
+                                name,
+                                specialty,
+                                phone.takeIf { it.isNotBlank() },
+                                null,
+                                facility.takeIf { it.isNotBlank() },
+                                null,
+                                patientNum.takeIf { it.isNotBlank() },
+                                null
+                            )
                         }
-                    ) { Text("Save") }
-                }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AddFacilityDialog(
+fun AddFacilitySheet(
     onDismiss: () -> Unit,
     onSave: (name: String, patientNum: String?, phone: String?, address: String?, notes: String?) -> Unit
 ) {
@@ -1961,75 +1980,88 @@ fun AddFacilityDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Add Healthcare Facility",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Add Clinic / Facility",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
+                    }
+                }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Facility Name",
                     value = name,
                     onValueChange = { name = it },
-                    label = "Facility / Hospital Name *",
-                    placeholder = "e.g. Avenues Clinic, Parirenyatwa"
+                    placeholder = "e.g. Avenues Clinic"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Patient Number",
                     value = patientNum,
                     onValueChange = { patientNum = it },
-                    label = "Your Patient Number at this Facility",
-                    placeholder = "e.g. HC-28472"
+                    placeholder = "e.g. HC-28472",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Phone Number",
                     value = phone,
                     onValueChange = { phone = it },
-                    label = "Phone Number",
-                    placeholder = "e.g. +263..."
+                    placeholder = "e.g. +263...",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Address / City",
                     value = address,
                     onValueChange = { address = it },
-                    label = "Address / City",
-                    placeholder = "e.g. Harare, Zimbabwe"
+                    placeholder = "e.g. Harare",
+                    optional = true
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (name.isNotBlank()) {
-                                onSave(
-                                    name,
-                                    patientNum.takeIf { it.isNotBlank() },
-                                    phone.takeIf { it.isNotBlank() },
-                                    address.takeIf { it.isNotBlank() },
-                                    null
-                                )
-                            }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                VaultPillActionButton(
+                    text = "Save",
+                    enabled = name.isNotBlank(),
+                    onClick = {
+                        if (name.isNotBlank()) {
+                            onSave(
+                                name,
+                                patientNum.takeIf { it.isNotBlank() },
+                                phone.takeIf { it.isNotBlank() },
+                                address.takeIf { it.isNotBlank() },
+                                null
+                            )
                         }
-                    ) { Text("Save") }
-                }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AddCoverageDialog(
+fun AddCoverageSheet(
     onDismiss: () -> Unit,
     onSave: (type: CoverageType, prov: String, policy: String?, member: String?, plan: String?, valid: String?, phone: String?, notes: String?, photo: String?) -> Unit
 ) {
@@ -2041,97 +2073,116 @@ fun AddCoverageDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Add Coverage Plan",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                // Coverage Type Chips
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf(CoverageType.MEDICAL_AID, CoverageType.HEALTH_INSURANCE, CoverageType.DENTAL_COVERAGE).forEach { covType ->
-                        FilterChip(
-                            selected = type == covType,
-                            onClick = { type = covType },
-                            label = { Text(covType.displayLabel) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                selectedLabelColor = MaterialTheme.colorScheme.primary
-                            )
-                        )
+                    Text(
+                        text = "Add Coverage",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
                     }
                 }
 
-                PimsOutlinedInput(
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(CoverageType.MEDICAL_AID, CoverageType.HEALTH_INSURANCE, CoverageType.DENTAL_COVERAGE).forEach { covType ->
+                        val isSel = type == covType
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSel) getVaultPillButtonColor() else getVaultBackground(),
+                            border = if (isSel) null else BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
+                            modifier = Modifier
+                                .clickable { type = covType }
+                                .tactilePress()
+                        ) {
+                            Text(
+                                text = covType.displayLabel,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                color = if (isSel) getVaultPillTextColor() else getVaultTextSecondary(),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
+                VaultUnderlineField(
+                    label = "Provider / Scheme",
                     value = provider,
                     onValueChange = { provider = it },
-                    label = "Provider / Scheme *",
-                    placeholder = "e.g. Discovery Health, Bupa"
+                    placeholder = "e.g. Discovery Health, Cimas"
                 )
 
-                PimsOutlinedInput(
-                    value = policy,
-                    onValueChange = { policy = it },
-                    label = "Policy Number",
-                    placeholder = "e.g. POL-99210"
-                )
-
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Membership Number",
                     value = member,
                     onValueChange = { member = it },
-                    label = "Membership Number",
-                    placeholder = "e.g. MEM-11203"
+                    placeholder = "e.g. MEM-11203",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Policy Number",
+                    value = policy,
+                    onValueChange = { policy = it },
+                    placeholder = "e.g. POL-99210",
+                    optional = true
+                )
+
+                VaultUnderlineField(
+                    label = "Plan / Tier",
                     value = plan,
                     onValueChange = { plan = it },
-                    label = "Plan / Tier",
-                    placeholder = "e.g. Comprehensive, Classic Core"
+                    placeholder = "e.g. Comprehensive",
+                    optional = true
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (provider.isNotBlank()) {
-                                onSave(
-                                    type,
-                                    provider,
-                                    policy.takeIf { it.isNotBlank() },
-                                    member.takeIf { it.isNotBlank() },
-                                    plan.takeIf { it.isNotBlank() },
-                                    null,
-                                    null,
-                                    null,
-                                    null
-                                )
-                            }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                VaultPillActionButton(
+                    text = "Save",
+                    enabled = provider.isNotBlank(),
+                    onClick = {
+                        if (provider.isNotBlank()) {
+                            onSave(
+                                type,
+                                provider,
+                                policy.takeIf { it.isNotBlank() },
+                                member.takeIf { it.isNotBlank() },
+                                plan.takeIf { it.isNotBlank() },
+                                null,
+                                null,
+                                null,
+                                null
+                            )
                         }
-                    ) { Text("Save") }
-                }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun AddVisitDialog(
+fun AddVisitSheet(
     onDismiss: () -> Unit,
     onSave: (date: String, reason: String, doc: String?, facility: String?, diag: String?, treat: String?, rxSummary: String?, followUp: String?, notes: String?) -> Unit
 ) {
@@ -2145,105 +2196,120 @@ fun AddVisitDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 580.dp)
+                    .heightIn(max = 600.dp)
                     .verticalScroll(rememberScrollState())
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Record Medical Visit",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Record Visit",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
+                    }
+                }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Visit Date",
                     value = date,
                     onValueChange = { date = it },
-                    label = "Visit Date *",
-                    placeholder = "e.g. 12 Sep 2026"
+                    placeholder = "e.g. 15 Oct 2026"
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Reason",
                     value = reason,
                     onValueChange = { reason = it },
-                    label = "Reason / Chief Complaint *",
-                    placeholder = "e.g. Annual checkup, Flu symptoms"
+                    placeholder = "e.g. Checkup, Symptoms"
                 )
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PimsOutlinedInput(
+                    VaultUnderlineField(
+                        label = "Doctor",
                         value = doc,
                         onValueChange = { doc = it },
-                        label = "Doctor",
-                        placeholder = "e.g. Dr. Tendai Moyo",
+                        placeholder = "e.g. Dr. Moyo",
+                        optional = true,
                         modifier = Modifier.weight(1f)
                     )
-                    PimsOutlinedInput(
+                    VaultUnderlineField(
+                        label = "Facility",
                         value = facility,
                         onValueChange = { facility = it },
-                        label = "Clinic / Facility",
                         placeholder = "e.g. Avenues Clinic",
+                        optional = true,
                         modifier = Modifier.weight(1f)
                     )
                 }
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Diagnosis",
                     value = diagnosis,
                     onValueChange = { diagnosis = it },
-                    label = "Diagnosis / Assessment",
-                    placeholder = "e.g. Acute viral rhinitis"
+                    placeholder = "e.g. Bronchitis",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Treatment",
                     value = treatment,
                     onValueChange = { treatment = it },
-                    label = "Treatment / Plan",
-                    placeholder = "e.g. Bed rest, hydration, nasal spray"
+                    placeholder = "e.g. Rest, hydration",
+                    optional = true
                 )
 
-                PimsOutlinedInput(
+                VaultUnderlineField(
+                    label = "Follow-up Date",
                     value = followUp,
                     onValueChange = { followUp = it },
-                    label = "Follow-up Date (Optional)",
-                    placeholder = "e.g. 19 Sep 2026"
+                    placeholder = "e.g. 22 Oct 2026",
+                    optional = true
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (date.isNotBlank() && reason.isNotBlank()) {
-                                onSave(
-                                    date,
-                                    reason,
-                                    doc.takeIf { it.isNotBlank() },
-                                    facility.takeIf { it.isNotBlank() },
-                                    diagnosis.takeIf { it.isNotBlank() },
-                                    treatment.takeIf { it.isNotBlank() },
-                                    null,
-                                    followUp.takeIf { it.isNotBlank() },
-                                    null
-                                )
-                            }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                VaultPillActionButton(
+                    text = "Save",
+                    enabled = date.isNotBlank() && reason.isNotBlank(),
+                    onClick = {
+                        if (date.isNotBlank() && reason.isNotBlank()) {
+                            onSave(
+                                date,
+                                reason,
+                                doc.takeIf { it.isNotBlank() },
+                                facility.takeIf { it.isNotBlank() },
+                                diagnosis.takeIf { it.isNotBlank() },
+                                treatment.takeIf { it.isNotBlank() },
+                                null,
+                                followUp.takeIf { it.isNotBlank() },
+                                null
+                            )
                         }
-                    ) { Text("Save") }
-                }
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun EmergencyCardConfigDialog(
+fun EmergencyCardConfigSheet(
     projection: EmergencyCardProjection,
     onDismiss: () -> Unit,
     onSave: (Set<EmergencyCardField>) -> Unit
@@ -2252,55 +2318,84 @@ fun EmergencyCardConfigDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(PimsDimensions.skeletonCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            color = getVaultCardSurface(),
+            border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(PimsDimensions.paddingLarge),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "Emergency Card Projection",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Select minimal fields visible without unlocking private vault:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                EmergencyCardField.values().forEach { field ->
-                    val isChecked = selectedFields.contains(field)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                selectedFields = if (isChecked) selectedFields - field else selectedFields + field
-                            }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = isChecked,
-                            onCheckedChange = { checked ->
-                                selectedFields = if (checked) selectedFields + field else selectedFields - field
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = field.displayLabel, style = MaterialTheme.typography.bodyMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "ICE Card Fields",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = getVaultTextPrimary()
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = getVaultTextPrimary())
                     }
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { onSave(selectedFields) }) { Text("Update Projection") }
+                Text(
+                    text = "Select public emergency fields visible when locked:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = getVaultTextSecondary()
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    EmergencyCardField.values().forEach { field ->
+                        val isChecked = selectedFields.contains(field)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    selectedFields = if (isChecked) selectedFields - field else selectedFields + field
+                                }
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isChecked,
+                                onCheckedChange = { checked ->
+                                    selectedFields = if (checked) selectedFields + field else selectedFields - field
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = getVaultPillButtonColor(),
+                                    checkmarkColor = getVaultPillTextColor()
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = field.displayLabel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = getVaultTextPrimary()
+                            )
+                        }
+                    }
                 }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                VaultPillActionButton(
+                    text = "Save",
+                    onClick = { onSave(selectedFields) }
+                )
             }
         }
     }

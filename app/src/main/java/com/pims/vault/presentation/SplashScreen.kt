@@ -248,7 +248,7 @@ fun PimsVaultSplashScreen() {
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "Encrypted Personal Vault",
+                    text = "Personal Vault",
                     color = subtitleColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Normal,

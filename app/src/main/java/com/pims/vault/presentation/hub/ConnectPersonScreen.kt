@@ -693,18 +693,7 @@ fun ConnectPersonScreen(
                     }
                 }
 
-                // Section 5: Emergency & Security Role
-                PersonaFormSection(
-                    title = "Emergency & Next of Kin",
-                    icon = Icons.Default.Shield
-                ) {
-                    PersonaToggleRow(
-                        title = "Designate as Next of Kin",
-                        subtitle = "Highlight this person as a primary emergency or trusted contact",
-                        checked = isNextOfKin,
-                        onCheckedChange = { isNextOfKin = it }
-                    )
-                }
+
 
                 // Quick Action Bar: "+ Add More Fields"
                 val unaddedFields = buildList {

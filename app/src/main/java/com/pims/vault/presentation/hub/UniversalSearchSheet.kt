@@ -202,7 +202,7 @@ fun UniversalSearchSheet(
                 UnifiedSearchResult(
                     id = "vault_${item.id}",
                     title = item.title,
-                    subtitle = item.accountIdentifier?.let { "Account: $it" } ?: "Encrypted hardware secret",
+                    subtitle = item.accountIdentifier?.let { "Account: $it" } ?: "Secret item",
                     domain = SearchDomain.VAULT,
                     icon = Icons.Default.Key,
                     badge = item.category.name,

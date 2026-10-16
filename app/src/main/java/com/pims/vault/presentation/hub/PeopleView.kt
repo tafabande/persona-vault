@@ -267,7 +267,7 @@ fun PeopleView(
                 PersonaEmptyState(
                     icon = Icons.Default.Person,
                     title = if (relationships.isEmpty()) "No people yet" else "No matching connections",
-                    description = if (relationships.isEmpty()) "People you add will appear here with encrypted memory notes." else "Try adjusting your search or category filter.",
+                    description = if (relationships.isEmpty()) "People you add will appear here." else "Try adjusting your search or category filter.",
                     actionLabel = if (relationships.isEmpty()) "Add person" else null,
                     onActionClick = {
                         haptics.light()
@@ -431,14 +431,7 @@ private fun PersonListItem(
                         maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
-                    if (person.isNextOfKin) {
-                        Icon(
-                            imageVector = PersonaIcons.Success,
-                            contentDescription = "Trusted contact",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
+
                 }
 
                 Row(
@@ -470,13 +463,6 @@ private fun PersonListItem(
                     )
                 }
             }
-
-            Icon(
-                imageVector = PersonaIcons.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                modifier = Modifier.size(18.dp)
-            )
         }
 
         HorizontalDivider(
@@ -626,36 +612,6 @@ fun PersonDetailSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Trusted Contact Chip (matching Screenshot_20260929-135310)
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0xFFF0EBE1),
-                border = BorderStroke(1.dp, Color(0xFFE5DFD4)),
-                modifier = Modifier.clickable {
-                    // Toggle trusted status
-                }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = PersonaIcons.Success,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "Trusted contact",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.5.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -791,7 +747,7 @@ fun PersonDetailSheet(
                             }
                     ) {
                         Text(
-                            text = "No encrypted notes yet · Tap + Add note to save reminders",
+                            text = "No notes yet · Tap + Add note to save reminders",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp)

@@ -322,15 +322,6 @@ fun PimsSkeletonAccordion(
                     if (classification != null) {
                         PimsClassificationBadge(classification = classification)
                     }
-
-                    Icon(
-                        imageVector = Icons.Default.ExpandMore,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .rotate(rotationAngle)
-                    )
                 }
             }
 
@@ -780,12 +771,6 @@ fun FacetSummaryRow(
                             )
                         }
                     }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(18.dp)
-                    )
                 }
             }
         }

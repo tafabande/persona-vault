@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -289,7 +290,8 @@ fun AvatarEditorContent(
                         haptics.selection()
                         config = config.copy(
                             avatarSource = AvatarSource.GENERATED,
-                            gender = AvatarGender.MALE
+                            gender = AvatarGender.MALE,
+                            customAvatarPath = null
                         )
                     },
                 shape = RoundedCornerShape(16.dp),
@@ -328,7 +330,8 @@ fun AvatarEditorContent(
                         haptics.selection()
                         config = config.copy(
                             avatarSource = AvatarSource.GENERATED,
-                            gender = AvatarGender.FEMALE
+                            gender = AvatarGender.FEMALE,
+                            customAvatarPath = null
                         )
                     },
                 shape = RoundedCornerShape(16.dp),
@@ -409,6 +412,7 @@ fun AvatarEditorContent(
             OutlinedButton(
                 onClick = {
                     haptics.light()
+                    avatarManager?.clearCustomPhoto()
                     config = config.copy(
                         avatarSource = AvatarSource.GENERATED,
                         customAvatarPath = null
@@ -419,11 +423,26 @@ fun AvatarEditorContent(
             ) {
                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Remove Custom Photo")
             }
         }
+        Spacer(modifier = Modifier.height(14.dp))
 
-        Spacer(modifier = Modifier.height(28.dp))
+        OutlinedButton(
+            onClick = {
+                haptics.selection()
+                avatarManager?.clearCustomPhoto()
+                config = PersonaAvatarConfig.default()
+                zoomScale = 1.0f
+            },
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().tactilePress()
+        ) {
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Reset to Default Avatar")
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         // Save Button
         Button(

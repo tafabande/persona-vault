@@ -126,6 +126,7 @@ fun HomeView(
     onOpenCentralizedEditor: () -> Unit = {},
     onOpenAvatarEditor: () -> Unit = {},
     avatarConfig: com.pims.vault.presentation.avatar.PersonaAvatarConfig? = null,
+    isWallpaperAutoplayEnabled: Boolean = false,
     onSaveIdentityDetails: ((name: String, email: String, phone: String, idNumber: String, idPhotoUri: Uri?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -160,6 +161,7 @@ fun HomeView(
                     activeIndex = activeWallpaperIndex,
                     onActiveIndexChanged = onActiveWallpaperChanged,
                     onOpenOptions = onOpenWallpaperOptions,
+                    isAutoplayEnabled = isWallpaperAutoplayEnabled,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
@@ -332,6 +334,21 @@ private fun HomeHeaderRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Left: Clean circular avatar button
+        com.pims.vault.presentation.avatar.PersonaAvatar(
+            name = displayName,
+            config = avatarConfig,
+            size = 44.dp,
+            onClick = {
+                haptics.selection()
+                onOpenProfile()
+            },
+            onLongClick = {
+                haptics.selection()
+                onOpenAvatarEditor()
+            }
+        )
+
+        // Right: Notification Bell with clean circular container
         Box(
             modifier = Modifier
                 .size(44.dp)
@@ -339,112 +356,24 @@ private fun HomeHeaderRow(
                 .background(buttonBg)
                 .clickable {
                     haptics.selection()
-                    onOpenProfile()
+                    onNotificationClick()
                 },
             contentAlignment = Alignment.Center
         ) {
-            if (photoBitmap != null) {
-                Image(
-                    bitmap = photoBitmap.asImageBitmap(),
-                    contentDescription = "Profile photo",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape)
-                )
-            } else {
-                Icon(
-                    imageVector = PersonaIcons.MeOutlined,
-                    contentDescription = "Profile",
-                    tint = iconTint,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-        }
-
-        // Right: Sync Status and Notification Bell with matching circular containers
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            val isSyncing = syncStatusText.contains("Syncing", ignoreCase = true)
-            val infiniteTransition = rememberInfiniteTransition(label = "SyncRotation")
-            val rotationAngle by infiniteTransition.animateFloat(
-                initialValue = 0f,
-                targetValue = 360f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 1000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart
-                ),
-                label = "SyncAngle"
+            Icon(
+                imageVector = PersonaIcons.NotificationsOutlined,
+                contentDescription = "Activity Notifications",
+                tint = iconTint,
+                modifier = Modifier.size(22.dp)
             )
-
-            // Sync Status Button
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(buttonBg)
-                    .clickable {
-                        haptics.selection()
-                        onSyncClick()
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = PersonaIcons.Sync,
-                    contentDescription = syncStatusText,
-                    tint = iconTint,
+            if (unreadNotificationCount > 0) {
+                Box(
                     modifier = Modifier
-                        .size(22.dp)
-                        .graphicsLayer {
-                            if (isSyncing) {
-                                rotationZ = rotationAngle
-                            }
-                        }
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp)
+                        .size(5.5.dp)
+                        .background(color = dotColor, shape = CircleShape)
                 )
-                val showSyncDot = !syncIsGood || syncStatusText.contains("error", ignoreCase = true) || syncStatusText.contains("fail", ignoreCase = true) || syncStatusText.contains("conflict", ignoreCase = true) || syncStatusText.contains("attention", ignoreCase = true)
-                if (showSyncDot) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 8.dp, end = 8.dp)
-                            .size(5.5.dp)
-                            .background(
-                                color = if (!syncIsGood) StateWarning else dotColor,
-                                shape = CircleShape
-                            )
-                    )
-                }
-            }
-
-            // Notification Bell
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(buttonBg)
-                    .clickable {
-                        haptics.selection()
-                        onNotificationClick()
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = PersonaIcons.NotificationsOutlined,
-                    contentDescription = "Activity Notifications",
-                    tint = iconTint,
-                    modifier = Modifier.size(22.dp)
-                )
-                if (unreadNotificationCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 8.dp, end = 8.dp)
-                            .size(5.5.dp)
-                            .background(color = dotColor, shape = CircleShape)
-                    )
-                }
             }
         }
     }

@@ -20,8 +20,18 @@ class PimsSoundManager @Inject constructor(
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private val prefs = context.getSharedPreferences("pims_sound_prefs", Context.MODE_PRIVATE)
 
-    private val _isSoundEnabled = MutableStateFlow(prefs.getBoolean(KEY_SOUND_ENABLED, true))
-    val isSoundEnabled: StateFlow<Boolean> = _isSoundEnabled.asStateFlow()
+    init {
+        synchronized(lock) {
+            if (sharedSoundFlow == null) {
+                sharedSoundFlow = MutableStateFlow(prefs.getBoolean(KEY_SOUND_ENABLED, true))
+            }
+        }
+    }
+
+    val isSoundEnabled: StateFlow<Boolean>
+        get() = synchronized(lock) {
+            sharedSoundFlow ?: MutableStateFlow(prefs.getBoolean(KEY_SOUND_ENABLED, true)).also { sharedSoundFlow = it }
+        }.asStateFlow()
 
     private var toneGenerator: ToneGenerator? = try {
         ToneGenerator(AudioManager.STREAM_NOTIFICATION, 35) // Gentle volume
@@ -31,14 +41,16 @@ class PimsSoundManager @Inject constructor(
 
     fun setSoundEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SOUND_ENABLED, enabled).apply()
-        _isSoundEnabled.value = enabled
+        synchronized(lock) {
+            sharedSoundFlow?.value = enabled
+        }
     }
 
     /**
      * Subtle, tactile navigation tick (used sparingly for major tab switches).
      */
     fun navigation() {
-        if (!_isSoundEnabled.value) return
+        if (!isSoundEnabled.value) return
         try {
             audioManager?.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.25f)
         } catch (_: Exception) {}
@@ -48,7 +60,7 @@ class PimsSoundManager @Inject constructor(
      * Gentle confirmation for saves, additions, or successful actions.
      */
     fun success() {
-        if (!_isSoundEnabled.value) return
+        if (!isSoundEnabled.value) return
         try {
             audioManager?.playSoundEffect(AudioManager.FX_KEY_CLICK, 0.4f)
         } catch (_: Exception) {}
@@ -58,7 +70,7 @@ class PimsSoundManager @Inject constructor(
      * Distinct sound for saving/committing records.
      */
     fun save() {
-        if (!_isSoundEnabled.value) return
+        if (!isSoundEnabled.value) return
         try {
             audioManager?.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.35f)
         } catch (_: Exception) {}
@@ -68,7 +80,7 @@ class PimsSoundManager @Inject constructor(
      * Sound cue for deletion confirmation.
      */
     fun delete() {
-        if (!_isSoundEnabled.value) return
+        if (!isSoundEnabled.value) return
         try {
             audioManager?.playSoundEffect(AudioManager.FX_KEYPRESS_DELETE, 0.4f)
         } catch (_: Exception) {}
@@ -78,7 +90,7 @@ class PimsSoundManager @Inject constructor(
      * Sound cue for share link/QR generation.
      */
     fun share() {
-        if (!_isSoundEnabled.value) return
+        if (!isSoundEnabled.value) return
         try {
             audioManager?.playSoundEffect(AudioManager.FX_KEY_CLICK, 0.35f)
         } catch (_: Exception) {}
@@ -88,7 +100,7 @@ class PimsSoundManager @Inject constructor(
      * Sound cue for receiving/viewing a notification.
      */
     fun notification() {
-        if (!_isSoundEnabled.value) return
+        if (!isSoundEnabled.value) return
         try {
             toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 70)
         } catch (_: Exception) {}
@@ -98,7 +110,7 @@ class PimsSoundManager @Inject constructor(
      * Sound cue for authentication error or blocked action.
      */
     fun error() {
-        if (!_isSoundEnabled.value) return
+        if (!isSoundEnabled.value) return
         try {
             toneGenerator?.startTone(ToneGenerator.TONE_PROP_NACK, 90)
         } catch (_: Exception) {}
@@ -108,7 +120,7 @@ class PimsSoundManager @Inject constructor(
      * Sound cue for successful biometric or vault unlock.
      */
     fun unlock() {
-        if (!_isSoundEnabled.value) return
+        if (!isSoundEnabled.value) return
         try {
             toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 80)
         } catch (_: Exception) {}
@@ -116,6 +128,9 @@ class PimsSoundManager @Inject constructor(
 
     companion object {
         private const val KEY_SOUND_ENABLED = "in_app_sound_effects_enabled"
+        private val lock = Any()
+        @Volatile
+        private var sharedSoundFlow: MutableStateFlow<Boolean>? = null
     }
 }
 

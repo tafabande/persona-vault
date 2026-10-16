@@ -62,6 +62,7 @@ import androidx.compose.ui.text.style.TextAlign
 import com.pims.vault.presentation.ui.components.ux.PersonaOtpInput
 import com.pims.vault.presentation.ui.components.ux.SpringDeleteButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -116,6 +117,7 @@ fun MoreView(
     isHapticsEnabled: Boolean = true,
     onToggleHaptics: (Boolean) -> Unit = {},
     onOpenWallpaperOptions: () -> Unit = {},
+    onOpenAvatarEditor: () -> Unit = {},
     onThemeModeSelected: (ThemeMode) -> Unit = {},
     onToggleSound: (Boolean) -> Unit = {},
     onLockClicked: () -> Unit = {},
@@ -137,6 +139,8 @@ fun MoreView(
 ) {
     val haptics = rememberPimsHaptics()
     val context = LocalContext.current
+    val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context) }
+    val avatarConfig by avatarManager.avatarConfig.collectAsState()
 
     // Collapsible Category Section States
     var personalisationExpanded by remember { mutableStateOf(true) }
@@ -193,36 +197,12 @@ fun MoreView(
                             .fillMaxWidth()
                             .padding(horizontal = 4.dp, vertical = 8.dp)
                     ) {
-                        val photoBitmap = remember(userPhotoPath) {
-                            if (!userPhotoPath.isNullOrBlank() && java.io.File(userPhotoPath).exists()) {
-                                try { android.graphics.BitmapFactory.decodeFile(userPhotoPath) } catch (_: Exception) { null }
-                            } else null
-                        }
-
-                        if (photoBitmap != null) {
-                            androidx.compose.foundation.Image(
-                                bitmap = photoBitmap.asImageBitmap(),
-                                contentDescription = "User profile photo",
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = (userName.take(1).ifBlank { "P" }).uppercase(),
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
+                        com.pims.vault.presentation.avatar.PersonaAvatar(
+                            name = userName,
+                            config = avatarConfig,
+                            size = 52.dp,
+                            onClick = onOpenAvatarEditor
+                        )
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -286,12 +266,6 @@ fun MoreView(
                                         )
                                     }
                                 }
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
                             }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
@@ -306,8 +280,7 @@ fun MoreView(
                                 showManageAccountSheet = true
                             }
                             .padding(vertical = 10.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -325,12 +298,6 @@ fun MoreView(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -436,6 +403,14 @@ fun MoreView(
                             onOpenWallpaperOptions()
                         }
                     )
+
+                    QuietSettingRow(
+                        title = "Profile Avatar",
+                        onClick = {
+                            haptics.selection()
+                            onOpenAvatarEditor()
+                        }
+                    )
                 }
             }
         }
@@ -538,7 +513,7 @@ fun MoreView(
                         }
                     )
                     QuietSettingRow(
-                        title = "Export Encrypted Backup",
+                        title = "Export Backup",
                         onClick = {
                             haptics.light()
                             onDataBackupClicked()
@@ -568,19 +543,12 @@ fun MoreView(
                                 advancedDiagnosticsExpanded = !advancedDiagnosticsExpanded
                             }
                             .padding(vertical = 8.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Storage Diagnostics",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Icon(
-                            imageVector = if (advancedDiagnosticsExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
                         )
                     }
 
@@ -1057,19 +1025,12 @@ private fun CollapsibleCategoryHeader(
     isExpanded: Boolean,
     onClick: () -> Unit
 ) {
-    val rotation by animateFloatAsState(
-        targetValue = if (isExpanded) 90f else 0f,
-        animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.snappySpring(false),
-        label = "arrowRotation"
-    )
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -1090,15 +1051,6 @@ private fun CollapsibleCategoryHeader(
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
-
-        Icon(
-            imageVector = Icons.Default.ChevronRight,
-            contentDescription = if (isExpanded) "Collapse" else "Expand",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier
-                .size(18.dp)
-                .rotate(rotation)
-        )
     }
 }
 
@@ -1132,13 +1084,6 @@ private fun QuietSettingRow(
                     text = trailingText,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -1257,7 +1202,6 @@ fun ManageAccountSheet(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
@@ -1280,8 +1224,7 @@ fun ManageAccountSheet(
                         ) {
                             Row(
                                 modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
@@ -1290,7 +1233,6 @@ fun ManageAccountSheet(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
-                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
 
@@ -1311,8 +1253,7 @@ fun ManageAccountSheet(
                     ) {
                         Row(
                             modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -1321,7 +1262,6 @@ fun ManageAccountSheet(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
@@ -1341,8 +1281,7 @@ fun ManageAccountSheet(
                     ) {
                         Row(
                             modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -1351,7 +1290,6 @@ fun ManageAccountSheet(
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                                 )
                             }
-                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                         }
                     }
                 }

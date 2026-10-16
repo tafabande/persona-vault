@@ -147,12 +147,6 @@ fun DataBackupHubSheet(
                                     )
                                 }
                             }
-
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
@@ -169,8 +163,8 @@ fun DataBackupHubSheet(
                 item {
                     DataActionRow(
                         icon = Icons.Default.FileUpload,
-                        title = "Export Encrypted Backup",
-                        subtitle = "Create a secure encrypted backup file",
+                        title = "Export Backup",
+                        subtitle = "Create a local backup file",
                         onClick = onExportBackup
                     )
                 }
@@ -268,13 +262,6 @@ private fun DataActionRow(
                     )
                 }
             }
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.size(18.dp)
-            )
         }
     }
 }

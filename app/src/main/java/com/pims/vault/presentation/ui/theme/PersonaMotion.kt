@@ -130,8 +130,18 @@ class PersonaMotionManager @Inject constructor(
 ) {
     private val prefs = context.getSharedPreferences("persona_motion_prefs", Context.MODE_PRIVATE)
 
-    private val _isReducedMotionPreferred = MutableStateFlow(loadInitialPreference())
-    val isReducedMotionPreferred: StateFlow<Boolean> = _isReducedMotionPreferred.asStateFlow()
+    init {
+        synchronized(lock) {
+            if (sharedMotionFlow == null) {
+                sharedMotionFlow = MutableStateFlow(loadInitialPreference())
+            }
+        }
+    }
+
+    val isReducedMotionPreferred: StateFlow<Boolean>
+        get() = synchronized(lock) {
+            sharedMotionFlow ?: MutableStateFlow(loadInitialPreference()).also { sharedMotionFlow = it }
+        }.asStateFlow()
 
     private fun loadInitialPreference(): Boolean {
         // First check explicit in-app preference; fallback to system accessibility setting
@@ -156,10 +166,15 @@ class PersonaMotionManager @Inject constructor(
 
     fun setReducedMotion(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_REDUCED_MOTION, enabled).apply()
-        _isReducedMotionPreferred.value = enabled
+        synchronized(lock) {
+            sharedMotionFlow?.value = enabled
+        }
     }
 
     companion object {
         private const val KEY_REDUCED_MOTION = "persona_reduced_motion_enabled"
+        private val lock = Any()
+        @Volatile
+        private var sharedMotionFlow: MutableStateFlow<Boolean>? = null
     }
 }

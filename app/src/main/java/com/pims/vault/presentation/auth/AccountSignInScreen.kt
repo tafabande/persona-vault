@@ -206,7 +206,7 @@ fun AccountSignInScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "Your private, encrypted personal identity vault",
+                text = "Personal identity vault",
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

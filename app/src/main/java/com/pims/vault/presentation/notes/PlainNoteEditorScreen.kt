@@ -876,7 +876,7 @@ fun PlainNoteEditorScreen(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            text = "This note is encrypted and locked. Authenticate using your biometric or security PIN to view and edit its contents.",
+                            text = "This note is locked. Authenticate to view.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

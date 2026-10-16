@@ -98,7 +98,8 @@ fun WallpaperCarousel(
     onActiveIndexChanged: (Int) -> Unit,
     onOpenOptions: () -> Unit,
     modifier: Modifier = Modifier,
-    carouselHeight: Dp? = null
+    carouselHeight: Dp? = null,
+    isAutoplayEnabled: Boolean = false
 ) {
     val haptics = rememberPimsHaptics()
     val scope = rememberCoroutineScope()
@@ -133,9 +134,9 @@ fun WallpaperCarousel(
         modifier.fillMaxSize()
     }
 
-    val carouselConfig = remember {
+    val carouselConfig = remember(isAutoplayEnabled) {
         PersonaCarouselConfig(
-            autoplay = true,
+            autoplay = isAutoplayEnabled,
             autoplayIntervalMs = 6000L,
             endBehaviour = CarouselEndBehaviour.CONTINUOUS_LOOP,
             indicatorStyle = CarouselIndicatorStyle.NONE,

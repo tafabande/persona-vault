@@ -202,6 +202,9 @@ class PersonaAvatarManager @Inject constructor(
     }
 
     private fun healStaleAvatarPath(config: PersonaAvatarConfig): PersonaAvatarConfig {
+        if (config.avatarSource != AvatarSource.CUSTOM_IMAGE) {
+            return config
+        }
         val path = config.customAvatarPath
         if (!path.isNullOrBlank()) {
             val f = File(path)
@@ -215,25 +218,19 @@ class PersonaAvatarManager @Inject constructor(
                 )
             }
         }
-        val avatarsDir = File(context.filesDir, "avatars")
-        if (avatarsDir.exists()) {
-            val restored = avatarsDir.listFiles()?.firstOrNull { it.isFile && it.length() > 0 && it.name.startsWith("avatar_") }
-            if (restored != null) {
-                return config.copy(
-                    customAvatarPath = restored.absolutePath,
-                    avatarSource = AvatarSource.CUSTOM_IMAGE
-                )
-            }
-        }
-        return config
+        // If file not found and user selected custom image, fallback to generated
+        return config.copy(
+            avatarSource = AvatarSource.GENERATED,
+            customAvatarPath = null
+        )
     }
 
     private fun loadConfig(): PersonaAvatarConfig {
-        val jsonStr = prefs.getString(KEY_CONFIG, null) ?: return healStaleAvatarPath(PersonaAvatarConfig.default())
+        val jsonStr = prefs.getString(KEY_CONFIG, null) ?: return PersonaAvatarConfig.default()
         return try {
             healStaleAvatarPath(parseConfigFromJson(JSONObject(jsonStr)))
         } catch (_: Exception) {
-            healStaleAvatarPath(PersonaAvatarConfig.default())
+            PersonaAvatarConfig.default()
         }
     }
 

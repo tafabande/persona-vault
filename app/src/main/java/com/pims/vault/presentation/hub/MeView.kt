@@ -220,56 +220,19 @@ fun MeView(
                     contentAlignment = Alignment.BottomEnd,
                     modifier = Modifier.padding(top = 8.dp)
                 ) {
-                    val hasPhoto = !customPhotoPath.isNullOrBlank() && File(customPhotoPath!!).exists()
-                    val photoBitmap = remember(customPhotoPath) {
-                        if (hasPhoto) {
-                            try {
-                                BitmapFactory.decodeFile(customPhotoPath)
-                            } catch (_: Exception) {
-                                null
-                            }
-                        } else null
-                    }
-
-                    if (photoBitmap != null) {
-                        Image(
-                            bitmap = photoBitmap.asImageBitmap(),
-                            contentDescription = "Profile photo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(104.dp)
-                                .clip(CircleShape)
-                                .combinedClickable(
-                                    onClick = {
-                                        haptics.selection()
-                                        onOpenAvatarEditor()
-                                    },
-                                    onLongClick = {
-                                        haptics.selection()
-                                        profilePhotoPicker.launch("image/*")
-                                    }
-                                )
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(104.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable {
-                                    haptics.selection()
-                                    onOpenAvatarEditor()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(56.dp)
-                            )
+                    com.pims.vault.presentation.avatar.PersonaAvatar(
+                        name = personName,
+                        config = avatarConfig,
+                        size = 104.dp,
+                        onClick = {
+                            haptics.selection()
+                            onOpenAvatarEditor()
+                        },
+                        onLongClick = {
+                            haptics.selection()
+                            profilePhotoPicker.launch("image/*")
                         }
-                    }
+                    )
 
                     // Edit Badge
                     Surface(
@@ -610,11 +573,5 @@ private fun MeFacetRowItem(
                     .padding(end = 6.dp)
             )
         }
-        Icon(
-            imageVector = Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier.size(20.dp)
-        )
     }
 }

@@ -3,17 +3,17 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Cute Minimalist Notes: Small notepad with subtle spiral notches, ruled lines, and cute angled pencil -->
+    <!-- Refined Minimalist Notes: Sleek hairline strokes for a premium, lightweight aesthetic -->
     <!-- Spiral notches at top -->
     <path
-        android:pathData="M8,3v2.5M12,3v2.5M16,3v2.5"
-        android:strokeWidth="1.8"
+        android:pathData="M8,3v2.2M12,3v2.2M16,3v2.2"
+        android:strokeWidth="1.15"
         android:strokeColor="@color/widget_icon_tint"
         android:strokeLineCap="round" />
     <!-- Notepad body -->
     <path
         android:pathData="M5,7c0,-1.1 0.9,-2 2,-2h10c1.1,0 2,0.9 2,2v12c0,1.1 -0.9,2 -2,2H7c-1.1,0 -2,-0.9 -2,-2Z"
-        android:strokeWidth="1.8"
+        android:strokeWidth="1.15"
         android:strokeColor="@color/widget_icon_tint"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
@@ -21,32 +21,32 @@
     <!-- Ruled lines -->
     <path
         android:pathData="M8.5,10h7"
-        android:strokeWidth="1.8"
+        android:strokeWidth="1.0"
         android:strokeColor="@color/widget_icon_tint"
         android:strokeLineCap="round" />
     <path
         android:pathData="M8.5,13.5h4"
-        android:strokeWidth="1.8"
+        android:strokeWidth="1.0"
         android:strokeColor="@color/widget_icon_tint"
         android:strokeLineCap="round" />
-    <!-- Cute angled pencil with tiny scribble mark -->
+    <!-- Minimalist angled pencil -->
     <path
         android:pathData="M14.5,18.5l4,-4l1.2,1.2l-4,4z"
-        android:strokeWidth="1.4"
+        android:strokeWidth="1.0"
         android:strokeColor="@color/widget_icon_tint"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:fillColor="#00000000" />
     <path
         android:pathData="M14.5,18.5l-1,1.5l1.5,-1z"
-        android:strokeWidth="1.4"
+        android:strokeWidth="1.0"
         android:strokeColor="@color/widget_icon_tint"
         android:strokeLineCap="round"
         android:fillColor="@color/widget_icon_tint" />
-    <!-- Little playful scribble -->
+    <!-- Understated scribble -->
     <path
         android:pathData="M11.5,19.5q-1,0.5 -2.5,-0.2"
-        android:strokeWidth="1.4"
+        android:strokeWidth="1.0"
         android:strokeColor="@color/widget_icon_tint"
         android:strokeLineCap="round" />
 </vector>

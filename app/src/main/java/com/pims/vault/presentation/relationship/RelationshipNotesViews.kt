@@ -638,7 +638,7 @@ fun AddOrEditRelationshipNoteDialog(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "Private Note (Encrypted at Rest)",
+                            text = "Private Note",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )

@@ -93,8 +93,8 @@ fun ImportRestoreScreen(
                 // Actions Grouped Card
                 VaultGroupedCard {
                     ImportOptionRow(
-                        title = "Restore encrypted backup",
-                        subtitle = "Decrypt and restore data from cloud or local backup",
+                        title = "Restore backup",
+                        subtitle = "Restore data from cloud or local backup archive",
                         icon = Icons.Default.CloudDownload,
                         onClick = onRestoreEncryptedBackup
                     )

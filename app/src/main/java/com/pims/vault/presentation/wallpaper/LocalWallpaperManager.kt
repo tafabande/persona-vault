@@ -118,9 +118,26 @@ class LocalWallpaperManager @Inject constructor(
         restoreFromCloudAsync()
     }
 
+    private val _isAutoplayEnabled = MutableStateFlow(surfacePrefs.getBoolean("wallpaper_autoplay_enabled", false))
+    val isAutoplayEnabled: StateFlow<Boolean> = _isAutoplayEnabled.asStateFlow()
+
+    fun setAutoplayEnabled(enabled: Boolean) {
+        surfacePrefs.edit().putBoolean("wallpaper_autoplay_enabled", enabled).apply()
+        _isAutoplayEnabled.value = enabled
+    }
+
     private fun loadActiveIndex(): Int {
+        val savedId = surfacePrefs.getString("active_persona_wp_id", null)
+        val list = loadWallpapers()
+        if (!savedId.isNullOrBlank()) {
+            val idx = list.indexOfFirst { it.id == savedId }
+            if (idx >= 0) return idx
+        }
         return try {
-            if (activeIndexFile.exists()) activeIndexFile.readText().trim().toInt() else 0
+            if (activeIndexFile.exists()) {
+                val parsed = activeIndexFile.readText().trim().toInt()
+                if (list.isNotEmpty()) parsed.coerceIn(0, list.lastIndex) else 0
+            } else 0
         } catch (_: Exception) {
             0
         }
@@ -227,6 +244,10 @@ class LocalWallpaperManager @Inject constructor(
         val coerced = if (total > 0) index.coerceIn(0, total - 1) else 0
         _activeWallpaperIndex.value = coerced
         persistActiveIndex(coerced)
+        val activeId = _wallpapers.value.getOrNull(coerced)?.id
+        if (!activeId.isNullOrBlank()) {
+            surfacePrefs.edit().putString("active_persona_wp_id", activeId).apply()
+        }
         syncCustomWallpaperState()
     }
 
@@ -426,8 +447,11 @@ class LocalWallpaperManager @Inject constructor(
     }
 
     fun restoreDefaultPresets() {
-        persistWallpapers(defaultPresets)
-        _wallpapers.value = defaultPresets
+        val current = _wallpapers.value
+        val customOnly = current.filter { !it.isBuiltIn }
+        val updated = defaultPresets + customOnly
+        persistWallpapers(updated)
+        _wallpapers.value = updated
         setActiveIndex(0)
     }
 

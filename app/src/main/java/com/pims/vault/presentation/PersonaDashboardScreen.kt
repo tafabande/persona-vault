@@ -333,6 +333,7 @@ fun PersonaDashboardScreen(
     val wallpaperManager = remember { LocalWallpaperManager(context) }
     val wallpapers by wallpaperManager.wallpapers.collectAsState()
     val activeWallpaperIndex by wallpaperManager.activeWallpaperIndex.collectAsState()
+    val isWallpaperAutoplayEnabled by wallpaperManager.isAutoplayEnabled.collectAsState()
     val moodManager = remember { com.pims.vault.presentation.ui.theme.PersonaMoodManager(context) }
     val currentMood by moodManager.currentMood.collectAsState()
     val motionManager = remember { com.pims.vault.presentation.ui.theme.PersonaMotionManager(context) }
@@ -1218,7 +1219,7 @@ fun PersonaDashboardScreen(
                         IconButton(onClick = { fullScreenOverlay = null }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "Back to Persona")
                         }
-                        Text("Encrypted Backup", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        Text("Backup", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                     }
                     BackupDashboardScreen(
                         viewModel = backupViewModel,
@@ -1416,6 +1417,7 @@ fun PersonaDashboardScreen(
                         unreadNotificationCount = notifications.count { !it.isRead },
                         wallpapers = wallpapers,
                         activeWallpaperIndex = activeWallpaperIndex,
+                        isWallpaperAutoplayEnabled = isWallpaperAutoplayEnabled,
                         onActiveWallpaperChanged = { wallpaperManager.setActiveIndex(it) },
                         onOpenWallpaperOptions = { showSheet("wallpaperOptions") },
                         onOpenCentralizedEditor = { showSheet("centralizedEditor") },
@@ -1605,6 +1607,7 @@ fun PersonaDashboardScreen(
                             isHapticsEnabled = it
                         },
                         onOpenWallpaperOptions = { showSheet("wallpaperOptions") },
+                        onOpenAvatarEditor = { showSheet("avatarEditor") },
                         onThemeModeSelected = { mode ->
                             themeManager.setThemeMode(mode)
                             soundManager.navigation()

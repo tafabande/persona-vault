@@ -60,17 +60,11 @@ fun BackupDashboardScreen(
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
-                    text = "ENCRYPTED BACKUP & RECOVERY",
+                    text = "BACKUP & RECOVERY",
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = "Argon2id + HKDF Isolated Package",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -164,14 +158,14 @@ private fun ExportBackupCard(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
-            text = "CREATE ENCRYPTED SNAPSHOT (.pimsbak)",
+            text = "CREATE BACKUP (.pimsbak)",
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
         )
         Text(
-            text = "Derives an isolated Master Key using Argon2id. All vault entries (passwords, cards, bank accounts, secure notes, TOTP) and documents are encrypted under domain-separated subkeys.",
+            text = "Creates a standalone local backup of your vault items and documents protected by your passphrase.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             modifier = Modifier.padding(vertical = 8.dp)
@@ -220,7 +214,7 @@ private fun ExportBackupCard(
             )
         ) {
             Text(
-                text = "EXPORT ENCRYPTED SNAPSHOT",
+                text = "EXPORT BACKUP",
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold
             )
@@ -299,10 +293,10 @@ private fun ProgressStateDisplay(state: BackupProgressState) {
             Text("Deriving domain subkeys with Argon2id...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.ExportingDatabase -> {
-            Text("Streaming encrypted database snapshot with vault items...", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Packaging database snapshot with vault items...", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.ExportingBlobs -> {
-            Text("Encrypting document blobs: ${state.currentBlob} / ${state.totalBlobs}", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Packaging document files: ${state.currentBlob} / ${state.totalBlobs}", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.FinalizingPackage -> {
             Text("Signing manifest and computing global HMAC...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)

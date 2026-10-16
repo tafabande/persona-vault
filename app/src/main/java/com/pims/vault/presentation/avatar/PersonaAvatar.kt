@@ -76,7 +76,8 @@ fun PersonaAvatar(
             .then(clickModifier),
         contentAlignment = Alignment.Center
     ) {
-        if (customBitmap != null) {
+        val isCustomImage = config?.avatarSource == AvatarSource.CUSTOM_IMAGE && customBitmap != null
+        if (isCustomImage && customBitmap != null) {
             Image(
                 bitmap = customBitmap.asImageBitmap(),
                 contentDescription = "$name profile photo",

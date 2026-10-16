@@ -301,12 +301,6 @@ fun PlainNotesScreen(
                             ),
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Icon(
-                            imageVector = PersonaIcons.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp)
-                        )
                     }
                 }
             }
@@ -509,30 +503,12 @@ fun PlainNotesScreen(
                                         }
                                     }
 
-                                    if (isExpanded) {
-                                        Icon(
-                                            imageVector = Icons.Default.KeyboardArrowDown,
-                                            contentDescription = "Collapse",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(20.dp)
+                                    if (!isExpanded) {
+                                        Text(
+                                            text = "${daySection.displayCount}",
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                    } else {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Text(
-                                                text = "${daySection.displayCount}",
-                                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Icon(
-                                                imageVector = PersonaIcons.ChevronRight,
-                                                contentDescription = "Expand",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
                                     }
                                 }
                             }

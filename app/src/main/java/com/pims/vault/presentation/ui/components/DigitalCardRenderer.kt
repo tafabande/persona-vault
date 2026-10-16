@@ -506,7 +506,7 @@ fun FinancialCardRepresentation(
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
                                 )
                                 Text(
-                                    text = "Encrypted binary storage • Auth required to view",
+                                    text = "Auth required to view",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

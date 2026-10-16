@@ -1131,7 +1131,7 @@ private fun VaultModularDashboard(
                                     Column(modifier = Modifier.padding(10.dp)) {
                                         Text(note.title, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        Text(note.accountIdentifier ?: "Confidential note encrypted in vault", fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(note.accountIdentifier ?: "Confidential note", fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -1454,11 +1454,6 @@ private fun GooglePasswordsSection(
                         )
                     }
                 }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
             }
         }
 
@@ -1565,13 +1560,6 @@ private fun GooglePasswordCredentialRow(
                 )
             }
         }
-
-        Icon(
-            imageVector = Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(18.dp)
-        )
     }
 }
 
@@ -1932,7 +1920,7 @@ private fun GoogleNoteCardItem(
                 }
             } else {
                 Text(
-                    text = "Secure encrypted content stored safely in vault...",
+                    text = "Content stored in vault...",
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
                     color = if (isDark) Color(0xFFB0B0B0) else Color(0xFF424242),
@@ -2361,7 +2349,7 @@ private fun GoogleWalletCardDetailScreen(
                 Text("Remove Card from Wallet", fontWeight = FontWeight.Bold)
             },
             text = {
-                Text("Are you sure you want to remove \"${card.title}\"? This encrypted card reference will be permanently removed from your secure vault.")
+                Text("Are you sure you want to remove \"${card.title}\"? This card reference will be permanently removed from your vault.")
             },
             confirmButton = {
                 androidx.compose.material3.Button(
@@ -3163,12 +3151,6 @@ private fun BankingSection(
                                                         )
                                                     }
                                                 }
-                                                Icon(
-                                                    Icons.Default.ChevronRight,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                                    modifier = Modifier.size(18.dp)
-                                                )
                                             }
                                         }
 
@@ -3283,7 +3265,7 @@ private fun BankAccountDetailScreen(
                 Text("Remove Bank Account", fontWeight = FontWeight.Bold)
             },
             text = {
-                Text("Are you sure you want to remove \"${account.title}\"? This encrypted bank account reference will be permanently removed from your vault.")
+                Text("Are you sure you want to remove \"${account.title}\"? This bank account reference will be permanently removed from your vault.")
             },
             confirmButton = {
                 androidx.compose.material3.Button(
@@ -5204,13 +5186,6 @@ private fun VaultCreateSecretSheet(
                                         ),
                                         color = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.weight(1f)
-                                    )
-
-                                    Icon(
-                                        imageVector = Icons.Default.ChevronRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }

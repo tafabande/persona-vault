@@ -582,11 +582,7 @@ fun PersonaDashboardDialogs(
                         }
                     }
                 }
-                PersonaToggleRow(
-                    title = "Mark as Next of Kin / ICE",
-                    checked = isNok,
-                    onCheckedChange = { isNok = it }
-                )
+
             }
         }
     }

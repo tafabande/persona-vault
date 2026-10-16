@@ -680,6 +680,7 @@ fun WallpaperOptionsSheet(
                         stagedAlignY = 0f
                         stagedZoom = 1f
                         onRestorePresets()
+                        stagedItem = availablePresets.firstOrNull() ?: wallpapers.firstOrNull()
                     },
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
@@ -788,17 +789,32 @@ fun WallpaperOptionsSheet(
                     )
 
                     if (!selectionState.isSelectionMode) {
-                        OutlinedButton(
-                            onClick = {
-                                haptics.selection()
-                                onPickFromDevice()
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.sizeIn(minHeight = 48.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add photo", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = {
+                                    haptics.selection()
+                                    onRestorePresets()
+                                    stagedItem = availablePresets.firstOrNull() ?: wallpapers.firstOrNull()
+                                },
+                                modifier = Modifier.sizeIn(minHeight = 44.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Restore Defaults", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold))
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    haptics.selection()
+                                    onPickFromDevice()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.sizeIn(minHeight = 44.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add photo", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                            }
                         }
                     }
                 }
@@ -828,11 +844,24 @@ fun WallpaperOptionsSheet(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Tap \"Add photo\" or reset to default artwork themes below.",
+                                text = "Tap \"Add photo\" or restore default artwork themes below.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Button(
+                                onClick = {
+                                    haptics.selection()
+                                    onRestorePresets()
+                                    stagedItem = availablePresets.firstOrNull()
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Restore Default Themes")
+                            }
                         }
                     }
                 } else {

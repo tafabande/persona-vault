@@ -567,7 +567,7 @@ fun LockScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "Your private life, encrypted locally",
+                text = "Your private life",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

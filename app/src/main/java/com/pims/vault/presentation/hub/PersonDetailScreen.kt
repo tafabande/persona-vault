@@ -298,40 +298,9 @@ fun PersonDetailScreen(
                     )
                 }
 
-                // Trusted Contact Toggle Chip
-                val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (person.isNextOfKin) tonalSurfaces.surfaceSelected else tonalSurfaces.surfaceGrouped,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (person.isNextOfKin) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else tonalSurfaces.borderSubtle
-                    ),
-                    modifier = Modifier.clickable {
-                        haptics.selection()
-                        onToggleTrusted(!person.isNextOfKin)
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = PersonaIcons.Success,
-                            contentDescription = null,
-                            tint = if (person.isNextOfKin) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Text(
-                            text = if (person.isNextOfKin) "Trusted Contact" else "Mark as Trusted Contact",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (person.isNextOfKin) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(4.dp))
+
+                val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
 
                 // UNIFIED CONTACT DETAILS TONAL GROUP
                 val hasContactInfo = person.phone.isNotBlank() || person.email.isNotBlank() ||
