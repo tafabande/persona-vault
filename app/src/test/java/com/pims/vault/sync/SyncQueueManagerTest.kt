@@ -42,6 +42,9 @@ class SyncQueueManagerTest {
         remoteSyncGateway = Mockito.mock(com.pims.vault.core.sync.RemoteSyncGateway::class.java)
 
         Mockito.`when`(syncQueueDao.getPendingCountFlow()).thenReturn(flowOf(0))
+        kotlinx.coroutines.runBlocking {
+            org.mockito.kotlin.whenever(syncQueueDao.getPendingOperations()).thenReturn(emptyList())
+        }
         Mockito.`when`(syncConflictDao.getUnresolvedCountFlow()).thenReturn(flowOf(0))
         Mockito.`when`(syncConflictDao.getUnresolvedConflictsFlow()).thenReturn(flowOf(emptyList()))
         Mockito.`when`(networkMonitor.networkState).thenReturn(flowOf(NetworkState.ONLINE))
