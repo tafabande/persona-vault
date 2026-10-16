@@ -136,6 +136,5 @@ jobs:
           echo "Publishing GitHub Release for tag: ${RELEASE_TAG}..."
           gh release create "${RELEASE_TAG}" release-artifacts/* \
             --title "Persona ${RELEASE_TAG}" \
-            --notes "Automated release for ${RELEASE_TAG} (${GITHUB_SHA})." \
-            --clobber
+            --notes "Automated release for ${RELEASE_TAG} (${GITHUB_SHA})."
 
