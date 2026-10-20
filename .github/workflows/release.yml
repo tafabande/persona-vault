@@ -62,6 +62,8 @@ jobs:
           bash gradlew testDebugUnitTest
 
       - name: Assemble Release Artifacts (AAB & APK)
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseParallelGC -Dfile.encoding=UTF-8"
         run: bash gradlew clean bundleRelease assembleRelease --no-build-cache
 
       - name: Sign Release Artifacts
