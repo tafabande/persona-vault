@@ -106,7 +106,9 @@ sealed interface ProfileEvent {
         val gender: String,
         val sexuality: String,
         val bloodGroup: String,
-        val occupation: String? = null
+        val occupation: String? = null,
+        val nationalIdNumber: String? = null,
+        val idPhotoPath: String? = null
     ) : ProfileEvent
 
     data class AddCustomField(
@@ -211,6 +213,7 @@ sealed interface ProfileEvent {
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val personDao: PersonDao,
     private val contactDao: ContactDao,
     private val addressDao: AddressDao,
@@ -686,6 +689,14 @@ class ProfileViewModel @Inject constructor(
                         val targetFirst = event.firstName.trim().ifBlank { existing?.firstName.orEmpty() }
                         val targetLast = event.lastName.trim().ifBlank { existing?.lastName.orEmpty() }
                         val targetOcc = event.occupation?.trim()?.takeIf { it.isNotBlank() } ?: existing?.occupation
+                        val targetNatId = event.nationalIdNumber?.trim()?.takeIf { it.isNotBlank() } ?: existing?.nationalIdNumber
+
+                        val currentMeta = parseNotesMeta(existing?.notes ?: _uiState.value.person?.notes)
+                        val updatedMeta = if (event.idPhotoPath != null) {
+                            currentMeta.copy(idPhotoPath = event.idPhotoPath)
+                        } else currentMeta
+                        val notesJson = serializeNotesMeta(updatedMeta)
+
                         val updatedPerson = (existing ?: PersonEntity(
                             id = CANONICAL_PRIMARY_OWNER_ID,
                             isPrimaryOwner = true,
@@ -694,11 +705,13 @@ class ProfileViewModel @Inject constructor(
                         )).copy(
                             firstName = targetFirst,
                             lastName = targetLast,
+                            nationalIdNumber = targetNatId,
                             dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() } ?: existing?.dateOfBirth,
                             gender = event.gender.trim().takeIf { it.isNotBlank() } ?: existing?.gender,
                             nationality = event.nationality.trim().takeIf { it.isNotBlank() } ?: existing?.nationality,
                             countryOfResidence = event.country.trim().takeIf { it.isNotBlank() } ?: existing?.countryOfResidence,
                             occupation = targetOcc,
+                            notes = notesJson,
                             updatedAt = System.currentTimeMillis()
                         )
                         personDao.insertOrUpdate(updatedPerson)
@@ -1071,6 +1084,10 @@ class ProfileViewModel @Inject constructor(
                         viewModelScope.launch(Dispatchers.IO) {
                             try { relationshipNoteDao.deleteForRelationship(event.relationshipId) } catch (_: Exception) {}
                             try { firestoreSyncService.deleteRemoteRelationship(event.relationshipId) } catch (_: Exception) {}
+                            try {
+                                com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context)
+                                    .setPersonPhotoPath(event.targetPersonId, null, event.relationshipId)
+                            } catch (_: Exception) {}
                         }
                         loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Relationship removed") }
@@ -1088,6 +1105,9 @@ class ProfileViewModel @Inject constructor(
                                 displayName = event.displayName
                             )
                             socialAccountDao.insertOrUpdate(account)
+                            viewModelScope.launch(Dispatchers.IO) {
+                                try { firestoreSyncService.syncSocialAccount(null, account) } catch (_: Exception) {}
+                            }
                             loadFullProfileAndRelationships()
                             _uiState.update { it.copy(userFeedbackMessage = "Added ${event.platform} profile") }
                         }

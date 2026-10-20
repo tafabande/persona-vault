@@ -7,6 +7,8 @@ import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
+import com.pims.vault.core.crypto.HkdfKeyDerivation
+import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.core.model.CardStatus
 import com.pims.vault.core.model.VaultCategory
@@ -394,9 +396,19 @@ class VaultViewModel @Inject constructor(
             if (keys.none { it.contentEquals(bytes) }) {
                 keys.add(bytes)
             }
+        } catch (e: Exception) {
+            VaultLogger.w("VaultViewModel", "Zone 4 hardware key unwrap failed: ${e.message}")
+        }
+
+        // 3. Alternate hardware root subkey candidate (e.g. if wrapped under rootKeyAlias)
+        try {
+            val rootSubkey = sessionManager.getHardwareSubkey(isZone4 = false)
+            if (rootSubkey != null && keys.none { it.contentEquals(rootSubkey) }) {
+                keys.add(rootSubkey)
+            }
         } catch (_: Exception) {}
 
-        // 3. Deterministic person-scoped fallback key
+        // 4. Deterministic person-scoped fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val fallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${activePersonId}".toByteArray(Charsets.UTF_8))
@@ -405,7 +417,7 @@ class VaultViewModel @Inject constructor(
             }
         } catch (_: Exception) {}
 
-        // 4. Deterministic canonical primary owner fallback key
+        // 5. Deterministic canonical primary owner fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val primaryFallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${CANONICAL_PRIMARY_OWNER_ID}".toByteArray(Charsets.UTF_8))
@@ -414,7 +426,25 @@ class VaultViewModel @Inject constructor(
             }
         } catch (_: Exception) {}
 
-        // 5. Database domain subkey
+        // 6. Historical persistent fallback key
+        try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val histFallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_FALLBACK_V1".toByteArray(Charsets.UTF_8))
+            if (keys.none { it.contentEquals(histFallbackKey) }) {
+                keys.add(histFallbackKey)
+            }
+        } catch (_: Exception) {}
+
+        // 7. Historical subkey fallback key
+        try {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val subkeyFallbackKey = digest.digest("PIMS_VAULT_SUBKEY_${HkdfKeyDerivation.CONTEXT_VAULT}".toByteArray(Charsets.UTF_8))
+            if (keys.none { it.contentEquals(subkeyFallbackKey) }) {
+                keys.add(subkeyFallbackKey)
+            }
+        } catch (_: Exception) {}
+
+        // 8. Database domain subkey
         try {
             val dbKey = sessionManager.getDatabaseKey()
             if (keys.none { it.contentEquals(dbKey) }) {
@@ -538,7 +568,13 @@ class VaultViewModel @Inject constructor(
             }
 
             if (!decryptedSuccessfully) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Failed to decrypt secret: ${lastException?.message ?: "Unknown error"}") }
+                VaultLogger.e("VaultViewModel", "Decryption failed for item ${item.id}: ${lastException?.message}", lastException)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "This secret cannot be decrypted with your device's current security keys."
+                    )
+                }
             }
         }
     }

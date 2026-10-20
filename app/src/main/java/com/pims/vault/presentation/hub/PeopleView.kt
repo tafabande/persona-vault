@@ -375,7 +375,10 @@ private fun PersonListItem(
 ) {
     val context = LocalContext.current
     val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
-    val contactPhoto = remember(person.id, photosVersion) { avatarManager.getPersonPhotoPath(person.id) }
+    val effectiveId = person.targetPersonId.ifBlank { person.id }
+    val contactPhoto = remember(effectiveId, person.id, photosVersion) {
+        avatarManager.getPersonPhotoPath(effectiveId, person.id)
+    }
     val contactBitmap = remember(contactPhoto) {
         contactPhoto?.let { path ->
             try {
@@ -494,8 +497,9 @@ fun PersonDetailSheet(
 ) {
     val context = LocalContext.current
     val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
-    var contactPhotoPath by remember(person.id) {
-        mutableStateOf(avatarManager.getPersonPhotoPath(person.id))
+    val effectiveId = person.targetPersonId.ifBlank { person.id }
+    var contactPhotoPath by remember(effectiveId, person.id) {
+        mutableStateOf(avatarManager.getPersonPhotoPath(effectiveId, person.id))
     }
     var showAvatarActionChooser by remember { mutableStateOf(false) }
 
@@ -505,13 +509,13 @@ fun PersonDetailSheet(
         if (uri != null) {
             try {
                 val photosDir = File(context.filesDir, "contact_photos").apply { mkdirs() }
-                val destFile = File(photosDir, "contact_${person.id}_${System.currentTimeMillis()}.jpg")
+                val destFile = File(photosDir, "contact_${effectiveId}_${System.currentTimeMillis()}.jpg")
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     destFile.outputStream().use { output ->
                         input.copyTo(output)
                     }
                 }
-                avatarManager.setPersonPhotoPath(person.id, destFile.absolutePath)
+                avatarManager.setPersonPhotoPath(effectiveId, destFile.absolutePath, person.id)
                 contactPhotoPath = destFile.absolutePath
             } catch (_: Exception) {}
         }
@@ -856,7 +860,7 @@ fun PersonDetailSheet(
                     if (!contactPhotoPath.isNullOrBlank()) {
                         TextButton(
                             onClick = {
-                                avatarManager.setPersonPhotoPath(person.id, null)
+                                avatarManager.setPersonPhotoPath(effectiveId, null, person.id)
                                 contactPhotoPath = null
                                 showAvatarActionChooser = false
                             },

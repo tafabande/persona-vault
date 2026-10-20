@@ -135,9 +135,19 @@ class ProfilePhotoSyncService @Inject constructor(
             }
             val bytes = plain ?: return@withContext false
             try {
-                val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
-                    .joinToString("") { "%02x".format(it) }
-                if (!digest.equals(expectedSha256Hex, ignoreCase = true)) return@withContext false
+                val digestBytes = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+                val shaHex = digestBytes.joinToString("") { "%02x".format(it) }
+                if (!shaHex.equals(expectedSha256Hex, ignoreCase = true)) {
+                    VaultLogger.w("PhotoSync", "SHA-256 mismatch: expected $expectedSha256Hex, got $shaHex")
+                    return@withContext false
+                }
+                // AGENTS.md §4: Validate canonical path to prevent directory traversal
+                val canonicalBase = context.filesDir.canonicalPath
+                val canonicalDest = destFile.canonicalPath
+                if (!canonicalDest.startsWith(canonicalBase)) {
+                    VaultLogger.w("PhotoSync", "Path traversal detected and blocked: $canonicalDest")
+                    return@withContext false
+                }
                 // Validate decodable image before caching.
                 val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext false
                 if (!bmp.isRecycled) try { bmp.recycle() } catch (_: Exception) {}

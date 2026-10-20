@@ -214,10 +214,12 @@ class KeySecurityManager(
      */
     fun deriveDomainSubkey(domainContext: String, isZone4: Boolean = false): SecretBytes {
         val targetAlias = rootKeyAlias
+
         if (!keyStore.containsAlias(targetAlias)) {
             initializeAndGetSecurityLevel()
         }
-        val masterKey = keyStore.getKey(targetAlias, null) as? SecretKey
+
+        val masterKey = (keyStore.getKey(targetAlias, null) as? SecretKey)
             ?: throw IllegalStateException("Master Key '$targetAlias' not found in Android Keystore")
 
         val prefs = sharedPreferences ?: context?.getSharedPreferences("pims_keystore_wrapped_subkeys", Context.MODE_PRIVATE)
@@ -237,15 +239,16 @@ class KeySecurityManager(
                 )
             }
 
+            val iv = base64Decode(ivStr)
+            val cipherBytes = base64Decode(cipherStr)
+
             try {
-                val iv = base64Decode(ivStr)
-                val cipherBytes = base64Decode(cipherStr)
                 val decryptCipher = Cipher.getInstance("AES/GCM/NoPadding")
                 decryptCipher.init(Cipher.DECRYPT_MODE, masterKey, javax.crypto.spec.GCMParameterSpec(128, iv))
                 val rawSubkey = decryptCipher.doFinal(cipherBytes)
                 return SecretBytes(rawSubkey)
             } catch (e: Exception) {
-                // Key material exists but cannot be decrypted (e.g. tag mismatch, corrupted ciphertext, wrong master key alias).
+                // Key material exists but cannot be decrypted by the Keystore master key.
                 // CRITICAL SAFETY RULE: Never generate a replacement key, and never overwrite/delete existing preferences!
                 throw WrappedKeyDecryptionException(
                     domainContext = domainContext,

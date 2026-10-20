@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -112,20 +113,21 @@ fun PersonDetailScreen(
     var noteToEdit by remember { mutableStateOf<RelationshipNote?>(null) }
     var noteToDelete by remember { mutableStateOf<RelationshipNote?>(null) }
 
-    val contactPhotoPath = remember(person.id, photosVersion) {
-        avatarManager.getPersonPhotoPath(person.id)
+    val effectivePersonId = person.targetPersonId.ifBlank { person.id }
+    val contactPhotoPath = remember(effectivePersonId, person.id, photosVersion) {
+        avatarManager.getPersonPhotoPath(effectivePersonId, person.id)
     }
 
     val saveUriToPhoto: (Uri) -> Unit = { uri ->
         try {
             val photosDir = java.io.File(context.filesDir, "contact_photos").apply { mkdirs() }
-            val destFile = java.io.File(photosDir, "contact_${person.id}_${System.currentTimeMillis()}.jpg")
+            val destFile = java.io.File(photosDir, "contact_${effectivePersonId}_${System.currentTimeMillis()}.jpg")
             context.contentResolver.openInputStream(uri)?.use { input ->
                 destFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
-            avatarManager.setPersonPhotoPath(person.id, destFile.absolutePath)
+            avatarManager.setPersonPhotoPath(effectivePersonId, destFile.absolutePath, person.id)
             haptics.success()
         } catch (_: Exception) {}
     }
@@ -319,6 +321,7 @@ fun PersonDetailScreen(
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = tonalSurfaces.surfaceGrouped,
+                        border = BorderStroke(0.5.dp, tonalSurfaces.borderSubtle.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column {
@@ -444,8 +447,9 @@ fun PersonDetailScreen(
                 // Fallback note snippet from person record if no structured notes yet
                 if (relationshipNotes.isEmpty() && person.notes.isNotBlank()) {
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(16.dp),
                         color = tonalSurfaces.surfaceGrouped,
+                        border = BorderStroke(0.5.dp, tonalSurfaces.borderSubtle.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -544,6 +548,7 @@ fun PersonDetailScreen(
                     onClick = {
                         showDeleteConfirmDialog = false
                         haptics.warning()
+                        avatarManager.setPersonPhotoPath(effectivePersonId, null, person.id)
                         onDeletePerson(person)
                         onBack()
                     },
@@ -608,7 +613,7 @@ fun PersonDetailScreen(
                         TextButton(
                             onClick = {
                                 showAvatarActionChooser = false
-                                avatarManager.setPersonPhotoPath(person.id, null)
+                                avatarManager.setPersonPhotoPath(effectivePersonId, null, person.id)
                                 haptics.warning()
                             },
                             modifier = Modifier.fillMaxWidth(),

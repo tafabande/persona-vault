@@ -600,4 +600,86 @@ class CryptographicRecoveryExperimentTest {
         // because wrappedBytes1 was overwritten by wrappedBytes2!
         assertFalse("Original wrapped key is destroyed in preferences", simulatedPreferences["PIMS/vault/v1_cipher"]!!.contentEquals(wrappedBytes1))
     }
+
+    @Test
+    fun testRealJellyfinCiphertextCandidateTrials() {
+        val jellyfinId = "97c4d039-b60f-4394-9a8a-d4ef70b15eab"
+        val payloadBytes = java.util.Base64.getDecoder().decode("Y6jE5WQV66hZynHSGR7UAhZiWOV/xKEglZ/SDQ==")
+        val ivHex = "555acd20e6f978fefc2b9dec"
+        val ivBytes = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        val candidateSeedStrings = listOf(
+            "PIMS_VAULT_ZONE4_PERSISTENT_primary_owner",
+            "PIMS_VAULT_ZONE4_PERSISTENT_primary",
+            "PIMS_VAULT_ZONE4_PERSISTENT_CANONICAL_PRIMARY_OWNER_ID",
+            "PIMS_VAULT_ZONE4_PERSISTENT_FALLBACK_V1",
+            "PIMS_VAULT_SUBKEY_PIMS/vault/v1",
+            "PIMS_VAULT_SUBKEY_PIMS/database/v1",
+            "PIMS_VAULT_ZONE4_PERSISTENT_d14ac326-3025-4c36-b8c3-8e055da2656c",
+            "PIMS_VAULT_ZONE4_PERSISTENT_dd035ccb-2061-499a-9c19-67f425c26635",
+            "PIMS_VAULT_ZONE4_PERSISTENT_BhBo1baogUVM1uYSsCt25R75lhw2",
+            "PIMS_VAULT_ZONE4_PERSISTENT_bleightjbande@gmail.com",
+            "bleightjbande@gmail.com",
+            "BhBo1baogUVM1uYSsCt25R75lhw2",
+            "PIMS/vault/v1",
+            "PIMS/database/v1",
+            "primary_owner",
+            "DEV"
+        )
+
+        var decryptedFound: String? = null
+        var successfulSeed: String? = null
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        for (seed in candidateSeedStrings) {
+            val rootKey = digest.digest(seed.toByteArray(Charsets.UTF_8))
+            
+            // Try standard two-step HKDF derivation
+            val itemKeyStandard = VaultRules.deriveItemKey(rootKey, VaultCategory.PASSWORD, jellyfinId)
+            for (version in listOf(1L, 0L, 2L)) {
+                val aad = VaultRules.constructItemAad(jellyfinId, VaultCategory.PASSWORD, version)
+                try {
+                    val decrypted = cryptoEngine.decrypt(EncryptedPayload(payloadBytes, ivBytes), itemKeyStandard, aad)
+                    decryptedFound = String(decrypted, Charsets.UTF_8)
+                    successfulSeed = "$seed (standard HKDF, v=$version)"
+                    break
+                } catch (_: Exception) {}
+            }
+            if (decryptedFound != null) break
+
+            // Try raw key (no HKDF) with standard AAD
+            for (version in listOf(1L, 0L, 2L)) {
+                val aad = VaultRules.constructItemAad(jellyfinId, VaultCategory.PASSWORD, version)
+                try {
+                    val decrypted = cryptoEngine.decrypt(EncryptedPayload(payloadBytes, ivBytes), rootKey, aad)
+                    decryptedFound = String(decrypted, Charsets.UTF_8)
+                    successfulSeed = "$seed (raw key, standard AAD v=$version)"
+                    break
+                } catch (_: Exception) {}
+            }
+            if (decryptedFound != null) break
+
+            // Try raw key with raw AAD (id only)
+            try {
+                val aad = jellyfinId.toByteArray(Charsets.UTF_8)
+                val decrypted = cryptoEngine.decrypt(EncryptedPayload(payloadBytes, ivBytes), rootKey, aad)
+                decryptedFound = String(decrypted, Charsets.UTF_8)
+                successfulSeed = "$seed (raw key, id AAD)"
+                break
+            } catch (_: Exception) {}
+            if (decryptedFound != null) break
+
+            // Try raw key with null AAD
+            try {
+                val decrypted = cryptoEngine.decrypt(EncryptedPayload(payloadBytes, ivBytes), rootKey, null)
+                decryptedFound = String(decrypted, Charsets.UTF_8)
+                successfulSeed = "$seed (raw key, null AAD)"
+                break
+            } catch (_: Exception) {}
+            if (decryptedFound != null) break
+        }
+
+        println("Jellyfin candidate search result: seed=$successfulSeed, decrypted=$decryptedFound")
+    }
 }
+

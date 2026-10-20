@@ -150,6 +150,20 @@ object PersonaIcons {
     @androidx.annotation.DrawableRes val CutePeopleRes: Int = com.pims.vault.R.drawable.ic_persona_people
     @androidx.annotation.DrawableRes val CuteVaultRes: Int = com.pims.vault.R.drawable.ic_persona_vault
     @androidx.annotation.DrawableRes val CuteNotesRes: Int = com.pims.vault.R.drawable.ic_persona_notes
+
+    // Authentic Brand & Social Vector Drawables
+    @androidx.annotation.DrawableRes val SocialWhatsApp: Int = com.pims.vault.R.drawable.ic_social_whatsapp
+    @androidx.annotation.DrawableRes val SocialInstagram: Int = com.pims.vault.R.drawable.ic_social_instagram
+    @androidx.annotation.DrawableRes val SocialFacebook: Int = com.pims.vault.R.drawable.ic_social_facebook
+    @androidx.annotation.DrawableRes val SocialTikTok: Int = com.pims.vault.R.drawable.ic_social_tiktok
+    @androidx.annotation.DrawableRes val SocialXTwitter: Int = com.pims.vault.R.drawable.ic_social_x_twitter
+    @androidx.annotation.DrawableRes val SocialLinkedIn: Int = com.pims.vault.R.drawable.ic_social_linkedin
+    @androidx.annotation.DrawableRes val SocialTelegram: Int = com.pims.vault.R.drawable.ic_social_telegram
+    @androidx.annotation.DrawableRes val SocialYouTube: Int = com.pims.vault.R.drawable.ic_social_youtube
+    @androidx.annotation.DrawableRes val SocialGitHub: Int = com.pims.vault.R.drawable.ic_social_github
+    @androidx.annotation.DrawableRes val SocialDiscord: Int = com.pims.vault.R.drawable.ic_social_discord
+    @androidx.annotation.DrawableRes val SocialWebsite: Int = com.pims.vault.R.drawable.ic_social_website
+    @androidx.annotation.DrawableRes val SocialBlog: Int = com.pims.vault.R.drawable.ic_social_blog
 }
 
 @Composable

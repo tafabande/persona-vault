@@ -438,6 +438,11 @@ class FirestoreSyncService @Inject constructor(
             firestore.collection("accounts").document(uid)
                 .collection("photos").document(meta.photoId)
                 .set(data, SetOptions.merge()).await()
+            try {
+                firestore.collection("accounts").document(uid)
+                    .collection("photo_tombstones").document(meta.photoId)
+                    .delete().await()
+            } catch (_: Exception) {}
             true
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Photo metadata sync failed: ${e.message}")
@@ -456,10 +461,59 @@ class FirestoreSyncService @Inject constructor(
                 if (remotePath.isNotBlank()) storageUploadService.delete(remotePath)
             } catch (_: Exception) {}
             ref.delete().await()
+            try {
+                firestore.collection("accounts").document(uid)
+                    .collection("photo_tombstones").document(photoId)
+                    .set(
+                        mapOf(
+                            "photoId" to photoId,
+                            "deletedAt" to System.currentTimeMillis()
+                        ),
+                        SetOptions.merge()
+                    ).await()
+            } catch (_: Exception) {}
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Failed to delete remote photo: ${e.message}")
         }
     }
+
+    suspend fun getRemotePhotoTombstones(userId: String?): Set<String> = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext emptySet()
+        try {
+            val snap = firestore.collection("accounts").document(uid)
+                .collection("photo_tombstones").get().await()
+            snap.documents.map { it.id }.toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
+    suspend fun getRemotePhoto(userId: String?, photoId: String): ProfilePhotoSyncService.PhotoMetadata? =
+        withContext(Dispatchers.IO) {
+            val uid = getEffectiveUserId(userId) ?: return@withContext null
+            try {
+                val d = firestore.collection("accounts").document(uid)
+                    .collection("photos").document(photoId).get().await()
+                if (!d.exists()) return@withContext null
+                val kind = d.getString("kind") ?: return@withContext null
+                ProfilePhotoSyncService.PhotoMetadata(
+                    photoId = d.id,
+                    kind = kind,
+                    ownerKey = d.getString("ownerKey") ?: "",
+                    b2RemotePath = d.getString("b2RemotePath") ?: "",
+                    b2DownloadUrl = d.getString("b2DownloadUrl") ?: "",
+                    b2IvHex = d.getString("b2IvHex") ?: "",
+                    sha256Hex = d.getString("sha256Hash") ?: "",
+                    mimeType = d.getString("mimeType") ?: "image/jpeg",
+                    sizeBytes = d.getLong("fileSizeBytes") ?: 0L,
+                    updatedAt = d.getLong("updatedAt") ?: 0L,
+                    photoCiphertextBase64 = d.getString("photoCiphertextBase64")
+                )
+            } catch (e: Exception) {
+                VaultLogger.w("FirestoreSync", "Failed to get remote photo $photoId: ${e.message}")
+                null
+            }
+        }
 
     suspend fun listRemotePhotos(userId: String?): List<ProfilePhotoSyncService.PhotoMetadata> =
         withContext(Dispatchers.IO) {
@@ -1300,13 +1354,19 @@ class FirestoreSyncService @Inject constructor(
 
                 val relationships = relationshipDao.getAllRelationships()
                 for (rel in relationships) {
-                    val pPhoto = avatarManager.getPersonPhotoPath(rel.targetPersonId)
+                    val pPhoto = avatarManager.getPersonPhotoPath(rel.targetPersonId, rel.id)
                     if (!pPhoto.isNullOrBlank() && File(pPhoto).exists()) {
                         photoBackupCoordinatorProvider.get().backupContactPhotoAsync(rel.targetPersonId, pPhoto)
                         count++
                     }
                 }
                 photoBackupCoordinatorProvider.get().backupAllPhotos()
+
+                try {
+                    com.pims.vault.presentation.wallpaper.LocalWallpaperManager.getInstance(context).backupAllCustomWallpapers()
+                } catch (e: Exception) {
+                    VaultLogger.w("FirestoreSync", "Error backing up custom wallpapers: ${e.message}")
+                }
             } catch (e: Exception) {
                 VaultLogger.w("FirestoreSync", "Error backing up avatar & contact photos: ${e.message}")
             }
@@ -2635,7 +2695,7 @@ class FirestoreSyncService @Inject constructor(
             }
 
             try {
-                com.pims.vault.presentation.wallpaper.LocalWallpaperManager(context).restoreFromCloudAsync()
+                com.pims.vault.presentation.wallpaper.LocalWallpaperManager.getInstance(context).restoreFromCloudAsync()
             } catch (e: Exception) {
                 VaultLogger.w("FirestoreSync", "Error restoring carousel wallpapers: ${e.message}")
             }

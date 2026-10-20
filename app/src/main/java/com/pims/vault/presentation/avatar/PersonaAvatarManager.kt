@@ -203,6 +203,16 @@ class PersonaAvatarManager @Inject constructor(
 
     private fun healStaleAvatarPath(config: PersonaAvatarConfig): PersonaAvatarConfig {
         if (config.avatarSource != AvatarSource.CUSTOM_IMAGE) {
+            if (config.customAvatarPath.isNullOrBlank()) {
+                val coordinator = getPhotoBackupCoordinator()
+                if (coordinator != null && !coordinator.isPhotoDeleted("avatar_primary")) {
+                    coordinator.downloadPhotoIfMissingAsync(
+                        com.pims.vault.core.sync.ProfilePhotoSyncService.KIND_AVATAR,
+                        "avatar_primary",
+                        "primary_owner"
+                    )
+                }
+            }
             return config
         }
         val path = config.customAvatarPath
@@ -218,7 +228,15 @@ class PersonaAvatarManager @Inject constructor(
                 )
             }
         }
-        // If file not found and user selected custom image, fallback to generated
+        // File not found locally: attempt download from cloud storage if not explicitly deleted
+        val coordinator = getPhotoBackupCoordinator()
+        if (coordinator != null && !coordinator.isPhotoDeleted("avatar_primary")) {
+            coordinator.downloadPhotoIfMissingAsync(
+                com.pims.vault.core.sync.ProfilePhotoSyncService.KIND_AVATAR,
+                "avatar_primary",
+                "primary_owner"
+            )
+        }
         return config.copy(
             avatarSource = AvatarSource.GENERATED,
             customAvatarPath = null
@@ -303,6 +321,8 @@ class PersonaAvatarManager @Inject constructor(
         return try {
             val dir = File(context.filesDir, "avatars").apply { if (!exists()) mkdirs() }
             val photoFile = File(dir, "avatar_custom_${System.currentTimeMillis()}.jpg")
+            val canonicalBase = context.filesDir.canonicalPath
+            if (!photoFile.canonicalPath.startsWith(canonicalBase)) return null
             FileOutputStream(photoFile).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
             }
@@ -324,6 +344,7 @@ class PersonaAvatarManager @Inject constructor(
             )
             saveConfig(updated)
             try {
+                getPhotoBackupCoordinator()?.clearPhotoDeleted("avatar_primary")
                 getPhotoBackupCoordinator()?.backupAvatarAsync(newPath)
             } catch (_: Exception) {}
             newPath
@@ -347,6 +368,9 @@ class PersonaAvatarManager @Inject constructor(
             avatarSource = AvatarSource.GENERATED
         )
         saveConfig(updated)
+        try {
+            getPhotoBackupCoordinator()?.deleteAvatarPhotoAsync()
+        } catch (_: Exception) {}
     }
 
     fun updateCustomPhotoAlignment(alignX: Float, alignY: Float) {
@@ -399,18 +423,22 @@ class PersonaAvatarManager @Inject constructor(
         return PersonaAvatarConfig.fromSeed(seed, style = AvatarStyle.SOFT)
     }
 
-    fun getPersonPhotoPath(personId: String): String? {
-        if (personId.isBlank()) return null
-        val path = prefs.getString("person_photo_$personId", null)
+    fun getPersonPhotoPath(personId: String, altId: String? = null): String? {
+        if (personId.isBlank() && altId.isNullOrBlank()) return null
+        var path = if (personId.isNotBlank()) prefs.getString("person_photo_$personId", null) else null
+        if (path.isNullOrBlank() && !altId.isNullOrBlank()) {
+            path = prefs.getString("person_photo_$altId", null)
+        }
         if (!path.isNullOrBlank()) {
             val direct = File(path)
             if (direct.exists() && direct.length() > 0) return direct.absolutePath
             try {
-                val name = File(path).name
+                val name = direct.name
                 if (name.isNotBlank()) {
                     val fallback = File(File(context.filesDir, "contact_photos"), name)
                     if (fallback.exists() && fallback.length() > 0) {
-                        prefs.edit().putString("person_photo_$personId", fallback.absolutePath).apply()
+                        if (personId.isNotBlank()) prefs.edit().putString("person_photo_$personId", fallback.absolutePath).apply()
+                        if (!altId.isNullOrBlank()) prefs.edit().putString("person_photo_$altId", fallback.absolutePath).apply()
                         return fallback.absolutePath
                     }
                 }
@@ -421,43 +449,81 @@ class PersonaAvatarManager @Inject constructor(
             if (contactDir.exists()) {
                 val matches = contactDir.listFiles()?.filter {
                     it.isFile && it.length() > 0 && (
-                        it.name == "contact_${personId}.jpg" ||
-                        it.name.startsWith("contact_${personId}_") ||
-                        it.name == "contact_${personId}_restored.jpg"
+                        (personId.isNotBlank() && (
+                            it.name == "contact_${personId}.jpg" ||
+                            it.name.startsWith("contact_${personId}_") ||
+                            it.name == "contact_${personId}_restored.jpg"
+                        )) ||
+                        (!altId.isNullOrBlank() && (
+                            it.name == "contact_${altId}.jpg" ||
+                            it.name.startsWith("contact_${altId}_") ||
+                            it.name == "contact_${altId}_restored.jpg"
+                        ))
                     )
                 }
                 val match = matches?.maxByOrNull { it.lastModified() }
                 if (match != null) {
-                    prefs.edit().putString("person_photo_$personId", match.absolutePath).apply()
+                    if (personId.isNotBlank()) prefs.edit().putString("person_photo_$personId", match.absolutePath).apply()
+                    if (!altId.isNullOrBlank()) prefs.edit().putString("person_photo_$altId", match.absolutePath).apply()
                     return match.absolutePath
                 }
             }
         } catch (_: Exception) {}
+
+        // If no local pfp exists, trigger download from storage unless user explicitly deleted it
+        val coordinator = getPhotoBackupCoordinator()
+        val isDeleted = (personId.isNotBlank() && coordinator?.isPhotoDeleted("contact_$personId") == true) ||
+                        (!altId.isNullOrBlank() && coordinator?.isPhotoDeleted("contact_$altId") == true)
+        if (!isDeleted) {
+            val keyToDownload = if (personId.isNotBlank()) personId else altId ?: ""
+            if (keyToDownload.isNotBlank()) {
+                coordinator?.downloadPhotoIfMissingAsync(
+                    kind = com.pims.vault.core.sync.ProfilePhotoSyncService.KIND_CONTACT,
+                    photoId = "contact_$keyToDownload",
+                    ownerKey = keyToDownload
+                )
+            }
+        }
         return null
     }
 
-    fun setPersonPhotoPath(personId: String, path: String?) {
+    fun setPersonPhotoPath(personId: String, path: String?, altId: String? = null) {
+        val editor = prefs.edit()
         if (path == null) {
-            prefs.edit().remove("person_photo_$personId").apply()
+            if (personId.isNotBlank()) editor.remove("person_photo_$personId")
+            if (!altId.isNullOrBlank()) editor.remove("person_photo_$altId")
+            editor.apply()
+            try {
+                getPhotoBackupCoordinator()?.deleteContactPhotoAsync(personId, altId)
+            } catch (_: Exception) {}
         } else {
-            prefs.edit().putString("person_photo_$personId", path).apply()
+            if (personId.isNotBlank()) editor.putString("person_photo_$personId", path)
+            if (!altId.isNullOrBlank()) editor.putString("person_photo_$altId", path)
+            editor.apply()
             try {
                 if (File(path).exists()) {
-                    getPhotoBackupCoordinator()?.backupContactPhotoAsync(personId, path)
+                    val backupKey = if (personId.isNotBlank()) personId else altId ?: ""
+                    if (backupKey.isNotBlank()) {
+                        getPhotoBackupCoordinator()?.clearPhotoDeleted("contact_$backupKey")
+                        getPhotoBackupCoordinator()?.backupContactPhotoAsync(backupKey, path)
+                    }
                 }
             } catch (_: Exception) {}
         }
         _personPhotosVersion.value = System.currentTimeMillis()
     }
 
-    fun saveRelationshipPhotoFromBitmap(personId: String, bitmap: Bitmap): String? {
+    fun saveRelationshipPhotoFromBitmap(personId: String, bitmap: Bitmap, altId: String? = null): String? {
         return try {
             val avatarsDir = File(context.filesDir, "contact_photos").apply { mkdirs() }
-            val destFile = File(avatarsDir, "contact_${personId}_${System.currentTimeMillis()}.jpg")
+            val primaryKey = if (personId.isNotBlank()) personId else altId ?: "unknown"
+            val destFile = File(avatarsDir, "contact_${primaryKey}_${System.currentTimeMillis()}.jpg")
+            val canonicalBase = context.filesDir.canonicalPath
+            if (!destFile.canonicalPath.startsWith(canonicalBase)) return null
             FileOutputStream(destFile).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
             }
-            setPersonPhotoPath(personId, destFile.absolutePath)
+            setPersonPhotoPath(personId, destFile.absolutePath, altId)
             destFile.absolutePath
         } catch (_: Exception) {
             null

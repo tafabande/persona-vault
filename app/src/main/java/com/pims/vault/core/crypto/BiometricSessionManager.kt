@@ -233,6 +233,16 @@ class BiometricSessionManager(
         return state is SessionState.Unlocked && state.isZone4Elevated && zone4VaultMasterKey != null
     }
 
+    fun getHardwareSubkey(isZone4: Boolean = true): ByteArray? {
+        return try {
+            keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_VAULT, isZone4 = isZone4)?.use {
+                it.copyBytes()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun generateFallbackKey(): SecretBytes {
         val fallbackBytes = java.security.MessageDigest.getInstance("SHA-256")
             .digest("PIMS_VAULT_ZONE4_PERSISTENT_FALLBACK_V1".toByteArray(Charsets.UTF_8))

@@ -84,29 +84,99 @@ class LocalWallpaperManager @Inject constructor(
     // Undo buffer for reversible removals
     private var lastRemovedSnapshot: MediaUndoSnapshot<WallpaperItem>? = null
 
-    val defaultPresets = listOf(
+    fun ensureAssetWallpapersExtracted() {
+        try {
+            val assetManager = context.assets
+            val assetFiles = assetManager.list("wallpapers") ?: return
+            for (fileName in assetFiles) {
+                val target = File(wallpaperDir, fileName)
+                if (!target.exists() || target.length() == 0L) {
+                    try {
+                        assetManager.open("wallpapers/$fileName").use { input ->
+                            FileOutputStream(target).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    val dayPresets = listOf(
         WallpaperItem(
-            id = "preset_grad",
-            title = "Serene Landscape",
-            type = WallpaperType.GENERATIVE_ARTWORK,
-            artSeed = 3,
+            id = "preset_day_alpine",
+            title = "Alpine Dawn",
+            subtitle = "Sunlit Glacial Peaks",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_day_alpine.jpg").absolutePath,
             isBuiltIn = true
         ),
         WallpaperItem(
-            id = "preset_amber",
-            title = "Terracotta Dunes",
-            type = WallpaperType.GENERATIVE_ARTWORK,
-            artSeed = 2,
+            id = "preset_day_coastal",
+            title = "Pacific Horizon",
+            subtitle = "Turquoise Coast & Ocean Waves",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_day_coastal.jpg").absolutePath,
             isBuiltIn = true
         ),
         WallpaperItem(
-            id = "preset_kariba",
-            title = "Lake Kariba",
-            type = WallpaperType.GENERATIVE_ARTWORK,
-            artSeed = 1,
+            id = "preset_day_valley",
+            title = "Emerald Valley",
+            subtitle = "Sunlit Alpine Meadow",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_day_valley.jpg").absolutePath,
+            isBuiltIn = true
+        ),
+        WallpaperItem(
+            id = "preset_day_dunes",
+            title = "Golden Dunes",
+            subtitle = "Sunlit Sahara Ridge",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_day_dunes.jpg").absolutePath,
             isBuiltIn = true
         )
     )
+
+    val nightPresets = listOf(
+        WallpaperItem(
+            id = "preset_night_aurora",
+            title = "Celestial Aurora",
+            subtitle = "Emerald Northern Lights",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_night_aurora.jpg").absolutePath,
+            isBuiltIn = true
+        ),
+        WallpaperItem(
+            id = "preset_night_milkyway",
+            title = "Starlit Milky Way",
+            subtitle = "Cosmic Galaxy over Peaks",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_night_milkyway.jpg").absolutePath,
+            isBuiltIn = true
+        ),
+        WallpaperItem(
+            id = "preset_night_lake",
+            title = "Nocturne Lake",
+            subtitle = "Moonlit Alpine Reflections",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_night_lake.jpg").absolutePath,
+            isBuiltIn = true
+        ),
+        WallpaperItem(
+            id = "preset_night_mountain",
+            title = "Midnight Peak",
+            subtitle = "Starry Night & Obsidian Slopes",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_night_mountain.jpg").absolutePath,
+            isBuiltIn = true
+        )
+    )
+
+    val defaultPresets: List<WallpaperItem> by lazy {
+        ensureAssetWallpapersExtracted()
+        dayPresets + nightPresets
+    }
 
     private val _wallpapers = MutableStateFlow<List<WallpaperItem>>(loadWallpapers())
     val wallpapers: StateFlow<List<WallpaperItem>> = _wallpapers.asStateFlow()
@@ -115,6 +185,7 @@ class LocalWallpaperManager @Inject constructor(
     val activeWallpaperIndex: StateFlow<Int> = _activeWallpaperIndex.asStateFlow()
 
     init {
+        ensureAssetWallpapersExtracted()
         restoreFromCloudAsync()
     }
 
@@ -150,6 +221,7 @@ class LocalWallpaperManager @Inject constructor(
     }
 
     private fun loadWallpapers(): List<WallpaperItem> {
+        ensureAssetWallpapersExtracted()
         if (!storeFile.exists()) return defaultPresets
         return try {
             val jsonStr = storeFile.readText()
@@ -157,9 +229,14 @@ class LocalWallpaperManager @Inject constructor(
             val list = mutableListOf<WallpaperItem>()
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
+                val id = obj.getString("id")
+                // Upgrade from old procedural presets to exquisite landscape presets
+                if (id == "preset_grad" || id == "preset_amber" || id == "preset_kariba") {
+                    continue
+                }
                 list.add(
                     WallpaperItem(
-                        id = obj.getString("id"),
+                        id = id,
                         title = obj.getString("title"),
                         subtitle = obj.optString("subtitle").takeIf { it.isNotBlank() },
                         type = WallpaperType.valueOf(obj.getString("type")),
@@ -172,7 +249,10 @@ class LocalWallpaperManager @Inject constructor(
                     )
                 )
             }
-            if (list.isEmpty()) defaultPresets else list
+            val existingIds = list.map { it.id }.toSet()
+            val missingDefaults = defaultPresets.filterNot { it.id in existingIds }
+            val merged = list + missingDefaults
+            if (merged.isEmpty()) defaultPresets else merged
         } catch (_: Exception) {
             defaultPresets
         }
@@ -649,6 +729,25 @@ class LocalWallpaperManager @Inject constructor(
             _wallpapers.value = local
             persistWallpapers(local)
             activeIndex?.let { setActiveIndex(it) }
+        }
+    }
+
+    fun backupAllCustomWallpapers() {
+        val activeId = _wallpapers.value.getOrNull(_activeWallpaperIndex.value)?.id
+        _wallpapers.value.filter { !it.isBuiltIn && !it.localFilePath.isNullOrBlank() }
+            .forEachIndexed { index, item ->
+                backupCoordinator()?.backupAsync(item, index, item.id == activeId)
+            }
+    }
+
+    companion object {
+        @Volatile
+        private var instance: LocalWallpaperManager? = null
+
+        fun getInstance(context: Context): LocalWallpaperManager {
+            return instance ?: synchronized(this) {
+                instance ?: LocalWallpaperManager(context.applicationContext).also { instance = it }
+            }
         }
     }
 }

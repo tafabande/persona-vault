@@ -48,6 +48,8 @@ import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -56,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -164,6 +167,18 @@ fun KeyDetailScreen(
         VaultCategory.GENERIC_SECRET -> genericSecret?.secretValue.orEmpty()
         VaultCategory.RECOVERY_CODE -> recoverySecret?.codes?.joinToString("\n") { it.code }.orEmpty()
         else -> ""
+    }
+
+    val isDecrypted = when (currentItem.category) {
+        VaultCategory.PASSWORD -> passSecret != null
+        VaultCategory.SECURE_NOTE -> noteSecret != null
+        VaultCategory.TOTP_2FA -> totpSecret != null
+        VaultCategory.API_KEY -> apiKeySecret != null
+        VaultCategory.SSH_KEY -> sshSecret != null
+        VaultCategory.ACCESS_TOKEN -> tokenSecret != null
+        VaultCategory.GENERIC_SECRET -> genericSecret != null
+        VaultCategory.RECOVERY_CODE -> recoverySecret != null
+        else -> secretValue.isNotBlank()
     }
 
     val headerIcon: ImageVector = when (currentItem.category) {
@@ -474,9 +489,14 @@ fun KeyDetailScreen(
                         DropdownMenuItem(
                             text = { Text("Export Secret (Plaintext)") },
                             leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                            enabled = isDecrypted,
                             onClick = {
                                 showMenu = false
-                                showExportConfirmDialog = true
+                                if (isDecrypted) {
+                                    showExportConfirmDialog = true
+                                } else {
+                                    Toast.makeText(context, "Cannot export: secret is unavailable", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         )
                         DropdownMenuItem(
@@ -577,42 +597,63 @@ fun KeyDetailScreen(
                     }
                 }
 
-                // Error Banner with Retry button
-                if (hasError) {
+                // Decryption Unavailable Banner with Actionable Recovery
+                if (hasError || (!isItemLoading && !isDecrypted)) {
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 16.dp),
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f))
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(16.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.LockReset,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = "Decryption Failed",
+                                    text = "Decryption Unavailable",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
+                                    fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = uiState.errorMessage.orEmpty(),
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp
-                                )
                             }
-                            IconButton(onClick = { viewModel.openItem(currentItem) }) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "This credential cannot be decrypted with your device's current security keys.",
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = onEdit,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Retry",
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onError
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (currentItem.category == VaultCategory.PASSWORD) "Re-enter Password" else "Re-enter Secret",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onError
                                 )
                             }
                         }
@@ -774,82 +815,131 @@ fun KeyDetailScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 14.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = null,
-                                    tint = getVaultTextSecondary(),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(14.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = if (isSecretRevealed) passwordPlain.ifBlank { "••••••••" } else "••••••••",
-                                        fontSize = 15.sp,
-                                        fontFamily = if (isSecretRevealed) FontFamily.Monospace else FontFamily.Default,
-                                        fontWeight = FontWeight.Medium,
-                                        color = getVaultTextPrimary()
-                                    )
-                                    Text(
-                                        text = "Password",
-                                        fontSize = 12.sp,
-                                        color = getVaultTextSecondary()
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { isSecretRevealed = !isSecretRevealed },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = if (isSecretRevealed) "Hide password" else "Reveal password",
-                                        tint = getVaultTextSecondary(),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        viewModel.copyToClipboard(context, passwordPlain, currentItem.title, isSecret = true)
-                                    },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy password",
-                                        tint = getVaultTextSecondary(),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-
-                            // Integrated password strength indicator
-                            if (passwordPlain.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(10.dp))
+                            if (passSecret != null) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "Strength: ${strength.label}",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = strength.color
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = getVaultTextSecondary(),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isSecretRevealed) passwordPlain else "••••••••",
+                                            fontSize = 15.sp,
+                                            fontFamily = if (isSecretRevealed) FontFamily.Monospace else FontFamily.Default,
+                                            fontWeight = FontWeight.Medium,
+                                            color = getVaultTextPrimary()
+                                        )
+                                        Text(
+                                            text = "Password",
+                                            fontSize = 12.sp,
+                                            color = getVaultTextSecondary()
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { isSecretRevealed = !isSecretRevealed },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = if (isSecretRevealed) "Hide password" else "Reveal password",
+                                            tint = getVaultTextSecondary(),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            viewModel.copyToClipboard(context, passwordPlain, currentItem.title, isSecret = true)
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy password",
+                                            tint = getVaultTextSecondary(),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                // Integrated password strength indicator
+                                if (passwordPlain.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Strength: ${strength.label}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = strength.color
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    LinearProgressIndicator(
+                                        progress = { strength.progress },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(2.dp)),
+                                        color = strength.color,
+                                        trackColor = getVaultBorder()
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator(
-                                    progress = { strength.progress },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp)),
-                                    color = strength.color,
-                                    trackColor = getVaultBorder()
-                                )
+                            } else {
+                                // Decryption unavailable state: no fake dots, disabled copy/view, actionable recovery
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Password unavailable",
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                        Text(
+                                            text = "Decryption failed — tap below to re-enter",
+                                            fontSize = 12.sp,
+                                            color = getVaultTextSecondary()
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = onEdit,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Re-enter Password",
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
 
@@ -940,123 +1030,169 @@ fun KeyDetailScreen(
                 } else {
                     // Non-password credentials: Reveal / Conceal and Copy card
                     VaultGroupedCard {
-                        // Reveal / Hide Row
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { isSecretRevealed = !isSecretRevealed }
-                                .tactilePress()
-                                .padding(horizontal = 16.dp, vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = null,
-                                tint = getVaultTextPrimary(),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = revealButtonText,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = getVaultTextPrimary()
+                        if (isDecrypted) {
+                            // Reveal / Hide Row
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isSecretRevealed = !isSecretRevealed }
+                                    .tactilePress()
+                                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = null,
+                                    tint = getVaultTextPrimary(),
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                if (isSecretRevealed) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    when (currentItem.category) {
-                                        VaultCategory.SECURE_NOTE -> {
-                                            Text(
-                                                text = secretValue.ifBlank { "(Empty note)" },
-                                                fontSize = 14.sp,
-                                                color = getVaultTextPrimary(),
-                                                lineHeight = 22.sp
-                                            )
-                                        }
-                                        VaultCategory.RECOVERY_CODE -> {
-                                            val codes = recoverySecret?.codes.orEmpty()
-                                            if (codes.isNotEmpty()) {
-                                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                    codes.forEach { codeEntry ->
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .clip(RoundedCornerShape(6.dp))
-                                                                .background(getVaultBorder().copy(alpha = 0.4f))
-                                                                .clickable {
-                                                                    if (!codeEntry.isUsed) {
-                                                                        viewModel.consumeRecoveryCode(currentItem.id, codeEntry.code)
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = revealButtonText,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = getVaultTextPrimary()
+                                    )
+                                    if (isSecretRevealed) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        when (currentItem.category) {
+                                            VaultCategory.SECURE_NOTE -> {
+                                                Text(
+                                                    text = secretValue.ifBlank { "(Empty note)" },
+                                                    fontSize = 14.sp,
+                                                    color = getVaultTextPrimary(),
+                                                    lineHeight = 22.sp
+                                                )
+                                            }
+                                            VaultCategory.RECOVERY_CODE -> {
+                                                val codes = recoverySecret?.codes.orEmpty()
+                                                if (codes.isNotEmpty()) {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        codes.forEach { codeEntry ->
+                                                            Row(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .clip(RoundedCornerShape(6.dp))
+                                                                    .background(getVaultBorder().copy(alpha = 0.4f))
+                                                                    .clickable {
+                                                                        if (!codeEntry.isUsed) {
+                                                                            viewModel.consumeRecoveryCode(currentItem.id, codeEntry.code)
+                                                                        }
                                                                     }
+                                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text(
+                                                                    text = codeEntry.code,
+                                                                    fontFamily = FontFamily.Monospace,
+                                                                    fontSize = 13.sp,
+                                                                    color = if (codeEntry.isUsed) getVaultTextSecondary() else getVaultTextPrimary(),
+                                                                    textDecoration = if (codeEntry.isUsed) TextDecoration.LineThrough else TextDecoration.None
+                                                                )
+                                                                if (codeEntry.isUsed) {
+                                                                    Text(text = "USED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = getVaultTextSecondary())
+                                                                } else {
+                                                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp), tint = getVaultTextSecondary())
                                                                 }
-                                                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Text(
-                                                                text = codeEntry.code,
-                                                                fontFamily = FontFamily.Monospace,
-                                                                fontSize = 13.sp,
-                                                                color = if (codeEntry.isUsed) getVaultTextSecondary() else getVaultTextPrimary(),
-                                                                textDecoration = if (codeEntry.isUsed) TextDecoration.LineThrough else TextDecoration.None
-                                                            )
-                                                            if (codeEntry.isUsed) {
-                                                                Text(text = "USED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = getVaultTextSecondary())
-                                                            } else {
-                                                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp), tint = getVaultTextSecondary())
                                                             }
                                                         }
                                                     }
+                                                } else {
+                                                    Text(text = "No recovery codes recorded", fontSize = 13.sp, color = getVaultTextSecondary())
                                                 }
-                                            } else {
-                                                Text(text = "No recovery codes recorded", fontSize = 13.sp, color = getVaultTextSecondary())
                                             }
-                                        }
-                                        else -> {
-                                            Text(
-                                                text = secretValue.ifBlank { "••••••••" },
-                                                fontSize = 14.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                color = getVaultTextPrimary()
-                                            )
+                                            else -> {
+                                                Text(
+                                                    text = secretValue,
+                                                    fontSize = 14.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = getVaultTextPrimary()
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
-                            Box(
+
+                            HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
+
+                            // Copy Secret Row
+                            Row(
                                 modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isSecretRevealed) getVaultTextPrimary() else getVaultTextSecondary().copy(alpha = 0.5f))
-                            )
-                        }
-
-                        HorizontalDivider(thickness = 0.5.dp, color = getVaultBorder().copy(alpha = 0.6f))
-
-                        // Copy Secret Row
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.copyToClipboard(context, secretValue, currentItem.title, isSecret = true)
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.copyToClipboard(context, secretValue, currentItem.title, isSecret = true)
+                                    }
+                                    .tactilePress()
+                                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    tint = getVaultTextPrimary(),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text = copyButtonText,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = getVaultTextPrimary()
+                                )
+                            }
+                        } else {
+                            // Secret unavailable state
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Secret unavailable",
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                        Text(
+                                            text = "Decryption failed with current device keys",
+                                            fontSize = 12.sp,
+                                            color = getVaultTextSecondary()
+                                        )
+                                    }
                                 }
-                                .tactilePress()
-                                .padding(horizontal = 16.dp, vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                tint = getVaultTextPrimary(),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = copyButtonText,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = getVaultTextPrimary()
-                            )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedButton(
+                                    onClick = onEdit,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Re-enter Secret",
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         }
                     }
                 }

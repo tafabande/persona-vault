@@ -330,7 +330,7 @@ fun PersonaDashboardScreen(
     val themeMode by themeManager.themeMode.collectAsState()
     val soundManager = rememberPimsSoundManager()
     val isSoundEnabled by soundManager.isSoundEnabled.collectAsState()
-    val wallpaperManager = remember { LocalWallpaperManager(context) }
+    val wallpaperManager = remember { LocalWallpaperManager.getInstance(context) }
     val wallpapers by wallpaperManager.wallpapers.collectAsState()
     val activeWallpaperIndex by wallpaperManager.activeWallpaperIndex.collectAsState()
     val isWallpaperAutoplayEnabled by wallpaperManager.isAutoplayEnabled.collectAsState()
@@ -344,7 +344,24 @@ fun PersonaDashboardScreen(
     val customAvatarPath by avatarManager.customAvatarPath.collectAsState()
     val avatarConfig by avatarManager.avatarConfig.collectAsState()
     var isHapticsEnabled by remember { mutableStateOf(haptics.isUserHapticsEnabled()) }
-    var dismissedNotificationIds by remember { mutableStateOf(setOf<String>()) }
+    val notifPrefs = remember { context.getSharedPreferences("pims_notifications_prefs", Context.MODE_PRIVATE) }
+    var dismissedNotificationIds by remember {
+        mutableStateOf(notifPrefs.getStringSet("dismissed_ids", emptySet())?.toSet() ?: emptySet())
+    }
+    val dismissNotification: (String) -> Unit = remember {
+        { id ->
+            val updated = dismissedNotificationIds + id
+            dismissedNotificationIds = updated
+            notifPrefs.edit().putStringSet("dismissed_ids", updated).apply()
+        }
+    }
+    val dismissAllNotifications: (Collection<String>) -> Unit = remember {
+        { ids ->
+            val updated = dismissedNotificationIds + ids
+            dismissedNotificationIds = updated
+            notifPrefs.edit().putStringSet("dismissed_ids", updated).apply()
+        }
+    }
 
     val wallpaperPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -930,22 +947,24 @@ fun PersonaDashboardScreen(
         }
     }
 
-    // Activity & Notification Center Data (Strictly relationship, sharing, and urgent profile alerts)
+    // Activity & Notification Center Data (Strictly genuine pending requests, sync alerts, and expiring documents)
     val notifications = remember(profileState.relationships, documentState.documents, conflicts, dismissedNotificationIds) {
         val list = mutableListOf<PersonaNotificationItem>()
 
-        // 1. Pending Connection Requests & Relationship Updates from actual data
+        // 1. Pending Connection Requests (ONLY genuine pending requests, not stale contacts with static notes)
         profileState.relationships.forEach { rel ->
             val notifId = "rel_${rel.id}"
             if (!dismissedNotificationIds.contains(notifId)) {
-                val isRequest = rel.relationRole.contains("Request", ignoreCase = true) || rel.notes.contains("Request", ignoreCase = true)
-                if (isRequest) {
+                val isPendingRequest = rel.relationRole.contains("Request", ignoreCase = true) ||
+                                       rel.relationRole.equals("PENDING", ignoreCase = true) ||
+                                       rel.notes.contains("Request", ignoreCase = true)
+                if (isPendingRequest) {
                     list.add(
                         PersonaNotificationItem(
                             id = notifId,
                             title = "Connection request",
-                            description = "${rel.fullName} wants to connect with you as ${rel.relationRole}.",
-                            timestampText = "Today",
+                            description = "${rel.fullName} wants to connect with you.",
+                            timestampText = "Request",
                             category = NotificationCategory.CONNECTION_REQUEST,
                             senderName = rel.fullName,
                             targetPersonId = rel.targetPersonId,
@@ -954,23 +973,6 @@ fun PersonaDashboardScreen(
                             isRead = false,
                             level = AlertLevel.INFO,
                             icon = Icons.Default.People
-                        )
-                    )
-                } else if (rel.notes.isNotBlank()) {
-                    list.add(
-                        PersonaNotificationItem(
-                            id = notifId,
-                            title = "Connection updated",
-                            description = "${rel.fullName} updated details: ${rel.notes}",
-                            timestampText = "Recent",
-                            category = NotificationCategory.PROFILE_UPDATE,
-                            senderName = rel.fullName,
-                            targetPersonId = rel.targetPersonId,
-                            isNeedsAttention = false,
-                            isToday = true,
-                            isRead = false,
-                            level = AlertLevel.INFO,
-                            icon = Icons.Default.Person
                         )
                     )
                 }
@@ -995,7 +997,7 @@ fun PersonaDashboardScreen(
             )
         }
 
-        // 3. Expiring Documents (Urgent life event)
+        // 3. Expiring Documents (Urgent life event: only documents expiring within 30 days or expired within the last 7 days)
         val now = System.currentTimeMillis()
         documentState.documents.forEach { docWithHist ->
             val doc = docWithHist.document
@@ -1010,18 +1012,35 @@ fun PersonaDashboardScreen(
                                             else Triple(parts[2].toInt(), parts[0].toInt() - 1, parts[1].toInt())
                             expCal.set(y, m, d)
                             val diffDays = ((expCal.timeInMillis - now) / (24 * 60 * 60 * 1000)).toInt()
-                            if (diffDays in 0..60) {
+                            if (diffDays in -7..30) {
+                                val (titleText, descText, timeText) = when {
+                                    diffDays < 0 -> Triple(
+                                        "${doc.title} expired",
+                                        "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expired ${-diffDays} days ago.",
+                                        "Expired ${-diffDays}d ago"
+                                    )
+                                    diffDays == 0 -> Triple(
+                                        "${doc.title} expires today",
+                                        "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expires today.",
+                                        "Today"
+                                    )
+                                    else -> Triple(
+                                        "${doc.title} expires soon",
+                                        "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expires in $diffDays days.",
+                                        "$diffDays d"
+                                    )
+                                }
                                 list.add(
                                     PersonaNotificationItem(
                                         id = notifId,
-                                        title = "${doc.title} expires soon",
-                                        description = "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expires in $diffDays days.",
-                                        timestampText = "$diffDays days",
+                                        title = titleText,
+                                        description = descText,
+                                        timestampText = timeText,
                                         category = NotificationCategory.SHARING_ACTIVITY,
-                                        isNeedsAttention = true,
-                                        isToday = diffDays <= 7,
+                                        isNeedsAttention = diffDays <= 7,
+                                        isToday = diffDays <= 1,
                                         isRead = false,
-                                        level = AlertLevel.WARNING,
+                                        level = if (diffDays <= 7) AlertLevel.WARNING else AlertLevel.INFO,
                                         icon = Icons.Default.Warning
                                     )
                                 )
@@ -1571,6 +1590,33 @@ fun PersonaDashboardScreen(
                             recentActivityManager.recordActivity("Removed social profile")
                             soundManager.delete()
                         },
+                        onSyncCloud = {
+                            haptics.selection()
+                            soundManager.navigation()
+                            syncViewModel.processSyncNow()
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Backing up socials & vault to cloud...")
+                            }
+                        },
+                        onRestoreCloud = {
+                            haptics.selection()
+                            soundManager.navigation()
+                            syncViewModel.processSyncNow()
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Restoring profiles from cloud...")
+                            }
+                        },
+                        onSavePasswordToVault = { platform, username, password ->
+                            vaultViewModel.savePassword(
+                                title = "Social - $platform",
+                                username = username,
+                                passwordPlain = password,
+                                websiteUrl = null,
+                                notes = "Linked from Persona Socials ($platform)"
+                            )
+                            recentActivityManager.recordActivity("Saved $platform password to Vault")
+                            soundManager.success()
+                        },
                         onExplain = { contextualExplanation = it }
                     )
 
@@ -1971,14 +2017,24 @@ fun PersonaDashboardScreen(
                 soundManager.navigation()
                 when {
                     item.id.startsWith("rel") -> {
-                        selectedTab = 2
+                        selectedTab = 3 // People tab
                     }
                     item.id.startsWith("conflict") -> showSheet("conflict")
                     item.id.startsWith("doc_exp") -> showSheet("documents")
                 }
             },
+            onDismissNotification = { item ->
+                dismissNotification(item.id)
+                soundManager.delete()
+                haptics.selection()
+            },
+            onClearAll = {
+                dismissAllNotifications(notifications.map { it.id })
+                soundManager.delete()
+                haptics.selection()
+            },
             onAcceptRequest = { item ->
-                dismissedNotificationIds = dismissedNotificationIds + item.id
+                dismissNotification(item.id)
                 soundManager.success()
                 haptics.success()
                 scope.launch {
@@ -1986,7 +2042,7 @@ fun PersonaDashboardScreen(
                 }
             },
             onDeclineRequest = { item ->
-                dismissedNotificationIds = dismissedNotificationIds + item.id
+                dismissNotification(item.id)
                 soundManager.delete()
                 haptics.selection()
                 scope.launch {
@@ -1994,7 +2050,7 @@ fun PersonaDashboardScreen(
                 }
             },
             onMarkAllRead = {
-                dismissedNotificationIds = dismissedNotificationIds + notifications.map { it.id }.toSet()
+                dismissAllNotifications(notifications.map { it.id })
                 soundManager.navigation()
                 haptics.selection()
             }
@@ -2408,7 +2464,7 @@ fun PersonaDashboardScreen(
         haptics = haptics,
         soundManager = soundManager,
         toastController = toastController,
-        onSaved = { first, last, dobVal, occ, countryVal, genderVal, nat ->
+        onSaved = { first, last, dobVal, occ, countryVal, genderVal, nat, phoneVal, emailVal ->
             firstName = first
             lastName = last
             dob = dobVal
@@ -2416,19 +2472,6 @@ fun PersonaDashboardScreen(
             country = countryVal
             gender = genderVal
             nationality = nat
-            profileViewModel.onEvent(
-                ProfileEvent.SavePersonalDetails(
-                    firstName = first, lastName = last, dob = dobVal,
-                    nationality = nat, country = countryVal, gender = genderVal,
-                    sexuality = sexuality, bloodGroup = bloodGroup
-                )
-            )
-            profileViewModel.savePrimaryPhone(primaryPhone ?: "")
-            profileViewModel.savePrimaryEmail(primaryEmail ?: "")
-            recentActivityManager.recordActivity("Updated personal information", "Profile name & details updated")
-            haptics.success()
-            soundManager.success()
-            toastController.showSuccess("Personal identity saved")
             hideDialog("editProfile")
         },
         onDismissRequest = { hideDialog("editProfile") }

@@ -348,12 +348,16 @@ private fun HomeHeaderRow(
             }
         )
 
-        // Right: Notification Bell with clean circular container
+        // Right: Notification Bell with clean translucent circular container
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(36.dp)
                 .clip(CircleShape)
-                .background(buttonBg)
+                .background(Color.Black.copy(alpha = 0.35f))
+                .border(
+                    BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                    CircleShape
+                )
                 .clickable {
                     haptics.selection()
                     onNotificationClick()
@@ -363,15 +367,15 @@ private fun HomeHeaderRow(
             Icon(
                 imageVector = PersonaIcons.NotificationsOutlined,
                 contentDescription = "Activity Notifications",
-                tint = iconTint,
-                modifier = Modifier.size(22.dp)
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
             )
             if (unreadNotificationCount > 0) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 8.dp)
-                        .size(5.5.dp)
+                        .padding(top = 5.dp, end = 5.dp)
+                        .size(6.dp)
                         .background(color = dotColor, shape = CircleShape)
                 )
             }
@@ -417,16 +421,16 @@ private fun IdentityDetailsCard(
         modifier = Modifier
             .fillMaxWidth()
             .pimsTactile { onEdit() },
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(16.dp),
         color = cardBg,
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, cardBorder)
+        shadowElevation = 0.dp,
+        border = BorderStroke(0.5.dp, cardBorder.copy(alpha = 0.35f))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Row 1: Full Name (Left) + Pencil Edit Icon (Right)
             Row(
@@ -443,7 +447,7 @@ private fun IdentityDetailsCard(
                     text = displayName,
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 19.sp
+                        fontSize = 18.sp
                     ),
                     color = textPrimary,
                     maxLines = 1,
@@ -460,18 +464,17 @@ private fun IdentityDetailsCard(
             // Row 2: Email Icon + Email text
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.padding(top = 2.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(
                     imageVector = PersonaIcons.EmailOutlined,
                     contentDescription = null,
                     tint = textSecondary,
-                    modifier = Modifier.size(17.dp)
+                    modifier = Modifier.size(16.dp)
                 )
                 Text(
                     text = primaryEmail?.takeIf { it.isNotBlank() } ?: "Add email",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
                     color = textSecondary,
                     maxLines = 1
                 )
@@ -479,9 +482,7 @@ private fun IdentityDetailsCard(
 
             // Row 3: Phone (Left) and Add ID photo (Right)
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -494,11 +495,11 @@ private fun IdentityDetailsCard(
                         imageVector = PersonaIcons.PhoneOutlined,
                         contentDescription = null,
                         tint = textSecondary,
-                        modifier = Modifier.size(17.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                     Text(
                         text = primaryPhone?.takeIf { it.isNotBlank() } ?: "Add phone",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
                         color = textSecondary,
                         maxLines = 1
                     )
@@ -526,27 +527,29 @@ private fun IdentityDetailsCard(
                                 .clip(RoundedCornerShape(4.dp))
                         )
                         Text(
-                            text = "ID photo",
+                            text = if (!idNumber.isNullOrBlank()) idNumber else "ID photo",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Normal,
-                                fontSize = 13.5.sp
+                                fontSize = 13.sp
                             ),
-                            color = textPrimary
+                            color = textPrimary,
+                            maxLines = 1
                         )
                     } else {
                         Icon(
                             imageVector = PersonaIcons.PhotoOutlined,
                             contentDescription = "Add ID photo",
                             tint = textPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Add ID photo",
+                            text = if (!idNumber.isNullOrBlank()) idNumber else "Add ID photo",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Normal,
-                                fontSize = 13.5.sp
+                                fontSize = 13.sp
                             ),
-                            color = textPrimary
+                            color = textPrimary,
+                            maxLines = 1
                         )
                     }
                 }
@@ -665,9 +668,9 @@ private fun IdentityDetailsEditorSheet(
             )
 
             Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(130.dp)
@@ -726,7 +729,7 @@ private fun IdentityDetailsEditorSheet(
                     onSave(name, email, phone, idNumber, selectedPhotoUri)
                 },
                 enabled = name.isNotBlank(),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
@@ -759,10 +762,10 @@ private fun HomeQuickAccessCard(
     Surface(
         modifier = modifier
             .pimsTactile { onClick() },
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(16.dp),
         color = cardBg,
-        shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, cardBorder)
+        shadowElevation = 0.dp,
+        border = BorderStroke(0.5.dp, cardBorder.copy(alpha = 0.35f))
     ) {
         Row(
             modifier = Modifier

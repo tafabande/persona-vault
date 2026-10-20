@@ -95,21 +95,6 @@ internal fun handleCentralizedInfoSave(
         }
     } ?: profileState.idPhotoPath
 
-    val primaryPhoneVal = phonesList.firstOrNull { it.isPrimary }?.number
-        ?: phonesList.firstOrNull()?.number ?: ""
-    val primaryEmailVal = emailsList.firstOrNull { it.isPrimary }?.address
-        ?: emailsList.firstOrNull()?.address ?: ""
-
-    profileViewModel.onEvent(
-        ProfileEvent.SaveIdentityDetails(
-            fullName = name,
-            email = primaryEmailVal,
-            phone = primaryPhoneVal,
-            nationalId = natId,
-            idPhotoPath = localPhotoPath
-        )
-    )
-
     val currentPerson = profileState.person
     var fName = currentPerson?.firstName.orEmpty()
     var lName = currentPerson?.lastName.orEmpty()
@@ -133,7 +118,9 @@ internal fun handleCentralizedInfoSave(
             gender = currentGender,
             sexuality = currentSexuality,
             bloodGroup = currentBloodGroup,
-            occupation = effectiveOcc
+            occupation = effectiveOcc,
+            nationalIdNumber = natId,
+            idPhotoPath = localPhotoPath
         )
     )
 

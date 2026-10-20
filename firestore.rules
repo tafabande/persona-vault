@@ -94,6 +94,9 @@ service cloud.firestore {
       match /photos/{photoId} {
         allow read, write: if isAccountOwner(accountId);
       }
+      match /photo_tombstones/{tombstoneId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
 
       // Active Devices & Sessions
       match /sessions/{sessionId} {

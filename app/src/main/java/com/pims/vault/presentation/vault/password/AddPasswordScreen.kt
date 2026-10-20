@@ -135,12 +135,6 @@ fun AddPasswordScreen(
         if (initialNotes.isNotBlank() && notes.isBlank()) notes = initialNotes
     }
 
-    // Generator configuration state
-    var showGenerator by remember { mutableStateOf(false) }
-    var genLength by remember { mutableFloatStateOf(16f) }
-    var genIncludeSymbols by remember { mutableStateOf(true) }
-    var genIncludeDigits by remember { mutableStateOf(true) }
-    var genIncludeUpper by remember { mutableStateOf(true) }
 
     // Background & Surface colors respecting centralized PersonaTheme
     val bgColor = MaterialTheme.colorScheme.background
@@ -294,39 +288,18 @@ fun AddPasswordScreen(
                         value = password,
                         onValueChange = { password = it },
                         label = "Password",
-                        placeholder = "Enter or generate password",
+                        placeholder = "Enter password",
                         leadingIcon = Icons.Default.Lock,
                         visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         modifier = Modifier.googleAutofill(listOf(AutofillType.Password)) { password = it },
                         trailingIcon = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
-                                    Icon(
-                                        imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = if (isPasswordVisible) "Hide" else "Show",
-                                        tint = textSecondary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                IconButton(onClick = {
-                                    showGenerator = !showGenerator
-                                    if (showGenerator && password.isEmpty()) {
-                                        password = generateSecurePassword(
-                                            length = genLength.toInt(),
-                                            includeUppercase = genIncludeUpper,
-                                            includeLowercase = true,
-                                            includeDigits = genIncludeDigits,
-                                            includeSymbols = genIncludeSymbols
-                                        )
-                                    }
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoFixHigh,
-                                        contentDescription = "Generator",
-                                        tint = if (showGenerator) accent else textSecondary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (isPasswordVisible) "Hide" else "Show",
+                                    tint = textSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         },
                         isDark = isDark,
@@ -361,140 +334,6 @@ fun AddPasswordScreen(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                        }
-                    }
-                }
-
-                // 6. Integrated Cryptographic Password Generator Panel
-                AnimatedVisibility(visible = showGenerator) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = cardBg,
-                        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoFixHigh,
-                                        contentDescription = null,
-                                        tint = accent,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Password Generator",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = textPrimary
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
-                                        password = generateSecurePassword(
-                                            length = genLength.toInt(),
-                                            includeUppercase = genIncludeUpper,
-                                            includeLowercase = true,
-                                            includeDigits = genIncludeDigits,
-                                            includeSymbols = genIncludeSymbols
-                                        )
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Regenerate",
-                                        tint = accent,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-
-                            // Length Slider
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("Length", fontSize = 12.sp, color = textSecondary)
-                                    Text("${genLength.toInt()} characters", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
-                                }
-                                Slider(
-                                    value = genLength,
-                                    onValueChange = {
-                                        genLength = it
-                                        password = generateSecurePassword(
-                                            length = it.toInt(),
-                                            includeUppercase = genIncludeUpper,
-                                            includeLowercase = true,
-                                            includeDigits = genIncludeDigits,
-                                            includeSymbols = genIncludeSymbols
-                                        )
-                                    },
-                                    valueRange = 8f..32f,
-                                    steps = 23,
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = accent,
-                                        activeTrackColor = accent
-                                    )
-                                )
-                            }
-
-                            // Generator Switches
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Include Symbols (!@#$)", fontSize = 12.sp, color = textPrimary)
-                                Switch(
-                                    checked = genIncludeSymbols,
-                                    onCheckedChange = {
-                                        genIncludeSymbols = it
-                                        password = generateSecurePassword(
-                                            length = genLength.toInt(),
-                                            includeUppercase = genIncludeUpper,
-                                            includeLowercase = true,
-                                            includeDigits = genIncludeDigits,
-                                            includeSymbols = it
-                                        )
-                                    },
-                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = accent)
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Include Numbers (0-9)", fontSize = 12.sp, color = textPrimary)
-                                Switch(
-                                    checked = genIncludeDigits,
-                                    onCheckedChange = {
-                                        genIncludeDigits = it
-                                        password = generateSecurePassword(
-                                            length = genLength.toInt(),
-                                            includeUppercase = genIncludeUpper,
-                                            includeLowercase = true,
-                                            includeDigits = it,
-                                            includeSymbols = genIncludeSymbols
-                                        )
-                                    },
-                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = accent)
-                                )
-                            }
                         }
                     }
                 }

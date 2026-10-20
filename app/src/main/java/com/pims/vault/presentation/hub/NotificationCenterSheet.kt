@@ -29,6 +29,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -77,9 +78,11 @@ fun NotificationCenterSheet(
     sheetState: SheetState,
     onDismissRequest: () -> Unit,
     onNotificationClick: (PersonaNotificationItem) -> Unit = {},
+    onDismissNotification: (PersonaNotificationItem) -> Unit = {},
     onAcceptRequest: (PersonaNotificationItem) -> Unit = {},
     onDeclineRequest: (PersonaNotificationItem) -> Unit = {},
     onMarkAllRead: () -> Unit = {},
+    onClearAll: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPimsHaptics()
@@ -134,26 +137,43 @@ fun NotificationCenterSheet(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Connections & Sharing",
+                            text = "Alerts & Notifications",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                if (notifications.any { !it.isRead }) {
-                    TextButton(
-                        onClick = {
-                            haptics.selection()
-                            sound.success()
-                            onMarkAllRead()
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (notifications.any { !it.isRead }) {
+                        TextButton(
+                            onClick = {
+                                haptics.selection()
+                                sound.success()
+                                onMarkAllRead()
+                            }
+                        ) {
+                            Text(
+                                text = "Mark read",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                    ) {
-                        Text(
-                            text = "Mark read",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                    }
+                    if (notifications.isNotEmpty()) {
+                        TextButton(
+                            onClick = {
+                                haptics.selection()
+                                sound.delete()
+                                onClearAll()
+                            }
+                        ) {
+                            Text(
+                                text = "Clear all",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -211,6 +231,7 @@ fun NotificationCenterSheet(
                             NotificationCardItem(
                                 item = item,
                                 onClick = { onNotificationClick(item) },
+                                onDismiss = { onDismissNotification(item) },
                                 onAccept = { onAcceptRequest(item) },
                                 onDecline = { onDeclineRequest(item) }
                             )
@@ -231,6 +252,7 @@ fun NotificationCenterSheet(
                             NotificationCardItem(
                                 item = item,
                                 onClick = { onNotificationClick(item) },
+                                onDismiss = { onDismissNotification(item) },
                                 onAccept = { onAcceptRequest(item) },
                                 onDecline = { onDeclineRequest(item) }
                             )
@@ -246,6 +268,7 @@ fun NotificationCenterSheet(
 private fun NotificationCardItem(
     item: PersonaNotificationItem,
     onClick: () -> Unit,
+    onDismiss: () -> Unit,
     onAccept: () -> Unit,
     onDecline: () -> Unit
 ) {
@@ -321,12 +344,31 @@ private fun NotificationCardItem(
                     }
                 }
 
-                Text(
-                    text = item.timestampText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(start = 6.dp)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = item.timestampText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                    IconButton(
+                        onClick = {
+                            haptics.selection()
+                            onDismiss()
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss notification",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
             }
 
             // Connection Request Direct Action Buttons (Approve / Decline)

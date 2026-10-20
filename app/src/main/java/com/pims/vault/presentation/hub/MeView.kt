@@ -49,6 +49,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MedicalServices
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +59,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,6 +75,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.avatar.PersonaAvatarManager
@@ -130,6 +133,9 @@ fun MeView(
     onEditProfileClick: () -> Unit = {},
     onAddSocialAccount: (SocialProfileItem) -> Unit = {},
     onRemoveSocialAccount: (String) -> Unit = {},
+    onSyncCloud: (() -> Unit)? = null,
+    onRestoreCloud: (() -> Unit)? = null,
+    onSavePasswordToVault: ((platform: String, username: String, password: String) -> Unit)? = null,
     onDeleteCustomField: (String) -> Unit = {},
     onExplain: (ContextualExplanation) -> Unit = {},
     onOpenAvatarEditor: () -> Unit = onEditProfileClick,
@@ -195,8 +201,8 @@ fun MeView(
     }
 
     val isDark = LocalPimsDarkTheme.current
-    val effectiveCountry = country.ifBlank { "Zimbabwe" }
-    val effectiveName = personName.trim().ifBlank { "Bleigh T.J Bande" }
+    val effectiveCountry = country.trim()
+    val effectiveName = personName.trim().takeIf { it.isNotBlank() && it != "My Profile" } ?: "Personal Profile"
     val meBgColor = MaterialTheme.colorScheme.background
 
     LazyColumn(
@@ -221,7 +227,7 @@ fun MeView(
                     modifier = Modifier.padding(top = 8.dp)
                 ) {
                     com.pims.vault.presentation.avatar.PersonaAvatar(
-                        name = personName,
+                        name = effectiveName,
                         config = avatarConfig,
                         size = 104.dp,
                         onClick = {
@@ -234,25 +240,25 @@ fun MeView(
                         }
                     )
 
-                    // Edit Badge
+                    // Edit Badge (taps to edit personal profile)
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surface,
                         shadowElevation = 2.dp,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(32.dp)
                             .clickable {
                                 haptics.selection()
-                                profilePhotoPicker.launch("image/*")
+                                onEditProfileClick()
                             }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Outlined.Edit,
-                                contentDescription = "Change photo",
+                                contentDescription = "Edit profile",
                                 tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                     }
@@ -264,30 +270,45 @@ fun MeView(
                 Text(
                     text = effectiveName,
                     style = MaterialTheme.typography.headlineSmall.copy(
-                        fontSize = 21.sp,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.3).sp
                     ),
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                // Location Pin + Country
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(top = 4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(15.dp)
-                    )
+                // Occupation / Role
+                if (occupation.isNotBlank()) {
                     Text(
-                        text = effectiveCountry,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = occupation,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 3.dp)
                     )
+                }
+
+                // Location Pin + Country
+                if (effectiveCountry.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = effectiveCountry,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(18.dp))
@@ -303,7 +324,7 @@ fun MeView(
                             haptics.light()
                             onViewPublicDossier()
                         },
-                        shape = RoundedCornerShape(23.dp),
+                        shape = RoundedCornerShape(20.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary
@@ -324,7 +345,7 @@ fun MeView(
                             haptics.light()
                             onShareProfileClick()
                         },
-                        shape = RoundedCornerShape(23.dp),
+                        shape = RoundedCornerShape(20.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = MaterialTheme.colorScheme.surface,
@@ -346,7 +367,131 @@ fun MeView(
             Spacer(modifier = Modifier.height(18.dp))
         }
 
-        // 2. Grouped Life Areas Card
+        // 2. Personal Information Card (Universal Design)
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 1.dp,
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Personal Information",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        TextButton(
+                            onClick = {
+                                haptics.selection()
+                                onEditProfileClick()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Edit,
+                                contentDescription = "Edit information",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Edit",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 0.5.dp
+                    )
+
+                    MeInfoDetailRow(
+                        icon = Icons.Default.Phone,
+                        label = "Phone",
+                        value = primaryPhone?.takeIf { it.isNotBlank() } ?: "Add phone number",
+                        isSet = !primaryPhone.isNullOrBlank(),
+                        onClick = { if (primaryPhone.isNullOrBlank()) onPhoneClick() else onEditProfileClick() }
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 0.5.dp,
+                        modifier = Modifier.padding(start = 54.dp)
+                    )
+
+                    MeInfoDetailRow(
+                        icon = Icons.Default.Email,
+                        label = "Email",
+                        value = primaryEmail?.takeIf { it.isNotBlank() } ?: "Add email address",
+                        isSet = !primaryEmail.isNullOrBlank(),
+                        onClick = { if (primaryEmail.isNullOrBlank()) onEmailClick() else onEditProfileClick() }
+                    )
+
+                    val displayAddress = primaryAddress?.takeIf { it.isNotBlank() }
+                        ?: country.takeIf { it.isNotBlank() }
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 0.5.dp,
+                        modifier = Modifier.padding(start = 54.dp)
+                    )
+
+                    MeInfoDetailRow(
+                        icon = Icons.Default.Home,
+                        label = "Address / Residence",
+                        value = displayAddress ?: "Add address / location",
+                        isSet = displayAddress != null,
+                        onClick = { if (displayAddress == null) onAddressClick() else onEditProfileClick() }
+                    )
+
+                    if (occupation.isNotBlank()) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                            thickness = 0.5.dp,
+                            modifier = Modifier.padding(start = 54.dp)
+                        )
+
+                        MeInfoDetailRow(
+                            icon = Icons.Default.Work,
+                            label = "Profession",
+                            value = occupation,
+                            isSet = true,
+                            onClick = onEditProfileClick
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+        }
+
+        // 3. Grouped Life Areas Card (Universal Design)
         item {
             val totalQuals = educationCount + certCount
             val totalHealth = medicalCount
@@ -355,10 +500,10 @@ fun MeView(
             val totalPeople = relationshipsCount
 
             Surface(
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 2.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                shadowElevation = 1.dp,
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -373,8 +518,8 @@ fun MeView(
                         }
                     )
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        thickness = 0.8.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 0.5.dp,
                         modifier = Modifier.padding(start = 54.dp)
                     )
 
@@ -389,8 +534,8 @@ fun MeView(
                         }
                     )
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        thickness = 0.8.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 0.5.dp,
                         modifier = Modifier.padding(start = 54.dp)
                     )
 
@@ -406,8 +551,8 @@ fun MeView(
                         }
                     )
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        thickness = 0.8.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 0.5.dp,
                         modifier = Modifier.padding(start = 54.dp)
                     )
 
@@ -422,8 +567,8 @@ fun MeView(
                         }
                     )
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        thickness = 0.8.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 0.5.dp,
                         modifier = Modifier.padding(start = 54.dp)
                     )
 
@@ -450,6 +595,9 @@ fun MeView(
                 canonicalPhone = primaryPhone,
                 onAddProfile = onAddSocialAccount,
                 onRemoveProfile = onRemoveSocialAccount,
+                onSyncCloud = onSyncCloud,
+                onRestoreCloud = onRestoreCloud,
+                onSavePasswordToVault = onSavePasswordToVault,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(18.dp))
@@ -476,15 +624,15 @@ fun MeView(
                         val label = field.label
                         val value = field.value
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(16.dp),
                             color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -518,6 +666,59 @@ fun MeView(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun MeInfoDetailRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    isSet: Boolean,
+    onClick: () -> Unit
+) {
+    val haptics = rememberPimsHaptics()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                haptics.light()
+                onClick()
+            }
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (isSet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(1.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = if (isSet) FontWeight.Medium else FontWeight.Normal,
+                    fontSize = 14.sp
+                ),
+                color = if (isSet) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
