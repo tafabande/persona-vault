@@ -13,6 +13,8 @@ captures/
 .cxx
 *.apk
 *.aab
+*.ap_
+*.dex
 
 # Local configuration & Secrets (NEVER COMMIT TO GIT)
 local.properties
@@ -20,6 +22,10 @@ local.properties
 secrets.properties
 /secrets.properties
 secrets.env
+.env
+.env.*
+!.env.example
+*.secrets
 *.jks
 *.keystore
 *.pem
@@ -27,6 +33,7 @@ secrets.env
 *.p12
 *.p8
 google-services.json
+*/google-services.json
 
 # Encrypted database backups & offline vault archives
 *.pimsbak
@@ -40,22 +47,39 @@ google-services.json
 .kotlin/
 *.swp
 *~
+*.iws
+*.ipr
+.history/
 .navigation/
 
 # OS generated files & installers
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+[Dd]esktop.ini
+[Tt]humbs.db
+$RECYCLE.BIN/
 *.exe
 *.msi
 *.dmg
 *.pkg
+*.cab
 
 # Development screenshots, captures & temporary test artifacts
 /*.png
 *.png
 !**/src/main/res/**/*.png
+!**/src/main/assets/**/*.png
+!**/src/main/assets/**/*.jpg
+!**/src/main/assets/**/*.jpeg
+!**/src/main/assets/**/*.webp
+external sources/
+/external sources/
 .tempmediaStorage/
 
 # Firebase & Cloud Functions
@@ -66,6 +90,8 @@ functions/node_modules/
 firebase-debug.log*
 firestore-debug.log*
 ui-debug.log*
+.runtimeconfig.json
+.firebaserc.local
 
 # JVM crash logs, profiler & heap dumps
 *.log
@@ -96,3 +122,7 @@ out/
 .classpath
 lint-results*.html
 lint-results*.xml
+lint-report*.html
+lint-report*.xml
+app/lint-report*
+app/lint-results*
