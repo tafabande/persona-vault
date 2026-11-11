@@ -16,6 +16,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
@@ -320,9 +322,11 @@ class MainActivity : FragmentActivity() {
                         if (reducedMotion) {
                             fadeIn(tween(durationMillis = 0)) togetherWith fadeOut(tween(durationMillis = 0))
                         } else {
-                            fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) +
-                                slideInVertically(spring(stiffness = Spring.StiffnessMediumLow)) { it / 12 } togetherWith
-                                fadeOut(spring(stiffness = Spring.StiffnessMedium))
+                            (fadeIn(tween(220)) +
+                                slideInVertically(spring(dampingRatio = 0.86f, stiffness = 450f)) { it / 16 } +
+                                scaleIn(initialScale = 0.97f, animationSpec = spring(dampingRatio = 0.86f, stiffness = 450f))) togetherWith
+                                (fadeOut(tween(160)) +
+                                    scaleOut(targetScale = 0.98f, animationSpec = spring(dampingRatio = 0.86f, stiffness = 500f)))
                         }
                     },
                     label = "main_navigation_state"
