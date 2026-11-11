@@ -217,6 +217,7 @@ class FirestoreSyncService @Inject constructor(
                 "value" to contact.value,
                 "label" to contact.label,
                 "isPrimary" to contact.isPrimary,
+                "sortOrder" to contact.sortOrder,
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
@@ -1840,7 +1841,8 @@ class FirestoreSyncService @Inject constructor(
                                     contactType = contactType,
                                     label = "${doc.getString("label") ?: "Secondary"} (Remote)",
                                     value = valStr,
-                                    isPrimary = false
+                                    isPrimary = false,
+                                    sortOrder = (doc.getLong("sortOrder") ?: 0L).toInt()
                                 )
                                 contactDao.insertOrUpdate(nPlusOneContact)
                                 count++
@@ -1855,7 +1857,8 @@ class FirestoreSyncService @Inject constructor(
                             contactType = contactType,
                             label = doc.getString("label") ?: "Primary",
                             value = valStr,
-                            isPrimary = doc.getBoolean("isPrimary") ?: false
+                            isPrimary = doc.getBoolean("isPrimary") ?: false,
+                            sortOrder = (doc.getLong("sortOrder") ?: 0L).toInt()
                         )
                         contactDao.insertOrUpdate(contact)
                         count++

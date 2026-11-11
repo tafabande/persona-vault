@@ -25,7 +25,7 @@
 - [ ] **In Progress** — Establish a shared low-border form style (field outlines only, section dividers, constrained content width) and responsive motion/accessibility rules; apply incrementally across screens.
 - [ ] Normalize profile form behavior: semantic validation states, dirty/unsaved tracking, discard confirmation, explicit saving/success/failure/retry feedback, and state restoration for rotation/process recreation.
 - [ ] Standardize segmented date and phone inputs with compact spacing, accessible focus order, intelligent deletion, country-aware length validation, and clear read-only versus editable treatment.
-- [ ] Refine relationship profile editing: grouped profile sections, guarded dirty-state dismissal, named and primary contact collections with person ownership, specific address fields, and relationship event dates with labels. Preserve existing records and avoid overloading occupation/residence fields.
+- [ ] **In Progress** — Refine relationship profile editing: grouped profile sections, guarded dirty-state dismissal, ordered/primary labeled contact collections with person ownership, specific address fields, and relationship event dates with labels. Preserve existing records and avoid overloading occupation/residence fields.
 - [ ] Establish shared motion and interaction rules for navigation, sheets, immediate action acknowledgement, reduced motion, and semantic haptics; incrementally replace screen-specific transitions and icon treatments.
 - [ ] Audit disconnected legacy code and UI state machines; remove only code proven unreachable after replacing its active entry points, and add explicit loading/empty/error/saving/success states for affected flows.
 

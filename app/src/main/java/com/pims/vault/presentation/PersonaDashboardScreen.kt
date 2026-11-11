@@ -1083,7 +1083,7 @@ fun PersonaDashboardScreen(
             "CONNECT_PERSON" -> {
                 ConnectPersonScreen(
                     onBack = { fullScreenOverlay = null },
-                    onSavePerson = { role, relName, gender, phone, email, address, dob, anniversary, notes, photoPath, isNextOfKin ->
+                    onSavePerson = { role, relName, gender, phone, email, address, dob, anniversary, notes, photoPath, isNextOfKin, contacts ->
                         val targetId = java.util.UUID.randomUUID().toString()
                         if (!photoPath.isNullOrBlank()) {
                             avatarManager.setPersonPhotoPath(targetId, photoPath)
@@ -1100,7 +1100,18 @@ fun PersonaDashboardScreen(
                                 notes = notes,
                                 isNextOfKin = isNextOfKin,
                                 customPersonId = targetId,
-                                photoPath = photoPath
+                                photoPath = photoPath,
+                                contactMethods = contacts.map { input ->
+                                    com.pims.vault.data.local.entity.ContactMethodEntity(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        personId = targetId,
+                                        contactType = input.type,
+                                        label = input.label,
+                                        value = input.value.trim(),
+                                        isPrimary = input.isPrimary,
+                                        sortOrder = contacts.filter { it.type == input.type }.indexOfFirst { it.key == input.key }
+                                    )
+                                }
                             )
                         )
                         recentActivityManager.recordActivity("Connected $relName", "Relationship: $role")

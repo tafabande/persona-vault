@@ -170,7 +170,7 @@ fun PersonaFAB(
         containerColor = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
         elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp, pressedElevation = 2.dp),
-        modifier = modifier
+        modifier = modifier.tactilePress()
     )
 }
 
@@ -415,10 +415,10 @@ fun PimsOutlinedInput(
             shape = RoundedCornerShape(12.dp),
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                focusedBorderColor = PimsColors.focus,
                 unfocusedBorderColor = Color.Transparent,
-                focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
+                focusedContainerColor = PimsColors.focus.copy(alpha = 0.055f),
+                unfocusedContainerColor = PimsColors.inputSurface,
                 cursorColor = MaterialTheme.colorScheme.primary,
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface
@@ -478,7 +478,7 @@ fun PimsButton(
         ),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
         contentPadding = ButtonDefaults.ContentPadding,
-        modifier = modifier
+        modifier = modifier.tactilePress()
     ) {
         Box(
             modifier = Modifier
@@ -964,9 +964,9 @@ fun CountrySuggestionField(
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = PimsTheme.text.primary),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                focusedContainerColor = PimsColors.focus.copy(alpha = 0.055f),
+                unfocusedContainerColor = PimsColors.inputSurface,
+                focusedBorderColor = PimsColors.focus,
                 unfocusedBorderColor = Color.Transparent
             ),
             modifier = Modifier

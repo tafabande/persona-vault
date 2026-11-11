@@ -57,6 +57,7 @@ import com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import com.pims.vault.presentation.ui.theme.PimsRadius
 import com.pims.vault.presentation.ui.theme.PimsTheme
+import com.pims.vault.presentation.ui.theme.PimsColors
 import androidx.compose.foundation.BorderStroke
 
 object VaultDesignTokens {
@@ -305,11 +306,11 @@ fun VaultUnderlineField(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(PimsRadius.input))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.12f else 0.24f))
+                .background(if (enabled) PimsColors.inputSurface else PimsColors.disabledSurface)
                 .then(
                     if (isFocused || isError) Modifier.border(
                         width = 1.dp,
-                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        color = if (isError) PimsColors.error else PimsColors.focus,
                         shape = RoundedCornerShape(PimsRadius.input)
                     ) else Modifier
                 )
@@ -350,8 +351,8 @@ fun VaultUnderlineField(
         HorizontalDivider(
             thickness = 0.5.dp,
             color = when {
-                isError -> MaterialTheme.colorScheme.error
-                isFocused -> MaterialTheme.colorScheme.primary
+                isError -> PimsColors.error
+                isFocused -> PimsColors.focus
                 else -> Color.Transparent
             }
         )

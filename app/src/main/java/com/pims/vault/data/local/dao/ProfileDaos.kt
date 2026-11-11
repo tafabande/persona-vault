@@ -74,13 +74,13 @@ interface PersonDao {
 
 @Dao
 interface ContactDao {
-    @Query("SELECT * FROM contact_methods WHERE person_id = :personId ORDER BY is_primary DESC, created_at ASC")
+    @Query("SELECT * FROM contact_methods WHERE person_id = :personId ORDER BY contact_type ASC, is_primary DESC, sort_order ASC, created_at ASC")
     fun getContactsForPersonFlow(personId: String): Flow<List<ContactMethodEntity>>
 
-    @Query("SELECT * FROM contact_methods WHERE person_id = :personId ORDER BY is_primary DESC, created_at ASC")
+    @Query("SELECT * FROM contact_methods WHERE person_id = :personId ORDER BY contact_type ASC, is_primary DESC, sort_order ASC, created_at ASC")
     suspend fun getContactsForPerson(personId: String): List<ContactMethodEntity>
 
-    @Query("SELECT * FROM contact_methods ORDER BY is_primary DESC, created_at ASC")
+    @Query("SELECT * FROM contact_methods ORDER BY person_id ASC, contact_type ASC, is_primary DESC, sort_order ASC, created_at ASC")
     suspend fun getAllContacts(): List<ContactMethodEntity>
 
     @Query("SELECT * FROM contact_methods WHERE id = :id LIMIT 1")

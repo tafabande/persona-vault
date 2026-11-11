@@ -10,14 +10,15 @@ Relationship profiles currently combine person-owned contact methods with flatte
 
 ## Decision
 
-Use `PersonEntity.id` as the owner of phone, email, and address records. Edit phone and email records as individual entries, retaining their record IDs, labels, and primary flags. Remove only entries explicitly removed from that person's editor and sync matching record changes. Represent country or region of residence separately from postal address fields. Store the single existing relationship start/anniversary date on the relationship record, never on `PersonEntity.occupation`.
+Use `PersonEntity.id` as the owner of phone, email, and address records. Edit phone and email records as individual entries, retaining their record IDs, labels, primary flags, and explicit per-type order. Remove only entries explicitly removed from that person's editor and sync matching record changes. Represent country or region of residence separately from postal address fields. Store the single existing relationship start/anniversary date on the relationship record, never on `PersonEntity.occupation`.
 
-The initial implementation does not introduce a new database table. Multiple differently labeled relationship milestones require a separately versioned schema and migration and remain planned work; do not overload notes or person fields to simulate them.
+Add a non-secret `sort_order` field to contact records with a Room migration and sync it as metadata. Multiple differently labeled relationship milestones require a separately versioned table, migration, and sync/restore path and remain planned work; do not overload notes or person fields to simulate them.
 
 ## Consequences
 
 - Existing contact and address records retain stable IDs and person ownership.
 - Contact edits can be synchronized and deletions mirrored remotely without replacing unrelated contact types.
-- The relationship editor has explicit ownership and primary-contact decisions.
+- Contact ordering is explicit and survives reload and sync.
+- The relationship editor has explicit ownership, primary-contact, and ordering decisions.
 - Relationship dates remain a single relationship start date until a migration is designed for labeled milestones.
 - Changes to persistence must preserve SQLCipher encryption, Room migration discipline, and stable person/relationship IDs.

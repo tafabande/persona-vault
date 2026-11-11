@@ -197,7 +197,8 @@ sealed interface ProfileEvent {
         val notes: String,
         val isNextOfKin: Boolean,
         val customPersonId: String? = null,
-        val photoPath: String? = null
+        val photoPath: String? = null,
+        val contactMethods: List<ContactMethodEntity>? = null
     ) : ProfileEvent
     data class DeleteRelationship(val relationshipId: String, val targetPersonId: String) : ProfileEvent
 
@@ -725,7 +726,15 @@ class ProfileViewModel @Inject constructor(
                         }
 
                         // Update or insert primary phone
-                        if (event.phone.isNotBlank()) {
+                        if (event.contactMethods != null) {
+                            event.contactMethods.forEach { contact ->
+                                if (contact.personId != targetId || contact.contactType !in setOf(ContactType.PHONE, ContactType.EMAIL)) {
+                                    throw SecurityException("Contact must belong to the new person")
+                                }
+                                contactDao.insertOrUpdate(contact)
+                                viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.syncContact(null, contact) } }
+                            }
+                        } else if (event.phone.isNotBlank()) {
                             val existingPhones = contactDao.getContactsForPersonFlow(ownerId).firstOrNull()?.filter { it.contactType == ContactType.PHONE } ?: emptyList()
                             val primaryPhone = existingPhones.firstOrNull { it.isPrimary } ?: existingPhones.firstOrNull()
                             if (primaryPhone != null) {

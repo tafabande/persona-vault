@@ -382,7 +382,8 @@ fun EditManagedPersonSheet(
                             contactType = draft.type,
                             label = draft.label,
                             value = value,
-                            isPrimary = draft.isPrimary
+                            isPrimary = draft.isPrimary,
+                            sortOrder = editContacts.filter { it.type == draft.type }.indexOfFirst { it.key == draft.key }
                         )
                     }
                     val normalizedContacts = savedContacts.groupBy { it.contactType }.values.flatMap { group ->

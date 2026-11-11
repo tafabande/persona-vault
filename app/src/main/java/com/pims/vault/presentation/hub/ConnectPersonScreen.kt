@@ -47,6 +47,8 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -80,13 +82,26 @@ import com.pims.vault.presentation.isRomanticOrMaritalRelationship
 import com.pims.vault.presentation.ui.components.PersonaFormSection
 import com.pims.vault.presentation.ui.components.PersonaTextInput
 import com.pims.vault.presentation.ui.components.PersonaToggleRow
+import com.pims.vault.presentation.ui.components.InternationalPhoneInput
+import com.pims.vault.presentation.ui.components.PersonaDropdownSelector
+import com.pims.vault.presentation.ui.components.PersonaSearchableCombobox
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.core.model.ContactType
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+
+@OptIn(ExperimentalLayoutApi::class)
+data class RelationshipContactInput(
+    val key: String = java.util.UUID.randomUUID().toString(),
+    val value: String,
+    val label: String,
+    val type: ContactType,
+    val isPrimary: Boolean
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -103,7 +118,8 @@ fun ConnectPersonScreen(
         anniversary: String,
         notes: String,
         photoPath: String?,
-        isNextOfKin: Boolean
+        isNextOfKin: Boolean,
+        contacts: List<RelationshipContactInput>
     ) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -116,17 +132,15 @@ fun ConnectPersonScreen(
     BackHandler(onBack = onBack)
 
     // Identity state
-    var relRole by remember { mutableStateOf("Partner") }
-    var customRole by remember { mutableStateOf("") }
+    var relRole by remember { mutableStateOf("") }
     var relName by remember { mutableStateOf("") }
-    var selectedGender by remember { mutableStateOf("Unspecified") }
+    var selectedGender by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf(false) }
+    var attemptedSave by remember { mutableStateOf(false) }
 
     // Contact state
-    var primaryPhone by remember { mutableStateOf("") }
-    val additionalPhones = remember { mutableStateListOf<String>() }
-    var primaryEmail by remember { mutableStateOf("") }
-    val additionalEmails = remember { mutableStateListOf<String>() }
+    val phoneEntries = remember { mutableStateListOf<RelationshipContactInput>() }
+    val emailEntries = remember { mutableStateListOf<RelationshipContactInput>() }
     var relAddress by remember { mutableStateOf("") }
 
     // Dates & Notes state
@@ -137,7 +151,6 @@ fun ConnectPersonScreen(
 
     // Section visibility toggles for adding optional fields
     var showAddressField by remember { mutableStateOf(false) }
-    var showEmailField by remember { mutableStateOf(false) }
     var showDobField by remember { mutableStateOf(false) }
     var showAnniversaryField by remember { mutableStateOf(false) }
     var showNotesField by remember { mutableStateOf(false) }
@@ -183,7 +196,7 @@ fun ConnectPersonScreen(
     val dividerColor = MaterialTheme.colorScheme.outlineVariant
 
     val isRomantic = isRomanticOrMaritalRelationship(
-        if (relRole == "Other" && customRole.isNotBlank()) customRole else relRole
+        relRole
     )
 
     Box(
@@ -387,62 +400,16 @@ fun ConnectPersonScreen(
                     title = "Relationship & Identity",
                     icon = Icons.Default.Person
                 ) {
-                    Text(
-                        text = "How do you know them?",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
+                    PersonaSearchableCombobox(
+                        value = relRole,
+                        onValueChange = { relRole = it },
+                        options = relationshipChips,
+                        label = "Relationship · required",
+                        placeholder = "Search or enter a relationship",
+                        allowCustom = true
                     )
-
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        relationshipChips.forEach { role ->
-                            val isSelected = relRole.equals(role, ignoreCase = true)
-                            Surface(
-                                shape = RoundedCornerShape(PimsRadius.chip),
-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
-                                border = null,
-                                modifier = Modifier.tactilePress(targetScale = 0.97f) {
-                                    haptics.selection()
-                                    relRole = role
-                                    // Intelligent gender suggestion
-                                    if (role in listOf("Mother", "Sister", "Daughter")) {
-                                        selectedGender = "Female"
-                                    } else if (role in listOf("Father", "Brother", "Son")) {
-                                        selectedGender = "Male"
-                                    }
-                                }
-                            ) {
-                                Text(
-                                    text = role,
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                        fontSize = 13.5.sp
-                                    ),
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // Custom role text input when "Other" is chosen
-                    AnimatedVisibility(
-                        visible = relRole.equals("Other", ignoreCase = true),
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
-                        PersonaTextInput(
-                            value = customRole,
-                            onValueChange = { customRole = it },
-                            label = "Specify Relationship",
-                            placeholder = "e.g. Mentor, Doctor, Cousin, Lawyer"
-                        )
+                    if (attemptedSave && relRole.isBlank()) {
+                        Text("Choose or enter a relationship", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
 
                     // Full Name Field (Required)
@@ -452,57 +419,20 @@ fun ConnectPersonScreen(
                             relName = it
                             if (it.isNotBlank()) nameError = false
                         },
-                        label = "Full Name *",
+                        label = "Full name · required",
                         placeholder = "e.g. Sarah Jenkins",
+                        keyboardCapitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
                         isError = nameError,
                         errorMessage = if (nameError) "Name is required" else null
                     )
 
                     // Gender Selector
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = "Gender",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            genderOptions.forEach { g ->
-                                val isSelected = selectedGender.equals(g, ignoreCase = true)
-                                Surface(
-                                    shape = RoundedCornerShape(PimsRadius.selection),
-                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
-                                    border = null,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .tactilePress(targetScale = 0.97f) {
-                                            haptics.selection()
-                                            selectedGender = g
-                                        }
-                                ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.padding(vertical = 8.dp)
-                                    ) {
-                                        Text(
-                                            text = g,
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                fontSize = 12.sp
-                                            ),
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    PersonaDropdownSelector(
+                        selectedOption = selectedGender,
+                        options = genderOptions,
+                        onOptionSelected = { selectedGender = it; haptics.selection() },
+                        label = "Gender · optional"
+                    )
                 }
 
                 // Section 2: Contact Information
@@ -510,130 +440,29 @@ fun ConnectPersonScreen(
                     title = "Contact Information",
                     icon = Icons.Default.Phone
                 ) {
-                    // Primary Phone
-                    PersonaTextInput(
-                        value = primaryPhone,
-                        onValueChange = { primaryPhone = it },
-                        label = "Primary Phone",
-                        placeholder = "+1 (555) 000-0000",
-                        keyboardType = KeyboardType.Phone,
-                        leadingIcon = {
-                            Icon(Icons.Default.Phone, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
-                        }
+                    RelationshipContactEditor(
+                        title = "Phone numbers",
+                        type = ContactType.PHONE,
+                        entries = phoneEntries,
+                        onEntriesChange = { phoneEntries.clear(); phoneEntries.addAll(it) },
+                        attemptedSave = attemptedSave
                     )
-
-                    // Additional Phones List
-                    additionalPhones.forEachIndexed { idx, extraPhone ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                PersonaTextInput(
-                                    value = extraPhone,
-                                    onValueChange = { newVal ->
-                                        additionalPhones[idx] = newVal
-                                    },
-                                    label = "Phone #${idx + 2}",
-                                    placeholder = "Secondary / Work Phone",
-                                    keyboardType = KeyboardType.Phone
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    haptics.light()
-                                    additionalPhones.removeAt(idx)
-                                },
-                                modifier = Modifier
-                                    .padding(top = 18.dp)
-                                    .size(36.dp)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Remove phone", tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-
-                    // Add another phone button
-                    TextButton(
-                        onClick = {
-                            haptics.light()
-                            additionalPhones.add("")
-                        },
-                        modifier = Modifier.align(Alignment.Start)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Add another phone", fontSize = 13.sp)
-                    }
-
-                    HorizontalDivider(color = dividerColor.copy(alpha = 0.7f), thickness = 0.8.dp)
-
-                    // Primary Email
-                    if (showEmailField || primaryEmail.isNotBlank()) {
-                        PersonaTextInput(
-                            value = primaryEmail,
-                            onValueChange = { primaryEmail = it },
-                            label = "Primary Email",
-                            placeholder = "name@example.com",
-                            keyboardType = KeyboardType.Email,
-                            leadingIcon = {
-                                Icon(Icons.Default.Email, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
-                            }
-                        )
-
-                        // Additional Emails List
-                        additionalEmails.forEachIndexed { idx, extraEmail ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(modifier = Modifier.weight(1f)) {
-                                    PersonaTextInput(
-                                        value = extraEmail,
-                                        onValueChange = { newVal ->
-                                            additionalEmails[idx] = newVal
-                                        },
-                                        label = "Email #${idx + 2}",
-                                        placeholder = "Work / Alternative Email",
-                                        keyboardType = KeyboardType.Email
-                                    )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        haptics.light()
-                                        additionalEmails.removeAt(idx)
-                                    },
-                                    modifier = Modifier
-                                        .padding(top = 18.dp)
-                                        .size(36.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove email", tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-
-                        TextButton(
-                            onClick = {
-                                haptics.light()
-                                additionalEmails.add("")
-                            },
-                            modifier = Modifier.align(Alignment.Start)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add another email", fontSize = 13.sp)
-                        }
-                    }
+                    HorizontalDivider(color = dividerColor.copy(alpha = 0.28f), thickness = 0.7.dp)
+                    RelationshipContactEditor(
+                        title = "Email addresses",
+                        type = ContactType.EMAIL,
+                        entries = emailEntries,
+                        onEntriesChange = { emailEntries.clear(); emailEntries.addAll(it) },
+                        attemptedSave = attemptedSave
+                    )
 
                     // Address Field
                     if (showAddressField || relAddress.isNotBlank()) {
                         PersonaTextInput(
                             value = relAddress,
                             onValueChange = { relAddress = it },
-                            label = "Physical Address / Location",
-                            placeholder = "e.g. 124 Main St, Apt 4B, City",
+                            label = "Country or region of residence · optional",
+                            placeholder = "Country or region",
                             leadingIcon = {
                                 Icon(Icons.Default.Home, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
                             }
@@ -695,7 +524,6 @@ fun ConnectPersonScreen(
 
                 // Quick Action Bar: "+ Add More Fields"
                 val unaddedFields = buildList {
-                    if (!showEmailField && primaryEmail.isBlank()) add("Email" to { showEmailField = true })
                     if (!showAddressField && relAddress.isBlank()) add("Address" to { showAddressField = true })
                     if (!showDobField && relDob.isBlank()) add("Birthday" to { showDobField = true })
                     if (!isRomantic && !showAnniversaryField && relAnniversary.isBlank()) add("Anniversary" to { showAnniversaryField = true })
@@ -767,6 +595,13 @@ fun ConnectPersonScreen(
             ) {
                 Button(
                     onClick = {
+                        attemptedSave = true
+                        if (relRole.isBlank()) {
+                            haptics.warning()
+                            feedback.warning()
+                            coroutineScope.launch { scrollState.animateScrollTo(0) }
+                            return@Button
+                        }
                         if (relName.isBlank()) {
                             nameError = true
                             haptics.warning()
@@ -780,21 +615,23 @@ fun ConnectPersonScreen(
                         haptics.success()
                         feedback.success()
 
-                        val effectiveRole = if (relRole.equals("Other", ignoreCase = true) && customRole.isNotBlank()) {
-                            customRole.trim()
-                        } else {
-                            relRole.trim()
+                        val effectiveRole = relRole.trim()
+
+                        val contactEntries = (phoneEntries + emailEntries).filter { it.value.isNotBlank() }
+                        if (contactEntries.any { entry ->
+                                when (entry.type) {
+                                    ContactType.PHONE -> !com.pims.vault.presentation.ui.components.isValidInternationalPhone(entry.value)
+                                    ContactType.EMAIL -> !android.util.Patterns.EMAIL_ADDRESS.matcher(entry.value.trim()).matches()
+                                    else -> false
+                                }
+                            } || contactEntries.groupBy { "${it.type}:${if (it.type == ContactType.PHONE) it.value.filter(Char::isDigit) else it.value.trim().lowercase()}" }.values.any { it.size > 1 }) {
+                            haptics.warning()
+                            feedback.warning()
+                            return@Button
                         }
 
-                        val combinedPhones = (listOf(primaryPhone) + additionalPhones)
-                            .map { it.trim() }
-                            .filter { it.isNotBlank() }
-                            .joinToString(", ")
-
-                        val combinedEmails = (listOf(primaryEmail) + additionalEmails)
-                            .map { it.trim() }
-                            .filter { it.isNotBlank() }
-                            .joinToString(", ")
+                        val primaryPhone = phoneEntries.firstOrNull { it.isPrimary }?.value.orEmpty()
+                        val primaryEmail = emailEntries.firstOrNull { it.isPrimary }?.value.orEmpty()
 
                         onSavePerson(
                             effectiveRole,
@@ -807,7 +644,8 @@ fun ConnectPersonScreen(
                             relAnniversary.trim(),
                             relNotes.trim(),
                             selectedPhotoPath,
-                            isNextOfKin
+                            isNextOfKin,
+                            contactEntries
                         )
                     },
                     modifier = Modifier

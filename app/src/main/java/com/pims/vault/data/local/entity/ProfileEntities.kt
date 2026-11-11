@@ -123,7 +123,10 @@ data class ContactMethodEntity(
     val securityClassification: SecurityClassification = SecurityClassification.ZONE_1_PERSONAL,
 
     @ColumnInfo(name = "created_at")
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "sort_order")
+    val sortOrder: Int = 0
 )
 
 @Entity(
