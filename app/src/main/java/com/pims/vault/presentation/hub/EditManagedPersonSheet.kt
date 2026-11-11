@@ -52,6 +52,7 @@ import com.pims.vault.presentation.ui.components.StandardDateInput
 import com.pims.vault.presentation.ui.components.ux.PersonaToastController
 import com.pims.vault.presentation.ui.util.PimsHaptics
 import com.pims.vault.presentation.ui.util.PimsSoundManager
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -269,14 +270,16 @@ fun EditManagedPersonSheet(
             StandardDateInput(
                 isoDate = editDob,
                 onDateChange = { editDob = it },
-                label = "Date of Birth"
+                label = "Date of birth",
+                maxDate = LocalDate.now()
             )
 
             AnimatedVisibility(visible = isRomanticOrMaritalRelationship(editRole)) {
                 StandardDateInput(
                     isoDate = editAnniversary,
                     onDateChange = { editAnniversary = it },
-                    label = "Anniversary"
+                    label = "Anniversary",
+                    maxDate = LocalDate.now()
                 )
             }
 

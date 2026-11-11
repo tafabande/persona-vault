@@ -61,10 +61,22 @@ object PimsSpacing {
     val xxs: Dp = 2.dp
     val xs: Dp = 4.dp
     val s: Dp = 8.dp
+    val sm: Dp = 12.dp
     val m: Dp = 16.dp
     val l: Dp = 24.dp
     val xl: Dp = 32.dp
     val xxl: Dp = 48.dp
+}
+
+/** Semantic shape tokens. Section grouping stays square and relies on spacing/dividers. */
+object PimsRadius {
+    val section: Dp = 0.dp
+    val chip: Dp = 50.dp
+    val input: Dp = 10.dp
+    val selection: Dp = 8.dp
+    val surface: Dp = 16.dp
+    val primaryAction: Dp = 14.dp
+    val modal: Dp = 24.dp
 }
 
 object PimsAnimation {
@@ -82,13 +94,13 @@ object PimsAnimation {
 
 /**
  * Tactile subtle press scale for buttons and interactive items.
- * Immediate scale down (0.94f) on press down with snappy spring return on release.
+ * Subtle scale down on press with a quick, low-bounce spring return on release.
  * Uses pointer detection to ensure instant reactivity without waiting for gesture delays.
  */
 @Composable
 fun Modifier.tactilePress(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    pressScale: Float = 0.94f
+    pressScale: Float = 0.97f
 ): Modifier {
     val isReduced = LocalReducedMotion.current
     val scope = rememberCoroutineScope()
@@ -118,8 +130,8 @@ fun Modifier.tactilePress(
                             scale.animateTo(
                                 targetValue = 1.0f,
                                 animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessHigh
                                 )
                             )
                         }
@@ -130,11 +142,11 @@ fun Modifier.tactilePress(
 }
 
 val PimsShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(24.dp)
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(PimsRadius.selection),
+    medium = RoundedCornerShape(PimsRadius.input),
+    large = RoundedCornerShape(PimsRadius.surface),
+    extraLarge = RoundedCornerShape(PimsRadius.modal)
 )
 
 object PimsDimensions {
@@ -287,6 +299,15 @@ data class PimsTonalSurfaces(
     val surfaceSelected: Color get() = selected
 }
 
+@androidx.compose.runtime.Immutable
+data class PimsTextColors(
+    val primary: Color,
+    val secondary: Color,
+    val placeholder: Color,
+    val disabled: Color,
+    val supporting: Color
+)
+
 val LocalPimsDarkTheme = staticCompositionLocalOf { false }
 val LocalPersonaMood = staticCompositionLocalOf { PersonaMood.WARM }
 val LocalPersonaBackground = staticCompositionLocalOf { Color(0xFFF7F5F0) }
@@ -304,6 +325,17 @@ object PimsTheme {
     val tonalSurfaces: PimsTonalSurfaces
         @Composable
         get() = LocalPimsTonalSurfaces.current
+
+    /** Semantic text hierarchy shared by every screen and form control. */
+    val text: PimsTextColors
+        @Composable
+        get() = PimsTextColors(
+            primary = MaterialTheme.colorScheme.onSurface,
+            secondary = MaterialTheme.colorScheme.onSurfaceVariant,
+            placeholder = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+            disabled = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            supporting = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f)
+        )
 }
 
 /**
@@ -513,12 +545,12 @@ fun PimsVaultTheme(
 
 /**
  * Centralized tactile interaction modifier:
- * Applies instant tactile spring compression (0.94f) on press, spring release on lift,
+ * Applies subtle tactile spring compression on press and a quick, controlled release,
  * respecting reduced motion settings.
  */
 @Composable
 fun Modifier.tactilePress(
-    targetScale: Float = 0.94f,
+    targetScale: Float = 0.97f,
     onClick: () -> Unit
 ): Modifier = this.pimsTactile(targetScale = targetScale, onClick = onClick)
 

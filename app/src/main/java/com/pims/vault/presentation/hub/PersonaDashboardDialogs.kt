@@ -67,6 +67,7 @@ import com.pims.vault.presentation.ui.components.PersonaToggleRow
 import com.pims.vault.presentation.ui.components.StandardDateInput
 import com.pims.vault.presentation.ui.util.PimsHaptics
 import com.pims.vault.presentation.ui.util.PimsSoundManager
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -529,13 +530,15 @@ fun PersonaDashboardDialogs(
                 StandardDateInput(
                     isoDate = relDob,
                     onDateChange = { relDob = it },
-                    label = "Birthday"
+                    label = "Birthday",
+                    maxDate = LocalDate.now()
                 )
                 AnimatedVisibility(visible = isRomanticOrMaritalRelationship(relRole) || isRomanticOrMaritalRelationship(effectiveRole)) {
                     StandardDateInput(
                         isoDate = relAnniversary,
                         onDateChange = { relAnniversary = it },
-                        label = "Anniversary"
+                        label = "Anniversary",
+                        maxDate = LocalDate.now()
                     )
                 }
                 // Private notes

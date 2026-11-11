@@ -1,6 +1,5 @@
 package com.pims.vault.presentation.hub
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,16 +10,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -29,6 +30,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,7 +45,12 @@ import com.pims.vault.presentation.profile.ProfileViewModel
 import com.pims.vault.presentation.ui.components.CountrySuggestionField
 import com.pims.vault.presentation.ui.components.InternationalPhoneInput
 import com.pims.vault.presentation.ui.components.PersonaTextInput
+import com.pims.vault.presentation.ui.components.PersonaFormSection
 import com.pims.vault.presentation.ui.components.StandardDateInput
+import com.pims.vault.presentation.ui.components.isValidInternationalPhone
+import com.pims.vault.presentation.ui.theme.PimsRadius
+import java.time.LocalDate
+import kotlinx.coroutines.launch
 import com.pims.vault.presentation.ui.components.ux.PersonaToastController
 import com.pims.vault.presentation.ui.util.PimsHaptics
 import com.pims.vault.presentation.ui.util.PimsSoundManager
@@ -79,33 +87,58 @@ fun EditPersonalIdentitySheet(
 ) {
     if (!isVisible) return
 
-    var editFirst by remember { mutableStateOf(firstName) }
-    var editLast by remember { mutableStateOf(lastName) }
-    var editPhone by remember { mutableStateOf(primaryPhone ?: "") }
-    var editEmail by remember { mutableStateOf(primaryEmail ?: "") }
-    var editDob by remember { mutableStateOf(dob) }
-    var editNationality by remember { mutableStateOf(nationality) }
-    var editCountry by remember { mutableStateOf(country) }
-    var editGender by remember { mutableStateOf(gender) }
-    var editOcc by remember { mutableStateOf(occupation) }
+    var editFirst by rememberSaveable(firstName) { mutableStateOf(firstName) }
+    var editLast by rememberSaveable(lastName) { mutableStateOf(lastName) }
+    var editPhone by rememberSaveable(primaryPhone) { mutableStateOf(primaryPhone ?: "") }
+    var editEmail by rememberSaveable(primaryEmail) { mutableStateOf(primaryEmail ?: "") }
+    var editDob by rememberSaveable(dob) { mutableStateOf(dob) }
+    var editNationality by rememberSaveable(nationality) { mutableStateOf(nationality) }
+    var editCountry by rememberSaveable(country) { mutableStateOf(country) }
+    var editGender by rememberSaveable(gender) { mutableStateOf(gender) }
+    var editOcc by rememberSaveable(occupation) { mutableStateOf(occupation) }
+    var isSaving by rememberSaveable { mutableStateOf(false) }
+    var attemptedSave by rememberSaveable { mutableStateOf(false) }
+    var phoneTouched by rememberSaveable { mutableStateOf(false) }
+    var emailTouched by rememberSaveable { mutableStateOf(false) }
+    var phoneHadFocus by rememberSaveable { mutableStateOf(false) }
+    var emailHadFocus by rememberSaveable { mutableStateOf(false) }
+    var dateIsValid by remember { mutableStateOf(true) }
+    var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
+    var saveError by rememberSaveable { mutableStateOf<String?>(null) }
     val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(isVisible, firstName, lastName, primaryPhone, primaryEmail, dob, nationality, country, gender, occupation) {
-        if (isVisible) {
-            editFirst = firstName
-            editLast = lastName
-            editPhone = primaryPhone ?: ""
-            editEmail = primaryEmail ?: ""
-            editDob = dob
-            editNationality = nationality
-            editCountry = country
-            editGender = gender
-            editOcc = occupation
+    LaunchedEffect(Unit) {
+        if (isSaving && !profileViewModel.isPersonalSaveInProgress()) isSaving = false
+    }
+
+    val isDirty = editFirst != firstName || editLast != lastName || editPhone != (primaryPhone ?: "") ||
+        editEmail != (primaryEmail ?: "") || editDob != dob || editNationality != nationality ||
+        editCountry != country || editGender != gender || editOcc != occupation
+    val emailInvalid = editEmail.isNotBlank() && (emailTouched || attemptedSave) &&
+        !android.util.Patterns.EMAIL_ADDRESS.matcher(editEmail.trim()).matches()
+    val phoneInvalid = editPhone.isNotBlank() && (phoneTouched || attemptedSave) &&
+        !isValidInternationalPhone(editPhone)
+
+    val requestDismiss = {
+        if (isSaving) Unit
+        else if (isDirty) {
+            showDiscardConfirmation = true
+            scope.launch { editSheetState.show() }
         }
+        else onDismissRequest()
     }
 
     val onSaveAction = {
-        profileViewModel.onEvent(
+        attemptedSave = true
+        saveError = null
+        if (!isDirty || editFirst.isBlank() || editLast.isBlank() || !dateIsValid || emailInvalid || phoneInvalid ||
+            (editEmail.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(editEmail.trim()).matches()) ||
+            (editPhone.isNotBlank() && !isValidInternationalPhone(editPhone))) {
+            Unit
+        } else {
+            isSaving = true
+            profileViewModel.onEvent(
             ProfileEvent.SavePersonalDetails(
                 firstName = editFirst,
                 lastName = editLast,
@@ -115,25 +148,38 @@ fun EditPersonalIdentitySheet(
                 gender = editGender,
                 sexuality = sexuality,
                 bloodGroup = bloodGroup,
-                occupation = editOcc
+                occupation = editOcc,
+                clearBlankOptionalFields = true
             )
-        )
-        profileViewModel.savePrimaryPhone(editPhone)
-        profileViewModel.savePrimaryEmail(editEmail)
-        onSaved(editFirst, editLast, editDob, editOcc, editCountry, editGender, editNationality, editPhone, editEmail)
-        recentActivityManager.recordActivity("Updated personal information", "Profile name & details updated")
-        haptics.success()
-        soundManager.success()
-        toastController.showSuccess("Personal identity saved")
-        onDismissRequest()
+            ) { personResult ->
+                if (personResult.isFailure) {
+                    isSaving = false
+                    saveError = personResult.exceptionOrNull()?.localizedMessage ?: "Couldn't save your details. Try again."
+                } else {
+                    profileViewModel.savePrimaryContacts(editPhone, editEmail) { contactResult ->
+                        isSaving = false
+                        if (contactResult.isFailure) {
+                            saveError = "Your identity was saved, but contact details need another try."
+                        } else {
+                            onSaved(editFirst, editLast, editDob, editOcc, editCountry, editGender, editNationality, editPhone, editEmail)
+                            recentActivityManager.recordActivity("Updated personal information", "Profile details updated")
+                            haptics.success()
+                            soundManager.success()
+                            toastController.showSuccess("Personal identity saved")
+                            onDismissRequest()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
+        onDismissRequest = requestDismiss,
         sheetState = editSheetState,
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        shape = RoundedCornerShape(topStart = PimsRadius.modal, topEnd = PimsRadius.modal)
     ) {
         Column(
             modifier = Modifier
@@ -141,46 +187,46 @@ fun EditPersonalIdentitySheet(
                 .imePadding()
                 .navigationBarsPadding()
         ) {
-            // Top Bar: Cancel (Left) | Title (Center) | Save Pill (Right)
+            // Balanced top bar keeps both actions easy to reach; emphasis stays on Save.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onDismissRequest) {
+                TextButton(onClick = requestDismiss, modifier = Modifier.width(84.dp).height(48.dp)) {
                     Text(
                         text = "Cancel",
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Text(
-                    text = "Personal Identity",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.2).sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Personal identity",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (isDirty) {
+                        Text("Unsaved changes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
 
                 Button(
                     onClick = onSaveAction,
-                    shape = RoundedCornerShape(18.dp),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
+                    enabled = isDirty && !isSaving,
+                    shape = RoundedCornerShape(PimsRadius.primaryAction),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    modifier = Modifier.height(36.dp)
+                    modifier = Modifier.width(84.dp).height(48.dp)
                 ) {
-                    Text(
-                        text = "Save",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
+                    if (isSaving) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    else Text("Save", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
             }
 
@@ -194,159 +240,125 @@ fun EditPersonalIdentitySheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Card 1: Identity & Profession
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Text(
-                            text = "Identity & Profession",
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            ),
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                if (saveError != null) {
+                    Text(saveError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            PersonaTextInput(
-                                value = editFirst,
-                                onValueChange = { editFirst = it },
-                                label = "First name",
-                                placeholder = "First name",
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            PersonaTextInput(
-                                value = editLast,
-                                onValueChange = { editLast = it },
-                                label = "Last name",
-                                placeholder = "Last name",
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
+                PersonaFormSection(title = "Personal details") {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PersonaTextInput(
-                            value = editOcc,
-                            onValueChange = { editOcc = it },
-                            label = "Occupation / Profession",
-                            placeholder = "e.g. Software Engineer, Designer"
+                            value = editFirst,
+                            onValueChange = { editFirst = it.take(100) },
+                            label = "First name · required",
+                            placeholder = "First name",
+                            isError = attemptedSave && editFirst.isBlank(),
+                            errorMessage = if (attemptedSave && editFirst.isBlank()) "Enter a first name" else null,
+                            modifier = Modifier.weight(1f)
                         )
-                    }
-                }
-
-                // Card 2: Contact Information
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Text(
-                            text = "Contact Details",
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            ),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        InternationalPhoneInput(
-                            value = editPhone,
-                            onValueChange = { editPhone = it },
-                            label = "Phone number"
-                        )
-
                         PersonaTextInput(
-                            value = editEmail,
-                            onValueChange = { editEmail = it },
-                            label = "Email address",
-                            placeholder = "name@example.com",
-                            keyboardType = KeyboardType.Email
+                            value = editLast,
+                            onValueChange = { editLast = it.take(100) },
+                            label = "Last name · required",
+                            placeholder = "Last name",
+                            isError = attemptedSave && editLast.isBlank(),
+                            errorMessage = if (attemptedSave && editLast.isBlank()) "Enter a last name" else null,
+                            modifier = Modifier.weight(1f)
                         )
                     }
+                    StandardDateInput(
+                        isoDate = editDob,
+                        onDateChange = { editDob = it },
+                        label = "Date of birth",
+                        maxDate = LocalDate.now(),
+                        onValidityChange = { dateIsValid = it }
+                    )
+                    PersonaTextInput(
+                        value = editGender,
+                        onValueChange = { editGender = it.take(60) },
+                        label = "Gender · optional",
+                        placeholder = "Add gender"
+                    )
                 }
 
-                // Card 3: Demographics & Location
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Text(
-                            text = "Demographics & Location",
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            ),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        StandardDateInput(
-                            isoDate = editDob,
-                            onDateChange = { editDob = it },
-                            label = "Date of birth"
-                        )
-
-                        CountrySuggestionField(
-                            value = editCountry,
-                            onValueChange = { editCountry = it },
-                            label = "Country of residence",
-                            placeholder = "Type country name..."
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            PersonaTextInput(
-                                value = editNationality,
-                                onValueChange = { editNationality = it },
-                                label = "Nationality",
-                                placeholder = "e.g. Zimbabwean",
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            PersonaTextInput(
-                                value = editGender,
-                                onValueChange = { editGender = it },
-                                label = "Gender",
-                                placeholder = "e.g. Female, Male",
-                                modifier = Modifier.weight(1f)
-                            )
+                PersonaFormSection(title = "Contact information") {
+                    InternationalPhoneInput(
+                        value = editPhone,
+                        onValueChange = { editPhone = it },
+                        label = "Phone number · optional",
+                        isError = phoneInvalid,
+                        errorMessage = if (phoneInvalid) "Enter a valid number for the selected country" else null,
+                        onFocusChanged = { focused ->
+                            if (focused) phoneHadFocus = true
+                            else if (phoneHadFocus) {
+                                phoneTouched = true
+                                phoneHadFocus = false
+                            }
                         }
-                    }
+                    )
+                    PersonaTextInput(
+                        value = editEmail,
+                        onValueChange = { editEmail = it.take(254) },
+                        label = "Email address · optional",
+                        placeholder = "name@example.com",
+                        keyboardType = KeyboardType.Email,
+                        isError = emailInvalid,
+                        errorMessage = if (emailInvalid) "Enter a valid email address" else null,
+                        onFocusChanged = { focused ->
+                            if (focused) emailHadFocus = true
+                            else if (emailHadFocus) {
+                                emailTouched = true
+                                emailHadFocus = false
+                            }
+                        }
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                PersonaFormSection(title = "Location and nationality") {
+                    CountrySuggestionField(
+                        value = editCountry,
+                        onValueChange = { editCountry = it.take(100) },
+                        label = "Country of residence · optional",
+                        placeholder = "Search or choose a country"
+                    )
+                    PersonaTextInput(
+                        value = editNationality,
+                        onValueChange = { editNationality = it.take(100) },
+                        label = "Nationality · optional",
+                        placeholder = "e.g. Zimbabwean"
+                    )
+                }
+
+                PersonaFormSection(title = "Additional information") {
+                    PersonaTextInput(
+                        value = editOcc,
+                        onValueChange = { editOcc = it.take(120) },
+                        label = "Occupation · optional",
+                        placeholder = "Add your occupation"
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
             }
         }
+    }
+
+    if (showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your unsaved edits will be lost.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardConfirmation = false
+                    onDismissRequest()
+                }) { Text("Discard", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirmation = false }) { Text("Keep editing") }
+            }
+        )
     }
 }

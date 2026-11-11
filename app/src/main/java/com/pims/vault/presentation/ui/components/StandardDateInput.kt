@@ -1,14 +1,11 @@
 package com.pims.vault.presentation.ui.components
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
@@ -16,7 +13,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,7 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import java.util.Calendar
+import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsTheme
 
 object StandardDateUtils {
 
@@ -83,7 +80,9 @@ fun StandardDateInput(
     onDateChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     label: String = "Date",
-    isRequired: Boolean = false
+    isRequired: Boolean = false,
+    maxDate: LocalDate? = null,
+    onValidityChange: ((Boolean) -> Unit)? = null
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -109,28 +108,41 @@ fun StandardDateInput(
     fun updateAndValidate(d: String, m: String, y: String) {
         if (d.isBlank() && m.isBlank() && y.isBlank()) {
             errorMessage = null
+            onValidityChange?.invoke(true)
             onDateChange("")
             return
         }
 
-        val dInt = d.toIntOrNull()
-        val mInt = m.toIntOrNull()
-        val yInt = y.toIntOrNull()
+        val dayNumber = d.toIntOrNull()
+        val monthNumber = m.toIntOrNull()
+        val yearNumber = y.toIntOrNull()
+        errorMessage = when {
+            d.length == 2 && (dayNumber == null || dayNumber !in 1..31) -> "Day must be between 1 and 31"
+            m.length == 2 && (monthNumber == null || monthNumber !in 1..12) -> "Month must be between 1 and 12"
+            y.length == 4 && (yearNumber == null || yearNumber !in 1900..2100) -> "Enter a year between 1900 and 2100"
+            else -> null
+        }
+        if (errorMessage != null) {
+            onValidityChange?.invoke(false)
+            return
+        }
 
-        if (dInt != null && mInt != null && yInt != null) {
-            if (y.length == 4) {
-                if (StandardDateUtils.isValidDate(dInt, mInt, yInt)) {
-                    errorMessage = null
-                    val formatted = String.format("%04d-%02d-%02d", yInt, mInt, dInt)
-                    onDateChange(formatted)
-                } else {
-                    errorMessage = "Invalid calendar date (e.g. check days in month)"
-                }
+        if (dayNumber != null && monthNumber != null && yearNumber != null && d.length == 2 && m.length == 2 && y.length == 4) {
+            val date = runCatching { LocalDate.of(yearNumber, monthNumber, dayNumber) }.getOrNull()
+            errorMessage = when {
+                date == null -> "Enter a valid calendar date"
+                maxDate != null && date.isAfter(maxDate) -> "Date must be on or before ${maxDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}"
+                else -> null
+            }
+            if (date != null && errorMessage == null) {
+                onDateChange(date.format(DateTimeFormatter.ISO_LOCAL_DATE))
+                onValidityChange?.invoke(true)
             } else {
-                errorMessage = null
+                onValidityChange?.invoke(false)
             }
         } else {
             errorMessage = null
+            onValidityChange?.invoke(false)
         }
     }
 
@@ -146,13 +158,13 @@ fun StandardDateInput(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp
                 ),
-                color = MaterialTheme.colorScheme.onSurface
+                color = PimsTheme.text.secondary
             )
             if (!isRequired) {
                 Text(
                     text = "Optional",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    color = PimsTheme.text.supporting
                 )
             }
         }
@@ -161,7 +173,7 @@ fun StandardDateInput(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Day Box [ DD ]
@@ -192,17 +204,18 @@ fun StandardDateInput(
                     fontSize = 15.sp
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(PimsRadius.input),
                 isError = errorMessage != null,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
+                    focusedBorderColor = if (errorMessage == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    unfocusedBorderColor = if (errorMessage == null) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.error,
+                    errorBorderColor = MaterialTheme.colorScheme.error,
+                    focusedTextColor = PimsTheme.text.primary,
+                    unfocusedTextColor = PimsTheme.text.primary
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(0.82f)
             )
 
             // Centered delimiter with NO weird offsets
@@ -241,17 +254,18 @@ fun StandardDateInput(
                     fontSize = 15.sp
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(PimsRadius.input),
                 isError = errorMessage != null,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
+                    focusedBorderColor = if (errorMessage == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    unfocusedBorderColor = if (errorMessage == null) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.error,
+                    errorBorderColor = MaterialTheme.colorScheme.error,
+                    focusedTextColor = PimsTheme.text.primary,
+                    unfocusedTextColor = PimsTheme.text.primary
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(0.82f)
             )
 
             // Centered delimiter with NO weird offsets
@@ -290,17 +304,18 @@ fun StandardDateInput(
                     fontSize = 15.sp
                 ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(PimsRadius.input),
                 isError = errorMessage != null,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
+                    focusedBorderColor = if (errorMessage == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    unfocusedBorderColor = if (errorMessage == null) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.error,
+                    errorBorderColor = MaterialTheme.colorScheme.error,
+                    focusedTextColor = PimsTheme.text.primary,
+                    unfocusedTextColor = PimsTheme.text.primary
                 ),
-                modifier = Modifier.weight(1.35f)
+                modifier = Modifier.weight(1.15f)
             )
         }
 

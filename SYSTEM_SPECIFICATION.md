@@ -245,6 +245,16 @@ sequenceDiagram
 
 ## 5. Android Clean Architecture Implementation
 
+### 5.1 Stable Person Identity and Recoverable Photos
+
+`Person.id` is the stable random identifier for an individual. The account authentication UID identifies the Firebase account namespace; it is not a person identifier. National ID numbers are optional, sensitive profile attributes and must not be used as primary keys, relationship keys, filenames, or cloud paths. Person-linked notes, photos, and vault records retain their stable person and record IDs through sync and crypto upgrades.
+
+Person avatars use two neutral built-in default icons until a person has a user-selected image, a restored image, or an image explicitly imported from the signed-in Google profile. Image selection and Google import require a user action. Photo bytes are encrypted before cloud upload and metadata is scoped to the account and stable person ID. Restore validates ownership, format, and integrity before updating the local photo pointer.
+
+### 5.2 Encrypted Payload Compatibility
+
+Encrypted records and file payloads must carry or resolve an explicit crypto-format and key-derivation version. Readers retain support for every format still present in local data or supported backups. Upgrades use a recoverable sequence: authenticate and decrypt the old payload, encrypt into a new version, persist the new version without changing record/person IDs, and authenticate read-back before retiring the old copy. Interruption or failure leaves the previous payload available. See [ADR-012](./docs/planning/adr/ADR-012-person-photos-and-crypto-format-migration.md).
+
 ```text
 app/src/main/java/com/pims/vault/
 │

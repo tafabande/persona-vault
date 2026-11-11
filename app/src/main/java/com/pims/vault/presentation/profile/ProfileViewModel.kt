@@ -44,6 +44,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 data class CustomField(
@@ -108,7 +109,8 @@ sealed interface ProfileEvent {
         val bloodGroup: String,
         val occupation: String? = null,
         val nationalIdNumber: String? = null,
-        val idPhotoPath: String? = null
+        val idPhotoPath: String? = null,
+        val clearBlankOptionalFields: Boolean = false
     ) : ProfileEvent
 
     data class AddCustomField(
@@ -229,6 +231,10 @@ class ProfileViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+    private val personalSaveInProgress = AtomicBoolean(false)
+    private val contactSaveInProgress = AtomicBoolean(false)
+
+    fun isPersonalSaveInProgress(): Boolean = personalSaveInProgress.get() || contactSaveInProgress.get()
 
     init {
         observeSessionAndProfile()
@@ -376,70 +382,93 @@ class ProfileViewModel @Inject constructor(
 
     fun savePrimaryPhone(phone: String, label: String = "Mobile") {
         viewModelScope.launch {
-            val ownerId = getOrCreatePrimaryOwnerId()
-            val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
-            val existingPhone = existingContacts.firstOrNull { it.contactType == ContactType.PHONE && it.isPrimary }
-                ?: existingContacts.firstOrNull { it.contactType == ContactType.PHONE }
-
-            if (phone.isBlank()) {
-                existingPhone?.let {
-                    contactDao.deleteById(it.id)
-                    try { firestoreSyncService.deleteRemoteContact(it.id) } catch (_: Exception) {}
-                }
-                loadFullProfileAndRelationships()
-                return@launch
-            }
-
-            val entity = if (existingPhone != null) {
-                existingPhone.copy(value = phone.trim(), label = label, isPrimary = true)
-            } else {
-                ContactMethodEntity(
-                    id = UUID.randomUUID().toString(),
-                    personId = ownerId,
-                    contactType = ContactType.PHONE,
-                    label = label,
-                    value = phone.trim(),
-                    isPrimary = true
-                )
-            }
-            contactDao.insertOrUpdate(entity)
-            try { firestoreSyncService.syncContact(null, entity) } catch (_: Exception) {}
-            loadFullProfileAndRelationships()
+            savePrimaryPhoneNow(phone, label)
         }
+    }
+
+    fun savePrimaryContacts(phone: String, email: String, onComplete: (Result<Unit>) -> Unit) {
+        if (!contactSaveInProgress.compareAndSet(false, true)) return
+        viewModelScope.launch {
+            try {
+                savePrimaryPhoneNow(phone, "Mobile")
+                savePrimaryEmailNow(email, "Personal")
+                onComplete(Result.success(Unit))
+            } catch (e: Exception) {
+                onComplete(Result.failure(e))
+            } finally {
+                contactSaveInProgress.set(false)
+            }
+        }
+    }
+
+    private suspend fun savePrimaryPhoneNow(phone: String, label: String) {
+        val ownerId = getOrCreatePrimaryOwnerId()
+        val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
+        val existingPhone = existingContacts.firstOrNull { it.contactType == ContactType.PHONE && it.isPrimary }
+            ?: existingContacts.firstOrNull { it.contactType == ContactType.PHONE }
+
+        if (phone.isBlank()) {
+            existingPhone?.let {
+                contactDao.deleteById(it.id)
+                try { firestoreSyncService.deleteRemoteContact(it.id) } catch (_: Exception) {}
+            }
+            loadFullProfileAndRelationships()
+            return
+        }
+
+        val entity = if (existingPhone != null) {
+            existingPhone.copy(value = phone.trim(), label = label, isPrimary = true)
+        } else {
+            ContactMethodEntity(
+                id = UUID.randomUUID().toString(),
+                personId = ownerId,
+                contactType = ContactType.PHONE,
+                label = label,
+                value = phone.trim(),
+                isPrimary = true
+            )
+        }
+        contactDao.insertOrUpdate(entity)
+        try { firestoreSyncService.syncContact(null, entity) } catch (_: Exception) {}
+        loadFullProfileAndRelationships()
     }
 
     fun savePrimaryEmail(email: String, label: String = "Personal") {
         viewModelScope.launch {
-            val ownerId = getOrCreatePrimaryOwnerId()
-            val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
-            val existingEmail = existingContacts.firstOrNull { it.contactType == ContactType.EMAIL && it.isPrimary }
-                ?: existingContacts.firstOrNull { it.contactType == ContactType.EMAIL }
-
-            if (email.isBlank()) {
-                existingEmail?.let {
-                    contactDao.deleteById(it.id)
-                    try { firestoreSyncService.deleteRemoteContact(it.id) } catch (_: Exception) {}
-                }
-                loadFullProfileAndRelationships()
-                return@launch
-            }
-
-            val entity = if (existingEmail != null) {
-                existingEmail.copy(value = email.trim(), label = label, isPrimary = true)
-            } else {
-                ContactMethodEntity(
-                    id = UUID.randomUUID().toString(),
-                    personId = ownerId,
-                    contactType = ContactType.EMAIL,
-                    label = label,
-                    value = email.trim(),
-                    isPrimary = true
-                )
-            }
-            contactDao.insertOrUpdate(entity)
-            try { firestoreSyncService.syncContact(null, entity) } catch (_: Exception) {}
-            loadFullProfileAndRelationships()
+            savePrimaryEmailNow(email, label)
         }
+    }
+
+    private suspend fun savePrimaryEmailNow(email: String, label: String) {
+        val ownerId = getOrCreatePrimaryOwnerId()
+        val existingContacts = contactDao.getContactsForPersonFlow(ownerId).firstOrNull() ?: emptyList()
+        val existingEmail = existingContacts.firstOrNull { it.contactType == ContactType.EMAIL && it.isPrimary }
+            ?: existingContacts.firstOrNull { it.contactType == ContactType.EMAIL }
+
+        if (email.isBlank()) {
+            existingEmail?.let {
+                contactDao.deleteById(it.id)
+                try { firestoreSyncService.deleteRemoteContact(it.id) } catch (_: Exception) {}
+            }
+            loadFullProfileAndRelationships()
+            return
+        }
+
+        val entity = if (existingEmail != null) {
+            existingEmail.copy(value = email.trim(), label = label, isPrimary = true)
+        } else {
+            ContactMethodEntity(
+                id = UUID.randomUUID().toString(),
+                personId = ownerId,
+                contactType = ContactType.EMAIL,
+                label = label,
+                value = email.trim(),
+                isPrimary = true
+            )
+        }
+        contactDao.insertOrUpdate(entity)
+        try { firestoreSyncService.syncContact(null, entity) } catch (_: Exception) {}
+        loadFullProfileAndRelationships()
     }
 
     fun reconcileContacts(
@@ -588,7 +617,9 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    fun onEvent(event: ProfileEvent) {
+    fun onEvent(event: ProfileEvent, onComplete: ((Result<Unit>) -> Unit)? = null) {
+        val isPersonalSave = event is ProfileEvent.SavePersonalDetails
+        if (isPersonalSave && !personalSaveInProgress.compareAndSet(false, true)) return
         viewModelScope.launch {
             try {
                 when (event) {
@@ -688,7 +719,8 @@ class ProfileViewModel @Inject constructor(
                         val existing = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
                         val targetFirst = event.firstName.trim().ifBlank { existing?.firstName.orEmpty() }
                         val targetLast = event.lastName.trim().ifBlank { existing?.lastName.orEmpty() }
-                        val targetOcc = event.occupation?.trim()?.takeIf { it.isNotBlank() } ?: existing?.occupation
+                        val targetOcc = if (event.clearBlankOptionalFields) event.occupation?.trim()?.takeIf { it.isNotBlank() }
+                            else event.occupation?.trim()?.takeIf { it.isNotBlank() } ?: existing?.occupation
                         val targetNatId = event.nationalIdNumber?.trim()?.takeIf { it.isNotBlank() } ?: existing?.nationalIdNumber
 
                         val currentMeta = parseNotesMeta(existing?.notes ?: _uiState.value.person?.notes)
@@ -706,10 +738,10 @@ class ProfileViewModel @Inject constructor(
                             firstName = targetFirst,
                             lastName = targetLast,
                             nationalIdNumber = targetNatId,
-                            dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() } ?: existing?.dateOfBirth,
-                            gender = event.gender.trim().takeIf { it.isNotBlank() } ?: existing?.gender,
-                            nationality = event.nationality.trim().takeIf { it.isNotBlank() } ?: existing?.nationality,
-                            countryOfResidence = event.country.trim().takeIf { it.isNotBlank() } ?: existing?.countryOfResidence,
+                            dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() } ?: if (event.clearBlankOptionalFields) null else existing?.dateOfBirth,
+                            gender = event.gender.trim().takeIf { it.isNotBlank() } ?: if (event.clearBlankOptionalFields) null else existing?.gender,
+                            nationality = event.nationality.trim().takeIf { it.isNotBlank() } ?: if (event.clearBlankOptionalFields) null else existing?.nationality,
+                            countryOfResidence = event.country.trim().takeIf { it.isNotBlank() } ?: if (event.clearBlankOptionalFields) null else existing?.countryOfResidence,
                             occupation = targetOcc,
                             notes = notesJson,
                             updatedAt = System.currentTimeMillis()
@@ -718,7 +750,17 @@ class ProfileViewModel @Inject constructor(
                         loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Profile updated successfully") }
                         viewModelScope.launch(Dispatchers.IO) {
-                            try { firestoreSyncService.syncPerson(null, updatedPerson) } catch (_: Exception) {}
+                            val fieldsToClear = if (event.clearBlankOptionalFields) buildSet {
+                                if (event.dob.isBlank()) add("dateOfBirth")
+                                if (event.gender.isBlank()) add("gender")
+                                if (event.nationality.isBlank()) add("nationality")
+                                if (event.country.isBlank()) {
+                                    add("country")
+                                    add("countryOfResidence")
+                                }
+                                if (event.occupation.isNullOrBlank()) add("occupation")
+                            } else emptySet()
+                            try { firestoreSyncService.syncPerson(null, updatedPerson, fieldsToClear) } catch (_: Exception) {}
                         }
                     }
 
@@ -1222,8 +1264,12 @@ class ProfileViewModel @Inject constructor(
                         _uiState.update { it.copy(userFeedbackMessage = null, errorMessage = null) }
                     }
                 }
+                onComplete?.invoke(Result.success(Unit))
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message ?: "Action failed") }
+                onComplete?.invoke(Result.failure(e))
+            } finally {
+                if (isPersonalSave) personalSaveInProgress.set(false)
             }
         }
     }

@@ -65,6 +65,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.util.CountryUtils
+import com.google.i18n.phonenumbers.PhoneNumberUtil
+import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsTheme
 
 /**
  * Country Calling Code metadata model.
@@ -339,6 +342,15 @@ fun formatNationalDigits(digits: String, callingCode: String): String {
     }
 }
 
+/** Validates a complete international number against Google's current region metadata. */
+fun isValidInternationalPhone(phoneNumber: String): Boolean {
+    if (phoneNumber.isBlank()) return false
+    return runCatching {
+        val parsed = PhoneNumberUtil.getInstance().parse(phoneNumber, null)
+        PhoneNumberUtil.getInstance().isValidNumber(parsed)
+    }.getOrDefault(false)
+}
+
 /**
  * VisualTransformation that formats phone digits with clean spaced grouping (e.g. "77 123 4567")
  * while preserving pure digits in the input buffer.
@@ -392,7 +404,9 @@ fun InternationalPhoneInput(
     label: String? = "Phone Number",
     placeholder: String? = null,
     isError: Boolean = false,
-    errorMessage: String? = null
+    errorMessage: String? = null,
+    enabled: Boolean = true,
+    onFocusChanged: ((Boolean) -> Unit)? = null
 ) {
     // Initial parsing
     val initialPair = remember(value) { parsePhoneInput(value) }
@@ -416,7 +430,10 @@ fun InternationalPhoneInput(
 
     val effectivePlaceholder = placeholder ?: selectedCountry.example
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         if (!label.isNullOrBlank()) {
             Text(
                 text = label,
@@ -424,8 +441,8 @@ fun InternationalPhoneInput(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp
                 ),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 6.dp, start = 1.dp)
+                color = if (enabled) PimsTheme.text.primary else PimsTheme.text.disabled,
+                modifier = Modifier.fillMaxWidth(0.90f).padding(bottom = 6.dp, start = 1.dp)
             )
         }
 
@@ -433,14 +450,14 @@ fun InternationalPhoneInput(
         val borderColor = when {
             isError -> MaterialTheme.colorScheme.error
             isFocused -> MaterialTheme.colorScheme.primary
-            else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+            else -> Color.Transparent
         }
 
         Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-            border = androidx.compose.foundation.BorderStroke(if (isFocused || isError) 1.5.dp else 1.dp, borderColor),
-            modifier = Modifier.fillMaxWidth()
+            shape = RoundedCornerShape(PimsRadius.input),
+            color = if (enabled) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+            border = if (isFocused || isError) androidx.compose.foundation.BorderStroke(1.5.dp, borderColor) else null,
+            modifier = Modifier.fillMaxWidth(0.90f)
         ) {
             Row(
                 modifier = Modifier
@@ -452,8 +469,8 @@ fun InternationalPhoneInput(
                 Row(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp))
-                        .clickable { isPickerOpen = true }
+                        .clip(RoundedCornerShape(topStart = PimsRadius.input, bottomStart = PimsRadius.input))
+                        .clickable(enabled = enabled) { isPickerOpen = true }
                         .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -515,18 +532,21 @@ fun InternationalPhoneInput(
 
                     BasicTextField(
                         value = rawDigits,
+                        enabled = enabled,
                         onValueChange = { input ->
                             // If user pasted a number with '+' or country code
                             if (input.contains("+")) {
                                 val (pCountry, pDigits) = parsePhoneInput(input, selectedCountry)
                                 selectedCountry = pCountry
-                                rawDigits = pDigits
-                                val canonical = if (pDigits.isNotBlank()) "${pCountry.callingCode}$pDigits" else ""
+                                val maxLength = (15 - pCountry.callingCode.count { it.isDigit() }).coerceAtLeast(1)
+                                rawDigits = pDigits.take(maxLength)
+                                val canonical = if (rawDigits.isNotBlank()) "${pCountry.callingCode}$rawDigits" else ""
                                 onValueChange(canonical)
                             } else {
-                                val cleaned = input.filter { it.isDigit() }
+                            val cleaned = input.filter { it.isDigit() }
                                 // Strip leading 0 if entered (e.g. 077 -> 77)
-                                val sanitizedDigits = if (cleaned.startsWith("0")) cleaned.drop(1) else cleaned
+                            val maxLength = (15 - selectedCountry.callingCode.count { it.isDigit() }).coerceAtLeast(1)
+                            val sanitizedDigits = (if (cleaned.startsWith("0")) cleaned.drop(1) else cleaned).take(maxLength)
                                 rawDigits = sanitizedDigits
                                 val canonical = if (sanitizedDigits.isNotBlank()) "${selectedCountry.callingCode}$sanitizedDigits" else ""
                                 onValueChange(canonical)
@@ -545,13 +565,17 @@ fun InternationalPhoneInput(
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .onFocusChanged { isFocused = it.isFocused }
+                            .onFocusChanged {
+                                isFocused = it.isFocused
+                                onFocusChanged?.invoke(it.isFocused)
+                            }
                     )
                 }
 
                 // Clear Button (when digits exist)
                 if (rawDigits.isNotEmpty()) {
                     IconButton(
+                        enabled = enabled,
                         onClick = {
                             rawDigits = ""
                             onValueChange("")
@@ -562,7 +586,7 @@ fun InternationalPhoneInput(
                             imageVector = Icons.Default.Clear,
                             contentDescription = "Clear phone number",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -575,7 +599,7 @@ fun InternationalPhoneInput(
                 text = errorMessage,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                modifier = Modifier.fillMaxWidth(0.90f).padding(top = 4.dp, start = 4.dp)
             )
         }
     }
@@ -586,6 +610,8 @@ fun InternationalPhoneInput(
             selectedCountry = selectedCountry,
             onCountrySelected = { country ->
                 selectedCountry = country
+                val maxLength = (15 - country.callingCode.count { it.isDigit() }).coerceAtLeast(1)
+                rawDigits = rawDigits.take(maxLength)
                 isPickerOpen = false
                 val canonical = if (rawDigits.isNotBlank()) "${country.callingCode}$rawDigits" else ""
                 onValueChange(canonical)
@@ -747,12 +773,12 @@ private fun CountryRowItem(
     onSelect: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(PimsRadius.selection),
         color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
-        border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)) else null,
+        border = null,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(PimsRadius.selection))
             .clickable(onClick = onSelect)
     ) {
         Row(
@@ -763,9 +789,9 @@ private fun CountryRowItem(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(4.dp),
                 color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant,
-                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                border = null,
                 modifier = Modifier.size(width = 34.dp, height = 24.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {

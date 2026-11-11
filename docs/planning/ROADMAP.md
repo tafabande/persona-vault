@@ -18,6 +18,14 @@
 - [ ] Audit and harden Persona/Firebase identity mapping, optional profile-field serialization, person-scoped note/avatar recovery, and encrypted financial display metadata. This work is additive and uses stable Room/Firestore record IDs; it does not perform a production bulk migration.
 - [ ] Add encrypted backup and restore for user-imported carousel wallpapers, including stable item IDs, visual alignment, ordering, and active selection.
 - [ ] Harden bank-account record lifecycle: selected-ID-only edits, authenticated read-back, multi-account support, explicit card links, and idempotent sync verification. No destructive financial migration is authorised.
+- [ ] Replace procedural avatar generation/editor with two neutral default person icons and person-scoped photo selection (uploaded, restored, or explicitly imported Google profile image); retain owner and relationship photos through encrypted upload/download sync.
+- [ ] Audit person identity and relationship ownership boundaries. Use stable random Person IDs for keys and links; keep national ID values optional, encrypted, and out of document paths/cloud identifiers.
+- [ ] Preserve encrypted vault readability across crypto upgrades: persist format/key version metadata, keep compatible readers for existing payloads, and re-encrypt only after successful authenticated read-back. Keep vault item/person links stable.
+- [ ] Audit personal and relationship note lifecycle for create, edit, delete, attachment handling, and owner scoping after account creation.
+- [ ] **In Progress** — Establish a shared low-border form style (field outlines only, section dividers, constrained content width) and responsive motion/accessibility rules; apply incrementally across screens.
+- [ ] Normalize profile form behavior: semantic validation states, dirty/unsaved tracking, discard confirmation, explicit saving/success/failure/retry feedback, and state restoration for rotation/process recreation.
+- [ ] Standardize segmented date and phone inputs with compact spacing, accessible focus order, intelligent deletion, country-aware length validation, and clear read-only versus editable treatment.
+- [ ] Audit disconnected legacy code and UI state machines; remove only code proven unreachable after replacing its active entry points, and add explicit loading/empty/error/saving/success states for affected flows.
 
 ## Current Focus (Planning Phase)
 

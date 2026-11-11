@@ -78,6 +78,8 @@ import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import com.pims.vault.presentation.ui.theme.PersonaAccent
 import com.pims.vault.presentation.ui.theme.PersonaDivider
 import com.pims.vault.presentation.ui.theme.PimsDimensions
+import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsTheme
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.StateWarning
@@ -369,14 +371,17 @@ fun PimsOutlinedInput(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     singleLine: Boolean = true
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         if (label.isNotEmpty()) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.fillMaxWidth(0.90f).padding(bottom = 4.dp)
             )
         }
 
@@ -410,14 +415,14 @@ fun PimsOutlinedInput(
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.20f),
+                unfocusedBorderColor = Color.Transparent,
+                focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
                 cursorColor = MaterialTheme.colorScheme.primary,
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface
             ),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(0.90f)
         )
 
         if (isError && errorMessage != null) {
@@ -425,7 +430,7 @@ fun PimsOutlinedInput(
                 text = errorMessage,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                modifier = Modifier.fillMaxWidth(0.90f).padding(start = 4.dp, top = 2.dp)
             )
         }
     }
@@ -434,16 +439,15 @@ fun PimsOutlinedInput(
 @Composable
 fun PimsCard(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(16.dp),
+    shape: Shape = RoundedCornerShape(PimsRadius.surface),
     content: @Composable () -> Unit
 ) {
-    val isDark = LocalPimsDarkTheme.current
-    val surfaceColor = if (isDark) com.pims.vault.presentation.ui.theme.DarkSurfaceGrouped else MaterialTheme.colorScheme.surface
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = shape,
-        color = surfaceColor,
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = null,
+        tonalElevation = 1.dp
     ) {
         content()
     }
@@ -457,31 +461,14 @@ fun PimsButton(
     isSecondary: Boolean = false,
     enabled: Boolean = true
 ) {
-    val isDark = LocalPimsDarkTheme.current
-    val containerColor = when {
-        isSecondary && isDark -> Color(0xFF20232B)
-        isSecondary && !isDark -> Color(0xFFF1F3F5)
-        isDark -> Color(0xFF2C323D)
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val contentColor = when {
-        isSecondary && isDark -> Color(0xFF94A3B8)
-        isSecondary && !isDark -> Color(0xFF4B5563)
-        isDark -> Color(0xFFF9FAFB)
-        else -> MaterialTheme.colorScheme.onPrimary
-    }
-    val borderStroke = when {
-        isSecondary && isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333846))
-        isSecondary && !isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
-        isDark -> androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF454E5F))
-        else -> null
-    }
+    val containerColor = if (isSecondary) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary
+    val contentColor = if (isSecondary) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary
 
     Button(
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(14.dp),
-        border = borderStroke,
+        shape = RoundedCornerShape(PimsRadius.primaryAction),
+        border = null,
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,
@@ -950,8 +937,8 @@ fun CountrySuggestionField(
                 onValueChange(it)
                 expanded = true
             },
-            label = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
-            placeholder = { Text(placeholder) },
+            label = { Text(label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, color = PimsTheme.text.secondary) },
+            placeholder = { Text(placeholder, color = PimsTheme.text.placeholder) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Public,
@@ -972,8 +959,15 @@ fun CountrySuggestionField(
                     }
                 }
             },
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(PimsRadius.input),
             singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = PimsTheme.text.primary),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = Color.Transparent
+            ),
             modifier = Modifier
                 .menuAnchor()
                 .fillMaxWidth()

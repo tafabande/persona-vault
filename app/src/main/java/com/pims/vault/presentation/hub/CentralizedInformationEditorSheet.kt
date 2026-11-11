@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -62,8 +63,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,8 +85,12 @@ import com.pims.vault.presentation.ui.components.PersonaFormSection
 import com.pims.vault.presentation.ui.components.PersonaTextInput
 import com.pims.vault.presentation.ui.components.PersonaToggleRow
 import com.pims.vault.presentation.ui.components.StandardDateInput
+import com.pims.vault.presentation.ui.components.isValidInternationalPhone
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
+import com.pims.vault.presentation.ui.theme.PimsRadius
+import java.time.LocalDate
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 data class EditablePhone(
     val id: String = UUID.randomUUID().toString(),
@@ -161,11 +168,6 @@ data class EditableCustomField(
 )
 
 private val EMAIL_VALIDATION_PATTERN = Regex("^[A-Za-z0-9+._-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
-
-private fun isValidPhoneNumber(raw: String): Boolean {
-    val digits = raw.replace(Regex("[^0-9]"), "")
-    return digits.length in 7..15
-}
 
 private fun isValidEmailAddress(raw: String): Boolean =
     EMAIL_VALIDATION_PATTERN.matches(raw.trim())
@@ -268,17 +270,41 @@ fun CentralizedInformationEditorSheet(
     val customFields = remember { mutableStateListOf<EditableCustomField>() }
 
     var showFacetChooser by remember { mutableStateOf(false) }
+    var showDiscardConfirmation by remember { mutableStateOf(false) }
+    var attemptedSave by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    val phoneTouched = remember { mutableStateMapOf<String, Boolean>() }
+    val phoneFocused = remember { mutableStateMapOf<String, Boolean>() }
+    val emailTouched = remember { mutableStateMapOf<String, Boolean>() }
+    val emailFocused = remember { mutableStateMapOf<String, Boolean>() }
+    val scope = rememberCoroutineScope()
 
-    // Save gate: true while any non-blank phone/email entry is malformed
-    val hasInvalidEntries = phones.any { it.number.isNotBlank() && !isValidPhoneNumber(it.number) } ||
+    val draftFingerprint = listOf(
+        fullName, occupation, countryVal, nationalId, selectedPhotoUri?.toString(),
+        phones.toList(), emails.toList(), addresses.toList(), activeFacets.toList(),
+        allergies.toList(), conditions.toList(), medications.toList(), educationList.toList(),
+        workList.toList(), socials.toList(), customFields.toList()
+    ).joinToString("\u001f")
+    val originalFingerprint = remember { draftFingerprint }
+    val isDirty = draftFingerprint != originalFingerprint
+
+    val requestDismiss = {
+        if (isDirty) {
+            showDiscardConfirmation = true
+            scope.launch { sheetState.show() }
+        } else onDismissRequest()
+    }
+
+    val hasInvalidEntries = phones.any { it.number.isNotBlank() && !isValidInternationalPhone(it.number) } ||
             emails.any { it.address.isNotBlank() && !isValidEmailAddress(it.address) }
 
     ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
+        onDismissRequest = requestDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        shape = RoundedCornerShape(topStart = PimsRadius.modal, topEnd = PimsRadius.modal),
         dragHandle = null
     ) {
         Column(
@@ -295,15 +321,15 @@ fun CentralizedInformationEditorSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Edit Information",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.3).sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                IconButton(onClick = onDismissRequest) {
+                Column {
+                    Text(
+                        text = "Edit information",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (isDirty) Text("Unsaved changes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = requestDismiss) {
                     Icon(Icons.Default.Close, contentDescription = "Close")
                 }
             }
@@ -324,26 +350,28 @@ fun CentralizedInformationEditorSheet(
                     ) {
                         PersonaTextInput(
                             value = fullName,
-                            onValueChange = { fullName = it },
-                            label = "Full legal name",
-                            placeholder = "e.g. Eleanor Vance"
+                            onValueChange = { fullName = it.take(200) },
+                            label = "Full legal name · required",
+                            placeholder = "e.g. Eleanor Vance",
+                            isError = attemptedSave && fullName.isBlank(),
+                            errorMessage = if (attemptedSave && fullName.isBlank()) "Enter a name" else null
                         )
                         PersonaTextInput(
                             value = occupation,
-                            onValueChange = { occupation = it },
-                            label = "Occupation / Role",
+                            onValueChange = { occupation = it.take(120) },
+                            label = "Occupation / role · optional",
                             placeholder = "e.g. Architect"
                         )
                         com.pims.vault.presentation.ui.components.CountrySuggestionField(
                             value = countryVal,
-                            onValueChange = { countryVal = it },
-                            label = "Country / Region",
+                            onValueChange = { countryVal = it.take(100) },
+                            label = "Country / region · optional",
                             placeholder = "Type country name..."
                         )
                         PersonaTextInput(
                             value = nationalId,
                             onValueChange = { nationalId = it },
-                            label = "National ID / Passport Number",
+                            label = "National ID / passport number · optional",
                             placeholder = "e.g. 9801015009088"
                         )
 
@@ -380,7 +408,8 @@ fun CentralizedInformationEditorSheet(
                         }
                     ) {
                         phones.forEachIndexed { index, item ->
-                            val isInvalid = item.number.isNotBlank() && !isValidPhoneNumber(item.number)
+                            val isInvalid = item.number.isNotBlank() && !isValidInternationalPhone(item.number) &&
+                                (phoneTouched[item.id] == true || attemptedSave)
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -413,15 +442,17 @@ fun CentralizedInformationEditorSheet(
                                 InternationalPhoneInput(
                                     value = item.number,
                                     onValueChange = { phones[index] = item.copy(number = it) },
-                                    label = if (phones.size == 1) "Phone number" else null
+                                    label = if (phones.size == 1) "Phone number · optional" else null,
+                                    isError = isInvalid,
+                                    errorMessage = if (isInvalid) "Enter a valid number for the selected country" else null,
+                                    onFocusChanged = { focused ->
+                                        if (focused) phoneFocused[item.id] = true
+                                        else if (phoneFocused[item.id] == true) {
+                                            phoneTouched[item.id] = true
+                                            phoneFocused[item.id] = false
+                                        }
+                                    }
                                 )
-                                if (isInvalid) {
-                                    Text(
-                                        text = "⚠️ Please enter a valid phone number with digits",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -489,7 +520,8 @@ fun CentralizedInformationEditorSheet(
                         }
                     ) {
                         emails.forEachIndexed { index, item ->
-                            val isInvalid = item.address.isNotBlank() && !isValidEmailAddress(item.address)
+                            val isInvalid = item.address.isNotBlank() && !isValidEmailAddress(item.address) &&
+                                (emailTouched[item.id] == true || attemptedSave)
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -522,17 +554,19 @@ fun CentralizedInformationEditorSheet(
                                 PersonaTextInput(
                                     value = item.address,
                                     onValueChange = { emails[index] = item.copy(address = it) },
-                                    label = if (emails.size == 1) "Email address" else null,
+                                    label = if (emails.size == 1) "Email address · optional" else null,
                                     placeholder = "name@example.com",
-                                    keyboardType = KeyboardType.Email
+                                    keyboardType = KeyboardType.Email,
+                                    isError = isInvalid,
+                                    errorMessage = if (isInvalid) "Enter a valid email address" else null,
+                                    onFocusChanged = { focused ->
+                                        if (focused) emailFocused[item.id] = true
+                                        else if (emailFocused[item.id] == true) {
+                                            emailTouched[item.id] = true
+                                            emailFocused[item.id] = false
+                                        }
+                                    }
                                 )
-                                if (isInvalid) {
-                                    Text(
-                                        text = "⚠️ Please enter a valid email address (e.g. name@domain.com)",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -706,9 +740,9 @@ fun CentralizedInformationEditorSheet(
                         ) {
                             allergies.forEachIndexed { i, allergy ->
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(PimsRadius.section),
+                                    color = Color.Transparent,
+                                    border = null,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -767,9 +801,9 @@ fun CentralizedInformationEditorSheet(
                         ) {
                             conditions.forEachIndexed { i, cond ->
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(PimsRadius.section),
+                                    color = Color.Transparent,
+                                    border = null,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -791,7 +825,8 @@ fun CentralizedInformationEditorSheet(
                                         StandardDateInput(
                                             isoDate = cond.diagnosedDate,
                                             onDateChange = { conditions[i] = cond.copy(diagnosedDate = it) },
-                                            label = "Diagnosis Date"
+                                            label = "Diagnosis date",
+                                            maxDate = LocalDate.now()
                                         )
                                     }
                                 }
@@ -818,9 +853,9 @@ fun CentralizedInformationEditorSheet(
                         ) {
                             medications.forEachIndexed { i, med ->
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(PimsRadius.section),
+                                    color = Color.Transparent,
+                                    border = null,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -878,9 +913,9 @@ fun CentralizedInformationEditorSheet(
                         ) {
                             educationList.forEachIndexed { i, edu ->
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(PimsRadius.section),
+                                    color = Color.Transparent,
+                                    border = null,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -938,9 +973,9 @@ fun CentralizedInformationEditorSheet(
                         ) {
                             workList.forEachIndexed { i, work ->
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(PimsRadius.section),
+                                    color = Color.Transparent,
+                                    border = null,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1003,9 +1038,9 @@ fun CentralizedInformationEditorSheet(
                         ) {
                             socials.forEachIndexed { i, s ->
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(PimsRadius.section),
+                                    color = Color.Transparent,
+                                    border = null,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1057,9 +1092,9 @@ fun CentralizedInformationEditorSheet(
                         ) {
                             customFields.forEachIndexed { i, cf ->
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(PimsRadius.section),
+                                    color = Color.Transparent,
+                                    border = null,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1138,12 +1173,12 @@ fun CentralizedInformationEditorSheet(
 
             // Bottom Sticky Save / Cancel Bar
             Surface(
-                tonalElevation = 8.dp,
-                shadowElevation = 8.dp,
+                tonalElevation = 2.dp,
+                shadowElevation = 0.dp,
                 color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                if (hasInvalidEntries) {
+                if (attemptedSave && hasInvalidEntries) {
                     Text(
                         text = "⚠️ Fix the invalid phone number(s) or email address(es) above before saving.",
                         style = MaterialTheme.typography.labelSmall,
@@ -1159,16 +1194,16 @@ fun CentralizedInformationEditorSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     FilledTonalButton(
-                        onClick = onDismissRequest,
-                        shape = RoundedCornerShape(16.dp),
+                        onClick = requestDismiss,
+                        shape = RoundedCornerShape(PimsRadius.primaryAction),
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ),
-                        border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        border = null,
                         modifier = Modifier
                             .weight(1f)
-                            .height(50.dp)
+                            .height(48.dp)
                     ) {
                         Text(
                             text = "Cancel",
@@ -1178,53 +1213,89 @@ fun CentralizedInformationEditorSheet(
 
                     Button(
                         onClick = {
+                            attemptedSave = true
+                            if (!isDirty || isSaving) return@Button
                             if (hasInvalidEntries) {
                                 haptics.light()
                                 return@Button
                             }
+                            isSaving = true
+                            saveError = null
                             haptics.success()
-                            onSaveAll(
-                                fullName,
-                                occupation,
-                                countryVal,
-                                nationalId,
-                                selectedPhotoUri,
-                                phones.filter { it.number.isNotBlank() },
-                                emails.filter { it.address.isNotBlank() },
-                                addresses.filter { it.street1.isNotBlank() || it.city.isNotBlank() },
-                                allergies.filter { it.allergen.isNotBlank() },
-                                conditions.filter { it.name.isNotBlank() },
-                                medications.filter { it.name.isNotBlank() },
-                                educationList.filter { it.institution.isNotBlank() || it.qualification.isNotBlank() },
-                                workList.filter { it.company.isNotBlank() },
-                                socials.filter { it.usernameOrUrl.isNotBlank() },
-                                customFields.filter { it.label.isNotBlank() && it.value.isNotBlank() }
-                            )
-                            onDismissRequest()
+                            try {
+                                onSaveAll(
+                                    fullName,
+                                    occupation,
+                                    countryVal,
+                                    nationalId,
+                                    selectedPhotoUri,
+                                    phones.filter { it.number.isNotBlank() },
+                                    emails.filter { it.address.isNotBlank() },
+                                    addresses.filter { it.street1.isNotBlank() || it.city.isNotBlank() },
+                                    allergies.filter { it.allergen.isNotBlank() },
+                                    conditions.filter { it.name.isNotBlank() },
+                                    medications.filter { it.name.isNotBlank() },
+                                    educationList.filter { it.institution.isNotBlank() || it.qualification.isNotBlank() },
+                                    workList.filter { it.company.isNotBlank() },
+                                    socials.filter { it.usernameOrUrl.isNotBlank() },
+                                    customFields.filter { it.label.isNotBlank() && it.value.isNotBlank() }
+                                )
+                            } catch (_: Exception) {
+                                saveError = "Couldn’t save changes. Please try again."
+                            } finally {
+                                isSaving = false
+                            }
                         },
-                        enabled = !hasInvalidEntries,
-                        shape = RoundedCornerShape(16.dp),
+                        enabled = isDirty && !isSaving,
+                        shape = RoundedCornerShape(PimsRadius.primaryAction),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                             disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
                             disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
                         ),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp, pressedElevation = 4.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
                         modifier = Modifier
-                            .weight(1.15f)
-                            .height(50.dp)
+                            .weight(1f)
+                            .height(48.dp)
                     ) {
                         Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Save Changes",
+                            text = if (isSaving) "Saving…" else "Save Changes",
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                         )
                     }
                 }
+                saveError?.let { message ->
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
+
+    }
+
+    if (showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your edits have not been saved.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardConfirmation = false
+                    onDismissRequest()
+                }) { Text("Discard") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirmation = false }) { Text("Keep editing") }
+            },
+            shape = RoundedCornerShape(PimsRadius.modal)
+        )
     }
 
     // Modal Chooser for "+ Add Section"

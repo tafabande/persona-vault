@@ -196,6 +196,7 @@ dependencies {
     implementation(libs.googleid)
     implementation(libs.okhttp)
     implementation(libs.zxing.core)
+    implementation(libs.google.libphonenumber)
 
     // Room & Encrypted Database (SQLCipher)
     implementation(libs.androidx.room.runtime)

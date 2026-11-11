@@ -81,6 +81,7 @@ import com.pims.vault.presentation.ui.components.PersonaFormSection
 import com.pims.vault.presentation.ui.components.PersonaTextInput
 import com.pims.vault.presentation.ui.components.PersonaToggleRow
 import com.pims.vault.presentation.ui.theme.tactilePress
+import com.pims.vault.presentation.ui.theme.PimsRadius
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import kotlinx.coroutines.launch
@@ -403,10 +404,10 @@ fun ConnectPersonScreen(
                         relationshipChips.forEach { role ->
                             val isSelected = relRole.equals(role, ignoreCase = true)
                             Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                                border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                modifier = Modifier.tactilePress(targetScale = 0.94f) {
+                                shape = RoundedCornerShape(PimsRadius.chip),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+                                border = null,
+                                modifier = Modifier.tactilePress(targetScale = 0.97f) {
                                     haptics.selection()
                                     relRole = role
                                     // Intelligent gender suggestion
@@ -423,7 +424,7 @@ fun ConnectPersonScreen(
                                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                         fontSize = 13.5.sp
                                     ),
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                                 )
                             }
@@ -475,15 +476,12 @@ fun ConnectPersonScreen(
                             genderOptions.forEach { g ->
                                 val isSelected = selectedGender.equals(g, ignoreCase = true)
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(
-                                        if (isSelected) 1.5.dp else 1.dp,
-                                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                                    ),
+                                    shape = RoundedCornerShape(PimsRadius.selection),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+                                    border = null,
                                     modifier = Modifier
                                         .weight(1f)
-                                        .tactilePress(targetScale = 0.95f) {
+                                        .tactilePress(targetScale = 0.97f) {
                                             haptics.selection()
                                             selectedGender = g
                                         }
@@ -763,11 +761,9 @@ fun ConnectPersonScreen(
             }
 
             // Sticky Bottom Save Bar
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp),
-                color = MaterialTheme.colorScheme.background
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
             ) {
                 Button(
                     onClick = {
@@ -815,21 +811,21 @@ fun ConnectPersonScreen(
                         )
                     },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .tactilePress(),
-                    shape = RoundedCornerShape(27.dp),
+                        .fillMaxWidth(0.90f)
+                        .height(48.dp)
+                        .tactilePress(targetScale = 0.97f),
+                    shape = RoundedCornerShape(PimsRadius.primaryAction),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) {
                     Text(
                         text = "Save Connection",
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
                         ),
                         color = MaterialTheme.colorScheme.onPrimary
                     )

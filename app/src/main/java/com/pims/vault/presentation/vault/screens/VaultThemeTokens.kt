@@ -50,6 +50,7 @@ import com.pims.vault.presentation.ui.theme.LightSurfaceGrouped
 import com.pims.vault.presentation.ui.theme.LightBorderSubtle
 import com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import com.pims.vault.presentation.ui.theme.PimsRadius
 import androidx.compose.foundation.BorderStroke
 
 object VaultDesignTokens {
@@ -122,10 +123,10 @@ fun VaultGroupedCard(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp)),
-        color = getVaultCardSurface(),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(0.5.dp, getVaultBorder().copy(alpha = 0.35f))
+            .clip(RoundedCornerShape(PimsRadius.section)),
+        color = Color.Transparent,
+        shape = RoundedCornerShape(PimsRadius.section),
+        border = null
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             content()

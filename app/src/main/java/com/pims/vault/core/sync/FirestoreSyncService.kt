@@ -158,7 +158,11 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
-    suspend fun syncPerson(userId: String?, person: PersonEntity) = withContext(Dispatchers.IO) {
+    suspend fun syncPerson(
+        userId: String?,
+        person: PersonEntity,
+        clearOptionalFields: Set<String> = emptySet()
+    ) = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
             // Sparse updates are intentional: an uncollected optional field is
@@ -191,6 +195,9 @@ class FirestoreSyncService @Inject constructor(
             putOptional("nationalIdNumber", person.nationalIdNumber)
             putOptional("previousNames", person.previousNames)
             putOptional("notes", person.notes)
+            clearOptionalFields.intersect(CLEARABLE_PERSON_FIELDS).forEach { field ->
+                if (personData[field] == null) personData[field] = com.google.firebase.firestore.FieldValue.delete()
+            }
             firestore.collection("accounts").document(uid)
                 .collection("people").document(person.id)
                 .set(personData, SetOptions.merge()).await()
@@ -2810,6 +2817,12 @@ class FirestoreSyncService @Inject constructor(
     }
 
     companion object {
+        private val CLEARABLE_PERSON_FIELDS = setOf(
+            "middleName", "preferredName", "occupation", "nationality", "country",
+            "countryOfResidence", "gender", "dateOfBirth", "religion", "ethnicity",
+            "nationalIdNumber", "previousNames", "notes"
+        )
+
         /**
          * Pure resolution function for merging a remote relationship note snapshot with an optional existing local entity.
          * Enforces non-negotiable invariants:

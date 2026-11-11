@@ -46,13 +46,12 @@ enum class PimsInteractionState {
 
 /**
  * Tactile Press Modifier:
- * Immediate, tactile spring compression on touch down (1.00 -> 0.94f) with elastic bounce release on lift.
- * Rapid taps latch briefly so the tactile squish is visibly and physically satisfying.
+ * Subtle spring compression on touch down with a quick, controlled release.
  * Respects Android reduced motion preferences.
  */
 @Composable
 fun Modifier.pimsTactile(
-    targetScale: Float = 0.94f,
+    targetScale: Float = 0.97f,
     onClick: () -> Unit
 ): Modifier {
     val isReduced = LocalReducedMotion.current
@@ -84,8 +83,8 @@ fun Modifier.pimsTactile(
                             scale.animateTo(
                                 targetValue = 1.0f,
                                 animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessHigh
                                 )
                             )
                         }
@@ -100,7 +99,7 @@ fun Modifier.pimsTactile(
 
 /**
  * Tactile Long-Press Modifier:
- * - On touch down: gently compresses to targetScale (0.94f).
+ * - On touch down: gently compresses to targetScale.
  * - While holding: subtle organic micro-pulse to acknowledge the user's hold.
  * - On reaching long-press threshold: provides distinct tactile confirmation and triggers onLongClick.
  * - Stops pulse immediately upon release or completion.
@@ -108,7 +107,7 @@ fun Modifier.pimsTactile(
  */
 @Composable
 fun Modifier.pimsLongPress(
-    targetScale: Float = 0.94f,
+    targetScale: Float = 0.97f,
     onLongClick: () -> Unit,
     onClick: (() -> Unit)? = null
 ): Modifier {
@@ -157,7 +156,7 @@ fun Modifier.pimsLongPress(
  */
 @Composable
 fun Modifier.pimsApplePress(
-    targetScale: Float = 0.92f,
+    targetScale: Float = 0.97f,
     onClick: () -> Unit
 ): Modifier {
     val isReduced = LocalReducedMotion.current
