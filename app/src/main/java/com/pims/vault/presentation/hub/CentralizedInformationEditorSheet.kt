@@ -289,11 +289,12 @@ fun CentralizedInformationEditorSheet(
     val originalFingerprint = remember { draftFingerprint }
     val isDirty = draftFingerprint != originalFingerprint
 
-    val requestDismiss = {
+    val requestDismiss: () -> Unit = {
         if (isDirty) {
             showDiscardConfirmation = true
             scope.launch { sheetState.show() }
         } else onDismissRequest()
+        Unit
     }
 
     val hasInvalidEntries = phones.any { it.number.isNotBlank() && !isValidInternationalPhone(it.number) } ||

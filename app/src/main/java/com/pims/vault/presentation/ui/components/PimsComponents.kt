@@ -80,6 +80,7 @@ import com.pims.vault.presentation.ui.theme.PersonaDivider
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.PimsRadius
 import com.pims.vault.presentation.ui.theme.PimsTheme
+import com.pims.vault.presentation.ui.theme.PimsColors
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.StateWarning

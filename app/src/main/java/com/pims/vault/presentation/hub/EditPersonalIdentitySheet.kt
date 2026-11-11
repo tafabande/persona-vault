@@ -120,13 +120,14 @@ fun EditPersonalIdentitySheet(
     val phoneInvalid = editPhone.isNotBlank() && (phoneTouched || attemptedSave) &&
         !isValidInternationalPhone(editPhone)
 
-    val requestDismiss = {
+    val requestDismiss: () -> Unit = {
         if (isSaving) Unit
         else if (isDirty) {
             showDiscardConfirmation = true
             scope.launch { editSheetState.show() }
         }
         else onDismissRequest()
+        Unit
     }
 
     val onSaveAction = {

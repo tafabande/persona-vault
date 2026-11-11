@@ -30,9 +30,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -51,6 +56,7 @@ import com.pims.vault.presentation.ui.theme.LightBorderSubtle
 import com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsTheme
 import androidx.compose.foundation.BorderStroke
 
 object VaultDesignTokens {
@@ -124,8 +130,8 @@ fun VaultGroupedCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(PimsRadius.section)),
-        color = Color.Transparent,
-        shape = RoundedCornerShape(PimsRadius.section),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+        shape = RoundedCornerShape(PimsRadius.surface),
         border = null
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -274,8 +280,13 @@ fun VaultUnderlineField(
     placeholder: String = "",
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    trailingAction: (@Composable () -> Unit)? = null
+    trailingAction: (@Composable () -> Unit)? = null,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    isError: Boolean = false,
+    errorMessage: String? = null
 ) {
+    var isFocused by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -291,7 +302,18 @@ fun VaultUnderlineField(
         }
         Spacer(modifier = Modifier.height(4.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(PimsRadius.input))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.12f else 0.24f))
+                .then(
+                    if (isFocused || isError) Modifier.border(
+                        width = 1.dp,
+                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(PimsRadius.input)
+                    ) else Modifier
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.weight(1f)) {
@@ -299,22 +321,24 @@ fun VaultUnderlineField(
                     Text(
                         text = placeholder,
                         fontSize = 16.sp,
-                        color = getVaultTextSecondary().copy(alpha = 0.6f)
+                        color = PimsTheme.text.placeholder
                     )
                 }
                 BasicTextField(
                     value = value,
+                    enabled = enabled,
+                    readOnly = readOnly,
                     onValueChange = onValueChange,
                     singleLine = true,
                     textStyle = TextStyle(
                         fontSize = 16.sp,
-                        color = getVaultTextPrimary(),
+                        color = if (enabled) getVaultTextPrimary() else PimsTheme.text.disabled,
                         fontFamily = FontFamily.Default
                     ),
                     cursorBrush = SolidColor(getVaultTextPrimary()),
                     visualTransformation = visualTransformation,
                     keyboardOptions = keyboardOptions,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { isFocused = it.isFocused }
                 )
             }
             if (trailingAction != null) {
@@ -325,7 +349,14 @@ fun VaultUnderlineField(
         Spacer(modifier = Modifier.height(6.dp))
         HorizontalDivider(
             thickness = 0.5.dp,
-            color = getVaultBorder().copy(alpha = 0.4f)
+            color = when {
+                isError -> MaterialTheme.colorScheme.error
+                isFocused -> MaterialTheme.colorScheme.primary
+                else -> Color.Transparent
+            }
         )
+        if (isError && !errorMessage.isNullOrBlank()) {
+            Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }

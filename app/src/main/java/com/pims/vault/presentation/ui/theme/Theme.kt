@@ -2,6 +2,8 @@ package com.pims.vault.presentation.ui.theme
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -66,6 +68,18 @@ object PimsSpacing {
     val l: Dp = 24.dp
     val xl: Dp = 32.dp
     val xxl: Dp = 48.dp
+    val fieldGap: Dp = 8.dp
+    val relatedFieldGap: Dp = 10.dp
+    val sectionGap: Dp = 20.dp
+    val actionGap: Dp = 12.dp
+}
+
+object PimsControlSize {
+    val compactInput: Dp = 48.dp
+    val standardInput: Dp = 56.dp
+    val selector: Dp = 52.dp
+    val iconTouchTarget: Dp = 48.dp
+    val iconGlyph: Dp = 20.dp
 }
 
 /** Semantic shape tokens. Section grouping stays square and relies on spacing/dividers. */
@@ -86,6 +100,8 @@ object PimsAnimation {
 
     val EasingStandard = FastOutSlowInEasing
     val EasingEmphasized = CubicBezierEasing(0.2f, 0.0f, 0.0f, 1.0f)
+    val EasingEnter = LinearOutSlowInEasing
+    val EasingExit = FastOutLinearInEasing
 
     fun <T> fast() = tween<T>(durationMillis = DURATION_FAST, easing = EasingStandard)
     fun <T> normal() = tween<T>(durationMillis = DURATION_NORMAL, easing = EasingStandard)
@@ -336,6 +352,28 @@ object PimsTheme {
             disabled = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
             supporting = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f)
         )
+}
+
+/** Semantic surfaces and interaction colors shared across every screen. */
+object PimsColors {
+    val canvas: Color
+        @Composable get() = PimsTheme.tonalSurfaces.canvas
+    val elevatedSurface: Color
+        @Composable get() = PimsTheme.tonalSurfaces.elevated
+    val groupedSurface: Color
+        @Composable get() = PimsTheme.tonalSurfaces.grouped
+    val inputSurface: Color
+        @Composable get() = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+    val selectedSurface: Color
+        @Composable get() = PimsTheme.tonalSurfaces.selected
+    val outline: Color
+        @Composable get() = PimsTheme.tonalSurfaces.borderSubtle.copy(alpha = 0.45f)
+    val focus: Color
+        @Composable get() = MaterialTheme.colorScheme.primary
+    val error: Color
+        @Composable get() = MaterialTheme.colorScheme.error
+    val disabledSurface: Color
+        @Composable get() = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
 }
 
 /**

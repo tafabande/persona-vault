@@ -30,7 +30,9 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsControlSize
 import com.pims.vault.presentation.ui.theme.PimsTheme
+import com.pims.vault.presentation.ui.theme.PimsColors
 
 object StandardDateUtils {
 
@@ -172,7 +174,7 @@ fun StandardDateInput(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
+                .height(PimsControlSize.selector),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -207,11 +209,11 @@ fun StandardDateInput(
                 shape = RoundedCornerShape(PimsRadius.input),
                 isError = errorMessage != null,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
-                    focusedBorderColor = if (errorMessage == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                    unfocusedBorderColor = if (errorMessage == null) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.error,
-                    errorBorderColor = MaterialTheme.colorScheme.error,
+                    focusedContainerColor = PimsColors.focus.copy(alpha = 0.055f),
+                    unfocusedContainerColor = PimsColors.inputSurface,
+                    focusedBorderColor = if (errorMessage == null) PimsColors.focus else PimsColors.error,
+                    unfocusedBorderColor = if (errorMessage == null) androidx.compose.ui.graphics.Color.Transparent else PimsColors.error,
+                    errorBorderColor = PimsColors.error,
                     focusedTextColor = PimsTheme.text.primary,
                     unfocusedTextColor = PimsTheme.text.primary
                 ),

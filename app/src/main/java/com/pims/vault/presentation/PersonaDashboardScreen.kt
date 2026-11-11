@@ -21,10 +21,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -36,6 +32,7 @@ import kotlin.math.roundToInt
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import com.pims.vault.presentation.ui.theme.LocalReducedMotion
+import com.pims.vault.presentation.ui.theme.PimsAnimation
 import com.pims.vault.presentation.ui.util.screenEnterRise
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -1391,12 +1388,10 @@ fun PersonaDashboardScreen(
                         fadeIn(tween(durationMillis = 0)) togetherWith fadeOut(tween(durationMillis = 0))
                     } else {
                         val direction = if (targetState > initialState) 1 else -1
-                        (slideInHorizontally(spring(dampingRatio = 0.86f, stiffness = 500f)) { (it / 8) * direction } +
-                            fadeIn(tween(180)) +
-                            scaleIn(initialScale = 0.96f, animationSpec = spring(dampingRatio = 0.86f, stiffness = 500f))) togetherWith
-                            (slideOutHorizontally(spring(dampingRatio = 0.86f, stiffness = 600f)) { (-it / 8) * direction } +
-                                fadeOut(tween(120)) +
-                                scaleOut(targetScale = 0.96f, animationSpec = spring(dampingRatio = 0.86f, stiffness = 600f)))
+                        (slideInHorizontally(tween(260, easing = PimsAnimation.EasingEnter)) { (it / 24) * direction } +
+                            fadeIn(tween(210, easing = PimsAnimation.EasingEnter))) togetherWith
+                            (slideOutHorizontally(tween(170, easing = PimsAnimation.EasingExit)) { (-it / 32) * direction } +
+                                fadeOut(tween(150, easing = PimsAnimation.EasingExit)))
                     }
                 },
                 label = "TabSwitch"

@@ -813,7 +813,7 @@ fun ConnectPersonScreen(
                     modifier = Modifier
                         .fillMaxWidth(0.90f)
                         .height(48.dp)
-                        .tactilePress(targetScale = 0.97f),
+                        .tactilePress(pressScale = 0.97f),
                     shape = RoundedCornerShape(PimsRadius.primaryAction),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,

@@ -67,7 +67,9 @@ import androidx.compose.ui.unit.sp
 import com.pims.vault.core.util.CountryUtils
 import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsControlSize
 import com.pims.vault.presentation.ui.theme.PimsTheme
+import com.pims.vault.presentation.ui.theme.PimsColors
 
 /**
  * Country Calling Code metadata model.
@@ -448,21 +450,21 @@ fun InternationalPhoneInput(
 
         // Unified Attached Input Container
         val borderColor = when {
-            isError -> MaterialTheme.colorScheme.error
-            isFocused -> MaterialTheme.colorScheme.primary
+            isError -> PimsColors.error
+            isFocused -> PimsColors.focus
             else -> Color.Transparent
         }
 
         Surface(
             shape = RoundedCornerShape(PimsRadius.input),
-            color = if (enabled) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+            color = if (enabled) PimsColors.inputSurface else PimsColors.disabledSurface,
             border = if (isFocused || isError) androidx.compose.foundation.BorderStroke(1.5.dp, borderColor) else null,
             modifier = Modifier.fillMaxWidth(0.90f)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp),
+                    .height(PimsControlSize.selector),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Attached Country Prefix Box
@@ -580,7 +582,7 @@ fun InternationalPhoneInput(
                             rawDigits = ""
                             onValueChange("")
                         },
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(PimsControlSize.iconTouchTarget)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Clear,

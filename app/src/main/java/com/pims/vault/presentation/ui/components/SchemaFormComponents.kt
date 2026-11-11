@@ -70,12 +70,15 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsControlSize
 import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.theme.PimsTheme
+import com.pims.vault.presentation.ui.theme.PimsColors
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.tactilePress
 
@@ -98,6 +101,7 @@ fun PersonaTextInput(
     isError: Boolean = false,
     errorMessage: String? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
+    keyboardCapitalization: KeyboardCapitalization = KeyboardCapitalization.Sentences,
     singleLine: Boolean = true,
     maxLines: Int = if (singleLine) 1 else 4,
     enabled: Boolean = true,
@@ -108,7 +112,7 @@ fun PersonaTextInput(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.Start
     ) {
         if (!label.isNullOrBlank()) {
             Text(
@@ -118,20 +122,20 @@ fun PersonaTextInput(
                     fontSize = 13.sp
                 ),
                 color = PimsTheme.text.secondary,
-                modifier = Modifier.fillMaxWidth(0.90f).padding(bottom = 5.dp, start = 1.dp)
+                modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp, start = 1.dp)
             )
         }
 
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(0.90f).onFocusChanged { onFocusChanged?.invoke(it.isFocused) },
+            modifier = Modifier.fillMaxWidth().onFocusChanged { onFocusChanged?.invoke(it.isFocused) },
             shape = RoundedCornerShape(PimsRadius.input),
             readOnly = readOnly,
             enabled = enabled,
             singleLine = singleLine,
             maxLines = maxLines,
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, capitalization = keyboardCapitalization),
             textStyle = MaterialTheme.typography.bodyMedium.copy(
                 fontSize = 14.sp,
                 color = PimsTheme.text.primary
@@ -149,17 +153,17 @@ fun PersonaTextInput(
             trailingIcon = trailingIcon,
             isError = isError,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = if (readOnly) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
-                unfocusedContainerColor = if (readOnly) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
-                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
-                focusedBorderColor = if (readOnly) Color.Transparent else MaterialTheme.colorScheme.primary,
+            focusedContainerColor = if (readOnly) PimsColors.inputSurface else PimsColors.focus.copy(alpha = 0.055f),
+                unfocusedContainerColor = if (readOnly) PimsColors.inputSurface else PimsColors.inputSurface,
+                disabledContainerColor = PimsColors.disabledSurface,
+                focusedBorderColor = if (readOnly) Color.Transparent else PimsColors.focus,
                 unfocusedBorderColor = Color.Transparent,
                 disabledBorderColor = Color.Transparent,
                 cursorColor = MaterialTheme.colorScheme.primary,
                 focusedTextColor = if (readOnly) PimsTheme.text.secondary else PimsTheme.text.primary,
                 unfocusedTextColor = if (readOnly) PimsTheme.text.secondary else PimsTheme.text.primary,
                 disabledTextColor = PimsTheme.text.disabled,
-                errorBorderColor = MaterialTheme.colorScheme.error,
+                errorBorderColor = PimsColors.error,
                 errorContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.20f)
             )
         )
@@ -169,14 +173,14 @@ fun PersonaTextInput(
                 text = errorMessage,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.fillMaxWidth(0.90f).padding(top = 4.dp, start = 2.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 2.dp)
             )
         } else if (!helperText.isNullOrBlank()) {
             Text(
                 text = helperText,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.fillMaxWidth(0.90f).padding(top = 4.dp, start = 2.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 2.dp)
             )
         }
     }
@@ -214,23 +218,23 @@ fun PersonaDropdownSelector(
                     fontSize = 13.sp
                 ),
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth(0.90f).padding(bottom = 6.dp, start = 2.dp)
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp, start = 2.dp)
             )
         }
 
         ExposedDropdownMenuBox(
             expanded = expanded && enabled,
             onExpandedChange = { if (enabled) expanded = !expanded },
-            modifier = Modifier.fillMaxWidth(0.90f)
+            modifier = Modifier.fillMaxWidth()
         ) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
+                    .height(PimsControlSize.selector)
                     .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled)
-                    .clip(RoundedCornerShape(12.dp)),
-                shape = RoundedCornerShape(PimsRadius.selection),
-                color = MaterialTheme.colorScheme.surface,
+                    .clip(RoundedCornerShape(PimsRadius.input)),
+                shape = RoundedCornerShape(PimsRadius.input),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
                 border = if (expanded) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
                 shadowElevation = if (expanded) 1.dp else 0.dp
             ) {
@@ -326,7 +330,7 @@ fun PersonaDropdownSelector(
  * - Anchored directly beneath the input field matching exact parent width.
  * - Creatable / Freeform support: if typed query isn't in predefined options, displays:
  *   + Add "Custom Value"
- * - Instant tap selection or clear button.
+ * - Instant tap selection; changing a selection happens through the same search field.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -372,14 +376,14 @@ fun PersonaSearchableCombobox(
                     fontSize = 13.sp
                 ),
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth(0.90f).padding(bottom = 6.dp, start = 2.dp)
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp, start = 2.dp)
             )
         }
 
         ExposedDropdownMenuBox(
             expanded = expanded && enabled,
             onExpandedChange = { if (enabled) expanded = !expanded },
-            modifier = Modifier.fillMaxWidth(0.90f)
+            modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
                 value = searchQuery,
@@ -399,56 +403,25 @@ fun PersonaSearchableCombobox(
                 },
                 singleLine = true,
                 enabled = enabled,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(PimsRadius.input),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.055f),
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
                     disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = Color.Transparent
+                    unfocusedBorderColor = Color.Transparent,
+                    disabledBorderColor = Color.Transparent
                 ),
                 trailingIcon = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 4.dp)
-                    ) {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(
-                                onClick = {
-                                    searchQuery = ""
-                                    onValueChange("")
-                                    expanded = true
-                                },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .background(
-                                    if (expanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ExpandMore,
-                                contentDescription = "Dropdown",
-                                tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .graphicsLayer { rotationZ = if (expanded) 180f else 0f }
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Default.ExpandMore,
+                        contentDescription = if (expanded) "Hide relationship options" else "Show relationship options",
+                        tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(22.dp)
+                            .graphicsLayer { rotationZ = if (expanded) 180f else 0f }
+                    )
                 },
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = 14.5.sp,
@@ -801,7 +774,8 @@ fun PersonaDialog(
 }
 
 /**
- * Clean section container with header directly on the canvas, removing excessive outer card borders.
+ * Section card with low tonal contrast. It groups related fields without an outline; separation
+ * comes from card spacing and its heading instead of nested borders and repeated rules.
  */
 @Composable
 fun PersonaFormSection(
@@ -817,67 +791,38 @@ fun PersonaFormSection(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth(0.90f).padding(horizontal = 2.dp, vertical = 2.dp)
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.95f),
+            shape = RoundedCornerShape(PimsRadius.surface),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f),
+            border = null
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (icon != null) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                Text(
-                        text = title,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 0.sp,
-                        fontSize = 14.sp
-                    ),
-                    color = PimsTheme.text.primary
-                )
-            }
-            if (headerAction != null) {
-                headerAction()
-            }
-        }
-
-        if (isCardContainer) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(0.90f),
-                shape = RoundedCornerShape(PimsRadius.section),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
-                border = null
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(PimsSpacing.m),
-                    verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
-                ) {
-                    content()
-                }
-            }
-        } else {
             Column(
-                modifier = Modifier.fillMaxWidth(0.90f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = PimsSpacing.m, vertical = PimsSpacing.m),
                 verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (icon != null) {
+                            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        }
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 14.sp),
+                            color = PimsTheme.text.primary
+                        )
+                    }
+                    headerAction?.invoke()
+                }
                 content()
             }
         }
-        HorizontalDivider(
-            modifier = Modifier.fillMaxWidth(0.90f).padding(top = 8.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f),
-            thickness = 0.7.dp
-        )
     }
 }
 

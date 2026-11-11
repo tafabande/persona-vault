@@ -43,6 +43,8 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -67,8 +69,18 @@ data class KinRelationshipItem(
     val anniversary: String = "",
     val notes: String = "",
     val isNextOfKin: Boolean = false,
-    val isVerified: Boolean = false
+    val isVerified: Boolean = false,
+    val phoneContacts: List<ContactMethodEntity> = emptyList(),
+    val emailContacts: List<ContactMethodEntity> = emptyList(),
+    val addresses: List<AddressEntity> = emptyList(),
+    val editableRelationshipNotes: List<RelationshipNoteEntity> = emptyList()
 )
+
+private fun parseEpochDate(isoDate: String): Long? =
+    runCatching { LocalDate.parse(isoDate.trim()).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli() }.getOrNull()
+
+private fun formatEpochDate(epochMillis: Long): String =
+    runCatching { java.time.Instant.ofEpochMilli(epochMillis).atZone(ZoneOffset.UTC).toLocalDate().toString() }.getOrDefault("")
 
 data class ProfileUiState(
     val isLoading: Boolean = true,
@@ -207,7 +219,10 @@ sealed interface ProfileEvent {
         val address: String,
         val dob: String,
         val anniversary: String,
-        val notes: String
+        val notes: String,
+        val contactMethods: List<ContactMethodEntity>? = null,
+        val addressRecords: List<AddressEntity>? = null,
+        val relationshipNotes: List<RelationshipNoteEntity>? = null
     ) : ProfileEvent
 
     data object ClearFeedback : ProfileEvent
@@ -233,6 +248,7 @@ class ProfileViewModel @Inject constructor(
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
     private val personalSaveInProgress = AtomicBoolean(false)
     private val contactSaveInProgress = AtomicBoolean(false)
+    private val managedPersonSaveInProgress = AtomicBoolean(false)
 
     fun isPersonalSaveInProgress(): Boolean = personalSaveInProgress.get() || contactSaveInProgress.get()
 
@@ -270,11 +286,12 @@ class ProfileViewModel @Inject constructor(
                     val kinItems = relList.map { item ->
                         val target = item.targetPerson
                         val targetContacts = contactDao.getContactsForPersonFlow(target.id).firstOrNull() ?: emptyList()
+                        val targetAddresses = addressDao.getAddressesForPerson(target.id)
                         val phone = targetContacts.firstOrNull { it.contactType == ContactType.PHONE }?.value ?: ""
                         val email = targetContacts.firstOrNull { it.contactType == ContactType.EMAIL }?.value ?: ""
 
-                        val dossierNotes = relationshipNoteDao.getNotesForRelationshipFlow(item.relationship.id).firstOrNull()
-                            ?.mapNotNull { it.contentPlaintext?.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                        val allDossierNotes = relationshipNoteDao.getNotesForRelationshipFlow(item.relationship.id).firstOrNull() ?: emptyList()
+                        val dossierNotes = allDossierNotes.mapNotNull { it.contentPlaintext?.trim() }.filter { it.isNotBlank() }
                         val directNotes = listOfNotNull(
                             item.relationship.notes?.trim()?.takeIf { it.isNotBlank() },
                             target.notes?.trim()?.takeIf { it.isNotBlank() }
@@ -296,9 +313,29 @@ class ProfileViewModel @Inject constructor(
                             email = email,
                             address = target.countryOfResidence ?: "",
                             dateOfBirth = target.dateOfBirth ?: "",
-                            anniversary = target.occupation ?: "",
+                            anniversary = item.relationship.startDate?.let(::formatEpochDate)
+                                ?: target.occupation?.takeIf { runCatching { LocalDate.parse(it) }.isSuccess }.orEmpty(),
                             notes = effectiveNotes,
-                            isNextOfKin = item.relationship.isVerified || item.relationship.customLabel.equals("Next of Kin", ignoreCase = true)
+                            isNextOfKin = item.relationship.isVerified || item.relationship.customLabel.equals("Next of Kin", ignoreCase = true),
+                            phoneContacts = targetContacts.filter { it.contactType == ContactType.PHONE },
+                            emailContacts = targetContacts.filter { it.contactType == ContactType.EMAIL },
+                            addresses = targetAddresses,
+                            editableRelationshipNotes = buildList {
+                                addAll(allDossierNotes.filter { it.format == NoteFormat.PLAIN && !it.isPrivate && it.contentPlaintext != null })
+                                val legacy = item.relationship.notes?.takeIf { raw ->
+                                    raw.isNotBlank() && none { it.contentPlaintext == raw }
+                                }
+                                legacy?.let { value ->
+                                    add(RelationshipNoteEntity(
+                                        id = "legacy-relationship-note-${item.relationship.id}",
+                                        relationshipId = item.relationship.id,
+                                        topic = "Personal note",
+                                        contentPlaintext = value,
+                                        format = NoteFormat.PLAIN,
+                                        isPrivate = false
+                                    ))
+                                }
+                            }
                         )
                     }
 
@@ -619,7 +656,12 @@ class ProfileViewModel @Inject constructor(
 
     fun onEvent(event: ProfileEvent, onComplete: ((Result<Unit>) -> Unit)? = null) {
         val isPersonalSave = event is ProfileEvent.SavePersonalDetails
+        val isManagedPersonSave = event is ProfileEvent.UpdatePersonDetails
         if (isPersonalSave && !personalSaveInProgress.compareAndSet(false, true)) return
+        if (isManagedPersonSave && !managedPersonSaveInProgress.compareAndSet(false, true)) {
+            onComplete?.invoke(Result.failure(IllegalStateException("A profile save is already in progress")))
+            return
+        }
         viewModelScope.launch {
             try {
                 when (event) {
@@ -1048,7 +1090,6 @@ class ProfileViewModel @Inject constructor(
                             lastName = last,
                             dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
                             countryOfResidence = event.address.trim().takeIf { it.isNotBlank() },
-                            occupation = event.anniversary.trim().takeIf { it.isNotBlank() },
                             notes = savedNotes
                         )
                         personDao.insertOrUpdate(targetPerson)
@@ -1095,6 +1136,7 @@ class ProfileViewModel @Inject constructor(
                             targetPersonId = targetId,
                             relationshipType = relType,
                             customLabel = event.role.trim().ifBlank { "Next of Kin" },
+                            startDate = parseEpochDate(event.anniversary),
                             notes = event.notes.trim().takeIf { it.isNotBlank() },
                             isVerified = event.isNextOfKin
                         )
@@ -1166,21 +1208,72 @@ class ProfileViewModel @Inject constructor(
 
                     is ProfileEvent.UpdatePersonDetails -> {
                         val existing = personDao.getPersonById(event.personId)
-                        if (existing != null) {
+                            ?: throw IllegalStateException("The selected person no longer exists")
+                        run {
+                            if (existing.isPrimaryOwner) throw SecurityException("Owner details must use the owner profile editor")
+                            val owningRelationship = relationshipDao.getRelationshipBetween(CANONICAL_PRIMARY_OWNER_ID, event.personId)
+                                ?: throw SecurityException("This person is not linked to the current owner")
+                            event.contactMethods?.forEach { contact ->
+                                if (contact.personId != event.personId || contact.contactType !in setOf(ContactType.PHONE, ContactType.EMAIL)) {
+                                    throw SecurityException("Contact ownership cannot be changed through profile editing")
+                                }
+                                val persisted = contactDao.getContactById(contact.id)
+                                if (persisted != null && (persisted.personId != event.personId || persisted.contactType != contact.contactType)) {
+                                    throw SecurityException("Contact ownership cannot be changed through profile editing")
+                                }
+                            }
+                            event.addressRecords?.forEach { address ->
+                                if (address.personId != event.personId) throw SecurityException("Address ownership cannot be changed through profile editing")
+                                val persisted = addressDao.getAddressById(address.id)
+                                if (persisted != null && persisted.personId != event.personId) {
+                                    throw SecurityException("Address ownership cannot be changed through profile editing")
+                                }
+                            }
+                            event.relationshipNotes?.forEach { note ->
+                                if (note.relationshipId != owningRelationship.id || note.format != NoteFormat.PLAIN || note.isPrivate) {
+                                    throw SecurityException("Notes must remain scoped to their relationship")
+                                }
+                                val persisted = relationshipNoteDao.getNoteById(note.id)
+                                if (persisted != null && persisted.relationshipId != owningRelationship.id) {
+                                    throw SecurityException("Notes must remain scoped to their relationship")
+                                }
+                            }
                             val effectiveNotes = event.notes.trim().takeIf { it.isNotBlank() } ?: existing.notes
                             val updated = existing.copy(
                                 firstName = event.firstName.trim(),
                                 lastName = event.lastName.trim(),
                                 dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
                                 countryOfResidence = event.address.trim().takeIf { it.isNotBlank() },
-                                occupation = event.anniversary.trim().takeIf { it.isNotBlank() },
                                 notes = effectiveNotes,
                                 updatedAt = System.currentTimeMillis()
                             )
                             personDao.insertOrUpdate(updated)
 
-                            val currentContacts = contactDao.getContactsForPersonFlow(event.personId).firstOrNull() ?: emptyList()
-                            if (event.phone.isNotBlank()) {
+                            val currentContacts = contactDao.getContactsForPerson(event.personId)
+                            if (event.contactMethods != null) {
+                                if (event.contactMethods.any { it.personId != event.personId }) {
+                                    throw SecurityException("Contact ownership cannot be changed through profile editing")
+                                }
+                                val submitted = event.contactMethods
+                                val submittedIds = submitted.mapTo(mutableSetOf()) { it.id }
+                                val managedTypes = setOf(ContactType.PHONE, ContactType.EMAIL)
+                                submitted.forEach { contact ->
+                                    val persisted = contactDao.getContactById(contact.id)
+                                    if (persisted != null && (persisted.personId != event.personId || persisted.contactType != contact.contactType)) {
+                                        throw SecurityException("Contact ownership cannot be changed through profile editing")
+                                    }
+                                    contactDao.insertOrUpdate(contact)
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        runCatching { firestoreSyncService.syncContact(null, contact) }
+                                    }
+                                }
+                                currentContacts.filter { it.contactType in managedTypes && it.id !in submittedIds }.forEach { stale ->
+                                    contactDao.deleteById(stale.id)
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        runCatching { firestoreSyncService.deleteRemoteContact(stale.id) }
+                                    }
+                                }
+                            } else if (event.phone.isNotBlank()) {
                                 val phoneContact = currentContacts.firstOrNull { it.contactType == ContactType.PHONE }
                                 if (phoneContact != null) {
                                     contactDao.insertOrUpdate(phoneContact.copy(value = event.phone.trim()))
@@ -1197,7 +1290,7 @@ class ProfileViewModel @Inject constructor(
                                     )
                                 }
                             }
-                            if (event.email.isNotBlank()) {
+                            if (event.contactMethods == null && event.email.isNotBlank()) {
                                 val emailContact = currentContacts.firstOrNull { it.contactType == ContactType.EMAIL }
                                 if (emailContact != null) {
                                     contactDao.insertOrUpdate(emailContact.copy(value = event.email.trim()))
@@ -1214,21 +1307,56 @@ class ProfileViewModel @Inject constructor(
                                     )
                                 }
                             }
+                            if (event.addressRecords != null) {
+                                val existingAddresses = addressDao.getAddressesForPerson(event.personId)
+                                if (event.addressRecords.any { it.personId != event.personId }) {
+                                    throw SecurityException("Address ownership cannot be changed through profile editing")
+                                }
+                                val submittedAddresses = event.addressRecords.filter { it.streetLine1.isNotBlank() || it.city.isNotBlank() || it.country.isNotBlank() }
+                                val submittedAddressIds = submittedAddresses.mapTo(mutableSetOf()) { it.id }
+                                submittedAddresses.forEach { address ->
+                                    val persisted = addressDao.getAddressById(address.id)
+                                    if (persisted != null && persisted.personId != event.personId) {
+                                        throw SecurityException("Address ownership cannot be changed through profile editing")
+                                    }
+                                    addressDao.insertOrUpdate(address)
+                                    viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.syncAddress(null, address) } }
+                                }
+                                existingAddresses.filter { it.id !in submittedAddressIds }.forEach { stale ->
+                                    addressDao.deleteById(stale.id)
+                                    viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.deleteRemoteAddress(stale.id) } }
+                                }
+                            }
+                            val relationship = owningRelationship
+                            if (event.relationshipNotes != null && relationship != null) {
+                                val existingNotes = relationshipNoteDao.getNotesForRelationshipFlow(relationship.id).firstOrNull().orEmpty()
+                                val safeExisting = existingNotes.filter { it.format == NoteFormat.PLAIN && !it.isPrivate && it.contentPlaintext != null }
+                                val submitted = event.relationshipNotes.filter {
+                                    it.relationshipId == relationship.id && it.format == NoteFormat.PLAIN && !it.isPrivate
+                                }
+                                val submittedIds = submitted.mapTo(mutableSetOf()) { it.id }
+                                submitted.forEach { relationshipNoteDao.insertOrUpdate(it) }
+                                safeExisting.filter { it.id !in submittedIds }.forEach { stale ->
+                                    relationshipNoteDao.deleteById(stale.id)
+                                    viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.deleteRemoteRelationshipNote(stale.id) } }
+                                }
+                            }
 
-                            val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
-                            if (owner != null) {
-                                val rel = relationshipDao.getRelationshipBetween(owner.id, event.personId)
-                                if (rel != null) {
-                                    val relNotes = event.notes.trim().takeIf { it.isNotBlank() } ?: rel.notes
+                            run {
+                                val rel = owningRelationship
+                                    val relNotes = if (event.relationshipNotes != null) {
+                                        event.relationshipNotes.firstOrNull()?.contentPlaintext?.takeIf { it.isNotBlank() }
+                                    } else event.notes.trim().takeIf { it.isNotBlank() } ?: rel.notes
                                     relationshipDao.insertOrUpdate(
                                         rel.copy(
                                             customLabel = event.relationRole.trim(),
+                                            startDate = parseEpochDate(event.anniversary),
                                             notes = relNotes,
                                             updatedAt = System.currentTimeMillis()
                                         )
                                     )
 
-                                    if (event.notes.trim().isNotBlank()) {
+                                    if (event.relationshipNotes == null && event.notes.trim().isNotBlank()) {
                                         val existingNotes = relationshipNoteDao.getNotesForRelationshipFlow(rel.id).firstOrNull() ?: emptyList()
                                         val primaryNote = existingNotes.firstOrNull()
                                         if (primaryNote != null) {
@@ -1253,7 +1381,6 @@ class ProfileViewModel @Inject constructor(
                                             )
                                         }
                                     }
-                                }
                             }
                             loadFullProfileAndRelationships()
                             _uiState.update { it.copy(userFeedbackMessage = "Updated ${event.firstName}'s details") }
@@ -1270,6 +1397,7 @@ class ProfileViewModel @Inject constructor(
                 onComplete?.invoke(Result.failure(e))
             } finally {
                 if (isPersonalSave) personalSaveInProgress.set(false)
+                if (isManagedPersonSave) managedPersonSaveInProgress.set(false)
             }
         }
     }
