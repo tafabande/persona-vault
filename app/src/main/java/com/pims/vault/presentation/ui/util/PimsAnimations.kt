@@ -18,9 +18,9 @@ import kotlinx.coroutines.delay
  * the entrance effects those don't cover. All of them respect reduced motion.
  */
 object PimsAnimDefaults {
-    const val staggerDelayMs = 45L
-    const val staggerTranslationPx = 28f
-    const val screenRiseTranslationPx = 56f
+    const val staggerDelayMs = 32L
+    const val staggerTranslationPx = 32f
+    const val screenRiseTranslationPx = 44f
 }
 
 /**
@@ -36,13 +36,15 @@ fun Modifier.staggeredEnter(index: Int): Modifier = composed {
             progress.snapTo(1f)
         } else {
             delay(PimsAnimDefaults.staggerDelayMs * index)
-            progress.animateTo(1f, PersonaMotion.smoothSpring())
+            progress.animateTo(1f, PersonaMotion.screenTransitionSpring(reduced))
         }
     }
     val value = progress.value
     graphicsLayer {
         alpha = value
         translationY = (1f - value) * PimsAnimDefaults.staggerTranslationPx
+        scaleX = 0.98f + (0.02f * value)
+        scaleY = 0.98f + (0.02f * value)
     }
 }
 
@@ -58,12 +60,14 @@ fun Modifier.screenEnterRise(): Modifier = composed {
         if (reduced) {
             progress.snapTo(1f)
         } else {
-            progress.animateTo(1f, PersonaMotion.smoothSpring())
+            progress.animateTo(1f, PersonaMotion.screenTransitionSpring(reduced))
         }
     }
     val value = progress.value
     graphicsLayer {
         alpha = value
         translationY = (1f - value) * PimsAnimDefaults.screenRiseTranslationPx
+        scaleX = 0.97f + (0.03f * value)
+        scaleY = 0.97f + (0.03f * value)
     }
 }

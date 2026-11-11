@@ -24,6 +24,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.animation.core.Animatable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -75,23 +82,51 @@ object PimsAnimation {
 
 /**
  * Tactile subtle press scale for buttons and interactive items.
- * Slight scale down (0.97f) on press, quick spring back on release.
+ * Immediate scale down (0.94f) on press down with snappy spring return on release.
+ * Uses pointer detection to ensure instant reactivity without waiting for gesture delays.
  */
 @Composable
 fun Modifier.tactilePress(
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    pressScale: Float = 0.97f
+    pressScale: Float = 0.94f
 ): Modifier {
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) pressScale else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "tactileScale"
-    )
-    return this.scale(scale)
+    val isReduced = LocalReducedMotion.current
+    val scope = rememberCoroutineScope()
+    val scale = remember { Animatable(1.0f) }
+
+    return this
+        .scale(if (isReduced) 1.0f else scale.value)
+        .pointerInput(isReduced, pressScale) {
+            awaitPointerEventScope {
+                while (true) {
+                    awaitFirstDown(requireUnconsumed = false)
+                    if (!isReduced) {
+                        scope.launch {
+                            scale.animateTo(
+                                targetValue = pressScale,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessHigh
+                                )
+                            )
+                        }
+                    }
+                    waitForUpOrCancellation()
+                    if (!isReduced) {
+                        scope.launch {
+                            delay(45)
+                            scale.animateTo(
+                                targetValue = 1.0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
 }
 
 val PimsShapes = Shapes(
@@ -478,29 +513,12 @@ fun PimsVaultTheme(
 
 /**
  * Centralized tactile interaction modifier:
- * Applies subtle scale compression (0.97f) on press, spring release on lift,
+ * Applies instant tactile spring compression (0.94f) on press, spring release on lift,
  * respecting reduced motion settings.
  */
 @Composable
 fun Modifier.tactilePress(
-    targetScale: Float = 0.97f,
+    targetScale: Float = 0.94f,
     onClick: () -> Unit
-): Modifier {
-    val isReduced = LocalReducedMotion.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && !isReduced) targetScale else 1.0f,
-        animationSpec = PersonaMotion.snappySpring(isReduced),
-        label = "tactilePressScale"
-    )
-
-    return this
-        .scale(scale)
-        .clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-}
+): Modifier = this.pimsTactile(targetScale = targetScale, onClick = onClick)
 

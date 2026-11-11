@@ -117,6 +117,30 @@ object PersonaMotion {
     }
 
     /**
+     * Sliding Indicator Pill Spring:
+     * Glides smoothly between navigation tabs or segmented pills with subtle fluid damping.
+     */
+    fun <T> pillSpring(isReducedMotion: Boolean = false): AnimationSpec<T> {
+        return if (isReducedMotion) {
+            tween(durationMillis = DURATION_FAST)
+        } else {
+            spring(dampingRatio = 0.78f, stiffness = 420f)
+        }
+    }
+
+    /**
+     * Screen Transition Spring:
+     * Fast, silky-smooth Shared-Axis sliding and modal elevation without dropped frames.
+     */
+    fun <T> screenTransitionSpring(isReducedMotion: Boolean = false): AnimationSpec<T> {
+        return if (isReducedMotion) {
+            tween(durationMillis = DURATION_FAST)
+        } else {
+            spring(dampingRatio = 0.84f, stiffness = 450f)
+        }
+    }
+
+    /**
      * Instant transition for reduced motion or micro-state switches.
      */
     fun <T> instant(): AnimationSpec<T> = tween(durationMillis = 0)

@@ -46,40 +46,61 @@ enum class PimsInteractionState {
 
 /**
  * Tactile Press Modifier:
- * Subtle scale compression on touch down (1.00 -> 0.97f) with snappy spring release on lift.
+ * Immediate, tactile spring compression on touch down (1.00 -> 0.94f) with elastic bounce release on lift.
+ * Rapid taps latch briefly so the tactile squish is visibly and physically satisfying.
  * Respects Android reduced motion preferences.
  */
 @Composable
 fun Modifier.pimsTactile(
-    targetScale: Float = 0.97f,
+    targetScale: Float = 0.94f,
     onClick: () -> Unit
 ): Modifier {
     val isReduced = LocalReducedMotion.current
-    val haptics = rememberPimsHaptics()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && !isReduced) targetScale else 1.0f,
-        animationSpec = PersonaMotion.snappySpring(isReduced),
-        label = "pimsTactileScale"
-    )
+    val feedback = rememberPimsFeedback()
+    val scope = rememberCoroutineScope()
+    val scale = remember { Animatable(1.0f) }
 
     return this
-        .scale(scale)
-        .clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = {
-                haptics.buttonPress()
-                onClick()
-            }
-        )
+        .scale(if (isReduced) 1.0f else scale.value)
+        .pointerInput(isReduced, targetScale, onClick) {
+            detectTapGestures(
+                onPress = {
+                    feedback.tap()
+                    if (!isReduced) {
+                        scope.launch {
+                            scale.animateTo(
+                                targetValue = targetScale,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessHigh
+                                )
+                            )
+                        }
+                    }
+                    val released = tryAwaitRelease()
+                    if (!isReduced) {
+                        scope.launch {
+                            delay(45)
+                            scale.animateTo(
+                                targetValue = 1.0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            )
+                        }
+                    }
+                },
+                onTap = {
+                    onClick()
+                }
+            )
+        }
 }
 
 /**
  * Tactile Long-Press Modifier:
- * - On touch down: gently compresses to targetScale (0.96f).
+ * - On touch down: gently compresses to targetScale (0.94f).
  * - While holding: subtle organic micro-pulse to acknowledge the user's hold.
  * - On reaching long-press threshold: provides distinct tactile confirmation and triggers onLongClick.
  * - Stops pulse immediately upon release or completion.
@@ -87,7 +108,7 @@ fun Modifier.pimsTactile(
  */
 @Composable
 fun Modifier.pimsLongPress(
-    targetScale: Float = 0.96f,
+    targetScale: Float = 0.94f,
     onLongClick: () -> Unit,
     onClick: (() -> Unit)? = null
 ): Modifier {
@@ -130,44 +151,68 @@ fun Modifier.pimsLongPress(
 
 /**
  * Apple-grade Spring Press Modifier:
- * - Fluidly squishes down (0.95f) on touch press.
- * - Springs back with subtle high-fidelity damping on release.
+ * - Fluidly squishes down (0.92f) on touch press with instant zero-slop response.
+ * - Springs back with lively elastic overshoot (1.02f -> 1.00f) on release.
  * - Triggers synchronized tactile haptic and audio click feedback.
  */
 @Composable
 fun Modifier.pimsApplePress(
-    targetScale: Float = 0.95f,
+    targetScale: Float = 0.92f,
     onClick: () -> Unit
 ): Modifier {
     val isReduced = LocalReducedMotion.current
     val feedback = rememberPimsFeedback()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && !isReduced) targetScale else 1.0f,
-        animationSpec = spring(
-            dampingRatio = if (isPressed) Spring.DampingRatioNoBouncy else Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "applePressScale"
-    )
+    val scope = rememberCoroutineScope()
+    val scaleAnim = remember { Animatable(1.0f) }
 
     return this
-        .scale(scale)
-        .clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = {
-                feedback.tap()
-                onClick()
-            }
-        )
+        .scale(if (isReduced) 1.0f else scaleAnim.value)
+        .pointerInput(isReduced, targetScale, onClick) {
+            detectTapGestures(
+                onPress = {
+                    feedback.tap()
+                    if (!isReduced) {
+                        scope.launch {
+                            scaleAnim.animateTo(
+                                targetValue = targetScale,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessHigh
+                                )
+                            )
+                        }
+                    }
+                    tryAwaitRelease()
+                    if (!isReduced) {
+                        scope.launch {
+                            delay(45)
+                            scaleAnim.animateTo(
+                                targetValue = 1.02f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            )
+                            scaleAnim.animateTo(
+                                targetValue = 1.0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            )
+                        }
+                    }
+                },
+                onTap = {
+                    onClick()
+                }
+            )
+        }
 }
 
 /**
  * Bouncing Icon Modifier:
- * Triggers a spring scale bounce (1.0 -> 1.25 -> 0.95 -> 1.0) when tapped,
+ * Triggers a spring scale bounce (1.0 -> 1.22 -> 0.94 -> 1.0) when tapped,
  * accompanied by haptic tick and audio pop.
  */
 @Composable
@@ -189,7 +234,7 @@ fun Modifier.pimsBounceOnClick(
                 if (!isReduced) {
                     scope.launch {
                         scaleAnim.animateTo(
-                            targetValue = 1.25f,
+                            targetValue = 1.22f,
                             animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh)
                         )
                         scaleAnim.animateTo(
@@ -234,4 +279,3 @@ fun Modifier.pimsShake(
 
     return this.offset { IntOffset(x = offsetX.value.roundToInt(), y = 0) }
 }
-

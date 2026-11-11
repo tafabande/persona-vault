@@ -1,20 +1,22 @@
 package com.pims.vault.presentation
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -126,130 +128,124 @@ internal fun PersonaDashboardBottomBar(
     onTabSelected: (Int) -> Unit
 ) {
     val haptics = rememberPimsHaptics()
-    val barBg = MaterialTheme.colorScheme.surface
-    val dividerColor = MaterialTheme.colorScheme.outlineVariant
+    val isReducedMotion = com.pims.vault.presentation.ui.theme.LocalReducedMotion.current
 
-    Surface(
-        color = barBg,
-        modifier = Modifier.fillMaxWidth()
+    val tabs = remember {
+        listOf(
+            Triple("Home", PersonaIcons.Home, PersonaIcons.HomeOutlined),
+            Triple("Notes", PersonaIcons.Notes, PersonaIcons.NotesOutlined),
+            Triple("Me", PersonaIcons.Me, PersonaIcons.MeOutlined),
+            Triple("People", PersonaIcons.People, PersonaIcons.PeopleOutlined),
+            Triple("Settings", PersonaIcons.Settings, PersonaIcons.SettingsOutlined)
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+            shadowElevation = 10.dp,
+            tonalElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            HorizontalDivider(
-                color = dividerColor,
-                thickness = 0.5.dp
-            )
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 4.dp, vertical = 4.dp)
             ) {
-                PersonaBottomNavItem(
-                    selected = selectedTab == 0,
-                    icon = PersonaIcons.HomeOutlined,
-                    label = "Home",
-                    onClick = { if (selectedTab != 0) { haptics.light(); onTabSelected(0) } },
-                    modifier = Modifier.weight(1f)
+                val tabCount = tabs.size
+                val tabWidth = maxWidth / tabCount
+
+                val indicatorOffset by androidx.compose.animation.core.animateDpAsState(
+                    targetValue = tabWidth * selectedTab,
+                    animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.pillSpring(isReducedMotion),
+                    label = "dockPillOffset"
                 )
-                PersonaBottomNavItem(
-                    selected = selectedTab == 1,
-                    icon = PersonaIcons.NotesOutlined,
-                    label = "Notes",
-                    onClick = { if (selectedTab != 1) { haptics.light(); onTabSelected(1) } },
-                    modifier = Modifier.weight(1f)
+
+                // Smooth sliding active pill background
+                Box(
+                    modifier = Modifier
+                        .offset(x = indicatorOffset)
+                        .width(tabWidth)
+                        .height(52.dp)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
                 )
-                PersonaBottomNavItem(
-                    selected = selectedTab == 2,
-                    icon = PersonaIcons.MeOutlined,
-                    label = "Me",
-                    onClick = { if (selectedTab != 2) { haptics.light(); onTabSelected(2) } },
-                    modifier = Modifier.weight(1f)
-                )
-                PersonaBottomNavItem(
-                    selected = selectedTab == 3,
-                    icon = PersonaIcons.PeopleOutlined,
-                    label = "People",
-                    onClick = { if (selectedTab != 3) { haptics.light(); onTabSelected(3) } },
-                    modifier = Modifier.weight(1f)
-                )
-                PersonaBottomNavItem(
-                    selected = selectedTab == 4,
-                    icon = PersonaIcons.SettingsOutlined,
-                    label = "Settings",
-                    onClick = { if (selectedTab != 4) { haptics.light(); onTabSelected(4) } },
-                    modifier = Modifier.weight(1f)
-                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    tabs.forEachIndexed { index, (label, filledIcon, outlinedIcon) ->
+                        val isSelected = selectedTab == index
+                        val activeColor = MaterialTheme.colorScheme.primary
+                        val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f)
+
+                        val tintColor by androidx.compose.animation.animateColorAsState(
+                            targetValue = if (isSelected) activeColor else inactiveColor,
+                            animationSpec = com.pims.vault.presentation.ui.theme.PersonaMotion.smoothSpring(isReducedMotion),
+                            label = "dockItemColor_$index"
+                        )
+
+                        val iconScale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (isSelected) 1.15f else 1.0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            ),
+                            label = "dockItemScale_$index"
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(22.dp))
+                                .tactilePress(targetScale = 0.92f) {
+                                    if (selectedTab != index) {
+                                        haptics.selection()
+                                        onTabSelected(index)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isSelected) filledIcon else outlinedIcon,
+                                    contentDescription = label,
+                                    tint = tintColor,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .scale(iconScale)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    ),
+                                    color = tintColor,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
-    }
-}
-
-@Composable
-internal fun PersonaBottomNavItem(
-    selected: Boolean,
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val activeColor = MaterialTheme.colorScheme.onSurface
-    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val color by androidx.compose.animation.animateColorAsState(
-        targetValue = if (selected) activeColor else inactiveColor,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = 400f),
-        label = "navColor"
-    )
-
-    val iconScale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (selected) 1.14f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = 450f
-        ),
-        label = "navIconScale"
-    )
-
-    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val pressScale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isPressed) 0.90f else 1.0f,
-        animationSpec = spring(dampingRatio = 0.70f, stiffness = 600f),
-        label = "navPressScale"
-    )
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = modifier
-            .scale(pressScale)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .padding(vertical = 4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = color,
-            modifier = Modifier
-                .size(24.dp)
-                .scale(iconScale)
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.5.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-            ),
-            color = color
-        )
     }
 }

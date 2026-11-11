@@ -29,6 +29,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
+import kotlin.math.roundToInt
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import com.pims.vault.presentation.ui.theme.LocalReducedMotion
@@ -1387,12 +1391,12 @@ fun PersonaDashboardScreen(
                         fadeIn(tween(durationMillis = 0)) togetherWith fadeOut(tween(durationMillis = 0))
                     } else {
                         val direction = if (targetState > initialState) 1 else -1
-                        (slideInHorizontally(spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow)) { it / 12 * direction } +
-                            fadeIn(spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMediumLow)) +
-                            scaleIn(initialScale = 0.985f, animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMediumLow))) togetherWith
-                            (slideOutHorizontally(spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMedium)) { -it / 12 * direction } +
-                                fadeOut(spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMedium)) +
-                                scaleOut(targetScale = 1.015f, animationSpec = spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMedium)))
+                        (slideInHorizontally(spring(dampingRatio = 0.86f, stiffness = 500f)) { (it / 8) * direction } +
+                            fadeIn(tween(180)) +
+                            scaleIn(initialScale = 0.96f, animationSpec = spring(dampingRatio = 0.86f, stiffness = 500f))) togetherWith
+                            (slideOutHorizontally(spring(dampingRatio = 0.86f, stiffness = 600f)) { (-it / 8) * direction } +
+                                fadeOut(tween(120)) +
+                                scaleOut(targetScale = 0.96f, animationSpec = spring(dampingRatio = 0.86f, stiffness = 600f)))
                     }
                 },
                 label = "TabSwitch"
