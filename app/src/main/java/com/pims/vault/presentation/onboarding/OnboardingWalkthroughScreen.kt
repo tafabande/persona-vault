@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -55,6 +57,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.theme.tactilePress
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import kotlinx.coroutines.launch
 
@@ -120,7 +123,9 @@ fun OnboardingWalkthroughScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 24.dp),
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = pimsPageGutter(), vertical = 16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             // Top Bar: Skip
@@ -459,12 +464,11 @@ private fun ConnectedNodesVisual(color: Color = MaterialTheme.colorScheme.primar
 
 @Composable
 private fun NotepadPenVisual() {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     Surface(
         modifier = Modifier.size(136.dp),
         shape = RoundedCornerShape(32.dp),
-        color = if (isDark) Color(0xFF1E2228) else Color(0xFFF1F3F5),
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF2E343E) else Color(0xFFE2E5E9))
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),

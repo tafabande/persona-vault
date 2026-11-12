@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -73,6 +74,7 @@ import com.pims.vault.presentation.relationship.AddOrEditRelationshipNoteDialog
 import com.pims.vault.presentation.relationship.RelationshipNotesSection
 import com.pims.vault.presentation.ui.components.DefaultAvatar
 import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
@@ -157,6 +159,7 @@ fun PersonDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .navigationBarsPadding()
         ) {
             // TOP APP BAR
             Row(
@@ -236,7 +239,7 @@ fun PersonDetailScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(horizontal = pimsPageGutter(), vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {

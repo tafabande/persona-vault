@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -68,6 +69,7 @@ import com.pims.vault.core.security.PinSecurityManager
 import com.pims.vault.presentation.ui.components.pimsGlassMicroBorder
 import com.pims.vault.presentation.ui.components.pimsGlassSurfaceBrush
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -138,7 +140,8 @@ fun SecuritySettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp)
+                .statusBarsPadding()
+                .padding(horizontal = pimsPageGutter())
         ) {
             // Top Bar
             Row(

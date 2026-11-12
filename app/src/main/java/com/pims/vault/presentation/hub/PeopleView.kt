@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -168,7 +169,7 @@ fun PeopleView(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = pimsPageGutter()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
@@ -534,7 +535,7 @@ fun PersonDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 32.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -551,7 +552,7 @@ fun PersonDetailSheet(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = Color(0xFF20201E)
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
@@ -559,15 +560,19 @@ fun PersonDetailSheet(
                     Icon(
                         imageVector = Icons.Default.Edit,
                         contentDescription = "Options",
-                        tint = Color(0xFF20201E)
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Person visual anchor with interactive photo
-            Box(contentAlignment = Alignment.BottomEnd) {
+            // Keep the photo action explicit and discoverable; tapping the image alone
+            // is not a clear affordance for changing someone's picture.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath!!).exists()
                 val photoBitmap = remember(contactPhotoPath) {
                     if (hasPhoto) {
@@ -583,7 +588,7 @@ fun PersonDetailSheet(
                         modifier = Modifier
                             .size(92.dp)
                             .clip(CircleShape)
-                            .border(1.5.dp, Color(0xFFD5D1C8), CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                             .clickable { showAvatarActionChooser = true }
                     )
                 } else {
@@ -591,6 +596,18 @@ fun PersonDetailSheet(
                         name = person.fullName,
                         size = 92.dp,
                         onClick = { showAvatarActionChooser = true }
+                    )
+                }
+
+                IconButton(
+                    onClick = { showAvatarActionChooser = true },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Change ${person.fullName}'s photo",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -604,14 +621,14 @@ fun PersonDetailSheet(
                     fontWeight = FontWeight.Bold,
                     fontSize = 24.sp
                 ),
-                color = Color(0xFF20201E)
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             // Relationship Role
             Text(
                 text = person.relationRole.lowercase().replaceFirstChar { it.uppercase() },
                 style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                color = Color(0xFF6F6B63)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(12.dp))

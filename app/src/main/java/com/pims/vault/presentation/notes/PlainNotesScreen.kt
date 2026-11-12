@@ -102,6 +102,7 @@ import com.pims.vault.presentation.ui.components.PersonaFAB
 import com.pims.vault.presentation.ui.theme.PersonaIcons
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.tactilePress
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.text.SimpleDateFormat
@@ -244,7 +245,7 @@ fun PlainNotesScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = pimsPageGutter(), vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -387,8 +388,8 @@ fun PlainNotesScreen(
             // Main Notes Content
             LazyColumn(
                 contentPadding = PaddingValues(
-                    start = 20.dp,
-                    end = 20.dp,
+                    start = pimsPageGutter(),
+                    end = pimsPageGutter(),
                     top = 8.dp,
                     bottom = 120.dp
                 ),

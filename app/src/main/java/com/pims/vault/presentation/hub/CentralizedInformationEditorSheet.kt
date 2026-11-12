@@ -88,6 +88,7 @@ import com.pims.vault.presentation.ui.components.StandardDateInput
 import com.pims.vault.presentation.ui.components.isValidInternationalPhone
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.launch
@@ -318,7 +319,7 @@ fun CentralizedInformationEditorSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(horizontal = pimsPageGutter(), vertical = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -340,7 +341,7 @@ fun CentralizedInformationEditorSheet(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = pimsPageGutter()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // 1. Core Identity Section
@@ -1309,7 +1310,7 @@ fun CentralizedInformationEditorSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
+                    .padding(horizontal = pimsPageGutter())
                     .padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {

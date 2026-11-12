@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Save
 import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PimsColors
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -353,9 +354,9 @@ private fun HomeHeaderRow(
             modifier = Modifier
                 .size(36.dp)
                 .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.35f))
+                .background(PimsColors.mediaScrim.copy(alpha = 0.35f))
                 .border(
-                    BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                    BorderStroke(1.dp, PimsColors.mediaScrimOutline),
                     CircleShape
                 )
                 .clickable {
@@ -367,7 +368,7 @@ private fun HomeHeaderRow(
             Icon(
                 imageVector = PersonaIcons.NotificationsOutlined,
                 contentDescription = "Activity Notifications",
-                tint = Color.White,
+                tint = PimsColors.onMediaScrim,
                 modifier = Modifier.size(18.dp)
             )
             if (unreadNotificationCount > 0) {
@@ -686,14 +687,14 @@ private fun IdentityDetailsEditorSheet(
                         )
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color.Black.copy(alpha = 0.6f),
+                            color = PimsColors.mediaScrim.copy(alpha = 0.6f),
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(8.dp)
                         ) {
                             Text(
                                 text = "Tap to replace",
-                                color = Color.White,
+                                color = PimsColors.onMediaScrim,
                                 style = MaterialTheme.typography.labelSmall,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )

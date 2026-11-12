@@ -241,6 +241,12 @@ sequenceDiagram
    $$\text{Hash}_n = \text{HMAC-SHA256}(\text{EventData}_n \mathbin{\Vert} \text{Hash}_{n-1}, \text{AUDIT\_KEY})$$
    Guarantees tamper evidence and sequential non-repudiation.
 
+### 4.2 Durable Domain-Key Initialization and Format Compatibility
+
+Domain subkeys are generated only when no wrapped material exists. Before returning a newly generated subkey for encryption, the implementation must durably store and confirm its Keystore-wrapped ciphertext and IV. If persistent storage is unavailable or does not confirm both values, initialization fails closed and the transient key is wiped; callers must not write ciphertext with it. Existing wrapped-key authentication failures must preserve the stored bytes and must never create a replacement key.
+
+Vault payloads must retain compatible readers for every supported historical key/format path until records carry explicit version metadata and each migration has authenticated the old payload, written a new version, and authenticated read-back. A key-alias or derivation change must not overwrite old key material or change stable person/item identifiers. See ADR-012 and ADR-014.
+
 ---
 
 ## 5. Android Clean Architecture Implementation

@@ -726,15 +726,7 @@ class ProfileViewModel @Inject constructor(
                         }
 
                         // Update or insert primary phone
-                        if (event.contactMethods != null) {
-                            event.contactMethods.forEach { contact ->
-                                if (contact.personId != targetId || contact.contactType !in setOf(ContactType.PHONE, ContactType.EMAIL)) {
-                                    throw SecurityException("Contact must belong to the new person")
-                                }
-                                contactDao.insertOrUpdate(contact)
-                                viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.syncContact(null, contact) } }
-                            }
-                        } else if (event.phone.isNotBlank()) {
+                        if (event.phone.isNotBlank()) {
                             val existingPhones = contactDao.getContactsForPersonFlow(ownerId).firstOrNull()?.filter { it.contactType == ContactType.PHONE } ?: emptyList()
                             val primaryPhone = existingPhones.firstOrNull { it.isPrimary } ?: existingPhones.firstOrNull()
                             if (primaryPhone != null) {
@@ -1103,7 +1095,15 @@ class ProfileViewModel @Inject constructor(
                         )
                         personDao.insertOrUpdate(targetPerson)
 
-                        if (event.phone.isNotBlank()) {
+                        if (event.contactMethods != null) {
+                            event.contactMethods.forEach { contact ->
+                                if (contact.personId != targetId || contact.contactType !in setOf(ContactType.PHONE, ContactType.EMAIL)) {
+                                    throw SecurityException("Contact must belong to the new person")
+                                }
+                                contactDao.insertOrUpdate(contact)
+                                viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.syncContact(null, contact) } }
+                            }
+                        } else if (event.phone.isNotBlank()) {
                             contactDao.insertOrUpdate(
                                 ContactMethodEntity(
                                     id = UUID.randomUUID().toString(),

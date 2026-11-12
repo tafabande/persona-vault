@@ -82,6 +82,7 @@ import com.pims.vault.presentation.ui.components.ContextualExplanation
 import com.pims.vault.presentation.ui.theme.StateError
 import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.ThemeMode
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
 import androidx.compose.ui.graphics.asImageBitmap
@@ -165,7 +166,7 @@ fun MoreView(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = pimsPageGutter()),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item { Spacer(modifier = Modifier.height(12.dp)) }
@@ -1121,7 +1122,7 @@ fun ManageAccountSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 36.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally

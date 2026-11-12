@@ -774,8 +774,8 @@ fun PersonaDialog(
 }
 
 /**
- * Section card with low tonal contrast. It groups related fields without an outline; separation
- * comes from card spacing and its heading instead of nested borders and repeated rules.
+ * Low contrast, full-width section surface with no outline or rounded section-group radius.
+ * Headings and spacing provide hierarchy; controls keep their own shape and interaction states.
  */
 @Composable
 fun PersonaFormSection(
@@ -792,15 +792,15 @@ fun PersonaFormSection(
         verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(0.95f),
-            shape = RoundedCornerShape(PimsRadius.surface),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(PimsRadius.section),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f),
             border = null
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = PimsSpacing.m, vertical = PimsSpacing.m),
+                    .padding(horizontal = PimsSpacing.sm, vertical = PimsSpacing.m),
                 verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
             ) {
                 Row(

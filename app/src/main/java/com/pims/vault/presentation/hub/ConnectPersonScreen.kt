@@ -87,6 +87,7 @@ import com.pims.vault.presentation.ui.components.PersonaDropdownSelector
 import com.pims.vault.presentation.ui.components.PersonaSearchableCombobox
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.core.model.ContactType
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
@@ -210,7 +211,7 @@ fun ConnectPersonScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = pimsPageGutter())
         ) {
             // Header Bar
             Row(
@@ -233,7 +234,7 @@ fun ConnectPersonScreen(
                 }
 
                 Text(
-                    text = "New Connection",
+                    text = "Add a person",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp
@@ -440,6 +441,7 @@ fun ConnectPersonScreen(
                     title = "Contact Information",
                     icon = Icons.Default.Phone
                 ) {
+                    Text("Contact details are stored with this person’s profile.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     RelationshipContactEditor(
                         title = "Phone numbers",
                         type = ContactType.PHONE,
@@ -503,17 +505,17 @@ fun ConnectPersonScreen(
                     }
                 }
 
-                // Section 4: Personal Notes & Memories
+                // Section 4: Relationship-scoped notes
                 if (showNotesField || relNotes.isNotBlank()) {
                     PersonaFormSection(
-                        title = "Notes & Memory Layer",
+                        title = "Notes",
                         icon = Icons.Default.Description
                     ) {
                         PersonaTextInput(
                             value = relNotes,
                             onValueChange = { relNotes = it },
-                            label = "Private Notes",
-                            placeholder = "Favorite things, coffee order, key milestones, how you met, dietary preferences...",
+                            label = "Notes about this person · optional",
+                            placeholder = "Add context you want to remember about this person...",
                             singleLine = false,
                             maxLines = 5
                         )
@@ -637,8 +639,8 @@ fun ConnectPersonScreen(
                             effectiveRole,
                             relName.trim(),
                             selectedGender,
-                            combinedPhones,
-                            combinedEmails,
+                            primaryPhone,
+                            primaryEmail,
                             relAddress.trim(),
                             relDob.trim(),
                             relAnniversary.trim(),
@@ -660,7 +662,7 @@ fun ConnectPersonScreen(
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) {
                     Text(
-                        text = "Save Connection",
+                        text = "Add person",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp
@@ -669,6 +671,101 @@ fun ConnectPersonScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RelationshipContactEditor(
+    title: String,
+    type: ContactType,
+    entries: List<RelationshipContactInput>,
+    onEntriesChange: (List<RelationshipContactInput>) -> Unit,
+    attemptedSave: Boolean
+) {
+    val labels = if (type == ContactType.PHONE) listOf("Mobile", "Work", "Home", "Other")
+    else listOf("Personal", "Work", "Home", "Other")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium), modifier = Modifier.weight(1f))
+            TextButton(
+                onClick = {
+                    onEntriesChange(entries + RelationshipContactInput(
+                        value = "", label = labels.first(), type = type, isPrimary = entries.isEmpty()
+                    ))
+                },
+                modifier = Modifier.height(44.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp)); Text(if (type == ContactType.PHONE) "Add phone" else "Add email")
+            }
+        }
+        entries.forEachIndexed { index, entry ->
+            val duplicate = entry.value.isNotBlank() && entries.count {
+                if (type == ContactType.PHONE) it.value.filter(Char::isDigit) == entry.value.filter(Char::isDigit)
+                else it.value.trim().equals(entry.value.trim(), ignoreCase = true)
+            } > 1
+            if (type == ContactType.PHONE) {
+                InternationalPhoneInput(
+                    value = entry.value,
+                    onValueChange = { value -> onEntriesChange(entries.map { if (it.key == entry.key) it.copy(value = value.take(32)) else it }) },
+                    label = if (entry.isPrimary) "Phone number · primary · optional" else "Phone number ${index + 1} · optional",
+                    isError = duplicate || (attemptedSave && entry.value.isNotBlank() && !com.pims.vault.presentation.ui.components.isValidInternationalPhone(entry.value)),
+                    errorMessage = when {
+                        duplicate -> "This phone number is already listed"
+                        attemptedSave && entry.value.isNotBlank() && !com.pims.vault.presentation.ui.components.isValidInternationalPhone(entry.value) -> "Enter a valid number for its country code"
+                        else -> null
+                    }
+                )
+            } else {
+                PersonaTextInput(
+                    value = entry.value,
+                    onValueChange = { value -> onEntriesChange(entries.map { if (it.key == entry.key) it.copy(value = value.take(254)) else it }) },
+                    label = if (entry.isPrimary) "Email address · primary · optional" else "Email address ${index + 1} · optional",
+                    placeholder = "name@example.com",
+                    keyboardType = KeyboardType.Email,
+                    keyboardCapitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None,
+                    isError = duplicate || (attemptedSave && entry.value.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(entry.value.trim()).matches()),
+                    errorMessage = when {
+                        duplicate -> "This email is already listed"
+                        attemptedSave && entry.value.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(entry.value.trim()).matches() -> "Enter a valid email address"
+                        else -> null
+                    }
+                )
+            }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                PersonaDropdownSelector(
+                    selectedOption = entry.label,
+                    options = labels,
+                    onOptionSelected = { label -> onEntriesChange(entries.map { if (it.key == entry.key) it.copy(label = label) else it }) },
+                    label = "Label",
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (entry.isPrimary) Text("Primary", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                else TextButton(onClick = { onEntriesChange(entries.map { it.copy(isPrimary = it.key == entry.key) }) }, modifier = Modifier.height(44.dp)) { Text("Make primary") }
+                if (index > 0) {
+                    IconButton(onClick = {
+                        val reordered = entries.toMutableList()
+                        reordered[index] = reordered[index - 1].also { reordered[index - 1] = reordered[index] }
+                        onEntriesChange(reordered)
+                    }, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move ${type.name.lowercase()} up") }
+                }
+                if (index < entries.lastIndex) {
+                    IconButton(onClick = {
+                        val reordered = entries.toMutableList()
+                        reordered[index] = reordered[index + 1].also { reordered[index + 1] = reordered[index] }
+                        onEntriesChange(reordered)
+                    }, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move ${type.name.lowercase()} down") }
+                }
+                TextButton(onClick = {
+                    val remaining = entries.filterNot { it.key == entry.key }.toMutableList()
+                    if (entry.isPrimary && remaining.isNotEmpty()) remaining[0] = remaining[0].copy(isPrimary = true)
+                    onEntriesChange(remaining)
+                }, modifier = Modifier.height(44.dp)) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+            if (index < entries.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f))
         }
     }
 }

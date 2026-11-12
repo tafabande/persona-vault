@@ -82,7 +82,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -101,6 +100,7 @@ import com.pims.vault.domain.model.PlainNote
 import com.pims.vault.presentation.ui.components.ux.WarmTooltip
 import com.pims.vault.presentation.ui.theme.PersonaIcons
 import com.pims.vault.presentation.ui.theme.PimsDimensions
+import com.pims.vault.presentation.ui.theme.PimsColors
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
@@ -1054,12 +1054,12 @@ fun PlainNoteEditorScreen(
                                         .padding(4.dp)
                                         .size(26.dp)
                                         .clip(CircleShape)
-                                        .background(Color.Black.copy(alpha = 0.65f))
+                                        .background(PimsColors.mediaScrim.copy(alpha = 0.65f))
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Remove attachment",
-                                        tint = Color.White,
+                                        tint = PimsColors.onMediaScrim,
                                         modifier = Modifier.size(15.dp)
                                     )
                                 }
@@ -1158,12 +1158,12 @@ fun PlainNoteEditorScreen(
                                         .padding(4.dp)
                                         .size(26.dp)
                                         .clip(CircleShape)
-                                        .background(Color.Black.copy(alpha = 0.65f))
+                                        .background(PimsColors.mediaScrim.copy(alpha = 0.65f))
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Remove attachment",
-                                        tint = Color.White,
+                                        tint = PimsColors.onMediaScrim,
                                         modifier = Modifier.size(15.dp)
                                     )
                                 }

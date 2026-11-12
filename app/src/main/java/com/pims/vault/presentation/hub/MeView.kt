@@ -84,6 +84,7 @@ import com.pims.vault.presentation.ui.components.ContextualExplanation
 import com.pims.vault.presentation.ui.components.SocialProfileItem
 import com.pims.vault.presentation.ui.components.SocialProfilesSection
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
 
@@ -211,7 +212,7 @@ fun MeView(
             .background(meBgColor)
             .statusBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp)
+        contentPadding = PaddingValues(start = pimsPageGutter(), end = pimsPageGutter(), top = 8.dp, bottom = 28.dp)
     ) {
         item {
             Spacer(modifier = Modifier.height(8.dp))

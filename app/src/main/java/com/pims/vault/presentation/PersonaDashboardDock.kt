@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.animation.core.Spring
@@ -246,6 +248,59 @@ internal fun PersonaDashboardBottomBar(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Persistent navigation for medium and expanded windows; compact phones keep the bottom dock. */
+@Composable
+internal fun PersonaDashboardNavigationRail(
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tabs = remember {
+        listOf(
+            Triple("Home", PersonaIcons.Home, PersonaIcons.HomeOutlined),
+            Triple("Notes", PersonaIcons.Notes, PersonaIcons.NotesOutlined),
+            Triple("Me", PersonaIcons.Me, PersonaIcons.MeOutlined),
+            Triple("People", PersonaIcons.People, PersonaIcons.PeopleOutlined),
+            Triple("Settings", PersonaIcons.Settings, PersonaIcons.SettingsOutlined)
+        )
+    }
+    val haptics = rememberPimsHaptics()
+
+    NavigationRail(
+        modifier = modifier.fillMaxHeight().navigationBarsPadding(),
+        containerColor = MaterialTheme.colorScheme.background,
+        header = {
+            Text(
+                text = "P",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(vertical = 20.dp)
+            )
+        }
+    ) {
+        tabs.forEachIndexed { index, (label, selectedIcon, unselectedIcon) ->
+            val selected = selectedTab == index
+            NavigationRailItem(
+                selected = selected,
+                onClick = {
+                    if (!selected) {
+                        haptics.selection()
+                        onTabSelected(index)
+                    }
+                },
+                icon = {
+                    Icon(
+                        imageVector = if (selected) selectedIcon else unselectedIcon,
+                        contentDescription = label
+                    )
+                },
+                label = { Text(label, maxLines = 1) },
+                alwaysShowLabel = false
+            )
         }
     }
 }

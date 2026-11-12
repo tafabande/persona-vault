@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1114,8 +1115,8 @@ fun PersonaDashboardScreen(
                                 }
                             )
                         )
-                        recentActivityManager.recordActivity("Connected $relName", "Relationship: $role")
-                        toastController.showSuccess("Connected $relName to People")
+                        recentActivityManager.recordActivity("Added $relName", "Relationship: $role")
+                        toastController.showSuccess("Added $relName to People")
                         soundManager.success()
                         fullScreenOverlay = null
                     }
@@ -1348,7 +1349,9 @@ fun PersonaDashboardScreen(
         }
     }
 
-    // MAIN HUB INTERFACE WITH 4-ITEM BOTTOM NAVIGATION
+    val useNavigationRail = LocalConfiguration.current.screenWidthDp >= 600
+
+    // Primary navigation adapts to the available window width.
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { PersonaToastHost(toastController) },
@@ -1368,29 +1371,37 @@ fun PersonaDashboardScreen(
                             .padding(bottom = 16.dp)
                             .tactilePress()
                     ) {
-                        Icon(Icons.Default.PersonAdd, contentDescription = "Connect Person", modifier = Modifier.size(24.dp))
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Add a person", modifier = Modifier.size(24.dp))
                     }
                 }
             }
         },
         bottomBar = {
-            PersonaDashboardBottomBar(
-                selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it }
-            )
+            if (!useNavigationRail) {
+                PersonaDashboardBottomBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = { selectedTab = it }
+                )
+            }
         }
     ) { innerPadding ->
-        // Top inset is applied per-tab. Bottom inset ensures content is positioned
-        // above the bottom navigation bar so no cards are obscured.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    start = innerPadding.calculateStartPadding(LocalLayoutDirection.current),
-                    end = innerPadding.calculateEndPadding(LocalLayoutDirection.current),
-                    bottom = innerPadding.calculateBottomPadding()
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (useNavigationRail) {
+                PersonaDashboardNavigationRail(
+                    selectedTab = selectedTab,
+                    onTabSelected = { selectedTab = it },
+                    modifier = Modifier.align(Alignment.CenterStart)
                 )
-        ) {
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = if (useNavigationRail) 80.dp else innerPadding.calculateStartPadding(LocalLayoutDirection.current),
+                        end = innerPadding.calculateEndPadding(LocalLayoutDirection.current),
+                        bottom = innerPadding.calculateBottomPadding()
+                    )
+            ) {
             val reducedMotion = LocalReducedMotion.current
             AnimatedContent(
                 targetState = selectedTab,
@@ -1704,6 +1715,7 @@ fun PersonaDashboardScreen(
                     )
                 }
             }
+            }
         }
     }
 
@@ -1887,21 +1899,6 @@ fun PersonaDashboardScreen(
                         showDialog("addCustomField")
                     }
                 }
-            }
-        )
-    }
-
-    // AVATAR EDITOR SHEET (WhatsApp style with zoom resizability)
-    if (sheetStates.value["avatarEditor"] == true) {
-        AvatarEditorSheet(
-            initialConfig = avatarConfig,
-            sheetState = avatarEditorSheetState,
-            avatarManager = avatarManager,
-            onDismissRequest = { hideSheet("avatarEditor") },
-            onSaveAvatar = { newConfig ->
-                avatarManager.saveConfig(newConfig)
-                hideSheet("avatarEditor")
-                toastController.showSuccess("Avatar updated")
             }
         )
     }

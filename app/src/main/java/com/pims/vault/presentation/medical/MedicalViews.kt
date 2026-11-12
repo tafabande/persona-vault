@@ -89,6 +89,7 @@ import com.pims.vault.domain.model.MedicalVisitItem
 import com.pims.vault.domain.model.MedicationItem
 import com.pims.vault.domain.model.PrescriptionItem
 import com.pims.vault.presentation.ui.theme.tactilePress
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.vault.screens.VaultDesignTokens
 import com.pims.vault.presentation.vault.screens.VaultGroupedCard
 import com.pims.vault.presentation.vault.screens.VaultPillActionButton
@@ -146,7 +147,7 @@ fun MedicalDossierView(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                    .padding(horizontal = pimsPageGutter(), vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (onDismiss != null) {
@@ -264,8 +265,8 @@ fun MedicalDossierView(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                    .padding(horizontal = pimsPageGutter()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 48.dp)
             ) {
                 // Privacy gate lock banner if locked

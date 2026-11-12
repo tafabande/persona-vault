@@ -70,6 +70,7 @@ import com.pims.vault.presentation.ui.components.ux.PersonaToastController
 import com.pims.vault.presentation.ui.util.PimsHaptics
 import com.pims.vault.presentation.ui.util.PimsSoundManager
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import java.time.LocalDate
 
 private data class EditableManagedContact(
@@ -180,7 +181,7 @@ fun EditManagedPersonSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 28.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -245,6 +246,7 @@ fun EditManagedPersonSheet(
             }
 
             PersonaFormSection(title = "Contact information", icon = Icons.Default.Phone) {
+                Text("These numbers and addresses belong to ${person.fullName}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ContactMethodEditor(
                     title = "Phone numbers",
                     type = ContactType.PHONE,
@@ -537,14 +539,15 @@ private fun ContactMethodEditor(
                         )
                     }
                 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     PersonaDropdownSelector(
                         selectedOption = entry.label,
                         options = labels,
                         onOptionSelected = { label -> onContactsChange(contacts.map { if (it.key == entry.key) it.copy(label = label) else it }) },
                         label = "Label",
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     if (!entry.isPrimary) {
                         TextButton(onClick = {
                             onContactsChange(contacts.map { if (it.type == type) it.copy(isPrimary = it.key == entry.key) else it })
@@ -589,6 +592,7 @@ private fun ContactMethodEditor(
                         }
                         onContactsChange(remaining)
                     }, modifier = Modifier.height(44.dp)) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                    }
                 }
                 if (type == ContactType.PHONE && duplicate) Text("This phone number is already listed", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 if (index < entries.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f))

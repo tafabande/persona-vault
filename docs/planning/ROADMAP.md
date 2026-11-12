@@ -15,12 +15,17 @@
 
 ### Active integrity work
 
+- [ ] **In Progress** — Deliver the application-wide product/design remediation documented in [APP_WIDE_DESIGN_REMEDIATION.md](./APP_WIDE_DESIGN_REMEDIATION.md): safe-area and adaptive-width fixes, shared semantic theme/motion/shape tokens, and a route-by-route migration and verification checklist.
+- [ ] Complete the screen inventory migration across every route, sheet, dialog, form, and interaction; track per-screen completion in the remediation document and do not mark the design-system milestone complete until all routes are migrated or have documented exceptions.
+- [ ] **Widget planning slot (implementation deferred)** — define a privacy-safe, adaptive Persona Vault launcher widget after core screen/security remediation; see the widget section in `APP_WIDE_DESIGN_REMEDIATION.md`.
+
 - [ ] Audit and harden Persona/Firebase identity mapping, optional profile-field serialization, person-scoped note/avatar recovery, and encrypted financial display metadata. This work is additive and uses stable Room/Firestore record IDs; it does not perform a production bulk migration.
 - [ ] Add encrypted backup and restore for user-imported carousel wallpapers, including stable item IDs, visual alignment, ordering, and active selection.
 - [ ] Harden bank-account record lifecycle: selected-ID-only edits, authenticated read-back, multi-account support, explicit card links, and idempotent sync verification. No destructive financial migration is authorised.
 - [ ] Replace procedural avatar generation/editor with two neutral default person icons and person-scoped photo selection (uploaded, restored, or explicitly imported Google profile image); retain owner and relationship photos through encrypted upload/download sync.
 - [ ] Audit person identity and relationship ownership boundaries. Use stable random Person IDs for keys and links; keep national ID values optional, encrypted, and out of document paths/cloud identifiers.
 - [ ] Preserve encrypted vault readability across crypto upgrades: persist format/key version metadata, keep compatible readers for existing payloads, and re-encrypt only after successful authenticated read-back. Keep vault item/person links stable.
+- [x] Prevent newly generated domain keys from being used before their wrapped key material is durably committed; fail closed on missing/failed persistence. See [ADR-014](./adr/ADR-014-durable-domain-key-initialization.md). This does not complete historical vault key migration.
 - [ ] Audit personal and relationship note lifecycle for create, edit, delete, attachment handling, and owner scoping after account creation.
 - [ ] **In Progress** — Establish a shared low-border form style (field outlines only, section dividers, constrained content width) and responsive motion/accessibility rules; apply incrementally across screens.
 - [ ] Normalize profile form behavior: semantic validation states, dirty/unsaved tracking, discard confirmation, explicit saving/success/failure/retry feedback, and state restoration for rotation/process recreation.

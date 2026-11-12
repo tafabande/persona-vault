@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -177,6 +178,17 @@ object PimsDimensions {
     val skeletonCornerRadius = 8.dp
     val cardCornerRadius = 12.dp
     val chipCornerRadius = 20.dp
+}
+
+/** Responsive outer page gutter. Use this once at a screen root; child components add only local spacing. */
+@Composable
+fun pimsPageGutter(): Dp {
+    val screenWidth = LocalConfiguration.current.screenWidthDp
+    return when {
+        screenWidth < 600 -> 12.dp
+        screenWidth < 840 -> 20.dp
+        else -> 28.dp
+    }
 }
 
 // =============================================================================
@@ -374,6 +386,10 @@ object PimsColors {
         @Composable get() = MaterialTheme.colorScheme.error
     val disabledSurface: Color
         @Composable get() = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
+    /** Fixed contrast overlay for text/icons rendered over user-selected imagery. */
+    val mediaScrim: Color = Color.Black
+    val onMediaScrim: Color = Color.White
+    val mediaScrimOutline: Color = Color.White.copy(alpha = 0.18f)
 }
 
 /**

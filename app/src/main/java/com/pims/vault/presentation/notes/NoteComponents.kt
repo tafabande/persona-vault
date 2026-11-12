@@ -40,7 +40,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -49,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.pims.vault.presentation.ui.theme.PimsColors
 
 enum class NoteFilter(val label: String, val icon: ImageVector) {
     ALL("All", Icons.Default.Description),
@@ -154,7 +154,7 @@ fun FullscreenImageViewerDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.94f))
+                .background(PimsColors.mediaScrim.copy(alpha = 0.94f))
         ) {
             Image(
                 bitmap = bitmap.asImageBitmap(),
@@ -177,7 +177,7 @@ fun FullscreenImageViewerDialog(
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = Color.White
+                        color = PimsColors.onMediaScrim
                     )
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))
@@ -188,12 +188,12 @@ fun FullscreenImageViewerDialog(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.6f))
+                        .background(PimsColors.mediaScrim.copy(alpha = 0.6f))
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close preview",
-                        tint = Color.White,
+                        tint = PimsColors.onMediaScrim,
                         modifier = Modifier.size(24.dp)
                     )
                 }

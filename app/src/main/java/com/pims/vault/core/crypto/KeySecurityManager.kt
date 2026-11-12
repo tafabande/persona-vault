@@ -258,7 +258,12 @@ class KeySecurityManager(
             }
         }
 
-        // Generate high-entropy 32-byte subkey (first-time initialization path)
+        // Generate high-entropy 32-byte subkey (first-time initialization path).
+        // Returning a key that was not durably wrapped would make newly encrypted data
+        // unreadable after process/device restart, so persistence is a hard requirement.
+        if (prefs == null) {
+            throw IllegalStateException("Persistent storage is unavailable for domain key '$domainContext'")
+        }
         val rawSubkey = ByteArray(32)
         java.security.SecureRandom().nextBytes(rawSubkey)
 
@@ -269,15 +274,16 @@ class KeySecurityManager(
             val encryptedSubkey = encryptCipher.doFinal(rawSubkey)
             val iv = encryptCipher.iv
 
-            prefs?.edit()
+            val persisted = prefs.edit()
                 ?.putString(prefKeyIv, base64Encode(iv))
                 ?.putString(prefKeyCipher, base64Encode(encryptedSubkey))
                 ?.commit()
-        } catch (_: Exception) {
-            // Non-Android or test environment fallback: derive deterministic subkey from domainContext
-            val deterministic = java.security.MessageDigest.getInstance("SHA-256")
-                .digest("PIMS_VAULT_SUBKEY_${domainContext}".toByteArray(Charsets.UTF_8))
-            return SecretBytes(deterministic)
+            if (persisted != true || !prefs.contains(prefKeyIv) || !prefs.contains(prefKeyCipher)) {
+                throw IllegalStateException("Persistent storage did not confirm domain key '$domainContext'")
+            }
+        } catch (e: Exception) {
+            java.util.Arrays.fill(rawSubkey, 0)
+            throw IllegalStateException("Unable to persist domain key '$domainContext'; refusing to use an ephemeral key", e)
         }
 
         return SecretBytes(rawSubkey)

@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -67,6 +69,7 @@ import com.pims.vault.core.crypto.SessionState
 import com.pims.vault.core.session.AccountMode
 import com.pims.vault.core.session.AccountModeManager
 import com.pims.vault.presentation.ui.theme.PimsDimensions
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.theme.PimsVaultTheme
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -537,7 +540,9 @@ fun LockScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(PimsDimensions.paddingLarge),
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = pimsPageGutter()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {

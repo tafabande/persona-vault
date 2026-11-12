@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -63,7 +64,7 @@ fun MinimalProfileSetupScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 20.dp)
+                .padding(horizontal = pimsPageGutter(), vertical = 16.dp)
                 .statusBarsPadding()
                 .navigationBarsPadding(),
             verticalArrangement = Arrangement.SpaceBetween
