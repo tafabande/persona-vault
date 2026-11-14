@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Schedule
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -118,547 +120,139 @@ fun PlainNotesScreen(
     viewModel: PlainNotesViewModel = hiltViewModel(),
     onRequestAuth: ((title: String, subtitle: String, onSuccess: () -> Unit) -> Unit)? = null
 ) {
-    var showCumulativeOverview by remember { mutableStateOf(false) }
-
-    val handleNoteClick: (PlainNote) -> Unit = { note ->
-        if (note.isLocked && onRequestAuth != null) {
-            onRequestAuth("Unlock Protected Note", "Authentication required to open protected note") {
-                onOpenEditor(note.id)
-            }
-        } else {
-            onOpenEditor(note.id)
-        }
-    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val dayFormat = remember { SimpleDateFormat("EEE d MMM", Locale.getDefault()) }
-    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-    val haptics = rememberPimsHaptics()
-    val focusManager = LocalFocusManager.current
-    val tonalSurfaces = LocalPimsTonalSurfaces.current
-
+    var showCumulativeOverview by remember { mutableStateOf(false) }
     var noteToDelete by remember { mutableStateOf<PlainNote?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearchVisible by remember { mutableStateOf(false) }
+    var searchQuery by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var isSearchVisible by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var activeFilter by remember { mutableStateOf(NoteFilter.ALL) }
-
-    data class DaySection(
-        val dayLabel: String,
-        val isToday: Boolean = false,
-        val notes: List<PlainNote>
-    ) {
-        val displayCount: Int get() = notes.size
-    }
-
-    val currentWeekLabel = remember {
-        val c = Calendar.getInstance()
-        "Week ${c.get(Calendar.WEEK_OF_YEAR)}"
-    }
-
-    // Filter notes based on active filter and search query
-    val filteredNotes = remember(state.notes, activeFilter, searchQuery) {
+    var monthValue by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(java.time.YearMonth.now().toString()) }
+    var selectedValue by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val zone = java.time.ZoneId.systemDefault()
+    val today = java.time.LocalDate.now(zone)
+    val month = java.time.YearMonth.parse(monthValue)
+    val selectedDate = selectedValue?.let(java.time.LocalDate::parse)
+    val markers = remember(state.notes, zone) { noteCalendarMarkers(state.notes, zone) }
+    val isFiltering = searchQuery.isNotBlank() || activeFilter != NoteFilter.ALL
+    val filtered = remember(state.notes, searchQuery, activeFilter) {
         state.notes.filter { note ->
-            val matchesFilter = when (activeFilter) {
+            val match = when (activeFilter) {
                 NoteFilter.ALL -> true
                 NoteFilter.REMINDERS -> note.reminderAt != null && !note.isReminderDone
                 NoteFilter.PHOTOS -> note.attachments.isNotEmpty()
                 NoteFilter.DONE -> note.isReminderDone
             }
-            val matchesSearch = if (searchQuery.isBlank()) {
-                true
-            } else {
-                val q = searchQuery.trim()
-                val tagQ = if (q.startsWith("#")) q.drop(1).trim() else q
-                note.title.contains(searchQuery, ignoreCase = true) ||
-                    note.content.contains(searchQuery, ignoreCase = true) ||
-                    (note.reminderTag?.contains(searchQuery, ignoreCase = true) == true) ||
-                    (note.reminderTag?.contains(tagQ, ignoreCase = true) == true) ||
-                    note.tags.any { it.contains(tagQ, ignoreCase = true) || it.contains(q, ignoreCase = true) }
-            }
-            matchesFilter && matchesSearch
-        }
+            val query = searchQuery.trim().removePrefix("#")
+            match && (query.isBlank() || (!note.isLocked &&
+                (note.title.contains(query, true) || note.content.contains(query, true) || note.tags.any { it.contains(query, true) })))
+        }.sortedByDescending { it.updatedAt }
     }
-
-    // Rolling 3-day window: Today (0), Yesterday (-1), Day before yesterday (-2)
-    val recentDays = remember(filteredNotes) {
-        val todayCal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-
-        listOf(0, -1, -2).map { offset ->
-            val dayCal = (todayCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, offset) }
-            val dayStart = dayCal.timeInMillis
-            val dayEnd = dayStart + 86400000L
-
-            val label = when (offset) {
-                0 -> "Today"
-                -1 -> "Yesterday"
-                else -> dayFormat.format(dayCal.time)
-            }
-            val isToday = (offset == 0)
-
-            val dayNotes = filteredNotes.filter { note ->
-                note.updatedAt in dayStart until dayEnd
-            }
-            DaySection(label, isToday, dayNotes)
-        }
+    val displayed = when {
+        isFiltering -> filtered
+        selectedDate != null -> notesForCalendarDay(state.notes, selectedDate, zone)
+        else -> notesOverview(state.notes)
     }
-
-    // Historical notes prior to the 3-day rolling window
-    val twoDaysAgoStart = remember {
-        Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-            add(Calendar.DAY_OF_YEAR, -2)
-        }.timeInMillis
+    val heading = when {
+        isFiltering -> "${displayed.size} results"
+        selectedDate != null -> selectedDate.format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()))
+        state.notes.any { it.isPinned } -> "Pinned notes"
+        else -> "Recent notes"
     }
-
-    val historicalNotes = remember(filteredNotes, twoDaysAgoStart) {
-        filteredNotes.filter { note ->
-            note.updatedAt < twoDaysAgoStart
-        }
+    val handleNoteClick: (PlainNote) -> Unit = { note ->
+        if (note.isLocked) {
+            onRequestAuth?.invoke("Unlock Protected Note", "Authentication required to open protected note") { onOpenEditor(note.id) }
+        } else onOpenEditor(note.id)
     }
-
-    val initialExpandedDay = remember(recentDays) {
-        recentDays.firstOrNull { it.isToday }?.dayLabel
-            ?: recentDays.firstOrNull()?.dayLabel
-    }
-
-    var expandedDayLabels by remember(recentDays) {
-        mutableStateOf(setOfNotNull(initialExpandedDay))
-    }
-
-    val isSearchOrFilterActive = searchQuery.isNotBlank() || activeFilter != NoteFilter.ALL
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Header Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = pimsPageGutter(), vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Search Toggle
-                IconButton(
-                    onClick = {
-                        haptics.light()
-                        isSearchVisible = !isSearchVisible
-                        if (!isSearchVisible) {
-                            searchQuery = ""
-                            focusManager.clearFocus()
-                        }
-                    },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isSearchVisible) Icons.Default.Close else PersonaIcons.Search,
-                        contentDescription = if (isSearchVisible) "Close search" else "Search notes",
-                        tint = if (isSearchVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-
-                // Center Week Label
-                Text(
-                    text = if (isSearchVisible && searchQuery.isNotBlank()) "Search Results" else currentWeekLabel,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.5.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-
-                // Right: Pill Badge showing total notes count (Tapping opens cumulative overview)
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier.clickable {
-                        haptics.light()
-                        showCumulativeOverview = true
+    val dateFormat = remember { SimpleDateFormat("d MMM · h:mm a", Locale.getDefault()) }
+    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        LazyColumn(
+            modifier = Modifier.align(Alignment.TopCenter).widthIn(max = 720.dp).fillMaxSize().statusBarsPadding(),
+            contentPadding = PaddingValues(start = pimsPageGutter(), end = pimsPageGutter(), bottom = 104.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item(key = "header") {
+                Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Notes", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                     }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
+                    IconButton(onClick = { isSearchVisible = !isSearchVisible; if (!isSearchVisible) searchQuery = "" }) {
+                        Icon(if (isSearchVisible) Icons.Default.Close else Icons.Default.Search,
+                            if (isSearchVisible) "Close search" else "Search notes")
+                    }
+                }
+            }
+            if (isSearchVisible) item(key = "search") {
+                OutlinedTextField(searchQuery, { searchQuery = it }, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Search notes or #tags") }, singleLine = true,
+                    shape = RoundedCornerShape(20.dp), leadingIcon = { Icon(Icons.Default.Search, null) })
+            }
+            item(key = "calendar") {
+                NotesCalendar(month, selectedDate, today, markers,
+                    onMonthChange = { monthValue = it.toString(); selectedValue = null },
+                    onSelectDate = { selectedValue = if (selectedDate == it) null else it.toString(); monthValue = java.time.YearMonth.from(it).toString(); searchQuery = ""; activeFilter = NoteFilter.ALL },
+                    onToday = { monthValue = java.time.YearMonth.from(today).toString(); selectedValue = today.toString(); searchQuery = ""; activeFilter = NoteFilter.ALL })
+            }
+            item(key = "filters") {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NoteFilter.values().forEach { filter ->
+                        FilterChip(selected = activeFilter == filter,
+                            onClick = { activeFilter = filter }, label = { Text(filter.label) },
+                            leadingIcon = { Icon(filter.icon, null, Modifier.size(16.dp)) })
+                    }
+                }
+            }
+            state.error?.let { message -> item(key = "error") {
+                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(16.dp)) {
+                    Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer)
+                        IconButton(onClick = viewModel::clearError) { Icon(Icons.Default.Close, "Dismiss error") }
+                    }
+                }
+            } }
+            item(key = "section") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(heading, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    }
+                    TextButton(onClick = { if (selectedDate != null || isFiltering) {
+                        selectedValue = null; activeFilter = NoteFilter.ALL; searchQuery = ""
+                    } else showCumulativeOverview = true }) {
+                        Text(if (selectedDate != null || isFiltering) "Overview" else "All notes")
+                    }
+                }
+            }
+            if (displayed.isEmpty()) item(key = "empty") {
+                Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = if (state.notes.isEmpty()) "0 Notes" else "${state.notes.size} Notes",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
+                            if (isFiltering) "No matching notes" else if (selectedDate != null) "No notes for this day" else "No notes yet",
+                            style = MaterialTheme.typography.titleMedium
                         )
+                        TextButton(onClick = { onOpenEditor(null) }) { Text("Write a note") }
                     }
                 }
             }
-
-            // In-line Search Bar
-            AnimatedVisibility(visible = isSearchVisible) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search notes by title, content, tag...") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear search",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                )
-            }
-
-            // Filter Chips Bar (All, Reminders, Photos, Done)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                NoteFilter.values().forEach { filter ->
-                    val isSelected = activeFilter == filter
-                    val filterCount = when (filter) {
-                        NoteFilter.ALL -> state.notes.size
-                        NoteFilter.REMINDERS -> state.notes.count { it.reminderAt != null && !it.isReminderDone }
-                        NoteFilter.PHOTOS -> state.notes.count { it.attachments.isNotEmpty() }
-                        NoteFilter.DONE -> state.notes.count { it.isReminderDone }
+            items(displayed, key = { it.id }) { note ->
+                    Column {
+                        NoteListRow(note, dateFormat.format(Date(note.updatedAt)), { handleNoteClick(note) },
+                            { noteToDelete = note }, viewModel,
+                            onTagClick = { searchQuery = "#$it"; isSearchVisible = true }, onRequestAuth = onRequestAuth)
                     }
-
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            haptics.selection()
-                            activeFilter = filter
-                        },
-                        label = {
-                            Text("${filter.label} ($filterCount)")
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = filter.icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    )
-                }
-            }
-
-            // Main Notes Content
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    start = pimsPageGutter(),
-                    end = pimsPageGutter(),
-                    top = 8.dp,
-                    bottom = 120.dp
-                ),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                if (isSearchOrFilterActive) {
-                    // Filtered / Search flat results list
-                    item(key = "search_header") {
-                        Text(
-                            text = "${filteredNotes.size} matching note${if (filteredNotes.size == 1) "" else "s"}",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(vertical = 10.dp)
-                        )
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            thickness = 0.5.dp
-                        )
-                    }
-
-                    if (filteredNotes.isEmpty()) {
-                        item(key = "search_empty") {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 40.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = "No notes found",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "Try adjusting your search terms or filter",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
-                        }
-                    } else {
-                        items(filteredNotes, key = { it.id }) { note ->
-                            NoteListRow(
-                                note = note,
-                                timeStr = timeFormat.format(Date(note.updatedAt)),
-                                onClick = { handleNoteClick(note) },
-                                onDelete = { noteToDelete = note },
-                                viewModel = viewModel,
-                                onTagClick = { tag ->
-                                    searchQuery = "#$tag"
-                                    isSearchVisible = true
-                                }
-                            )
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                thickness = 0.5.dp
-                            )
-                        }
-                    }
-                } else {
-                    // Rolling 3-day recent timeline
-                    recentDays.forEach { daySection ->
-                        val isExpanded = daySection.dayLabel in expandedDayLabels
-
-                        item(key = "header_${daySection.dayLabel}") {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (daySection.isToday) tonalSurfaces.surfaceElevated else Color.Transparent,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .tactilePress(targetScale = 0.98f) {
-                                            expandedDayLabels = if (isExpanded) {
-                                                expandedDayLabels - daySection.dayLabel
-                                            } else {
-                                                expandedDayLabels + daySection.dayLabel
-                                            }
-                                        }
-                                        .padding(horizontal = if (daySection.isToday) 12.dp else 4.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(
-                                            text = daySection.dayLabel,
-                                            style = MaterialTheme.typography.titleMedium.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 16.5.sp
-                                            ),
-                                            color = MaterialTheme.colorScheme.onBackground
-                                        )
-                                        if (daySection.isToday) {
-                                            Surface(
-                                                shape = RoundedCornerShape(6.dp),
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                            ) {
-                                                Text(
-                                                    text = "Today",
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    if (!isExpanded) {
-                                        Text(
-                                            text = "${daySection.displayCount}",
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (!daySection.isToday) {
-                                HorizontalDivider(
-                                    color = tonalSurfaces.borderSubtle,
-                                    thickness = 0.5.dp
-                                )
-                            }
-                        }
-
-                        if (isExpanded) {
-                            if (daySection.notes.isNotEmpty()) {
-                                items(daySection.notes, key = { it.id }) { note ->
-                                    NoteListRow(
-                                        note = note,
-                                        timeStr = timeFormat.format(Date(note.updatedAt)),
-                                        onClick = { handleNoteClick(note) },
-                                        onDelete = { noteToDelete = note },
-                                        viewModel = viewModel,
-                                        onTagClick = { tag ->
-                                            searchQuery = "#$tag"
-                                            isSearchVisible = true
-                                        }
-                                    )
-                                    HorizontalDivider(
-                                        color = tonalSurfaces.borderSubtle,
-                                        thickness = 0.5.dp
-                                    )
-                                }
-                            } else {
-                                item(key = "empty_${daySection.dayLabel}") {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onOpenEditor(null) }
-                                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = PersonaIcons.Edit,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Text(
-                                            text = "No notes · Tap to write",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Historical notes displayed directly beneath recent days without gatekeeper
-                    if (historicalNotes.isNotEmpty()) {
-                        item(key = "header_historical_notes") {
-                            Text(
-                                text = "Previous Notes",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.5.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
-                            )
-                            HorizontalDivider(
-                                color = tonalSurfaces.borderSubtle,
-                                thickness = 0.5.dp
-                            )
-                        }
-
-                        items(historicalNotes, key = { it.id }) { note ->
-                            NoteListRow(
-                                note = note,
-                                timeStr = dayFormat.format(Date(note.updatedAt)),
-                                onClick = { handleNoteClick(note) },
-                                onDelete = { noteToDelete = note },
-                                viewModel = viewModel,
-                                onTagClick = { tag ->
-                                    searchQuery = "#$tag"
-                                    isSearchVisible = true
-                                },
-                                onRequestAuth = onRequestAuth
-                            )
-                            HorizontalDivider(
-                                color = tonalSurfaces.borderSubtle,
-                                thickness = 0.5.dp
-                            )
-                        }
-                    }
-                }
             }
         }
-
-        // FAB — New Note
-        PersonaFAB(
-            text = "New Note",
-            icon = Icons.Default.Edit,
-            onClick = { onOpenEditor(null) },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 20.dp)
-        )
-
+        PersonaFAB(text = "New note", icon = Icons.Default.Edit, onClick = { onOpenEditor(null) },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 20.dp))
         noteToDelete?.let { note ->
-            AlertDialog(
-                onDismissRequest = { noteToDelete = null },
-                title = { Text("Delete Note") },
-                text = { Text("Are you sure you want to delete '${note.title.ifBlank { "Untitled" }}'?") },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            viewModel.delete(note)
-                            noteToDelete = null
-                        }
-                    ) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { noteToDelete = null }) {
-                        Text("Cancel")
-                    }
-                }
-            )
+            AlertDialog(onDismissRequest = { noteToDelete = null }, title = { Text("Delete note?") },
+                text = { Text("This note and its attachments will be deleted.") },
+                confirmButton = { TextButton(onClick = { viewModel.delete(note); noteToDelete = null }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+                dismissButton = { TextButton(onClick = { noteToDelete = null }) { Text("Cancel") } })
         }
-
-        CumulativeNotesOverviewSheet(
-            notes = state.notes,
-            isVisible = showCumulativeOverview,
+        CumulativeNotesOverviewSheet(notes = state.notes, isVisible = showCumulativeOverview,
             onDismiss = { showCumulativeOverview = false },
-            onNoteClick = { note ->
-                showCumulativeOverview = false
-                handleNoteClick(note)
-            },
-            onNewNote = {
-                showCumulativeOverview = false
-                onOpenEditor(null)
-            },
-            onOpenSearch = {
-                showCumulativeOverview = false
-                isSearchVisible = true
-            }
-        )
+            onNoteClick = { showCumulativeOverview = false; handleNoteClick(it) },
+            onNewNote = { showCumulativeOverview = false; onOpenEditor(null) },
+            onOpenSearch = { showCumulativeOverview = false; isSearchVisible = true })
     }
 }
 
@@ -1254,10 +848,16 @@ fun NoteListRow(
     var thumbnailBitmap by remember(firstAttachment?.id) { mutableStateOf<Bitmap?>(null) }
     var showMenu by remember { mutableStateOf(false) }
 
-    LaunchedEffect(firstAttachment?.id) {
-        if (firstAttachment != null && viewModel != null) {
+    val withUnlockedNote: (() -> Unit) -> Unit = { action ->
+        if (note.isLocked) onRequestAuth?.invoke("Unlock protected note", "Authentication required for this action", action)
+        else action()
+    }
+    LaunchedEffect(firstAttachment?.id, note.isLocked) {
+        if (firstAttachment != null && viewModel != null && !note.isLocked) {
             val bytes = viewModel.readAttachment(firstAttachment)
-            thumbnailBitmap = if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size) else null
+            thumbnailBitmap = bytes?.let {
+                try { BitmapFactory.decodeByteArray(it, 0, it.size) } finally { it.fill(0) }
+            }
         } else {
             thumbnailBitmap = null
         }
@@ -1267,7 +867,7 @@ fun NoteListRow(
         modifier = Modifier
             .fillMaxWidth()
             .tactilePress(targetScale = 0.97f, onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(PimsDimensions.paddingMedium)
     ) {
@@ -1279,14 +879,14 @@ fun NoteListRow(
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(56.dp)
                         .clip(RoundedCornerShape(8.dp))
                 )
             }
         } else {
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(56.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
                 contentAlignment = Alignment.Center
@@ -1303,9 +903,12 @@ fun NoteListRow(
         // Text content
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (note.isPinned) {
+                    Icon(Icons.Default.PushPin, "Pinned", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                }
                 Text(
-                    text = note.title.ifBlank { "Untitled" },
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    text = if (note.isLocked) "Protected note" else note.title.ifBlank { "Untitled" },
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1321,30 +924,31 @@ fun NoteListRow(
                 }
             }
 
-            val subtitleParts = buildList {
-                add(timeStr)
-                if (!note.isLocked) {
-                    val cleanContent = note.content
-                        .replace('\n', ' ')
-                        .trim()
-                        .let { if (it == "•" || it == "-") "" else it }
-                    if (cleanContent.isNotBlank()) {
-                        add(cleanContent.take(60))
-                    } else if (firstAttachment != null) {
-                        add("Photo")
-                    }
-                }
+            if (!note.isLocked && note.content.isNotBlank()) {
+                Text(
+                    note.content.replace('\n', ' ').trim(),
+                    modifier = Modifier.padding(top = 4.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
+            val metadata = buildList {
+                add(timeStr)
+                if (!note.isLocked && note.tags.isNotEmpty()) {
+                    add(note.tags.take(2).joinToString(" ") { "#$it" })
+                }
+            }.joinToString(" · ")
             Text(
-                text = subtitleParts.joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
+                metadata, modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                maxLines = 1, overflow = TextOverflow.Ellipsis
             )
 
             // Reminder status row with interactive toggle
-            if (note.reminderAt != null) {
+            if (note.reminderAt != null && !note.isLocked) {
                 val remSdf = remember { SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()) }
                 val remText = remSdf.format(Date(note.reminderAt))
                 val isPast = note.reminderAt <= System.currentTimeMillis()
@@ -1374,24 +978,14 @@ fun NoteListRow(
                 }
             }
 
-            // Category & Hashtags as clean single metadata line
-            if (note.tags.isNotEmpty()) {
-                Text(
-                    text = note.tags.joinToString("  ") { "#$it" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
+
         }
 
         // Overflow Actions Menu (Copy, Duplicate, Share, Lock, Delete)
         Box {
             IconButton(
                 onClick = { showMenu = true },
-                modifier = Modifier.size(34.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
@@ -1405,6 +999,11 @@ fun NoteListRow(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
+                DropdownMenuItem(
+                    text = { Text(if (note.isPinned) "Unpin note" else "Pin note") },
+                    leadingIcon = { Icon(Icons.Default.PushPin, null) },
+                    onClick = { showMenu = false; viewModel?.togglePin(note) }
+                )
                 // Lock / Unlock Note
                 DropdownMenuItem(
                     text = { Text(if (note.isLocked) "Unlock Note" else "Lock Note") },
@@ -1424,9 +1023,6 @@ fun NoteListRow(
                                     viewModel?.toggleLock(note)
                                     Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
                                 }
-                            } else {
-                                viewModel?.toggleLock(note)
-                                Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
                             }
                         } else {
                             viewModel?.toggleLock(note)
@@ -1448,13 +1044,15 @@ fun NoteListRow(
                     onClick = {
                         showMenu = false
                         haptics.light()
-                        val full = buildString {
-                            if (note.title.isNotBlank()) appendLine(note.title)
-                            if (note.content.isNotBlank()) append(note.content)
+                        withUnlockedNote {
+                            val full = buildString {
+                                if (note.title.isNotBlank()) appendLine(note.title)
+                                if (note.content.isNotBlank()) append(note.content)
+                            }
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Persona Note", full))
+                            Toast.makeText(context, "Note copied to clipboard", Toast.LENGTH_SHORT).show()
                         }
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Persona Note", full))
-                        Toast.makeText(context, "Note copied to clipboard", Toast.LENGTH_SHORT).show()
                     }
                 )
 
@@ -1471,8 +1069,10 @@ fun NoteListRow(
                     onClick = {
                         showMenu = false
                         haptics.light()
-                        viewModel?.duplicateNote(note) {
-                            Toast.makeText(context, "Note duplicated", Toast.LENGTH_SHORT).show()
+                        withUnlockedNote {
+                            viewModel?.duplicateNote(note) {
+                                Toast.makeText(context, "Note duplicated", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                 )
@@ -1490,12 +1090,14 @@ fun NoteListRow(
                     onClick = {
                         showMenu = false
                         haptics.light()
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, note.title.ifBlank { "Note" })
-                            putExtra(Intent.EXTRA_TEXT, "${note.title}\n\n${note.content}")
+                        withUnlockedNote {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, note.title.ifBlank { "Note" })
+                                putExtra(Intent.EXTRA_TEXT, "${note.title}\n\n${note.content}")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Note"))
                         }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share Note"))
                     }
                 )
 

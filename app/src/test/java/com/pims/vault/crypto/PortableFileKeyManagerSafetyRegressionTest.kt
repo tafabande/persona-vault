@@ -154,4 +154,17 @@ class PortableFileKeyManagerSafetyRegressionTest {
         assertFalse(manager.hasLocalKey())
         assertEquals(corruptedCipher, fakePrefs.getString("pfk_wrap_cipher", null))
     }
+    @Test
+    fun failedPortableKeyCommitNeverReturnsOrCachesAnEphemeralKey() {
+        val prefs = Mockito.spy(fakePrefs)
+        val editor = Mockito.spy(fakePrefs.edit())
+        Mockito.doReturn(false).`when`(editor).commit()
+        Mockito.doReturn(editor).`when`(prefs).edit()
+        val manager = PortableFileKeyManager(mockContext, keySecurityManager, cryptoEngine, prefs)
+        repeat(2) {
+            assertThrows(IllegalStateException::class.java) { manager.copyKeyBytes() }
+            assertFalse(fakePrefs.contains("pfk_wrap_cipher"))
+        }
+    }
+
 }

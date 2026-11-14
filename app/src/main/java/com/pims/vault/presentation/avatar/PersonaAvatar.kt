@@ -57,8 +57,7 @@ fun PersonaAvatar(
         }
     }
 
-    val isFemale = config?.gender == AvatarGender.FEMALE ||
-            (config?.gender == null && name.isNotBlank() && name.hashCode() % 2 != 0)
+    val isFemale = config?.gender == AvatarGender.FEMALE
 
     val clickModifier = if (onClick != null) {
         Modifier.tactilePress {

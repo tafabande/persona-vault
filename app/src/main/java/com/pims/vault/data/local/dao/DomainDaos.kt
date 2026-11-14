@@ -6,6 +6,8 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
+import androidx.room.Upsert
 import com.pims.vault.core.model.DocumentType
 import com.pims.vault.core.model.MedicalRecordType
 import com.pims.vault.core.model.VaultCategory
@@ -202,8 +204,71 @@ interface VaultDao {
     @Query("SELECT * FROM vault_items ORDER BY category ASC, title ASC")
     suspend fun getAllVaultItems(): List<VaultItemEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertOrUpdate(item: VaultItemEntity): Long
+
+    @Update
+    suspend fun updateVaultItem(item: VaultItemEntity): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun archiveLegacyPayload(archive: com.pims.vault.data.local.entity.VaultItemMigrationArchiveEntity): Long
+
+    @Query("SELECT * FROM vault_item_migration_archive WHERE vault_item_id = :itemId ORDER BY archived_at DESC LIMIT 1")
+    suspend fun getMigrationArchive(itemId: String): com.pims.vault.data.local.entity.VaultItemMigrationArchiveEntity?
+
+    @Transaction
+    suspend fun persistMigratedPayload(
+        item: VaultItemEntity,
+        archive: com.pims.vault.data.local.entity.VaultItemMigrationArchiveEntity
+    ): Boolean {
+        val current = getVaultItemById(item.id) ?: return false
+        if (archive.vaultItemId != item.id || current.personId != item.personId || current.category != item.category ||
+            current.encryptionKeyVersion != archive.encryptionKeyVersion ||
+            current.encryptionFormatVersion != archive.encryptionFormatVersion ||
+            current.encryptionIv != archive.encryptionIv ||
+            !current.encryptedPayload.contentEquals(archive.encryptedPayload)
+        ) return false
+        if (archiveLegacyPayload(archive) == -1L && getMigrationArchive(item.id) != archive) return false
+        // A concurrent metadata edit is independent of the authenticated ciphertext.
+        // Copy only crypto fields into the row read inside this transaction.
+        val upgraded = current.copy(
+            encryptedPayload = item.encryptedPayload,
+            encryptionIv = item.encryptionIv,
+            encryptionFormatVersion = item.encryptionFormatVersion,
+            encryptionKeyVersion = item.encryptionKeyVersion,
+            updatedAt = maxOf(current.updatedAt, item.updatedAt)
+        )
+        check(updateVaultItem(upgraded) == 1) { "Vault item changed during migration" }
+        return true
+    }
+
+    @Transaction
+    suspend fun restoreLegacyArchivedItem(
+        expected: VaultItemEntity,
+        archive: com.pims.vault.data.local.entity.VaultItemMigrationArchiveEntity
+    ): Boolean {
+        val current = getVaultItemById(expected.id) ?: return false
+        if (current.encryptionKeyVersion != 2 || current.encryptionFormatVersion != 1 ||
+            current.personId != expected.personId || current.category != expected.category ||
+            current.encryptionKeyVersion != expected.encryptionKeyVersion ||
+            current.encryptionFormatVersion != expected.encryptionFormatVersion ||
+            current.encryptionIv != expected.encryptionIv ||
+            !current.encryptedPayload.contentEquals(expected.encryptedPayload)
+        ) return false
+        // Restore exactly the archive that authenticated, never a newly fetched replacement.
+        if (archive.vaultItemId != current.id || archive.encryptionFormatVersion != 1 ||
+            archive.encryptionKeyVersion != 1 ||
+            archive.archiveId != "${current.id}:key-1:target-iv-${current.encryptionIv}" ||
+            getMigrationArchive(current.id) != archive
+        ) return false
+        val restored = current.copy(
+            encryptedPayload = archive.encryptedPayload.copyOf(),
+            encryptionIv = archive.encryptionIv,
+            encryptionFormatVersion = archive.encryptionFormatVersion,
+            encryptionKeyVersion = archive.encryptionKeyVersion
+        )
+        return updateVaultItem(restored) == 1
+    }
 
     @Query("DELETE FROM vault_items WHERE id = :id")
     suspend fun deleteVaultItem(id: String)

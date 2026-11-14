@@ -9,6 +9,9 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.pims.vault.core.logging.VaultLogger
+import com.pims.vault.core.crypto.CryptoEngine
+import com.pims.vault.core.crypto.EncryptedPayload
+import com.pims.vault.core.crypto.ZeroizingByteArrayOutputStream
 import com.pims.vault.core.storage.B2StorageUploadService
 import com.pims.vault.core.storage.FileStorageService
 import com.pims.vault.data.local.dao.AddressDao
@@ -49,13 +52,14 @@ import com.pims.vault.data.local.entity.PlainNoteAttachmentEntity
 import com.pims.vault.data.local.entity.PlainNoteEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
 import com.pims.vault.data.local.entity.RelationshipNoteEntity
+import com.pims.vault.data.local.entity.RelationshipNoteAttachmentEntity
 import com.pims.vault.data.local.entity.SocialAccountEntity
 import com.pims.vault.data.local.entity.VaultItemEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.ByteArrayOutputStream
+import java.io.ByteArrayInputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -77,6 +81,7 @@ class FirestoreSyncService @Inject constructor(
     private val storageUploadService: com.pims.vault.core.storage.StorageUploadService,
     private val fileStorage: FileStorageService,
     private val networkMonitor: NetworkStateMonitor,
+    private val cryptoEngine: CryptoEngine,
     private val portableFileKeyManager: com.pims.vault.core.crypto.PortableFileKeyManager,
     private val keySecurityManager: com.pims.vault.core.crypto.KeySecurityManager,
     private val photoBackupCoordinatorProvider: javax.inject.Provider<PhotoBackupCoordinator>,
@@ -286,8 +291,54 @@ class FirestoreSyncService @Inject constructor(
         deleteRemoteDoc("relationships", relationshipId)
     }
 
+    private val relationshipDeletions by lazy { context.getSharedPreferences("relationship_note_deletions", Context.MODE_PRIVATE) }
+
+    private fun deletionKey(uid: String, noteId: String, attachmentId: String? = null): String {
+        require(listOfNotNull(uid, noteId, attachmentId).all { it.isNotBlank() && '/' !in it && '|' !in it })
+        return "$uid|$noteId|${attachmentId.orEmpty()}"
+    }
+
+    private fun hasPendingDeletion(uid: String, noteId: String, attachmentId: String? = null) =
+        relationshipDeletions.contains(deletionKey(uid, noteId)) ||
+            attachmentId != null && relationshipDeletions.contains(deletionKey(uid, noteId, attachmentId))
+
+    private suspend fun applyRelationshipDeletion(uid: String, noteId: String, attachmentId: String?) {
+        val noteRef = firestore.collection("accounts").document(uid).collection("relationshipNotes").document(noteId)
+        val attachments = if (attachmentId == null) noteRef.collection("attachments").get().await().documents
+            else listOf(noteRef.collection("attachments").document(attachmentId).get().await())
+        attachments.forEach { doc ->
+            val path = doc.getString("b2RemotePath") ?: doc.getString("objectKey") ?: ""
+            if (path.isNotBlank()) {
+                require(path.startsWith("users/notes/$uid/relationship_$noteId/") && !path.contains(".."))
+                storageUploadService.delete(path)
+            }
+            doc.reference.delete().await()
+        }
+        if (attachmentId == null) noteRef.delete().await()
+        check(relationshipDeletions.edit().remove(deletionKey(uid, noteId, attachmentId)).commit())
+    }
+
+    private suspend fun retryRelationshipDeletions(uid: String) {
+        if (!networkMonitor.isCurrentlyConnected()) return
+        relationshipDeletions.all.keys.filter { it.startsWith("$uid|") }.take(10).forEach { key ->
+            val parts = key.split('|')
+            if (parts.size == 3) try {
+                withTimeoutOrNull(10_000L) { applyRelationshipDeletion(uid, parts[1], parts[2].takeIf { it.isNotEmpty() }) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (_: Exception) { /* Retain durable tombstone for the next sync. */ }
+        }
+    }
+
     suspend fun deleteRemoteRelationshipNote(noteId: String) = withContext(Dispatchers.IO) {
-        deleteRemoteDoc("relationshipNotes", noteId)
+        val uid = getEffectiveUserId(null) ?: return@withContext
+        check(relationshipDeletions.edit().putBoolean(deletionKey(uid, noteId), true).commit())
+        retryRelationshipDeletions(uid)
+    }
+
+    suspend fun deleteRemoteRelationshipNoteAttachment(noteId: String, attachmentId: String) = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(null) ?: return@withContext
+        check(relationshipDeletions.edit().putBoolean(deletionKey(uid, noteId, attachmentId), true).commit())
+        retryRelationshipDeletions(uid)
     }
 
     suspend fun deleteRemotePerson(personId: String): Boolean = withContext(Dispatchers.IO) {
@@ -723,10 +774,12 @@ class FirestoreSyncService @Inject constructor(
             return@withContext
         }
         val uid = getEffectiveUserId(userId) ?: return@withContext
+        if (hasPendingDeletion(uid, note.id)) return@withContext
         // Enforce established device-local privacy policy:
         // Private relationship notes are encrypted locally with device master keys and are NEVER uploaded to cloud.
         if (note.isPrivate) {
-            VaultLogger.d("FirestoreSync", "Skipping cloud sync for private relationship note ${note.id} (device-local privacy policy)")
+            // Retry removal of historical public copies, including an interrupted privacy change.
+            deleteRemoteRelationshipNote(note.id)
             return@withContext
         }
         try {
@@ -736,6 +789,8 @@ class FirestoreSyncService @Inject constructor(
                 "topic" to (note.topic ?: ""),
                 "content" to (note.contentPlaintext ?: ""),
                 "isPrivate" to false,
+                "encryptedPayload" to com.google.firebase.firestore.FieldValue.delete(),
+                "encryptionIv" to com.google.firebase.firestore.FieldValue.delete(),
                 "createdAt" to note.createdAt,
                 "updatedAt" to note.updatedAt,
                 "version" to 1L
@@ -748,6 +803,133 @@ class FirestoreSyncService @Inject constructor(
             VaultLogger.i("FirestoreSync", "Relationship note ${note.id} synced to Firestore")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync relationship note: ${e.message}", e)
+        }
+    }
+
+    suspend fun syncRelationshipNoteAttachment(
+        userId: String?, noteId: String, attachment: RelationshipNoteAttachmentEntity
+    ) = withContext(Dispatchers.IO) {
+        if (!networkMonitor.isCurrentlyConnected()) return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext
+        var plain = ByteArray(0)
+        var pfk: ByteArray? = null
+        try {
+            val parent = relationshipNoteDao.getNoteById(noteId) ?: return@withContext
+            if (parent.isPrivate || hasPendingDeletion(uid, noteId, attachment.id)) return@withContext
+            val out = ZeroizingByteArrayOutputStream(attachment.fileSizeBytes.toInt().coerceAtLeast(32))
+            try {
+                fileStorage.readDecryptedFile(attachment.storagePath, "", attachment.sha256Hash, out)
+                plain = out.takeBytesAndWipe()
+            } finally {
+                out.wipe()
+            }
+            pfk = portableFileKeyManager.copyKeyBytes()
+            val payload = if (plain.size <= 800 * 1024) cryptoEngine.encrypt(plain, pfk!!) else null
+            var remotePath = ""
+            var downloadUrl = ""
+            var remoteIv = payload?.iv?.toHexString().orEmpty()
+            val inlineCipherHash = payload?.combinedCiphertextWithTag?.let { bytes ->
+                java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            }.orEmpty()
+            var remoteHash = inlineCipherHash
+            var b2Iv = ""
+            var previousRemotePath = ""
+            val attachmentRef = firestore.collection("accounts").document(uid)
+                .collection("relationshipNotes").document(noteId).collection("attachments").document(attachment.id)
+            runCatching {
+                val existingSnapshot = attachmentRef.get().await()
+                previousRemotePath = existingSnapshot.getString("b2RemotePath")
+                    ?: existingSnapshot.getString("objectKey").orEmpty()
+            }
+            if (storageUploadService.isConfigured()) {
+                val uploaded = storageUploadService.uploadNoteAttachment(uid, "relationship_$noteId", attachment.mimeType, plain)
+                remotePath = uploaded.remotePath
+                downloadUrl = uploaded.downloadUrl
+                b2Iv = uploaded.ivHex
+                if (uploaded.sha256Hex.isNotBlank()) remoteHash = uploaded.sha256Hex
+            }
+            if (plain.size > 800 * 1024 && remotePath.isBlank()) {
+                VaultLogger.w("FirestoreSync", "Large relationship note attachment needs configured cloud storage")
+                return@withContext
+            }
+            val data = hashMapOf(
+                "id" to attachment.id, "noteId" to noteId, "mimeType" to attachment.mimeType,
+                "fileSizeBytes" to attachment.fileSizeBytes, "sha256Hash" to remoteHash,
+                "ciphertextSha256" to inlineCipherHash,
+                "ciphertextBase64" to (payload?.let { Base64.encodeToString(it.combinedCiphertextWithTag, Base64.NO_WRAP) } ?: ""),
+                "encryptionIv" to remoteIv, "b2IvHex" to b2Iv, "b2RemotePath" to remotePath,
+                "b2DownloadUrl" to downloadUrl, "createdAt" to attachment.createdAt
+            )
+            attachmentRef.set(data, SetOptions.merge()).await()
+            if (previousRemotePath.isNotBlank() && previousRemotePath != remotePath) {
+                runCatching { storageUploadService.delete(previousRemotePath) }
+            }
+        } catch (e: Exception) {
+            VaultLogger.w("FirestoreSync", "Failed to sync relationship note attachment: ${e.message}")
+        } finally {
+            plain.fill(0)
+            pfk?.fill(0)
+        }
+    }
+
+    private suspend fun restoreRelationshipNoteAttachments(uid: String, noteId: String) {
+        val note = relationshipNoteDao.getNoteById(noteId) ?: return
+        if (note.isPrivate) return
+        val docs = firestore.collection("accounts").document(uid).collection("relationshipNotes")
+            .document(noteId).collection("attachments").get().await()
+        for (doc in docs.documents) {
+            if (!runCatching { UUID.fromString(noteId); UUID.fromString(doc.id) }.isSuccess) continue
+            if (hasPendingDeletion(uid, noteId, doc.id)) continue
+            if (relationshipNoteDao.getAttachmentById(doc.id) != null) continue
+            val mime = doc.getString("mimeType") ?: continue
+            if (mime !in setOf("image/jpeg", "image/png", "application/pdf")) continue
+            val size = doc.getLong("fileSizeBytes") ?: continue
+            if (size !in 1..(10L * 1024 * 1024)) continue
+            var cipherBytes = ByteArray(0)
+            var pfk: ByteArray? = null
+            var plainBytes = ByteArray(0)
+            try {
+                var ivHex = doc.getString("encryptionIv").orEmpty()
+                val encoded = doc.getString("ciphertextBase64").orEmpty()
+                var expectedCipherHash = ""
+                if (encoded.isNotBlank()) {
+                    cipherBytes = Base64.decode(encoded, Base64.NO_WRAP)
+                    expectedCipherHash = doc.getString("ciphertextSha256").orEmpty()
+                } else {
+                    val url = doc.getString("b2DownloadUrl").orEmpty()
+                    ivHex = doc.getString("b2IvHex") ?: ivHex
+                    expectedCipherHash = doc.getString("sha256Hash").orEmpty()
+                    if (url.isBlank()) continue
+                    cipherBytes = storageUploadService.downloadEncryptedBytes(url) ?: continue
+                }
+                if (cipherBytes.isEmpty() || ivHex.length != 24) continue
+                if (expectedCipherHash.isNotBlank()) {
+                    val actualHash = java.security.MessageDigest.getInstance("SHA-256").digest(cipherBytes)
+                        .joinToString("") { "%02x".format(it) }
+                    if (!actualHash.equals(expectedCipherHash, ignoreCase = true)) continue
+                }
+                pfk = portableFileKeyManager.copyKeyBytes()
+                val iv = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                plainBytes = cryptoEngine.decrypt(EncryptedPayload(cipherBytes, iv), pfk!!)
+                if (plainBytes.size.toLong() != size) continue
+                val metadata = fileStorage.storeEncryptedFile(
+                    documentId = "rel_note_${noteId}_${doc.id}", versionNumber = 1,
+                    mimeType = mime, inputStream = ByteArrayInputStream(plainBytes)
+                )
+                relationshipNoteDao.upsertAttachment(
+                    RelationshipNoteAttachmentEntity(
+                        id = doc.id, noteId = noteId, storagePath = metadata.relativePath,
+                        mimeType = mime, fileSizeBytes = metadata.sizeBytes, sha256Hash = metadata.sha256Hex,
+                        createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                    )
+                )
+            } catch (e: Exception) {
+                VaultLogger.w("FirestoreSync", "Could not restore relationship note attachment ${doc.id}: ${e.javaClass.simpleName}")
+            } finally {
+                cipherBytes.fill(0)
+                plainBytes.fill(0)
+                pfk?.fill(0)
+            }
         }
     }
 
@@ -767,6 +949,8 @@ class FirestoreSyncService @Inject constructor(
                 "accountIdentifier" to (item.accountIdentifier ?: ""),
                 "encryptedPayload" to payloadBase64,
                 "encryptionIv" to item.encryptionIv,
+                "encryptionFormatVersion" to item.encryptionFormatVersion,
+                "encryptionKeyVersion" to item.encryptionKeyVersion,
                 "notes" to (item.notes ?: ""),
                 "version" to 1L,
                 "updatedAt" to item.updatedAt
@@ -800,37 +984,224 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
+    private fun noteSyncAad(uid: String, noteId: String, ownerPersonId: String): ByteArray =
+        "PIMS|plain-note-sync|v1\naccount=${uid.trim()}\nnote=${noteId.trim()}\nowner=${ownerPersonId.trim()}"
+            .toByteArray(Charsets.UTF_8)
+
+    private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
+
+    private fun String.hexBytes(): ByteArray {
+        require(length % 2 == 0 && all { it.digitToIntOrNull(16) != null })
+        return chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }
+
+    private suspend fun readOrProtectLockedNote(
+        uid: String,
+        snapshot: com.google.firebase.firestore.DocumentSnapshot,
+        rawOwnerId: String
+    ): org.json.JSONObject? {
+        val noteId = snapshot.id
+        val payloadBase64 = snapshot.getString("encryptionPayload")
+        val ivHex = snapshot.getString("encryptionIv")
+        val keyVersion = snapshot.getLong("encryptionKeyVersion") ?: 1L
+        if (payloadBase64.isNullOrBlank() && ivHex.isNullOrBlank()) {
+            // Upgrade legacy locked notes once, removing their former plaintext cloud fields.
+            val legacy = org.json.JSONObject().apply {
+                put("title", snapshot.getString("title") ?: "Untitled Note")
+                put("content", snapshot.getString("content") ?: "")
+                put("format", snapshot.getString("format") ?: "PLAIN")
+                put("reminderAt", snapshot.getLong("reminderAt") ?: org.json.JSONObject.NULL)
+                put("reminderTag", snapshot.getString("reminderTag") ?: org.json.JSONObject.NULL)
+                put("reminderRepeat", snapshot.getString("reminderRepeat") ?: org.json.JSONObject.NULL)
+                put("isReminderDone", snapshot.getBoolean("isReminderDone") ?: false)
+            }
+            val clearBytes = legacy.toString().toByteArray(Charsets.UTF_8)
+            var syncKey: ByteArray? = null
+            try {
+                val keyBytes = portableFileKeyManager.copyKeyBytes()
+                syncKey = keyBytes
+                val encrypted = cryptoEngine.encrypt(clearBytes, keyBytes, noteSyncAad(uid, noteId, rawOwnerId))
+                withTimeoutOrNull(4000L) {
+                    firestore.collection("accounts").document(uid).collection("notes").document(noteId)
+                        .set(
+                            mapOf(
+                                "title" to "",
+                                "content" to "",
+                                "format" to "PLAIN",
+                                "reminderAt" to null,
+                                "reminderTag" to null,
+                                "reminderRepeat" to null,
+                                "isReminderDone" to false,
+                                "encryptionPayload" to Base64.encodeToString(encrypted.combinedCiphertextWithTag, Base64.NO_WRAP),
+                                "encryptionIv" to encrypted.iv.toHexString(),
+                                "encryptionKeyVersion" to 1L,
+                                "updatedAt" to System.currentTimeMillis()
+                            ),
+                            SetOptions.merge()
+                        ).await()
+                }
+                return legacy
+            } finally {
+                clearBytes.fill(0)
+                syncKey?.fill(0)
+            }
+        }
+        if (payloadBase64.isNullOrBlank() || ivHex.isNullOrBlank() || keyVersion != 1L) return null
+        var syncKey: ByteArray? = null
+        var clearBytes: ByteArray? = null
+        return try {
+            syncKey = portableFileKeyManager.copyKeyBytes()
+            clearBytes = cryptoEngine.decrypt(
+                EncryptedPayload(Base64.decode(payloadBase64, Base64.NO_WRAP), ivHex.hexBytes()),
+                syncKey,
+                noteSyncAad(uid, noteId, rawOwnerId)
+            )
+            org.json.JSONObject(String(clearBytes, Charsets.UTF_8))
+        } catch (_: Exception) {
+            null
+        } finally {
+            syncKey?.fill(0)
+            clearBytes?.fill(0)
+        }
+    }
+
+    private suspend fun readOrProtectLockedNoteCaption(
+        uid: String,
+        noteId: String,
+        attachmentId: String,
+        snapshot: com.google.firebase.firestore.DocumentSnapshot
+    ): String? {
+        val encryptedCaption = snapshot.getString("encryptedCaption")
+        val captionIv = snapshot.getString("captionIv")
+        val version = snapshot.getLong("captionKeyVersion") ?: 1L
+        if (encryptedCaption.isNullOrBlank() && captionIv.isNullOrBlank()) {
+            val legacyCaption = snapshot.getString("caption") ?: return null
+            if (legacyCaption.isBlank()) return ""
+            val clearBytes = legacyCaption.toByteArray(Charsets.UTF_8)
+            var key: ByteArray? = null
+            try {
+                val keyBytes = portableFileKeyManager.copyKeyBytes()
+                key = keyBytes
+                val aad = "PIMS|plain-note-caption|v1\naccount=$uid\nnote=$noteId\nattachment=$attachmentId".toByteArray(Charsets.UTF_8)
+                val encrypted = cryptoEngine.encrypt(clearBytes, keyBytes, aad)
+                withTimeoutOrNull(4000L) {
+                    snapshot.reference.set(
+                        mapOf(
+                            "caption" to "",
+                            "encryptedCaption" to Base64.encodeToString(encrypted.combinedCiphertextWithTag, Base64.NO_WRAP),
+                            "captionIv" to encrypted.iv.toHexString(),
+                            "captionKeyVersion" to 1L
+                        ),
+                        SetOptions.merge()
+                    ).await()
+                }
+                return legacyCaption
+            } finally {
+                clearBytes.fill(0)
+                key?.fill(0)
+            }
+        }
+        if (encryptedCaption.isNullOrBlank() || captionIv.isNullOrBlank() || version != 1L) return null
+        var key: ByteArray? = null
+        var clearBytes: ByteArray? = null
+        return try {
+            key = portableFileKeyManager.copyKeyBytes()
+            clearBytes = cryptoEngine.decrypt(
+                EncryptedPayload(Base64.decode(encryptedCaption, Base64.NO_WRAP), captionIv.hexBytes()),
+                key,
+                "PIMS|plain-note-caption|v1\naccount=$uid\nnote=$noteId\nattachment=$attachmentId".toByteArray(Charsets.UTF_8)
+            )
+            String(clearBytes, Charsets.UTF_8)
+        } catch (_: Exception) {
+            null
+        } finally {
+            key?.fill(0)
+            clearBytes?.fill(0)
+        }
+    }
+
     suspend fun syncNote(userId: String?, note: PlainNoteEntity, isDeleted: Boolean = false) = withContext(Dispatchers.IO) {
         if (!networkMonitor.isCurrentlyConnected()) {
             VaultLogger.d("FirestoreSync", "Device is offline; skipping immediate Firestore sync for note ${note.id}")
-            return@withContext
+            return@withContext false
         }
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
-            val noteData = hashMapOf(
+            val noteData = hashMapOf<String, Any?>(
                 "id" to note.id,
                 "ownerPersonId" to note.ownerPersonId,
-                "title" to note.title,
-                "content" to note.content,
-                "format" to note.format,
                 "createdAt" to note.createdAt,
                 "updatedAt" to note.updatedAt,
-                "reminderAt" to note.reminderAt,
-                "reminderTag" to note.reminderTag,
-                "reminderRepeat" to note.reminderRepeat,
-                "isReminderDone" to note.isReminderDone,
                 "isLocked" to note.isLocked,
                 "isDeleted" to isDeleted,
+                "encryptionPayload" to null,
+                "encryptionIv" to null,
+                "encryptionKeyVersion" to null,
+                "payloadJson" to com.google.firebase.firestore.FieldValue.delete(),
                 "version" to 1L
             )
-            withTimeoutOrNull(4000L) {
+            if (note.isLocked && !isDeleted) {
+                val privatePayload = org.json.JSONObject().apply {
+                    put("title", note.title)
+                    put("content", note.content)
+                    put("format", note.format)
+                    put("reminderAt", note.reminderAt ?: org.json.JSONObject.NULL)
+                    put("reminderTag", note.reminderTag ?: org.json.JSONObject.NULL)
+                    put("reminderRepeat", note.reminderRepeat ?: org.json.JSONObject.NULL)
+                    put("isReminderDone", note.isReminderDone)
+                    put("isPinned", note.isPinned)
+                }.toString().toByteArray(Charsets.UTF_8)
+                val syncKey = portableFileKeyManager.copyKeyBytes()
+                try {
+                    val encrypted = cryptoEngine.encrypt(privatePayload, syncKey, noteSyncAad(uid, note.id, note.ownerPersonId))
+                    noteData["title"] = ""
+                    noteData["content"] = ""
+                    noteData["format"] = "PLAIN"
+                    noteData["encryptionPayload"] = Base64.encodeToString(encrypted.combinedCiphertextWithTag, Base64.NO_WRAP)
+                    noteData["encryptionIv"] = encrypted.iv.toHexString()
+                    noteData["encryptionKeyVersion"] = 1L
+                    noteData["reminderAt"] = null
+                    noteData["reminderTag"] = null
+                    noteData["reminderRepeat"] = null
+                    noteData["isReminderDone"] = false
+                    noteData["isPinned"] = false
+                } finally {
+                    java.util.Arrays.fill(syncKey, 0)
+                    java.util.Arrays.fill(privatePayload, 0)
+                }
+            } else if (note.isLocked) {
+                noteData["title"] = ""
+                noteData["content"] = ""
+                noteData["format"] = "PLAIN"
+                noteData["reminderAt"] = null
+                noteData["reminderTag"] = null
+                noteData["reminderRepeat"] = null
+                noteData["isReminderDone"] = false
+                noteData["isPinned"] = false
+            } else {
+                noteData["title"] = note.title
+                noteData["content"] = note.content
+                noteData["format"] = note.format
+                noteData["reminderAt"] = note.reminderAt
+                noteData["reminderTag"] = note.reminderTag
+                noteData["reminderRepeat"] = note.reminderRepeat
+                noteData["isReminderDone"] = note.isReminderDone
+                noteData["isPinned"] = note.isPinned
+            }
+            val committed = withTimeoutOrNull(4000L) {
                 firestore.collection("accounts").document(uid)
                     .collection("notes").document(note.id)
                     .set(noteData, SetOptions.merge()).await()
-            }
+                true
+            } ?: false
+            if (!committed) return@withContext false
             VaultLogger.i("FirestoreSync", "Note ${note.id} synced to Firestore (isDeleted: $isDeleted)")
-        } catch (e: Exception) {
-            VaultLogger.e("FirestoreSync", "Failed to sync note: ${e.message}", e)
+            true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Note sync failed; retained for retry")
+            false
         }
     }
 
@@ -876,38 +1247,60 @@ class FirestoreSyncService @Inject constructor(
             return@withContext
         }
         val uid = getEffectiveUserId(userId) ?: return@withContext
+        var bytes = ByteArray(0)
         try {
+            val parentNote = plainNoteDao.getById(noteId)
+            val encryptCaption = parentNote?.isLocked == true
             var b2DownloadUrl = ""
             var b2RemotePath = ""
             var b2IvHex = ""
             var binaryMissing = false
             var ciphertextBase64 = ""
+            var encryptedCaptionBase64 = ""
+            var captionIvHex = ""
 
-            var bytes = ByteArray(0)
+            val attachmentOut = ZeroizingByteArrayOutputStream(attachment.fileSizeBytes.toInt().coerceAtLeast(32))
             try {
-                val baos = ByteArrayOutputStream()
                 fileStorage.readDecryptedFile(
                     relativePath = attachment.storagePath,
                     encryptionIvHex = "",
                     expectedSha256Hex = attachment.sha256Hash,
-                    outputStream = baos
+                    outputStream = attachmentOut
                 )
-                bytes = baos.toByteArray()
+                bytes = attachmentOut.takeBytesAndWipe()
             } catch (e: Exception) {
                 VaultLogger.w("FirestoreSync", "Attachment binary read failed: ${e.message}")
+            } finally {
+                attachmentOut.wipe()
             }
 
             if (bytes.isNotEmpty()) {
                 // If small enough (< 800KB), generate inline encrypted base64 payload for zero-dependency sync
                 val pfk = try { portableFileKeyManager.copyKeyBytes() } catch (_: Exception) { null }
-                if (pfk != null && bytes.size <= 800 * 1024) {
+                if (pfk != null) {
                     try {
-                        val enc = com.pims.vault.core.crypto.HardenedCryptoEngine().encrypt(bytes, pfk)
-                        ciphertextBase64 = Base64.encodeToString(enc.combinedCiphertextWithTag, Base64.NO_WRAP)
-                        b2IvHex = enc.iv.joinToString("") { "%02x".format(it) }
+                        if (bytes.size <= 800 * 1024) {
+                            val enc = cryptoEngine.encrypt(bytes, pfk)
+                            ciphertextBase64 = Base64.encodeToString(enc.combinedCiphertextWithTag, Base64.NO_WRAP)
+                            b2IvHex = enc.iv.toHexString()
+                        }
+                        if (encryptCaption && !attachment.caption.isNullOrBlank()) {
+                            val captionBytes = attachment.caption.toByteArray(Charsets.UTF_8)
+                            try {
+                                val captionEncrypted = cryptoEngine.encrypt(
+                                    captionBytes,
+                                    pfk,
+                                    "PIMS|plain-note-caption|v1\naccount=$uid\nnote=$noteId\nattachment=${attachment.id}".toByteArray(Charsets.UTF_8)
+                                )
+                                encryptedCaptionBase64 = Base64.encodeToString(captionEncrypted.combinedCiphertextWithTag, Base64.NO_WRAP)
+                                captionIvHex = captionEncrypted.iv.toHexString()
+                            } finally {
+                                captionBytes.fill(0)
+                            }
+                        }
                     } catch (_: Exception) {
                     } finally {
-                        java.util.Arrays.fill(pfk, 0)
+                        pfk.fill(0)
                     }
                 }
 
@@ -947,7 +1340,10 @@ class FirestoreSyncService @Inject constructor(
                 "mimeType" to attachment.mimeType,
                 "fileSizeBytes" to attachment.fileSizeBytes,
                 "sha256Hash" to attachment.sha256Hash,
-                "caption" to attachment.caption,
+                "caption" to if (encryptCaption) "" else attachment.caption,
+                "encryptedCaption" to encryptedCaptionBase64,
+                "captionIv" to captionIvHex,
+                "captionKeyVersion" to 1L,
                 "createdAt" to attachment.createdAt
             )
             withTimeoutOrNull(6000L) {
@@ -959,6 +1355,8 @@ class FirestoreSyncService @Inject constructor(
             VaultLogger.i("FirestoreSync", "Attachment ${attachment.id} for note $noteId synced to Firestore")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync note attachment: ${e.message}", e)
+        } finally {
+            bytes.fill(0)
         }
     }
 
@@ -1005,17 +1403,19 @@ class FirestoreSyncService @Inject constructor(
             var ciphertextBase64 = ""
 
             var bytes = ByteArray(0)
+            val versionOut = ZeroizingByteArrayOutputStream(version.fileSizeBytes.toInt().coerceAtLeast(32))
             try {
-                val baos = ByteArrayOutputStream()
                 fileStorage.readDecryptedFile(
                     relativePath = version.fileStoragePath,
                     encryptionIvHex = version.encryptionIv,
                     expectedSha256Hex = version.sha256Hash,
-                    outputStream = baos
+                    outputStream = versionOut
                 )
-                bytes = baos.toByteArray()
+                bytes = versionOut.takeBytesAndWipe()
             } catch (e: Exception) {
                 VaultLogger.w("FirestoreSync", "Document version binary read failed: ${e.message}")
+            } finally {
+                versionOut.wipe()
             }
 
             if (bytes.isNotEmpty()) {
@@ -1230,6 +1630,8 @@ class FirestoreSyncService @Inject constructor(
         if (!networkMonitor.isCurrentlyConnected()) {
             return@withContext SyncResult(false, 0, "Device is offline")
         }
+
+        retryRelationshipDeletions(uid)
 
         // Ensure account file key is synchronized before uploading binaries
         syncAccountFileKey(uid)
@@ -1654,6 +2056,8 @@ class FirestoreSyncService @Inject constructor(
             return@withContext SyncResult(false, 0, "Device is offline")
         }
 
+        retryRelationshipDeletions(uid)
+
         // Synchronize portable file key first so all media, attachments, documents and avatars decrypt cleanly
         syncAccountFileKey(uid)
 
@@ -2035,6 +2439,8 @@ class FirestoreSyncService @Inject constructor(
                         val remoteUpdated = doc.getLong("updatedAt") ?: System.currentTimeMillis()
 
                         val existing = relationshipNoteDao.getNoteById(doc.id)
+                        if (hasPendingDeletion(uid, doc.id) || doc.getBoolean("isPrivate") == true || existing?.isPrivate == true ||
+                            existing != null && existing.relationshipId != relId) continue
                         if (existing != null) {
                             val localContent = existing.contentPlaintext ?: ""
                             if (localContent.trim() != remoteContent.trim()) {
@@ -2065,6 +2471,7 @@ class FirestoreSyncService @Inject constructor(
 
                         if (resolved != null) {
                             relationshipNoteDao.insertOrUpdate(resolved)
+                            if (!resolved.isPrivate) restoreRelationshipNoteAttachments(uid, resolved.id)
                             count++
                         }
                     }
@@ -2085,6 +2492,8 @@ class FirestoreSyncService @Inject constructor(
                     } else ByteArray(0)
 
                     val remoteIv = doc.getString("encryptionIv") ?: ""
+                    val remoteFormatVersion = (doc.getLong("encryptionFormatVersion") ?: 1L).toInt()
+                    val remoteKeyVersion = (doc.getLong("encryptionKeyVersion") ?: 1L).toInt()
                     val catStr = doc.getString("category") ?: "PASSWORD"
                     val category = try { VaultCategory.valueOf(catStr) } catch (_: Exception) { VaultCategory.PASSWORD }
                     val remoteTitle = doc.getString("title") ?: "Untitled Item"
@@ -2101,6 +2510,8 @@ class FirestoreSyncService @Inject constructor(
                         remoteAccount = remoteAccount,
                         category = category,
                         notes = notes,
+                        encryptionFormatVersion = remoteFormatVersion,
+                        encryptionKeyVersion = remoteKeyVersion,
                         remoteUpdated = remoteUpdated
                     )
                     if (action == VaultDownsyncAction.APPLY_INSERT_OR_UPDATE) {
@@ -2119,13 +2530,28 @@ class FirestoreSyncService @Inject constructor(
                     val isDeleted = doc.getBoolean("isDeleted") ?: false
                     val rawOwner = doc.getString("ownerPersonId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetOwner = personIdMap[rawOwner] ?: rawOwner
-                    val title = doc.getString("title") ?: "Untitled Note"
-                    val content = doc.getString("content") ?: ""
-                    val format = doc.getString("format") ?: "PLAIN"
+                    val isLocked = doc.getBoolean("isLocked") ?: false
+                    val privatePayload = if (!isDeleted && isLocked) {
+                        readOrProtectLockedNote(uid, doc, rawOwner)
+                    } else null
+                    if (!isDeleted && isLocked && privatePayload == null) {
+                        VaultLogger.w("FirestoreSync", "Skipped locked note $noteId because its protected payload could not be authenticated")
+                        continue
+                    }
+                    val title = if (isLocked && !isDeleted) privatePayload!!.optString("title", "Untitled Note") else doc.getString("title") ?: "Untitled Note"
+                    val content = if (isLocked && !isDeleted) privatePayload!!.optString("content", "") else doc.getString("content") ?: ""
+                    val format = if (isLocked && !isDeleted) privatePayload!!.optString("format", "PLAIN") else doc.getString("format") ?: "PLAIN"
                     val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
                     val updatedAt = doc.getLong("updatedAt") ?: System.currentTimeMillis()
+                    val reminderAt = if (isLocked && !isDeleted) privatePayload!!.optLong("reminderAt", 0L).takeIf { it > 0L } else doc.getLong("reminderAt")
+                    val reminderTag = if (isLocked && !isDeleted) privatePayload!!.optString("reminderTag").takeIf { it.isNotBlank() && it != "null" } else doc.getString("reminderTag")
+                    val reminderRepeat = if (isLocked && !isDeleted) privatePayload!!.optString("reminderRepeat").takeIf { it.isNotBlank() && it != "null" } else doc.getString("reminderRepeat")
+                    val isReminderDone = if (isLocked && !isDeleted) privatePayload!!.optBoolean("isReminderDone", false) else doc.getBoolean("isReminderDone") ?: false
 
                     val existingNote = plainNoteDao.getById(noteId)
+                    val incomingPin = if (isLocked) {
+                        privatePayload?.takeIf { it.has("isPinned") }?.optBoolean("isPinned", false)
+                    } else doc.getBoolean("isPinned")
                     if (isDeleted) {
                         if (existingNote != null) {
                             if (existingNote.updatedAt > updatedAt) {
@@ -2146,9 +2572,9 @@ class FirestoreSyncService @Inject constructor(
                             recordConflictIfNeeded(
                                 entityType = "Note",
                                 entityId = noteId,
-                                fieldName = "Title / Content",
-                                localValue = "${existingNote.title}: ${existingNote.content}",
-                                remoteValue = "$title: $content",
+                                fieldName = if (isLocked) "Protected note content" else "Title / Content",
+                                localValue = if (isLocked) "Protected content differs" else "${existingNote.title}: ${existingNote.content}",
+                                remoteValue = if (isLocked) "Protected content differs" else "$title: $content",
                                 localVersion = existingNote.updatedAt,
                                 serverVersion = updatedAt
                             )
@@ -2158,13 +2584,9 @@ class FirestoreSyncService @Inject constructor(
                             continue
                         } else {
                             effectiveNoteId = existingNote.id
+                            incomingPin?.let { plainNoteDao.applyRemotePin(existingNote.id, it, updatedAt) }
                         }
                     } else {
-                        val isLocked = doc.getBoolean("isLocked") ?: false
-                        val reminderAt = doc.getLong("reminderAt")
-                        val reminderTag = doc.getString("reminderTag")
-                        val reminderRepeat = doc.getString("reminderRepeat")
-                        val isReminderDone = doc.getBoolean("isReminderDone") ?: false
                         val noteEntity = PlainNoteEntity(
                             id = noteId,
                             ownerPersonId = targetOwner,
@@ -2177,7 +2599,8 @@ class FirestoreSyncService @Inject constructor(
                             reminderTag = reminderTag,
                             reminderRepeat = reminderRepeat,
                             isReminderDone = isReminderDone,
-                            isLocked = isLocked
+                            isLocked = isLocked,
+                            isPinned = incomingPin ?: false
                         )
                         plainNoteDao.upsert(noteEntity)
                         count++
@@ -2192,7 +2615,9 @@ class FirestoreSyncService @Inject constructor(
                             val mimeType = attDoc.getString("mimeType") ?: "image/jpeg"
                             var fileSizeBytes = attDoc.getLong("fileSizeBytes") ?: 0L
                             var sha256Hash = attDoc.getString("sha256Hash") ?: ""
-                            val caption = attDoc.getString("caption")
+                            val caption = if (isLocked) {
+                                readOrProtectLockedNoteCaption(uid, noteId, attId, attDoc)
+                            } else attDoc.getString("caption")
                             val attCreatedAt = attDoc.getLong("createdAt") ?: System.currentTimeMillis()
                             val b2DownloadUrl = attDoc.getString("b2DownloadUrl")
                             val b2IvHex = attDoc.getString("b2IvHex") ?: ""
@@ -2762,14 +3187,17 @@ class FirestoreSyncService @Inject constructor(
         remoteAccount: String?,
         category: VaultCategory,
         notes: String?,
+        encryptionFormatVersion: Int = 1,
+        encryptionKeyVersion: Int = 1,
         remoteUpdated: Long
     ): VaultDownsyncAction {
-        val isStructurallyValid = shouldDownsyncVaultItem(payloadBytes, remoteIv)
+        val isSupportedVersion = encryptionFormatVersion == 1 && encryptionKeyVersion in 1..2
+        val isStructurallyValid = isSupportedVersion && shouldDownsyncVaultItem(payloadBytes, remoteIv)
         if (!isStructurallyValid) {
             if (payloadBytes.isNotEmpty() || remoteIv.isNotBlank()) {
                 VaultLogger.w(
                     "FirestoreSync",
-                    "Skipping malformed remote vault item $docId: invalid IV or payload (< $MIN_GCM_CIPHERTEXT_BYTES bytes)"
+                    "Skipping incompatible remote vault item $docId: unsupported crypto version or invalid IV/payload"
                 )
                 val existing = vaultDao.getItemById(docId)
                 if (existing != null) {
@@ -2812,6 +3240,8 @@ class FirestoreSyncService @Inject constructor(
             accountIdentifier = remoteAccount,
             encryptedPayload = payloadBytes,
             encryptionIv = remoteIv,
+            encryptionFormatVersion = encryptionFormatVersion,
+            encryptionKeyVersion = encryptionKeyVersion,
             notes = notes,
             updatedAt = remoteUpdated
         )
@@ -2846,62 +3276,16 @@ class FirestoreSyncService @Inject constructor(
             remoteCreatedAt: Long,
             remoteUpdatedAt: Long
         ): RelationshipNoteEntity? {
-            val remotePayloadBytes = if (!remotePayloadBase64.isNullOrBlank()) {
-                try {
-                    java.util.Base64.getDecoder().decode(remotePayloadBase64)
-                } catch (_: Throwable) {
-                    try { Base64.decode(remotePayloadBase64, Base64.NO_WRAP) } catch (_: Throwable) { null }
-                }
-            } else null
-
-            val remoteHasEncryptedContent = remotePayloadBytes != null && remotePayloadBytes.isNotEmpty() && !remoteIv.isNullOrBlank()
-
-            if (existing == null) {
-                // Incomplete remote private placeholder with no ciphertext and no content must not be created as an empty stub
-                if (remoteIsPrivate && !remoteHasEncryptedContent && remoteContent.isBlank()) {
-                    return null
-                }
-                return RelationshipNoteEntity(
-                    id = remoteId,
-                    relationshipId = remoteRelationshipId,
-                    topic = remoteTopic,
-                    contentPlaintext = if (remoteIsPrivate) null else remoteContent,
-                    encryptedPayload = remotePayloadBytes,
-                    encryptionIv = remoteIv,
-                    format = com.pims.vault.domain.model.NoteFormat.PLAIN,
-                    isPrivate = remoteIsPrivate,
-                    createdAt = remoteCreatedAt,
-                    updatedAt = remoteUpdatedAt
-                )
-            }
-
-            val existingHasEncryptedContent = existing.isPrivate && existing.encryptedPayload != null && existing.encryptedPayload.isNotEmpty()
-
-            // Invariant 1: If existing is a private encrypted note, and remote update has NO valid encrypted payload and IV,
-            // we MUST NOT wipe the local encrypted content!
-            if (existingHasEncryptedContent && !remoteHasEncryptedContent) {
-                return null
-            }
-
-            // Normal timestamp precedence: Local is king if local is newer or equal
-            if (existing.updatedAt >= remoteUpdatedAt) {
-                return null
-            }
-
-            val finalIsPrivate = if (remoteHasEncryptedContent) true else remoteIsPrivate
-            val finalPayload = remotePayloadBytes ?: if (finalIsPrivate) existing.encryptedPayload else null
-            val finalIv = if (!remoteIv.isNullOrBlank()) remoteIv else if (finalIsPrivate) existing.encryptionIv else null
-
+            // Private relationship notes are device-only, including historical cloud copies.
+            if (remoteIsPrivate || existing?.isPrivate == true || !remotePayloadBase64.isNullOrBlank() || !remoteIv.isNullOrBlank()) return null
+            if (existing != null && (existing.id != remoteId || existing.relationshipId != remoteRelationshipId || existing.updatedAt >= remoteUpdatedAt)) return null
+            if (remoteId.isBlank() || remoteRelationshipId.isBlank()) return null
             return RelationshipNoteEntity(
-                id = remoteId,
-                relationshipId = remoteRelationshipId,
-                topic = remoteTopic ?: existing.topic,
-                contentPlaintext = if (finalIsPrivate) null else remoteContent,
-                encryptedPayload = finalPayload,
-                encryptionIv = finalIv,
-                format = existing.format,
-                isPrivate = finalIsPrivate,
-                createdAt = existing.createdAt,
+                id = remoteId, relationshipId = remoteRelationshipId,
+                topic = remoteTopic ?: existing?.topic, contentPlaintext = remoteContent,
+                encryptedPayload = null, encryptionIv = null,
+                format = existing?.format ?: com.pims.vault.domain.model.NoteFormat.PLAIN,
+                isPrivate = false, createdAt = existing?.createdAt ?: remoteCreatedAt,
                 updatedAt = remoteUpdatedAt
             )
         }

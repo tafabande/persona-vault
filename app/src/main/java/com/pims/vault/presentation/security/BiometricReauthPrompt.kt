@@ -31,8 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.security.SecurityTier
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
 
 /**
  * Non-punitive biometric / credential reauthentication prompt.

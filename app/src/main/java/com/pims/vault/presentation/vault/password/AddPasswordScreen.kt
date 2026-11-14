@@ -57,8 +57,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -196,7 +194,7 @@ fun AddPasswordScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.SpaceBetween
@@ -398,7 +396,7 @@ fun AddPasswordScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Save Password to Vault",
+                    text = "Save password",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -554,45 +552,21 @@ private fun CleanPasswordTextField(
     isDark: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val cardBg = MaterialTheme.colorScheme.surface
-    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-    val textPrimary = MaterialTheme.colorScheme.onSurface
-    val textSecondary = MaterialTheme.colorScheme.onSurfaceVariant
-    val accent = MaterialTheme.colorScheme.primary
-
-    OutlinedTextField(
+    com.pims.vault.presentation.ui.components.PersonaTextInput(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, fontSize = 13.sp) },
-        placeholder = { Text(placeholder, fontSize = 13.sp, color = textSecondary.copy(alpha = 0.6f)) },
-        leadingIcon = leadingIcon?.let {
-            {
-                Icon(
-                    imageVector = it,
-                    contentDescription = null,
-                    tint = textSecondary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+        modifier = modifier,
+        label = label,
+        placeholder = placeholder,
+        leadingIcon = leadingIcon?.let { icon ->
+            { Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         },
         trailingIcon = trailingIcon,
         visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         singleLine = singleLine,
-        maxLines = maxLines,
-        shape = RoundedCornerShape(14.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = cardBg,
-            unfocusedContainerColor = cardBg,
-            focusedBorderColor = accent,
-            unfocusedBorderColor = borderColor,
-            focusedTextColor = textPrimary,
-            unfocusedTextColor = textPrimary,
-            focusedLabelColor = accent,
-            unfocusedLabelColor = textSecondary
-        ),
-        modifier = modifier.fillMaxWidth()
+        maxLines = maxLines
     )
 }
 

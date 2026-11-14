@@ -49,7 +49,10 @@ data class PlainNoteEntity(
     val isReminderDone: Boolean = false,
 
     @ColumnInfo(name = "is_locked", defaultValue = "0")
-    val isLocked: Boolean = false
+    val isLocked: Boolean = false,
+
+    @ColumnInfo(name = "is_pinned", defaultValue = "0")
+    val isPinned: Boolean = false
 )
 
 @Entity(

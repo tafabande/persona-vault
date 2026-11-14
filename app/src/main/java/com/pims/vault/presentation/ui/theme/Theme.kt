@@ -35,6 +35,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -87,7 +89,7 @@ object PimsControlSize {
 object PimsRadius {
     val section: Dp = 0.dp
     val chip: Dp = 50.dp
-    val input: Dp = 10.dp
+    val input: Dp = 14.dp
     val selection: Dp = 8.dp
     val surface: Dp = 16.dp
     val primaryAction: Dp = 14.dp
@@ -375,13 +377,17 @@ object PimsColors {
     val groupedSurface: Color
         @Composable get() = PimsTheme.tonalSurfaces.grouped
     val inputSurface: Color
-        @Composable get() = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+        @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.45f).compositeOver(MaterialTheme.colorScheme.background)
     val selectedSurface: Color
         @Composable get() = PimsTheme.tonalSurfaces.selected
     val outline: Color
         @Composable get() = PimsTheme.tonalSurfaces.borderSubtle.copy(alpha = 0.45f)
     val focus: Color
         @Composable get() = MaterialTheme.colorScheme.primary
+    val success: Color
+        @Composable get() = MaterialTheme.colorScheme.primary
+    val warning: Color
+        @Composable get() = if (LocalPimsDarkTheme.current) DarkStateWarning else StateWarning
     val error: Color
         @Composable get() = MaterialTheme.colorScheme.error
     val disabledSurface: Color
@@ -429,6 +435,10 @@ fun createPersonaColorScheme(mood: PersonaMood = PersonaMood.WARM) = lightColorS
     onError = Color.White
 )
 
+/** Chooses readable foreground ink for every mood accent, including transition colours. */
+internal fun personaAccentContentColor(accent: Color): Color =
+    if (accent.luminance() > 0.179f) Color.Black else Color.White
+
 /**
  * Centrally animates all semantic color tokens on PersonaMood and theme transitions.
  * Supports both light and dark modes with smooth animated transitions.
@@ -461,7 +471,7 @@ fun animatedPersonaColorScheme(
     return if (isDark) {
         darkColorScheme(
             primary = primary,
-            onPrimary = Color(0xFF1A1917),
+            onPrimary = personaAccentContentColor(primary),
             primaryContainer = primaryContainer,
             onPrimaryContainer = DarkTextPrimary,
             secondary = DarkTextSecondary,
@@ -469,7 +479,7 @@ fun animatedPersonaColorScheme(
             secondaryContainer = surfaceVariant,
             onSecondaryContainer = DarkTextPrimary,
             tertiary = primary,
-            onTertiary = Color(0xFF1A1917),
+            onTertiary = personaAccentContentColor(primary),
             tertiaryContainer = avatarBackdrop,
             onTertiaryContainer = DarkTextPrimary,
             background = background,
@@ -483,18 +493,24 @@ fun animatedPersonaColorScheme(
             surfaceTint = Color.Transparent,
             surfaceContainer = surface,
             surfaceContainerHigh = surfaceVariant,
-            surfaceContainerHighest = if (mood == PersonaMood.MONOCHROME) DarkSurfaceSelected else surfaceVariant,
+            surfaceContainerHighest = surfaceVariant,
             surfaceContainerLow = surface,
             surfaceContainerLowest = background,
             surfaceDim = surface,
             surfaceBright = surfaceVariant,
             error = DarkStateError,
-            onError = Color(0xFF1A1917)
+            onError = Color(0xFF1A1917),
+            errorContainer = DarkStateError.copy(alpha = 0.16f).compositeOver(surface),
+            onErrorContainer = DarkTextPrimary,
+            inverseSurface = surfaceVariant,
+            inverseOnSurface = DarkTextPrimary,
+            inversePrimary = primary,
+            scrim = Color.Black
         )
     } else {
         lightColorScheme(
             primary = primary,
-            onPrimary = Color.White,
+            onPrimary = personaAccentContentColor(primary),
             primaryContainer = primaryContainer,
             onPrimaryContainer = PersonaTextPrimary,
             secondary = PersonaTextSecondary,
@@ -502,7 +518,7 @@ fun animatedPersonaColorScheme(
             secondaryContainer = surfaceVariant,
             onSecondaryContainer = PersonaTextPrimary,
             tertiary = primary,
-            onTertiary = Color.White,
+            onTertiary = personaAccentContentColor(primary),
             tertiaryContainer = avatarBackdrop,
             onTertiaryContainer = PersonaTextPrimary,
             background = background,
@@ -516,13 +532,19 @@ fun animatedPersonaColorScheme(
             surfaceTint = Color.Transparent,
             surfaceContainer = surface,
             surfaceContainerHigh = surfaceVariant,
-            surfaceContainerHighest = LightSurfaceSelected,
+            surfaceContainerHighest = surfaceVariant,
             surfaceContainerLow = surface,
             surfaceContainerLowest = background,
             surfaceDim = surfaceVariant,
             surfaceBright = surface,
             error = StateError,
-            onError = Color.White
+            onError = Color.White,
+            errorContainer = StateError.copy(alpha = 0.1f).compositeOver(surface),
+            onErrorContainer = PersonaTextPrimary,
+            inverseSurface = surfaceVariant,
+            inverseOnSurface = PersonaTextPrimary,
+            inversePrimary = primary,
+            scrim = Color.Black
         )
     }
 }
@@ -553,33 +575,13 @@ fun PimsVaultTheme(
     val bgTarget = if (isDark) mood.darkBackgroundColor else mood.backgroundColor
     val animatedBackground by androidx.compose.animation.animateColorAsState(bgTarget, colorSpec, label = "localBackground")
 
-    val tonalSurfaces = if (isDark) {
-        if (mood == PersonaMood.MONOCHROME) {
-            PimsTonalSurfaces(
-                canvas = DarkCanvas,
-                grouped = DarkSurfaceGrouped,
-                elevated = DarkSurfaceElevated,
-                selected = DarkSurfaceSelected,
-                borderSubtle = DarkBorderSubtle
-            )
-        } else {
-            PimsTonalSurfaces(
-                canvas = mood.darkBackgroundColor,
-                grouped = mood.darkSurfaceColor,
-                elevated = mood.darkSurfaceVariantColor,
-                selected = DarkSurfaceSelected,
-                borderSubtle = mood.darkDividerColor.copy(alpha = 0.5f)
-            )
-        }
-    } else {
-        PimsTonalSurfaces(
-            canvas = mood.backgroundColor,
-            grouped = mood.surfaceColor,
-            elevated = mood.surfaceVariantColor,
-            selected = LightSurfaceSelected,
-            borderSubtle = mood.dividerColor.copy(alpha = 0.5f)
-        )
-    }
+    val tonalSurfaces = PimsTonalSurfaces(
+        canvas = colorScheme.background,
+        grouped = colorScheme.surfaceContainerLow,
+        elevated = colorScheme.surfaceContainerHigh,
+        selected = colorScheme.primaryContainer,
+        borderSubtle = colorScheme.outlineVariant.copy(alpha = 0.5f)
+    )
 
     CompositionLocalProvider(
         LocalPimsDarkTheme provides isDark,

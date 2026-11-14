@@ -100,7 +100,7 @@ import com.pims.vault.presentation.profile.KinRelationshipItem
 import com.pims.vault.presentation.relationship.AddOrEditRelationshipNoteDialog
 import com.pims.vault.presentation.relationship.RelationshipNotesSection
 import com.pims.vault.presentation.ui.state.PersonaEmptyState
-import com.pims.vault.presentation.ui.theme.StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 
 private enum class PeopleCategory(val label: String) {
     ALL("All"),
@@ -490,7 +490,7 @@ fun PersonDetailSheet(
     onEditPerson: (KinRelationshipItem) -> Unit = {},
     relationshipNotes: List<RelationshipNote> = emptyList(),
     isVaultUnlocked: Boolean = false,
-    onAddNote: (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean) -> Unit = { _, _, _, _ -> },
+    onAddNote: suspend (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean, List<com.pims.vault.domain.model.RelationshipNoteAttachmentDraft>, Set<String>) -> Boolean = { _, _, _, _, _, _ -> true },
     onEditNote: (RelationshipNote) -> Unit = {},
     onDeleteNote: (RelationshipNote) -> Unit = {},
     onToggleNotePrivacy: (noteId: String, makePrivate: Boolean) -> Unit = { _, _ -> },
@@ -841,14 +841,19 @@ fun PersonDetailSheet(
     if (showNoteDialog) {
         AddOrEditRelationshipNoteDialog(
             initialNote = noteToEdit,
+            isVaultUnlocked = isVaultUnlocked,
+            onUnlockVault = onUnlockVaultSession,
             onDismiss = {
                 showNoteDialog = false
                 noteToEdit = null
             },
-            onSave = { topic, content, format, isPrivate ->
-                onAddNote(topic, content, format, isPrivate)
-                showNoteDialog = false
-                noteToEdit = null
+            onSave = { topic, content, format, isPrivate, attachments, removals ->
+                val saved = onAddNote(topic, content, format, isPrivate, attachments, removals)
+                if (saved) {
+                    showNoteDialog = false
+                    noteToEdit = null
+                }
+                saved
             }
         )
     }

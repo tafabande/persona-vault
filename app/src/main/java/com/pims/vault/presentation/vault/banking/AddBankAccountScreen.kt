@@ -214,7 +214,7 @@ fun AddBankAccountScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                     .navigationBarsPadding()
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -641,27 +641,10 @@ private fun CleanBankTextField(
     label: String,
     keyboardOptions: KeyboardOptions
 ) {
-    val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
-    OutlinedTextField(
+    com.pims.vault.presentation.ui.components.PersonaTextInput(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, fontSize = 13.sp) },
-        singleLine = true,
-        keyboardOptions = keyboardOptions,
-        shape = RoundedCornerShape(14.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = tonalSurfaces.surfaceElevated,
-            unfocusedContainerColor = tonalSurfaces.surfaceGrouped,
-            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-            unfocusedBorderColor = tonalSurfaces.borderSubtle,
-            focusedLabelColor = MaterialTheme.colorScheme.primary,
-            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ),
-        textStyle = TextStyle(
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        ),
-        modifier = Modifier.fillMaxWidth()
+        label = label,
+        keyboardOptions = keyboardOptions
     )
 }

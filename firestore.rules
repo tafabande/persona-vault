@@ -133,6 +133,9 @@ service cloud.firestore {
       }
       match /relationshipNotes/{relNoteId} {
         allow read, write: if isAccountOwner(accountId);
+        match /attachments/{attachmentId} {
+          allow read, write: if isAccountOwner(accountId);
+        }
       }
     }
 

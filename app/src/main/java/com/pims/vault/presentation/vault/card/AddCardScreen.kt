@@ -235,7 +235,7 @@ fun AddCardScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                     .navigationBarsPadding()
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.SpaceBetween
@@ -646,28 +646,12 @@ private fun CleanCardTextField(
     keyboardOptions: KeyboardOptions,
     visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
-    OutlinedTextField(
+    com.pims.vault.presentation.ui.components.PersonaTextInput(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, fontSize = 13.sp) },
-        singleLine = true,
+        label = label,
         keyboardOptions = keyboardOptions,
-        visualTransformation = visualTransformation,
-        shape = RoundedCornerShape(16.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-            focusedLabelColor = MaterialTheme.colorScheme.primary,
-            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ),
-        textStyle = TextStyle(
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        ),
-        modifier = Modifier.fillMaxWidth()
+        visualTransformation = visualTransformation
     )
 }
 

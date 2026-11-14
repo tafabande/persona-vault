@@ -48,8 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.session.ActiveDeviceSession
 import com.pims.vault.core.session.DeviceType
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,7 +72,7 @@ fun SessionManagementSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .padding(bottom = 32.dp)
         ) {
             // Header
@@ -297,7 +296,7 @@ private fun SessionItemRow(
                         if (session.isCurrentDevice) {
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
-                                color = StateSuccess.copy(alpha = 0.15f)
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                             ) {
                                 Text(
                                     text = "This device",
@@ -305,7 +304,7 @@ private fun SessionItemRow(
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
                                     ),
-                                    color = StateSuccess,
+                                    color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                 )
                             }

@@ -1,6 +1,8 @@
 package com.pims.vault.presentation.backup
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,11 +22,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.domain.model.BackupProgressState
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 
 @Composable
 fun BackupDashboardScreen(
     viewModel: BackupViewModel,
     modifier: Modifier = Modifier,
+    isVaultUnlocked: Boolean = false,
+    onUnlockVault: () -> Unit = {},
     onExportRequested: ((CharArray) -> Unit)? = null,
     onRestoreRequested: ((CharArray) -> Unit)? = null
 ) {
@@ -32,19 +37,53 @@ fun BackupDashboardScreen(
     val progressState by viewModel.progressState.collectAsState()
     var selectedTab by remember { mutableStateOf(0) } // 0 = Export, 1 = Restore
 
-    val handleExport: (CharArray) -> Unit = onExportRequested ?: { passphrase ->
-        viewModel.triggerFullVaultBackup(context, passphrase)
+    var pendingPassphrase by remember { mutableStateOf<CharArray?>(null) }
+    var showRestoreConfirmation by remember { mutableStateOf(false) }
+    val exportPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val phrase = pendingPassphrase
+        pendingPassphrase = null
+        if (phrase != null) {
+            if (uri != null) viewModel.triggerFullVaultBackup(context, phrase, uri) else phrase.fill('\u0000')
+        }
+    }
+    val restorePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val phrase = pendingPassphrase
+        pendingPassphrase = null
+        if (phrase != null) {
+            if (uri != null) viewModel.triggerFullVaultRestore(context, phrase, source = uri) else phrase.fill('\u0000')
+        }
+    }
+    DisposableEffect(Unit) { onDispose { pendingPassphrase?.fill('\u0000') } }
+    val handleExport: (CharArray) -> Unit = onExportRequested ?: { phrase ->
+        pendingPassphrase?.fill('\u0000')
+        pendingPassphrase = phrase
+        exportPicker.launch("Persona-Vault.pimsbak")
+    }
+    val handleRestore: (CharArray) -> Unit = onRestoreRequested ?: { phrase ->
+        pendingPassphrase?.fill('\u0000')
+        pendingPassphrase = phrase
+        showRestoreConfirmation = true
     }
 
-    val handleRestore: (CharArray) -> Unit = onRestoreRequested ?: { passphrase ->
-        viewModel.triggerFullVaultRestore(context, passphrase)
+    if (showRestoreConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirmation = false; pendingPassphrase?.fill('\u0000'); pendingPassphrase = null },
+            title = { Text("Replace this vault from a backup?") },
+            text = { Text("After the backup is verified, closing and reopening the app will replace the current vault, notes, documents and photos. Make a backup of your current data first. The restored vault opens in local-only mode.") },
+            confirmButton = { TextButton(onClick = { showRestoreConfirmation = false; restorePicker.launch(arrayOf("application/octet-stream", "*/*")) }) { Text("Choose backup") } },
+            dismissButton = { TextButton(onClick = { showRestoreConfirmation = false; pendingPassphrase?.fill('\u0000'); pendingPassphrase = null }) { Text("Cancel") } }
+        )
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
+            .padding(horizontal = pimsPageGutter(), vertical = 16.dp)
     ) {
         // Top Header
         Row(
@@ -97,6 +136,14 @@ fun BackupDashboardScreen(
             )
         }
 
+        if (!isVaultUnlocked) {
+            Text("Unlock the security vault to create or restore a full backup.")
+            Button(onClick = onUnlockVault, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("Unlock security vault")
+            }
+            return@Column
+        }
+
         // Main Action Card
         Box(
             modifier = Modifier
@@ -108,10 +155,12 @@ fun BackupDashboardScreen(
             when (selectedTab) {
                 0 -> ExportBackupCard(
                     progressState = progressState,
+                    canSubmit = pendingPassphrase == null,
                     onStartExport = handleExport
                 )
                 1 -> RestoreBackupCard(
                     progressState = progressState,
+                    canSubmit = pendingPassphrase == null,
                     onStartRestore = handleRestore
                 )
             }
@@ -151,12 +200,13 @@ private fun TabButton(
 @Composable
 private fun ExportBackupCard(
     progressState: BackupProgressState,
+    canSubmit: Boolean,
     onStartExport: (CharArray) -> Unit
 ) {
     var passphraseText by remember { mutableStateOf("") }
     var confirmText by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState())) {
         Text(
             text = "CREATE BACKUP (.pimsbak)",
             color = MaterialTheme.colorScheme.onSurface,
@@ -204,8 +254,8 @@ private fun ExportBackupCard(
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
-            onClick = { onStartExport(passphraseText.toCharArray()) },
-            enabled = isReady && progressState is BackupProgressState.Idle,
+            onClick = { val phrase = passphraseText.toCharArray(); passphraseText = ""; confirmText = ""; onStartExport(phrase) },
+            enabled = canSubmit && isReady && (progressState is BackupProgressState.Idle || progressState is BackupProgressState.Error || progressState is BackupProgressState.ExportSuccess),
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
@@ -228,20 +278,21 @@ private fun ExportBackupCard(
 @Composable
 private fun RestoreBackupCard(
     progressState: BackupProgressState,
+    canSubmit: Boolean,
     onStartRestore: (CharArray) -> Unit
 ) {
     var passphraseText by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState())) {
         Text(
-            text = "TRANSACTIONAL STAGING RESTORE",
+            text = "RESTORE A BACKUP",
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
         )
         Text(
-            text = "Backups are verified in an isolated staging sandbox. The active vault is replaced ONLY after 100% of tables, records, and file hashes are cryptographically verified.",
+            text = "Choose a passphrase-protected backup. After verification, restarting the app replaces the current vault and its files. Recovery opens in local-only mode; cloud credentials are not imported.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             modifier = Modifier.padding(vertical = 8.dp)
@@ -264,8 +315,8 @@ private fun RestoreBackupCard(
         Spacer(modifier = Modifier.height(12.dp))
 
         Button(
-            onClick = { onStartRestore(passphraseText.toCharArray()) },
-            enabled = passphraseText.isNotEmpty() && progressState is BackupProgressState.Idle,
+            onClick = { val phrase = passphraseText.toCharArray(); passphraseText = ""; onStartRestore(phrase) },
+            enabled = canSubmit && passphraseText.isNotEmpty() && (progressState is BackupProgressState.Idle || progressState is BackupProgressState.Error),
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
@@ -290,7 +341,7 @@ private fun ProgressStateDisplay(state: BackupProgressState) {
     when (state) {
         is BackupProgressState.Idle -> {}
         is BackupProgressState.DerivingKeys -> {
-            Text("Deriving domain subkeys with Argon2id...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Protecting your backup with your passphrase...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.ExportingDatabase -> {
             Text("Packaging database snapshot with vault items...", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
@@ -299,7 +350,7 @@ private fun ProgressStateDisplay(state: BackupProgressState) {
             Text("Packaging document files: ${state.currentBlob} / ${state.totalBlobs}", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.FinalizingPackage -> {
-            Text("Signing manifest and computing global HMAC...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Finalizing your encrypted backup...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.ExportSuccess -> {
             Text("✓ Snapshot exported successfully (${state.sizeBytes} bytes)", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
@@ -308,19 +359,22 @@ private fun ProgressStateDisplay(state: BackupProgressState) {
             Text("Validating package envelope header...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.StagingRestore -> {
-            Text("Decrypting snapshot into isolated staging sandbox...", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Opening and checking the backup...", color = MaterialTheme.colorScheme.onSurface, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.VerifyingIntegrity -> {
-            Text("Verifying SQLite integrity and blob SHA-256 digests...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Verifying backup contents...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.CommittingRestore -> {
-            Text("Integrity verified! Executing atomic live vault commit...", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Preparing the verified restore for the next app start...", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.RecordingJournal -> {
-            Text("Recording crash recovery journal checkpoint...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Preparing recovery...", color = MaterialTheme.colorScheme.tertiary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
         is BackupProgressState.RestoreSuccess -> {
-            Text("✓ Restoration complete. All ${state.report.verifiedTableCount} tables & ${state.report.verifiedBlobCount} blobs intact.", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text("Package restored: database checksum and ${state.report.verifiedBlobCount} attachments verified. Database rows and audit chain were not checked.", color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        }
+        is BackupProgressState.RestorePrepared -> {
+            Text("Restore prepared. Close and reopen Persona Vault to apply it. Current data stays available until restart; the restored vault will open in local-only mode.", color = MaterialTheme.colorScheme.primary)
         }
         is BackupProgressState.Error -> {
             Text("ERROR: ${state.message}", color = MaterialTheme.colorScheme.error, fontFamily = FontFamily.Monospace, fontSize = 12.sp)

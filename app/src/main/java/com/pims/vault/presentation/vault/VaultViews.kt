@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -251,7 +253,7 @@ fun VaultDashboardView(
     val cardBg = if (isDark) MaterialTheme.colorScheme.surface.copy(alpha = 0.82f) else MaterialTheme.colorScheme.surface
     val borderCol = if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
     val vaultTextPrimary = if (isDark) Color.White else PimsTextPrimary
-    val vaultTextSecondary = if (isDark) Color(0xFFE2E8F0) else PimsTextSecondary
+    val vaultTextSecondary = MaterialTheme.colorScheme.onSurfaceVariant
 
     var currentRoute by remember { mutableStateOf<VaultScreenRoute>(VaultScreenRoute.Home) }
     var previousRoute by remember { mutableStateOf<VaultScreenRoute>(VaultScreenRoute.Home) }
@@ -368,7 +370,9 @@ fun VaultDashboardView(
                             onAddSecret = { showTypePicker = true },
                             onAddCard = { viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE) },
                             onAddBankAccount = { viewModel.openEditor(VaultCategory.BANK_ACCOUNT) },
-                            onBack = onBack
+                            onBack = onBack,
+                            isMigratingLegacyItems = uiState.isMigratingLegacyItems,
+                            legacyMigrationPendingCount = uiState.legacyMigrationPendingCount
                         )
                     }
                     is VaultScreenRoute.PasswordsKeys -> {
@@ -920,6 +924,8 @@ fun VaultDashboardView(
                 initialContent = initialContent,
                 initialTags = initialTags,
                 isEditingExisting = uiState.activeItemId != null,
+                isSaving = uiState.isSaving,
+                errorMessage = uiState.errorMessage,
                 onSave = { noteTitle, noteContent, noteTags ->
                     viewModel.saveSecureNote(noteTitle, noteContent, uiState.activeItemId, noteTags)
                 },
@@ -1052,12 +1058,12 @@ private fun VaultModularDashboard(
                                             modifier = Modifier
                                                 .size(28.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF1A73E8)),
+                                                .background(MaterialTheme.colorScheme.primary),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 text = item.title.firstOrNull()?.uppercase() ?: "P",
-                                                color = Color.White,
+                                                color = MaterialTheme.colorScheme.onPrimary,
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -1118,20 +1124,18 @@ private fun VaultModularDashboard(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             notes.take(2).forEachIndexed { idx, note ->
-                                val pastelColors = listOf(Color(0xFFFFF9C4), Color(0xFFE8F5E9), Color(0xFFE3F2FD), Color(0xFFF3E5F5))
-                                val pastel = pastelColors[idx % pastelColors.size]
                                 Surface(
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(84.dp),
                                     shape = RoundedCornerShape(12.dp),
-                                    color = if (isDark) Color(0xFF262626) else pastel,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp)) {
                                         Text(note.title, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        Text(note.accountIdentifier ?: "Confidential note", fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(note.accountIdentifier ?: "", fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -1861,23 +1865,13 @@ private fun GoogleNoteCardItem(
     item: VaultItemHeader,
     onClick: () -> Unit
 ) {
-    val isDark = LocalPimsDarkTheme.current
-    val pastelColors = listOf(
-        Color(0xFFFFF9C4), // Lemon
-        Color(0xFFE8F5E9), // Mint
-        Color(0xFFE3F2FD), // Sky
-        Color(0xFFF3E5F5), // Lavender
-        Color(0xFFFFE0B2)  // Peach
-    )
-    val pastel = pastelColors[Math.abs(item.id.hashCode()) % pastelColors.size]
-    val bg = if (isDark) Color(0xFF262626) else pastel
-    val border = if (isDark) Color(0xFF383838) else Color(0xFFE0DDD5)
+    val bg = MaterialTheme.colorScheme.surfaceContainerLow
 
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(14.dp),
         color = bg,
-        border = BorderStroke(1.dp, border),
+        border = null,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -1885,7 +1879,7 @@ private fun GoogleNoteCardItem(
                 text = item.title,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = if (isDark) Color.White else Color(0xFF202020)
+                color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(6.dp))
             val tagList = item.accountIdentifier?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
@@ -1897,13 +1891,13 @@ private fun GoogleNoteCardItem(
                     tagList.take(3).forEach { tag ->
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = if (isDark) Color(0xFF404040) else Color(0xFFE0E0E0),
+                            color = MaterialTheme.colorScheme.primaryContainer,
                         ) {
                             Text(
                                 text = "#$tag",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (isDark) Color(0xFFCCCCCC) else Color(0xFF606060),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
@@ -1913,20 +1907,11 @@ private fun GoogleNoteCardItem(
                             text = "+${tagList.size - 3}",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
-                            color = if (isDark) Color(0xFF909090) else Color(0xFF808080),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 2.dp)
                         )
                     }
                 }
-            } else {
-                Text(
-                    text = "Content stored in vault...",
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    color = if (isDark) Color(0xFFB0B0B0) else Color(0xFF424242),
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
         }
     }
@@ -5217,17 +5202,33 @@ internal fun SecureNoteEditorModal(
     initialContent: String = "",
     initialTags: List<String> = emptyList(),
     isEditingExisting: Boolean = false,
+    isSaving: Boolean = false,
+    errorMessage: String? = null,
     onSave: (String, String, List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
     var title by remember(initialTitle) { mutableStateOf(initialTitle) }
     var content by remember(initialContent) { mutableStateOf(initialContent) }
-    var tags by remember(initialTags) { mutableStateOf(initialTags.toMutableList()) }
+    var tags by remember(initialTags) { mutableStateOf(initialTags.toList()) }
     var tagInput by remember { mutableStateOf("") }
 
+    var showDiscard by remember { mutableStateOf(false) }
+    val isDirty = title != initialTitle || content != initialContent || tags != initialTags || tagInput.isNotBlank()
+    val requestDismiss: () -> Unit = { if (!isSaving) { if (isDirty) showDiscard = true else onDismiss() } }
+    if (showDiscard) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDiscard = false },
+            title = { Text("Discard changes?") },
+            text = { Text("Your unsaved note changes will be lost.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Discard") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { showDiscard = false }) { Text("Keep editing") } },
+            properties = androidx.compose.ui.window.DialogProperties(securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)
+        )
+    }
+
     androidx.compose.ui.window.Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        onDismissRequest = requestDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)
     ) {
         Surface(
             modifier = Modifier
@@ -5242,7 +5243,9 @@ internal fun SecureNoteEditorModal(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(22.dp)
+                    .padding(com.pims.vault.presentation.ui.theme.pimsPageGutter())
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
             ) {
                 // Header Bar: Title + Close Button
                 Row(
@@ -5286,9 +5289,9 @@ internal fun SecureNoteEditorModal(
                     }
 
                     IconButton(
-                        onClick = onDismiss,
+                        onClick = requestDismiss,
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(48.dp)
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
                     ) {
                         Icon(
@@ -5304,6 +5307,7 @@ internal fun SecureNoteEditorModal(
 
                 // Wider, Prominent Title Box with Minimal Bezel
                 OutlinedTextField(
+                    enabled = !isSaving,
                     value = title,
                     onValueChange = { title = it },
                     placeholder = {
@@ -5333,6 +5337,7 @@ internal fun SecureNoteEditorModal(
 
                 // Wider, Expansive Note Content Box with Minimal Bezel
                 OutlinedTextField(
+                    enabled = !isSaving,
                     value = content,
                     onValueChange = { content = it },
                     placeholder = {
@@ -5355,7 +5360,7 @@ internal fun SecureNoteEditorModal(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
+                        .heightIn(min = 180.dp)
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -5399,7 +5404,7 @@ internal fun SecureNoteEditorModal(
                                         modifier = Modifier
                                             .size(14.dp)
                                             .clickable {
-                                                tags = tags.toMutableList().apply { remove(tag) }
+                                                if (!isSaving) tags = tags - tag
                                             }
                                     )
                                 }
@@ -5411,12 +5416,13 @@ internal fun SecureNoteEditorModal(
 
                 // Tag input field
                 OutlinedTextField(
+                    enabled = !isSaving,
                     value = tagInput,
                     onValueChange = { newVal ->
                         if (newVal.endsWith(",") || newVal.endsWith("\n")) {
                             val newTag = newVal.trimEnd(',', '\n', ' ').trim()
                             if (newTag.isNotBlank() && !tags.contains(newTag)) {
-                                tags = (tags + newTag).toMutableList()
+                                tags = tags + newTag
                             }
                             tagInput = ""
                         } else {
@@ -5446,6 +5452,8 @@ internal fun SecureNoteEditorModal(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
+                errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
                 // Bottom Action Bar: Cancel & Save Note
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -5453,7 +5461,7 @@ internal fun SecureNoteEditorModal(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     androidx.compose.material3.OutlinedButton(
-                        onClick = onDismiss,
+                        onClick = requestDismiss,
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         modifier = Modifier
@@ -5469,7 +5477,7 @@ internal fun SecureNoteEditorModal(
 
                     androidx.compose.material3.Button(
                         onClick = {
-                            if (title.isNotBlank() || content.isNotBlank()) {
+                            if (!isSaving && (title.isNotBlank() || content.isNotBlank())) {
                                 // Add any remaining tag input
                                 val finalTags = if (tagInput.trim().isNotBlank() && !tags.contains(tagInput.trim())) {
                                     tags + tagInput.trim()
@@ -5479,7 +5487,7 @@ internal fun SecureNoteEditorModal(
                                 onSave(title.ifBlank { "Untitled Note" }, content, finalTags)
                             }
                         },
-                        enabled = title.isNotBlank() || content.isNotBlank(),
+                        enabled = !isSaving && (title.isNotBlank() || content.isNotBlank()),
                         shape = RoundedCornerShape(12.dp),
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -5496,7 +5504,7 @@ internal fun SecureNoteEditorModal(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Save Note",
+                            if (isSaving) "Saving…" else "Save note",
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                         )
                     }

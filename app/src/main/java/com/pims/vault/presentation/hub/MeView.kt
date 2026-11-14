@@ -138,6 +138,8 @@ fun MeView(
     onRestoreCloud: (() -> Unit)? = null,
     onSavePasswordToVault: ((platform: String, username: String, password: String) -> Unit)? = null,
     onDeleteCustomField: (String) -> Unit = {},
+    onAddCustomField: () -> Unit = {},
+    onEditCustomField: (CustomField) -> Unit = {},
     onExplain: (ContextualExplanation) -> Unit = {},
     onOpenAvatarEditor: () -> Unit = onEditProfileClick,
     onViewPublicDossier: () -> Unit = {},
@@ -366,6 +368,14 @@ fun MeView(
             }
 
             Spacer(modifier = Modifier.height(18.dp))
+        }
+
+        item {
+            TextButton(onClick = onAddCustomField, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Add, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Add information")
+            }
         }
 
         // 2. Personal Information Card (Universal Design)
@@ -612,7 +622,7 @@ fun MeView(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Personal Universe",
+                        text = "More about you",
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = (-0.2).sp
@@ -627,8 +637,8 @@ fun MeView(
                         Surface(
                             shape = RoundedCornerShape(16.dp),
                             color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                            modifier = Modifier.fillMaxWidth()
+                            border = null,
+                            modifier = Modifier.fillMaxWidth().clickable { onEditCustomField(field) }
                         ) {
                             Row(
                                 modifier = Modifier
@@ -650,8 +660,8 @@ fun MeView(
                                     )
                                 }
                                 IconButton(
-                                    onClick = { onDeleteCustomField(label) },
-                                    modifier = Modifier.size(28.dp)
+                                    onClick = { onDeleteCustomField(field.id) },
+                                    modifier = Modifier.size(48.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,

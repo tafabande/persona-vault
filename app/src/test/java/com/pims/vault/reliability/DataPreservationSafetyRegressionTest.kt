@@ -96,7 +96,8 @@ class DataPreservationSafetyRegressionTest {
             portableFileKeyManager = portableFileKeyManager,
             keySecurityManager = keySecurityManager,
             photoBackupCoordinatorProvider = photoBackupCoordinatorProvider,
-            syncConflictDao = syncConflictDao
+            syncConflictDao = syncConflictDao,
+            cryptoEngine = com.pims.vault.core.crypto.StandardCryptoEngine()
         )
 
         personRepository = PersonRepositoryImpl(

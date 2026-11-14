@@ -75,7 +75,7 @@ import com.pims.vault.presentation.relationship.RelationshipNotesSection
 import com.pims.vault.presentation.ui.components.DefaultAvatar
 import com.pims.vault.presentation.ui.theme.PersonaIcons
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
-import com.pims.vault.presentation.ui.theme.StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
 
@@ -94,11 +94,14 @@ fun PersonDetailScreen(
     onBack: () -> Unit,
     onEditPerson: (KinRelationshipItem) -> Unit,
     onDeletePerson: (KinRelationshipItem) -> Unit,
-    onAddNote: (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean) -> Unit,
-    onUpdateNote: (noteId: String, topic: String?, content: String, format: NoteFormat, isPrivate: Boolean) -> Unit,
+    onAddNote: suspend (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean, List<com.pims.vault.domain.model.RelationshipNoteAttachmentDraft>, Set<String>) -> Boolean,
+    onUpdateNote: suspend (noteId: String, topic: String?, content: String, format: NoteFormat, isPrivate: Boolean, List<com.pims.vault.domain.model.RelationshipNoteAttachmentDraft>, Set<String>) -> Boolean,
     onDeleteNote: (noteId: String) -> Unit,
     onToggleTrusted: (Boolean) -> Unit,
     onToggleNotePrivacy: (noteId: String, makePrivate: Boolean) -> Unit = { _, _ -> },
+    onOpenAttachment: (String, String) -> Unit = { _, _ -> },
+    isVaultUnlocked: Boolean = false,
+    onUnlockVault: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -178,7 +181,7 @@ fun PersonDetailScreen(
                 }
 
                 Text(
-                    text = person.fullName,
+                    text = "People",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -243,67 +246,71 @@ fun PersonDetailScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // AVATAR & HERO
-                Box(contentAlignment = Alignment.BottomEnd) {
-                    val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath).exists()
-                    val photoBitmap = remember(contactPhotoPath) {
-                        if (hasPhoto) {
-                            try { BitmapFactory.decodeFile(contactPhotoPath) } catch (_: Exception) { null }
-                        } else null
-                    }
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // AVATAR & HERO
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath).exists()
+                        val photoBitmap = remember(contactPhotoPath) {
+                            if (hasPhoto) {
+                                try { BitmapFactory.decodeFile(contactPhotoPath) } catch (_: Exception) { null }
+                            } else null
+                        }
 
-                    if (photoBitmap != null) {
-                        Image(
-                            bitmap = photoBitmap.asImageBitmap(),
-                            contentDescription = person.fullName,
-                            contentScale = ContentScale.Crop,
+                        if (photoBitmap != null) {
+                            Image(
+                                bitmap = photoBitmap.asImageBitmap(),
+                                contentDescription = person.fullName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(CircleShape)
+                                    .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape)
+                                    .clickable { showAvatarActionChooser = true }
+                            )
+                        } else {
+                            DefaultAvatar(
+                                name = person.fullName,
+                                size = 72.dp,
+                                onClick = { showAvatarActionChooser = true }
+                            )
+                        }
+
+                        // Edit camera badge
+                        Box(
                             modifier = Modifier
-                                .size(96.dp)
+                                .size(30.dp)
                                 .clip(CircleShape)
-                                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape)
-                                .clickable { showAvatarActionChooser = true }
-                        )
-                    } else {
-                        DefaultAvatar(
-                            name = person.fullName,
-                            size = 96.dp,
-                            onClick = { showAvatarActionChooser = true }
-                        )
+                                .background(MaterialTheme.colorScheme.primary)
+                                .clickable { showAvatarActionChooser = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = "Change photo",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
-                    // Edit camera badge
-                    Box(
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
-                            .clickable { showAvatarActionChooser = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = "Change photo",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(16.dp)
+                    // Name & Role
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                        Text(
+                            text = person.fullName,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = person.relationRole.lowercase().replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-
-                // Name & Role
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = person.fullName,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = person.relationRole.lowercase().replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-
 
                 val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
 
@@ -323,8 +330,8 @@ fun PersonDetailScreen(
 
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = tonalSurfaces.surfaceGrouped,
-                        border = BorderStroke(0.5.dp, tonalSurfaces.borderSubtle.copy(alpha = 0.4f)),
+                        color = Color.Transparent,
+                        border = null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column {
@@ -430,12 +437,12 @@ fun PersonDetailScreen(
                 // RELATIONSHIP NOTES SECTION (In-Place Add, Edit, Delete)
                 RelationshipNotesSection(
                     notes = relationshipNotes,
-                    isVaultUnlocked = true,
+                    isVaultUnlocked = isVaultUnlocked,
                     onAddNoteClick = {
                         noteToEdit = null
                         showNoteDialog = true
                     },
-                    onUnlockVaultClick = {},
+                    onUnlockVaultClick = onUnlockVault,
                     onEditNote = { note ->
                         noteToEdit = note
                         showNoteDialog = true
@@ -444,6 +451,7 @@ fun PersonDetailScreen(
                         noteToDelete = note
                     },
                     onTogglePrivacy = onToggleNotePrivacy,
+                    onOpenAttachment = onOpenAttachment,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -451,8 +459,8 @@ fun PersonDetailScreen(
                 if (relationshipNotes.isEmpty() && person.notes.isNotBlank()) {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = tonalSurfaces.surfaceGrouped,
-                        border = BorderStroke(0.5.dp, tonalSurfaces.borderSubtle.copy(alpha = 0.4f)),
+                        color = Color.Transparent,
+                        border = null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -494,15 +502,20 @@ fun PersonDetailScreen(
     if (showNoteDialog) {
         AddOrEditRelationshipNoteDialog(
             initialNote = noteToEdit,
+            isVaultUnlocked = isVaultUnlocked,
+            onUnlockVault = onUnlockVault,
             onDismiss = { showNoteDialog = false },
-            onSave = { topic, content, format, isPrivate ->
-                if (noteToEdit != null) {
-                    onUpdateNote(noteToEdit!!.id, topic, content, format, isPrivate)
+            onSave = { topic, content, format, isPrivate, attachments, removals ->
+                val saved = if (noteToEdit != null) {
+                    onUpdateNote(noteToEdit!!.id, topic, content, format, isPrivate, attachments, removals)
                 } else {
-                    onAddNote(topic, content, format, isPrivate)
+                    onAddNote(topic, content, format, isPrivate, attachments, removals)
                 }
-                showNoteDialog = false
-                haptics.success()
+                if (saved) {
+                    showNoteDialog = false
+                    haptics.success()
+                }
+                saved
             }
         )
     }

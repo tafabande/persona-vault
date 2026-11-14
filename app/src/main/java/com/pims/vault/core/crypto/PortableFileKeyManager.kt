@@ -85,7 +85,7 @@ class PortableFileKeyManager @Inject constructor(
         val fresh = FileRecoveryCrypto.generatePortableKey()
         val secret = SecretBytes(fresh)
         java.util.Arrays.fill(fresh, 0)
-        wrapLocal(secret)
+        try { wrapLocal(secret) } catch (error: Exception) { secret.close(); throw error }
         cachedPfk = secret
         return secret
     }
@@ -107,7 +107,7 @@ class PortableFileKeyManager @Inject constructor(
         cachedPfk?.close()
         cachedPfk = null
         val secret = SecretBytes(portableKey)
-        wrapLocal(secret, keyId)
+        try { wrapLocal(secret, keyId) } catch (error: Exception) { secret.close(); throw error }
         cachedPfk = secret
     }
 
@@ -123,7 +123,7 @@ class PortableFileKeyManager @Inject constructor(
 
     /** Legacy device-bound key for reading pre-migration blobs. */
     fun legacyKeyBytes(): ByteArray =
-        keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES).copyBytes()
+        keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES).use { it.copyBytes() }
 
     // ---- internals ----
 
@@ -153,7 +153,7 @@ class PortableFileKeyManager @Inject constructor(
                 cipher.init(Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(master.bytes, "AES"), GCMParameterSpec(128, iv))
                 cipher.updateAAD(AAD.toByteArray(Charsets.UTF_8))
                 val raw = cipher.doFinal(cipherBytes)
-                SecretBytes(raw)
+                try { SecretBytes(raw) } finally { raw.fill(0) }
             } finally {
                 master.close()
             }
@@ -172,11 +172,13 @@ class PortableFileKeyManager @Inject constructor(
             cipher.init(Cipher.ENCRYPT_MODE, javax.crypto.spec.SecretKeySpec(master.bytes, "AES"))
             cipher.updateAAD(AAD.toByteArray(Charsets.UTF_8))
             val wrapped = cipher.doFinal(secret.bytes)
-            prefs.edit()
-                .putString(KEY_IV, base64Encode(cipher.iv))
-                .putString(KEY_CIPHER, base64Encode(wrapped))
-                .apply()
-            if (keyId != null) prefs.edit().putString(KEY_ID, keyId).apply()
+            val iv = base64Encode(cipher.iv)
+            val ciphertext = base64Encode(wrapped)
+            val editor = prefs.edit().putString(KEY_IV, iv).putString(KEY_CIPHER, ciphertext)
+            if (keyId != null) editor.putString(KEY_ID, keyId)
+            check(editor.commit() && prefs.getString(KEY_IV, null) == iv && prefs.getString(KEY_CIPHER, null) == ciphertext) {
+                "Portable key persistence failed; refusing an ephemeral key"
+            }
         } finally {
             master.close()
         }

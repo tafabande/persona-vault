@@ -82,6 +82,18 @@ data class RelatedPersonDossier(
         get() = relationship.customLabel?.takeIf { it.isNotBlank() } ?: relationship.type.displayLabel
 }
 
+data class RelationshipNoteAttachment(
+    val id: String,
+    val mimeType: String,
+    val fileSizeBytes: Long,
+    val createdAt: Long
+)
+
+data class RelationshipNoteAttachmentDraft(
+    val bytes: ByteArray,
+    val mimeType: String
+)
+
 /**
  * Complete Kinship and Interpersonal Graph View for an individual.
  */
@@ -107,5 +119,14 @@ data class RelationshipNote(
     val isPrivate: Boolean = false,
     val isDecrypted: Boolean = true, // False when private and locked
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
-)
+    val updatedAt: Long = System.currentTimeMillis(),
+    val attachments: List<RelationshipNoteAttachment> = emptyList()
+) {
+    /** Tags are derived from authored text so private note metadata stays encrypted with its content. */
+    val tags: List<String>
+        get() = Regex("#([A-Za-z0-9_]+)")
+            .findAll("$topic $content")
+            .map { it.groupValues[1] }
+            .distinctBy { it.lowercase() }
+            .toList()
+}

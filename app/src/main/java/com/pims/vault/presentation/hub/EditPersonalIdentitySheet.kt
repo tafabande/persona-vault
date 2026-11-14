@@ -1,6 +1,10 @@
 package com.pims.vault.presentation.hub
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,6 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -30,10 +35,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -50,7 +56,6 @@ import com.pims.vault.presentation.ui.components.StandardDateInput
 import com.pims.vault.presentation.ui.components.isValidInternationalPhone
 import com.pims.vault.presentation.ui.theme.PimsRadius
 import java.time.LocalDate
-import kotlinx.coroutines.launch
 import com.pims.vault.presentation.ui.components.ux.PersonaToastController
 import com.pims.vault.presentation.ui.util.PimsHaptics
 import com.pims.vault.presentation.ui.util.PimsSoundManager
@@ -62,7 +67,7 @@ import com.pims.vault.presentation.ui.util.PimsSoundManager
  * Eliminates disjointed card boxes, removes noisy all-caps micro-headers, and docks
  * the primary Save action cleanly in the top bar to avoid cut-off bottom overlays.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditPersonalIdentitySheet(
     isVisible: Boolean,
@@ -87,15 +92,20 @@ fun EditPersonalIdentitySheet(
 ) {
     if (!isVisible) return
 
-    var editFirst by rememberSaveable(firstName) { mutableStateOf(firstName) }
-    var editLast by rememberSaveable(lastName) { mutableStateOf(lastName) }
-    var editPhone by rememberSaveable(primaryPhone) { mutableStateOf(primaryPhone ?: "") }
-    var editEmail by rememberSaveable(primaryEmail) { mutableStateOf(primaryEmail ?: "") }
-    var editDob by rememberSaveable(dob) { mutableStateOf(dob) }
-    var editNationality by rememberSaveable(nationality) { mutableStateOf(nationality) }
-    var editCountry by rememberSaveable(country) { mutableStateOf(country) }
-    var editGender by rememberSaveable(gender) { mutableStateOf(gender) }
-    var editOcc by rememberSaveable(occupation) { mutableStateOf(occupation) }
+    val baseline = rememberSaveable {
+        arrayListOf(firstName, lastName, primaryPhone.orEmpty(), primaryEmail.orEmpty(), dob, nationality, country, gender, occupation)
+    }
+    // Incoming sync emissions must not replace edits in an already open sheet.
+    var editFirst by rememberSaveable { mutableStateOf(baseline[0]) }
+    var editLast by rememberSaveable { mutableStateOf(baseline[1]) }
+    var editPhone by rememberSaveable { mutableStateOf(baseline[2]) }
+    var editEmail by rememberSaveable { mutableStateOf(baseline[3]) }
+    var editDob by rememberSaveable { mutableStateOf(baseline[4]) }
+    var editNationality by rememberSaveable { mutableStateOf(baseline[5]) }
+    var editCountry by rememberSaveable { mutableStateOf(baseline[6]) }
+    var editGender by rememberSaveable { mutableStateOf(baseline[7]) }
+    var editOcc by rememberSaveable { mutableStateOf(baseline[8]) }
+    val fieldColumns = if (LocalConfiguration.current.screenWidthDp < 400 || LocalDensity.current.fontScale > 1.3f) 1 else 2
     var isSaving by rememberSaveable { mutableStateOf(false) }
     var attemptedSave by rememberSaveable { mutableStateOf(false) }
     var phoneTouched by rememberSaveable { mutableStateOf(false) }
@@ -105,16 +115,21 @@ fun EditPersonalIdentitySheet(
     var dateIsValid by remember { mutableStateOf(true) }
     var showDiscardConfirmation by rememberSaveable { mutableStateOf(false) }
     var saveError by rememberSaveable { mutableStateOf<String?>(null) }
-    val editSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         if (isSaving && !profileViewModel.isPersonalSaveInProgress()) isSaving = false
     }
 
-    val isDirty = editFirst != firstName || editLast != lastName || editPhone != (primaryPhone ?: "") ||
-        editEmail != (primaryEmail ?: "") || editDob != dob || editNationality != nationality ||
-        editCountry != country || editGender != gender || editOcc != occupation
+    val isDirty = listOf(editFirst, editLast, editPhone, editEmail, editDob, editNationality, editCountry, editGender, editOcc) != baseline
+    val editSheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { target ->
+            if (target == SheetValue.Hidden && (isDirty || isSaving)) {
+                if (!isSaving) showDiscardConfirmation = true
+                false
+            } else true
+        }
+    )
     val emailInvalid = editEmail.isNotBlank() && (emailTouched || attemptedSave) &&
         !android.util.Patterns.EMAIL_ADDRESS.matcher(editEmail.trim()).matches()
     val phoneInvalid = editPhone.isNotBlank() && (phoneTouched || attemptedSave) &&
@@ -124,7 +139,6 @@ fun EditPersonalIdentitySheet(
         if (isSaving) Unit
         else if (isDirty) {
             showDiscardConfirmation = true
-            scope.launch { editSheetState.show() }
         }
         else onDismissRequest()
         Unit
@@ -133,7 +147,7 @@ fun EditPersonalIdentitySheet(
     val onSaveAction = {
         attemptedSave = true
         saveError = null
-        if (!isDirty || editFirst.isBlank() || editLast.isBlank() || !dateIsValid || emailInvalid || phoneInvalid ||
+        if (isSaving || !isDirty || editFirst.isBlank() || editLast.isBlank() || !dateIsValid || emailInvalid || phoneInvalid ||
             (editEmail.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(editEmail.trim()).matches()) ||
             (editPhone.isNotBlank() && !isValidInternationalPhone(editPhone))) {
             Unit
@@ -196,7 +210,7 @@ fun EditPersonalIdentitySheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = requestDismiss, modifier = Modifier.width(84.dp).height(48.dp)) {
+                TextButton(onClick = requestDismiss, enabled = !isSaving, modifier = Modifier.widthIn(min = 64.dp).heightIn(min = 48.dp)) {
                     Text(
                         text = "Cancel",
                         style = MaterialTheme.typography.labelLarge,
@@ -204,7 +218,7 @@ fun EditPersonalIdentitySheet(
                     )
                 }
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "Personal identity",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
@@ -224,7 +238,7 @@ fun EditPersonalIdentitySheet(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    modifier = Modifier.width(84.dp).height(48.dp)
+                    modifier = Modifier.widthIn(min = 64.dp).heightIn(min = 48.dp)
                 ) {
                     if (isSaving) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     else Text("Save", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -248,9 +262,10 @@ fun EditPersonalIdentitySheet(
                     Text(saveError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
 
-                PersonaFormSection(title = "Personal details") {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PersonaFormSection(title = "About you") {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = fieldColumns) {
                         PersonaTextInput(
+                            enabled = !isSaving,
                             value = editFirst,
                             onValueChange = { editFirst = it.take(100) },
                             label = "First name · required",
@@ -260,6 +275,7 @@ fun EditPersonalIdentitySheet(
                             modifier = Modifier.weight(1f)
                         )
                         PersonaTextInput(
+                            enabled = !isSaving,
                             value = editLast,
                             onValueChange = { editLast = it.take(100) },
                             label = "Last name · required",
@@ -271,12 +287,13 @@ fun EditPersonalIdentitySheet(
                     }
                     StandardDateInput(
                         isoDate = editDob,
-                        onDateChange = { editDob = it },
+                        onDateChange = { if (!isSaving) editDob = it },
                         label = "Date of birth",
                         maxDate = LocalDate.now(),
                         onValidityChange = { dateIsValid = it }
                     )
                     PersonaTextInput(
+                            enabled = !isSaving,
                         value = editGender,
                         onValueChange = { editGender = it.take(60) },
                         label = "Gender · optional",
@@ -286,6 +303,7 @@ fun EditPersonalIdentitySheet(
 
                 PersonaFormSection(title = "Contact information") {
                     InternationalPhoneInput(
+                        enabled = !isSaving,
                         value = editPhone,
                         onValueChange = { editPhone = it },
                         label = "Phone number · optional",
@@ -300,6 +318,7 @@ fun EditPersonalIdentitySheet(
                         }
                     )
                     PersonaTextInput(
+                            enabled = !isSaving,
                         value = editEmail,
                         onValueChange = { editEmail = it.take(254) },
                         label = "Email address · optional",
@@ -320,11 +339,12 @@ fun EditPersonalIdentitySheet(
                 PersonaFormSection(title = "Location and nationality") {
                     CountrySuggestionField(
                         value = editCountry,
-                        onValueChange = { editCountry = it.take(100) },
+                        onValueChange = { if (!isSaving) editCountry = it.take(100) },
                         label = "Country of residence · optional",
                         placeholder = "Search or choose a country"
                     )
                     PersonaTextInput(
+                            enabled = !isSaving,
                         value = editNationality,
                         onValueChange = { editNationality = it.take(100) },
                         label = "Nationality · optional",
@@ -334,6 +354,7 @@ fun EditPersonalIdentitySheet(
 
                 PersonaFormSection(title = "Additional information") {
                     PersonaTextInput(
+                            enabled = !isSaving,
                         value = editOcc,
                         onValueChange = { editOcc = it.take(120) },
                         label = "Occupation · optional",

@@ -67,6 +67,8 @@ fun VaultHomeScreen(
     onAddCard: () -> Unit,
     onAddBankAccount: () -> Unit,
     onBack: () -> Unit,
+    isMigratingLegacyItems: Boolean = false,
+    legacyMigrationPendingCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val paymentCards = vaultItems.filter { it.category == VaultCategory.PAYMENT_REFERENCE }
@@ -143,10 +145,22 @@ fun VaultHomeScreen(
             }
 
             Spacer(modifier = Modifier.height(10.dp))
+            if (isMigratingLegacyItems || legacyMigrationPendingCount > 0) {
+                Text(
+                    text = if (isMigratingLegacyItems) "Updating vault protection…" else
+                        "$legacyMigrationPendingCount older ${if (legacyMigrationPendingCount == 1) "item" else "items"} will update when their current key is available.",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 4.dp),
+                    color = getVaultTextSecondary(),
+                    fontSize = 12.sp
+                )
+            }
 
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .weight(1f)
                     .verticalScroll(rememberScrollState())
             ) {
                 // SECTION 1: Cards & accounts
@@ -653,6 +667,7 @@ private fun VaultCardItem(
                     color = Color.White.copy(alpha = 0.75f)
                 )
             }
+
         }
     }
 }

@@ -108,7 +108,7 @@ fun IdCredentialDetailScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .verticalScroll(rememberScrollState())
         ) {
             // Top Bar

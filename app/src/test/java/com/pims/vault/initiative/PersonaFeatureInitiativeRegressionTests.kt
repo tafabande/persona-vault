@@ -59,7 +59,7 @@ class PersonaFeatureInitiativeRegressionTests {
     private val inMemoryVaultItems = mutableMapOf<String, VaultItemEntity>()
     private val inMemoryAudits = mutableListOf<AuditEventEntity>()
 
-    private val fakeVaultDao = object : VaultDao {
+    private val fakeVaultDao = object : com.pims.vault.testing.TestVaultDao() {
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
             inMemoryVaultItems[item.id] = item
             return 1L
@@ -231,6 +231,14 @@ class PersonaFeatureInitiativeRegressionTests {
             override fun observeAllAttachments(): Flow<List<PlainNoteAttachmentEntity>> = flowOf(inMemoryAttachments)
             override suspend fun getAllNotes(): List<PlainNoteEntity> = inMemoryNotes
             override suspend fun getById(id: String): PlainNoteEntity? = inMemoryNotes.find { it.id == id }
+            override suspend fun applyRemotePin(id: String, isPinned: Boolean, updatedAt: Long) {
+                val note = inMemoryNotes.find { it.id == id }
+                if (note != null && note.updatedAt < updatedAt) setPinned(id, isPinned, updatedAt)
+            }
+            override suspend fun setPinned(id: String, isPinned: Boolean, updatedAt: Long) {
+                val index = inMemoryNotes.indexOfFirst { it.id == id }
+                if (index >= 0) inMemoryNotes[index] = inMemoryNotes[index].copy(isPinned = isPinned, updatedAt = updatedAt)
+            }
             override suspend fun upsert(note: PlainNoteEntity) { inMemoryNotes.add(note) }
             override suspend fun deleteById(id: String) { inMemoryNotes.removeAll { it.id == id } }
             override suspend fun getAttachments(noteId: String): List<PlainNoteAttachmentEntity> =

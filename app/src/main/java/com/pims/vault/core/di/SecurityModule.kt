@@ -36,8 +36,14 @@ object SecurityModule {
 
     @Provides
     @Singleton
-    fun provideBiometricSessionManager(keySecurityManager: KeySecurityManager): BiometricSessionManager {
-        return BiometricSessionManager(keySecurityManager)
+    fun provideBiometricSessionManager(
+        keySecurityManager: KeySecurityManager,
+        portableFileKeyManager: com.pims.vault.core.crypto.PortableFileKeyManager
+    ): BiometricSessionManager {
+        return BiometricSessionManager(
+            keySecurityManager = keySecurityManager,
+            portableFileKeyManager = portableFileKeyManager
+        )
     }
 
     @Provides
@@ -74,13 +80,8 @@ object SecurityModule {
             // Portable file key (cross-device) with Keystore-wrapped local
             // protection. Falls back to the legacy device-bound key only when
             // no portable key exists yet (pre-migration installs).
-            keyProvider = {
-                try {
-                    portableFileKeyManager.copyKeyBytes()
-                } catch (_: Exception) {
-                    sessionManager.getFileStorageKey()
-                }
-            }
+            keyProvider = { portableFileKeyManager.copyKeyBytes() },
+            legacyKeyProvider = { portableFileKeyManager.legacyKeyBytes() }
         )
     }
 

@@ -21,6 +21,8 @@ interface PlainNotesRepository {
         isLocked: Boolean = false
     ): PlainNote
 
+    suspend fun setPinned(noteId: String, isPinned: Boolean)
+
     suspend fun toggleLock(noteId: String, isLocked: Boolean)
 
     suspend fun setReminder(

@@ -92,6 +92,7 @@ sealed class BackupProgressState {
     object RecordingJournal : BackupProgressState()
     object CommittingRestore : BackupProgressState()
     data class RestoreSuccess(val report: BackupIntegrityReport) : BackupProgressState()
+    object RestorePrepared : BackupProgressState()
 
     data class Error(val message: String, val cause: Throwable? = null) : BackupProgressState()
 }

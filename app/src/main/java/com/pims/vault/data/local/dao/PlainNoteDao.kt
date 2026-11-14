@@ -16,6 +16,12 @@ interface PlainNoteDao {
     @Query("SELECT * FROM plain_notes WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): PlainNoteEntity?
 
+    @Query("UPDATE plain_notes SET is_pinned = :isPinned, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setPinned(id: String, isPinned: Boolean, updatedAt: Long)
+
+    @Query("UPDATE plain_notes SET is_pinned = :isPinned, updated_at = :updatedAt WHERE id = :id AND updated_at < :updatedAt")
+    suspend fun applyRemotePin(id: String, isPinned: Boolean, updatedAt: Long)
+
     @Upsert
     suspend fun upsert(note: PlainNoteEntity)
 

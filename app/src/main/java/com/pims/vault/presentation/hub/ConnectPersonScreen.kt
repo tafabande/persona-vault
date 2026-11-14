@@ -159,7 +159,6 @@ fun ConnectPersonScreen(
     // Photo state
     var selectedPhotoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var selectedPhotoPath by remember { mutableStateOf<String?>(null) }
-    var selectedAvatarPreset by remember { mutableStateOf<Int?>(null) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -170,7 +169,6 @@ fun ConnectPersonScreen(
                     val bmp = BitmapFactory.decodeStream(stream)
                     if (bmp != null) {
                         selectedPhotoBitmap = bmp
-                        selectedAvatarPreset = null
                         val photosDir = File(context.filesDir, "contact_photos").apply { mkdirs() }
                         val destFile = File(photosDir, "contact_${System.currentTimeMillis()}.jpg")
                         FileOutputStream(destFile).use { out ->
@@ -253,152 +251,34 @@ fun ConnectPersonScreen(
                     .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                // Header Titles
-                Column(
-                    modifier = Modifier.padding(top = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Add someone",
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 26.sp
-                        ),
-                        color = textPrimary
-                    )
-                    Text(
-                        text = "Build their profile with as much or as little detail as you like.",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp),
-                        color = textSecondary
-                    )
-                }
-
-                // Avatar Photo Picker & Presets
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(96.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .border(
-                                BorderStroke(
-                                    2.dp,
-                                    if (selectedPhotoBitmap != null || selectedAvatarPreset != null)
-                                        MaterialTheme.colorScheme.primary
-                                    else
-                                        MaterialTheme.colorScheme.outlineVariant
-                                ),
-                                CircleShape
-                            )
-                            .clickable {
-                                haptics.selection()
-                                photoPickerLauncher.launch("image/*")
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (selectedPhotoBitmap != null) {
-                            Image(
-                                bitmap = selectedPhotoBitmap!!.asImageBitmap(),
-                                contentDescription = "Contact photo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else if (selectedAvatarPreset != null) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Selected avatar",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(48.dp)
-                            )
-                        } else {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CameraAlt,
-                                    contentDescription = "Add a photo",
-                                    tint = textSecondary,
-                                    modifier = Modifier.size(26.dp)
-                                )
-                                Text(
-                                    text = "Photo",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = textSecondary
-                                )
-                            }
-                        }
+                    val photo = selectedPhotoBitmap
+                    if (photo != null) {
+                        Image(
+                            bitmap = photo.asImageBitmap(), contentDescription = "Contact photo", contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(80.dp).clip(CircleShape).clickable { photoPickerLauncher.launch("image/*") }
+                        )
+                    } else {
+                        com.pims.vault.presentation.ui.components.DefaultAvatar(
+                            name = relName.ifBlank { "Person" }, size = 80.dp,
+                            onClick = { photoPickerLauncher.launch("image/*") }
+                        )
                     }
-
-                    Text(
-                        text = if (selectedPhotoBitmap != null) "Tap photo to change" else "Upload a photo or choose an avatar",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                        color = textSecondary
-                    )
-
-                    // Avatar presets row
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        listOf(1, 2, 3, 4).forEach { presetId ->
-                            val isPresetSelected = selectedAvatarPreset == presetId && selectedPhotoBitmap == null
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isPresetSelected) MaterialTheme.colorScheme.primaryContainer
-                                        else MaterialTheme.colorScheme.surfaceVariant
-                                    )
-                                    .border(
-                                        BorderStroke(
-                                            if (isPresetSelected) 2.dp else 1.dp,
-                                            if (isPresetSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                                        ),
-                                        CircleShape
-                                    )
-                                    .clickable {
-                                        haptics.selection()
-                                        selectedPhotoBitmap = null
-                                        selectedPhotoPath = null
-                                        selectedAvatarPreset = presetId
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "Avatar preset $presetId",
-                                    tint = if (isPresetSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-
-                        if (selectedPhotoBitmap != null || selectedAvatarPreset != null) {
-                            TextButton(
-                                onClick = {
-                                    selectedPhotoBitmap = null
-                                    selectedPhotoPath = null
-                                    selectedAvatarPreset = null
-                                }
-                            ) {
-                                Text("Clear", fontSize = 12.sp, color = textSecondary)
-                            }
-                        }
+                    IconButton(onClick = { photoPickerLauncher.launch("image/*") }) {
+                        Icon(Icons.Default.CameraAlt, "Upload a photo", tint = MaterialTheme.colorScheme.primary)
+                    }
+                    if (photo != null) {
+                        TextButton(onClick = { selectedPhotoBitmap = null; selectedPhotoPath = null }) { Text("Remove photo") }
                     }
                 }
 
                 // Section 1: Relationship & Identity
                 PersonaFormSection(
-                    title = "Relationship & Identity",
+                    title = "About them",
                     icon = Icons.Default.Person
                 ) {
                     PersonaSearchableCombobox(
@@ -438,10 +318,9 @@ fun ConnectPersonScreen(
 
                 // Section 2: Contact Information
                 PersonaFormSection(
-                    title = "Contact Information",
+                    title = "Contact details",
                     icon = Icons.Default.Phone
                 ) {
-                    Text("Contact details are stored with this person’s profile.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     RelationshipContactEditor(
                         title = "Phone numbers",
                         type = ContactType.PHONE,
@@ -476,7 +355,7 @@ fun ConnectPersonScreen(
                 val showDatesSection = showDobField || showAnniversaryField || isRomantic || relDob.isNotBlank() || relAnniversary.isNotBlank()
                 if (showDatesSection) {
                     PersonaFormSection(
-                        title = "Important Dates",
+                        title = "Important dates",
                         icon = Icons.Default.Cake
                     ) {
                         if (showDobField || relDob.isNotBlank()) {

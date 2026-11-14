@@ -45,8 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.state.AlertLevel
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.success as StateSuccess
+import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import com.pims.vault.presentation.ui.util.rememberPimsSoundManager
 
@@ -100,7 +100,7 @@ fun NotificationCenterSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .padding(top = 16.dp, bottom = 32.dp)
         ) {
             // Header

@@ -5,6 +5,13 @@ import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
+import android.os.Build
+import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
 import com.pims.vault.presentation.ui.util.PimsHaptics
 import com.pims.vault.presentation.ui.util.PimsSoundManager
 import com.pims.vault.presentation.profile.ProfileUiState
@@ -35,6 +42,7 @@ import com.pims.vault.presentation.ui.theme.LocalReducedMotion
 import com.pims.vault.presentation.ui.theme.PimsAnimation
 import com.pims.vault.presentation.ui.util.screenEnterRise
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +74,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -92,6 +102,7 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -219,8 +230,8 @@ import com.pims.vault.presentation.library.InformationLibraryScreen
 import com.pims.vault.presentation.library.LibraryItem
 import com.pims.vault.presentation.ui.components.FormFieldLabel
 import com.pims.vault.presentation.ui.components.FormTextInput
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.success as StateSuccess
 import com.pims.vault.presentation.hub.NotificationCategory
 import com.pims.vault.presentation.ui.theme.ThemeManager
 import com.pims.vault.presentation.ui.theme.ThemeMode
@@ -257,7 +268,8 @@ fun PersonaDashboardScreen(
     onLockClicked: () -> Unit,
     onSignOutClicked: () -> Unit = onLockClicked,
     onSignInClicked: () -> Unit = {},
-    onRequestBiometricAuth: ((title: String, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit)? = null
+    onRequestBiometricAuth: ((title: String, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit)? = null,
+    onRequestVaultBiometricAuth: ((title: String, subtitle: String, onSuccess: (androidx.biometric.BiometricPrompt.CryptoObject) -> Unit, onError: (String) -> Unit) -> Unit)? = null
 ) {
     val profileViewModel: ProfileViewModel = hiltViewModel()
     val documentViewModel: DocumentViewModel = hiltViewModel()
@@ -273,6 +285,17 @@ fun PersonaDashboardScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val toastController = rememberPersonaToastController()
     val feedback = rememberPimsFeedback()
+    LaunchedEffect(Unit) {
+        val status = context.getSharedPreferences("pims_restore_status", android.content.Context.MODE_PRIVATE)
+        if (status.getBoolean("restore_failed", false)) {
+            snackbarHostState.showSnackbar("Restore failed. Your previous vault was preserved. Choose the backup again to retry.")
+            status.edit().remove("restore_failed").apply()
+        } else if (status.getBoolean("restore_applied", false)) {
+            snackbarHostState.showSnackbar("Backup restored. This vault is in local-only mode.")
+            status.edit().remove("restore_applied").apply()
+        }
+    }
+
 
     // Automatically route all notifications/snackbars into Apple-grade floating dynamic status HUD
     LaunchedEffect(snackbarHostState.currentSnackbarData) {
@@ -493,12 +516,89 @@ fun PersonaDashboardScreen(
         }
     }
 
-    // Vault allows screenshots by default unless an explicit private key is revealed
+    LaunchedEffect(relationshipState.feedbackMessage, relationshipState.errorMessage) {
+        val message = relationshipState.errorMessage ?: relationshipState.feedbackMessage
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            relationshipViewModel.onEvent(RelationshipEvent.ClearFeedback)
+        }
+    }
+
+    var attachmentToPreview by remember { mutableStateOf<Pair<ByteArray, String>?>(null) }
+    var attachmentPreviewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isAttachmentPreviewLoading by remember { mutableStateOf(false) }
+
+    // Dashboard destinations contain Zone 2+ data, including relationship notes.
     DisposableEffect(Unit) {
-        val activity = context as? Activity
-        activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        val window = (context as? Activity)?.window
+        val wasSecure = window?.attributes?.flags?.and(android.view.WindowManager.LayoutParams.FLAG_SECURE) != 0
+        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         onDispose {
-            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            if (!wasSecure) window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    LaunchedEffect(relationshipState.isVaultUnlocked) {
+        if (!relationshipState.isVaultUnlocked) attachmentToPreview = null
+    }
+
+    LaunchedEffect(attachmentToPreview) {
+        attachmentPreviewBitmap?.recycle()
+        attachmentPreviewBitmap = null
+        val attachment = attachmentToPreview ?: run { isAttachmentPreviewLoading = false; return@LaunchedEffect }
+        isAttachmentPreviewLoading = true
+        try {
+            attachmentPreviewBitmap = withContext(Dispatchers.IO) {
+            try {
+                if (attachment.second.startsWith("image/")) {
+                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(attachment.first, 0, attachment.first.size, options)
+                    require(options.outWidth > 0 && options.outHeight > 0) { "Invalid attachment image" }
+                    var sample = 1
+                    while (options.outWidth / sample > 1600 || options.outHeight / sample > 1600) sample *= 2
+                    options.inJustDecodeBounds = false
+                    options.inSampleSize = sample
+                    BitmapFactory.decodeByteArray(attachment.first, 0, attachment.first.size, options)
+                } else if (attachment.second == "application/pdf") {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) error("In-memory PDF preview requires Android 11 or newer")
+                    val memoryFd = Os.memfd_create("pims-note-pdf-preview", 0)
+                    try {
+                        var written = 0
+                        while (written < attachment.first.size) {
+                            written += Os.write(memoryFd, attachment.first, written, attachment.first.size - written)
+                        }
+                        Os.lseek(memoryFd, 0, OsConstants.SEEK_SET)
+                        ParcelFileDescriptor.dup(memoryFd).use { descriptor ->
+                            PdfRenderer(descriptor).use { renderer ->
+                                if (renderer.pageCount == 0) null else renderer.openPage(0).use { page ->
+                                    val scale = minOf(1f, 1400f / page.width, 1800f / page.height)
+                                    val bitmap = Bitmap.createBitmap(
+                                        (page.width * scale).toInt().coerceAtLeast(1),
+                                        (page.height * scale).toInt().coerceAtLeast(1),
+                                        Bitmap.Config.ARGB_8888
+                                    )
+                                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                    bitmap
+                                }
+                            }
+                        }
+                    } finally {
+                        Os.close(memoryFd)
+                    }
+                } else null
+            } catch (_: Exception) { null }
+            }
+        } finally {
+            isAttachmentPreviewLoading = false
+        }
+    }
+
+    DisposableEffect(attachmentToPreview) {
+        val previewBytes = attachmentToPreview?.first
+        onDispose {
+            previewBytes?.fill(0)
+            attachmentPreviewBitmap?.recycle()
+            attachmentPreviewBitmap = null
         }
     }
 
@@ -530,6 +630,7 @@ fun PersonaDashboardScreen(
     var isPinChallengeVisible by remember { mutableStateOf(false) }
     var biometricFailedAttempts by remember { mutableIntStateOf(0) }
     var isLevel2Unlocked by remember { mutableStateOf(false) }
+    var zone4CryptoObject by remember { mutableStateOf<androidx.biometric.BiometricPrompt.CryptoObject?>(null) }
 
     fun requestGatedAccess(
         tier: SecurityTier,
@@ -543,6 +644,34 @@ fun PersonaDashboardScreen(
         }
         pendingSecurityTier = tier
         pendingSensitiveAction = onSuccess
+
+        if (tier == SecurityTier.LEVEL_3_VAULT) {
+            val requestVaultAuth = onRequestVaultBiometricAuth
+            if (requestVaultAuth == null) {
+                pendingSensitiveAction = null
+                pendingSecurityTier = null
+                scope.launch { snackbarHostState.showSnackbar("Vault hardware authentication is unavailable") }
+                return
+            }
+            requestVaultAuth(
+                title,
+                subtitle,
+                { cryptoObject ->
+                    zone4CryptoObject = cryptoObject
+                    val action = pendingSensitiveAction
+                    pendingSensitiveAction = null
+                    pendingSecurityTier = null
+                    action?.invoke()
+                },
+                { error ->
+                    zone4CryptoObject = null
+                    pendingSensitiveAction = null
+                    pendingSecurityTier = null
+                    scope.launch { snackbarHostState.showSnackbar("Vault authentication cancelled: $error") }
+                }
+            )
+            return
+        }
 
         val biometricAvailable = onRequestBiometricAuth != null && pinSecurityManager.isBiometricEnabled.value
         if (biometricAvailable) {
@@ -595,6 +724,20 @@ fun PersonaDashboardScreen(
         }
     }
 
+    fun withPrivateNotesUnlocked(action: () -> Unit) {
+        if (relationshipState.isVaultUnlocked) {
+            action()
+            return
+        }
+        requestGatedAccess(SecurityTier.LEVEL_3_VAULT, "Unlock security vault", "Confirm with a strong biometric") {
+            vaultViewModel.elevateAndUnlockVault(
+                cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
+                onSuccess = action,
+                onError = { error -> scope.launch { snackbarHostState.showSnackbar(error) } }
+            )
+        }
+    }
+
     val openVaultFortress: () -> Unit = {
         if (vaultState.isVaultUnlocked) {
             fullScreenOverlay = "VAULT"
@@ -602,9 +745,10 @@ fun PersonaDashboardScreen(
             requestGatedAccess(
                 SecurityTier.LEVEL_3_VAULT,
                 "Unlock Security Vault",
-                "Biometric or device credential required for hardware vault unlock"
+                "Confirm with a strong biometric to unlock this hardware-protected vault"
             ) {
                 vaultViewModel.elevateAndUnlockVault(
+                    cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
                     onSuccess = {
                         fullScreenOverlay = "VAULT"
                         recentActivityManager.recordActivity("Unlocked Security Vault", "Zone 4 hardware encryption accessed")
@@ -740,6 +884,8 @@ fun PersonaDashboardScreen(
     }
 
     var customFieldInitialLabel by remember { mutableStateOf("") }
+    var customFieldEditingId by remember { mutableStateOf<String?>(null) }
+    var customFieldInitialValue by remember { mutableStateOf("") }
     var customFieldCategory by remember { mutableStateOf("Custom Information") }
     
     fun showDialog(dialogName: String) {
@@ -1138,6 +1284,8 @@ fun PersonaDashboardScreen(
                         PersonDetailScreen(
                             person = currentPerson,
                             relationshipNotes = relationshipState.relationshipNotes,
+                            isVaultUnlocked = relationshipState.isVaultUnlocked,
+                            onUnlockVault = { withPrivateNotesUnlocked {} },
                             onBack = {
                                 fullScreenOverlay = null
                                 selectedPersonForDetail = null
@@ -1151,48 +1299,63 @@ fun PersonaDashboardScreen(
                                 fullScreenOverlay = null
                                 selectedPersonForDetail = null
                             },
-                            onAddNote = { topic, content, format, isPrivate ->
-                                relationshipViewModel.onEvent(
-                                    RelationshipEvent.SaveNote(
-                                        relationshipId = currentPerson.id,
-                                        topic = topic,
-                                        content = content,
-                                        format = format,
-                                        isPrivate = isPrivate
-                                    )
-                                )
-                                soundManager.success()
+                            onOpenAttachment = { noteId, attachmentId ->
                                 scope.launch {
+                                    val previous = attachmentToPreview?.first
+                                    previous?.fill(0)
+                                    attachmentToPreview = try {
+                                        withContext(Dispatchers.IO) { relationshipViewModel.readAttachment(noteId, attachmentId) }
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        throw cancelled
+                                    } catch (_: Exception) { null }
+                                    if (attachmentToPreview == null) snackbarHostState.showSnackbar("Attachment is unavailable or this note is locked")
+                                }
+                            },
+                            onAddNote = { topic, content, format, isPrivate, attachments, removals ->
+                                val saved = relationshipViewModel.saveRelationshipNote(
+                                    relationshipId = currentPerson.id,
+                                    topic = topic,
+                                    content = content,
+                                    format = format,
+                                    isPrivate = isPrivate,
+                                    attachmentsToAdd = attachments,
+                                    attachmentIdsToRemove = removals
+                                )
+                                if (saved) {
+                                    soundManager.success()
                                     snackbarHostState.showSnackbar("Note saved to memory dossier")
                                 }
+                                saved
                             },
-                            onUpdateNote = { noteId, topic, content, format, isPrivate ->
-                                relationshipViewModel.onEvent(
-                                    RelationshipEvent.SaveNote(
-                                        relationshipId = currentPerson.id,
-                                        topic = topic,
-                                        content = content,
-                                        format = format,
-                                        isPrivate = isPrivate,
-                                        noteId = noteId
-                                    )
+                            onUpdateNote = { noteId, topic, content, format, isPrivate, attachments, removals ->
+                                val saved = relationshipViewModel.saveRelationshipNote(
+                                    relationshipId = currentPerson.id,
+                                    topic = topic,
+                                    content = content,
+                                    format = format,
+                                    isPrivate = isPrivate,
+                                    noteId = noteId,
+                                    attachmentsToAdd = attachments,
+                                    attachmentIdsToRemove = removals
                                 )
-                                soundManager.success()
-                                scope.launch {
+                                if (saved) {
+                                    soundManager.success()
                                     snackbarHostState.showSnackbar("Note updated")
                                 }
+                                saved
                             },
                             onDeleteNote = { noteId ->
-                                relationshipViewModel.onEvent(RelationshipEvent.DeleteNote(noteId))
-                                soundManager.delete()
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("Note deleted")
-                                }
+                                val delete = { relationshipViewModel.onEvent(RelationshipEvent.DeleteNote(noteId)) }
+                                if (relationshipState.relationshipNotes.any { it.id == noteId && it.isPrivate }) {
+                                    withPrivateNotesUnlocked(delete)
+                                } else delete()
                             },
                             onToggleTrusted = { _ ->
                             },
                             onToggleNotePrivacy = { noteId, makePrivate ->
-                                relationshipViewModel.onEvent(RelationshipEvent.ToggleNotePrivacy(noteId, makePrivate))
+                                withPrivateNotesUnlocked {
+                                    relationshipViewModel.onEvent(RelationshipEvent.ToggleNotePrivacy(noteId, makePrivate))
+                                }
                             }
                         )
 
@@ -1225,6 +1388,7 @@ fun PersonaDashboardScreen(
                                 "Authentication required for vault access"
                             ) {
                                 vaultViewModel.elevateAndUnlockVault(
+                                    cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
                                     onError = { err ->
                                         scope.launch { snackbarHostState.showSnackbar("Vault re-authentication failed: $err") }
                                     }
@@ -1255,6 +1419,8 @@ fun PersonaDashboardScreen(
                     }
                     BackupDashboardScreen(
                         viewModel = backupViewModel,
+                        isVaultUnlocked = relationshipState.isVaultUnlocked,
+                        onUnlockVault = { withPrivateNotesUnlocked {} },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1571,7 +1737,21 @@ fun PersonaDashboardScreen(
                         onOpenAvatarEditor = { showSheet("avatarEditor") },
                         onViewPublicDossier = { showPublicResumeModal = true },
                         onExportPdf = { handleExportPdf() },
-                        onDeleteCustomField = { label -> profileViewModel.onEvent(ProfileEvent.DeleteCustomField(label)) },
+                        onDeleteCustomField = { id -> profileViewModel.onEvent(ProfileEvent.DeleteCustomField(id)) },
+                        onAddCustomField = {
+                            customFieldEditingId = null
+                            customFieldInitialLabel = ""
+                            customFieldInitialValue = ""
+                            customFieldCategory = "PERSONAL"
+                            showDialog("addCustomField")
+                        },
+                        onEditCustomField = { field ->
+                            customFieldEditingId = field.id
+                            customFieldInitialLabel = field.label
+                            customFieldInitialValue = field.value
+                            customFieldCategory = field.category.name
+                            showDialog("addCustomField")
+                        },
                         onEducationClick = { showSheet("education") },
                         onHealthClick = {
                             requestGatedAccess(
@@ -1847,6 +2027,7 @@ fun PersonaDashboardScreen(
                             "Authenticate to create password"
                         ) {
                             vaultViewModel.elevateAndUnlockVault(
+                                cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
                                 onSuccess = {
                                     vaultViewModel.openEditor(com.pims.vault.core.model.VaultCategory.PASSWORD)
                                     fullScreenOverlay = "VAULT"
@@ -1865,6 +2046,7 @@ fun PersonaDashboardScreen(
                             "Authenticate to add payment card"
                         ) {
                             vaultViewModel.elevateAndUnlockVault(
+                                cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
                                 onSuccess = {
                                     vaultViewModel.openEditor(com.pims.vault.core.model.VaultCategory.PAYMENT_REFERENCE)
                                     fullScreenOverlay = "VAULT"
@@ -1883,6 +2065,7 @@ fun PersonaDashboardScreen(
                             "Authenticate to add bank account"
                         ) {
                             vaultViewModel.elevateAndUnlockVault(
+                                cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
                                 onSuccess = {
                                     vaultViewModel.openEditor(com.pims.vault.core.model.VaultCategory.BANK_ACCOUNT)
                                     fullScreenOverlay = "VAULT"
@@ -1919,7 +2102,7 @@ fun PersonaDashboardScreen(
             onCopyShareLink = { link ->
                 clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(link))
                 haptics.selection()
-                scope.launch { snackbarHostState.showSnackbar("Copied: $link") }
+                scope.launch { snackbarHostState.showSnackbar("Contact copied") }
             }
         )
     }
@@ -2596,7 +2779,9 @@ fun PersonaDashboardScreen(
     // 12. Add Custom Information Dialog
     if (dialogStates.value["addCustomField"] == true) {
         var customLabel by remember(customFieldInitialLabel) { mutableStateOf(customFieldInitialLabel) }
-        var customVal by remember { mutableStateOf("") }
+        var customVal by remember { mutableStateOf(customFieldInitialValue) }
+        var customSaving by remember { mutableStateOf(false) }
+        var customSaveError by remember { mutableStateOf<String?>(null) }
         var selectedCategory by remember {
             mutableStateOf(InformationCategory.fromName(customFieldCategory))
         }
@@ -2612,27 +2797,35 @@ fun PersonaDashboardScreen(
         }
 
         PersonaDialog(
-            onDismissRequest = { hideDialog("addCustomField") },
-            title = "Add Custom Information",
-            confirmText = "Save Field",
-            confirmEnabled = customLabel.isNotBlank() && customVal.isNotBlank(),
+            onDismissRequest = { if (!customSaving) { hideDialog("addCustomField"); customFieldEditingId = null; customFieldInitialValue = "" } },
+            title = if (customFieldEditingId == null) "Add information" else "Edit information",
+            confirmText = if (customSaving) "Saving…" else "Save",
+            confirmEnabled = !customSaving && customLabel.isNotBlank() && customVal.isNotBlank(),
             onConfirm = {
-                if (customLabel.isNotBlank() && customVal.isNotBlank()) {
+                if (!customSaving && customLabel.isNotBlank() && customVal.isNotBlank()) {
+                    customSaving = true
+                    customSaveError = null
                     profileViewModel.onEvent(
                         ProfileEvent.AddCustomField(
-                            label = customLabel.trim(),
-                            value = customVal.trim(),
-                            category = selectedCategory
+                            label = customLabel.trim(), value = customVal.trim(), category = selectedCategory,
+                            id = customFieldEditingId,
+                            onComplete = { success ->
+                                customSaving = false
+                                if (success) {
+                                    hideDialog("addCustomField")
+                                    customFieldEditingId = null
+                                    customFieldInitialValue = ""
+                                    recentActivityManager.recordActivity("Saved personal information", "Personal profile")
+                                    haptics.success()
+                                } else customSaveError = "Could not save this field. Please retry."
+                            }
                         )
                     )
-                    recentActivityManager.recordActivity("Added custom information item", "${selectedCategory.displayName}: ${customLabel.trim()}")
-                    soundManager.success()
-                    haptics.success()
                 }
-                hideDialog("addCustomField")
             }
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                customSaveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 // Category Picker
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
@@ -2872,6 +3065,27 @@ fun PersonaDashboardScreen(
             onEditProfile = {
                 showSheet("centralizedEditor")
             }
+        )
+    }
+
+    attachmentToPreview?.let { attachment ->
+        AlertDialog(
+            onDismissRequest = { attachmentToPreview = null },
+            title = { Text(if (attachment.second == "application/pdf") "PDF preview" else "Image attachment") },
+            text = {
+                Box(Modifier.fillMaxWidth().heightIn(max = 560.dp), contentAlignment = Alignment.Center) {
+                    val bitmap = attachmentPreviewBitmap
+                    if (isAttachmentPreviewLoading) CircularProgressIndicator()
+                    else if (bitmap == null) Text("This file could not be previewed. It remains encrypted in your vault.")
+                    else Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Secure attachment preview",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { attachmentToPreview = null }) { Text("Close") } }
         )
     }
 }

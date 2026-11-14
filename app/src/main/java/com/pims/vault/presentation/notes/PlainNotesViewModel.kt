@@ -282,6 +282,18 @@ class PlainNotesViewModel @Inject constructor(
         )
     }
 
+    fun togglePin(note: PlainNote) {
+        viewModelScope.launch {
+            try {
+                repository.setPinned(note.id, !note.isPinned)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _uiState.update { it.copy(error = "Could not update pinned note. Please retry.") }
+            }
+        }
+    }
+
     fun toggleLock(note: PlainNote) {
         viewModelScope.launch {
             try {

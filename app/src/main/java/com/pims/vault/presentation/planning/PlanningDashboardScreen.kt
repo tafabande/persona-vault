@@ -21,6 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.pims.vault.BuildConfig
 import com.pims.vault.core.model.PlanningPhaseState
 import com.pims.vault.core.model.PlanningStatus
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 
 @Composable
 fun PlanningDashboardScreen(
@@ -32,7 +33,7 @@ fun PlanningDashboardScreen(
     }
     val states by viewModel.phases.collectAsState()
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = pimsPageGutter(), vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {

@@ -21,7 +21,8 @@ class EncryptedFileStorageImpl(
     private val context: Context,
     private val cryptoEngine: CryptoEngine,
     private val keyProvider: () -> ByteArray,
-    private val baseDirectoryName: String = "vault_documents"
+    private val baseDirectoryName: String = "vault_documents",
+    private val legacyKeyProvider: (() -> ByteArray)? = null
 ) : FileStorageService {
 
     private val baseDir: File
@@ -51,7 +52,7 @@ class EncryptedFileStorageImpl(
         var totalPlaintextBytes = 0L
         val fileKey = keyProvider()
 
-        val ivHex = FileOutputStream(targetFile).use { fos ->
+        val ivHex = try { FileOutputStream(targetFile).use { fos ->
             val countingStream = object : InputStream() {
                 override fun read(): Int {
                     val b = digestStream.read()
@@ -71,6 +72,8 @@ class EncryptedFileStorageImpl(
                 associatedDataPrefix = documentId.toByteArray(Charsets.UTF_8)
             )
         }
+
+        } finally { fileKey.fill(0) }
 
         val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
 
@@ -100,36 +103,39 @@ class EncryptedFileStorageImpl(
         val normalizedPath = relativePath.replace('\\', '/')
         val pathSegments = normalizedPath.split("/")
         val documentId = if (pathSegments.size >= 2) pathSegments[pathSegments.size - 2] else ""
-        val fileKey = keyProvider()
-
-        val sha256Digest = MessageDigest.getInstance("SHA-256")
-        val verifyingOutputStream = object : OutputStream() {
-            override fun write(b: Int) {
-                sha256Digest.update(b.toByte())
-                outputStream.write(b)
+        val candidates = mutableListOf(keyProvider())
+        try {
+            legacyKeyProvider?.invoke()?.let { legacy ->
+                if (candidates.any { it.contentEquals(legacy) }) legacy.fill(0) else candidates.add(legacy)
             }
-            override fun write(b: ByteArray, off: Int, len: Int) {
-                sha256Digest.update(b, off, len)
-                outputStream.write(b, off, len)
+            fun decrypt(key: ByteArray, destination: OutputStream) {
+                val digest = MessageDigest.getInstance("SHA-256")
+                val verifying = object : OutputStream() {
+                    override fun write(value: Int) { digest.update(value.toByte()); destination.write(value) }
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                        digest.update(bytes, offset, length); destination.write(bytes, offset, length)
+                    }
+                }
+                FileInputStream(targetFile).use { input ->
+                    cryptoEngine.decryptChunkedStream(input, verifying, key, documentId.toByteArray(Charsets.UTF_8))
+                }
+                val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                if (!actual.equals(expectedSha256Hex, true)) throw CryptoIntegrityException("Document checksum verification failed")
             }
-            override fun flush() = outputStream.flush()
-        }
-
-        FileInputStream(targetFile).use { fis ->
-            cryptoEngine.decryptChunkedStream(
-                input = fis,
-                output = verifyingOutputStream,
-                keyBytes = fileKey,
-                associatedDataPrefix = documentId.toByteArray(Charsets.UTF_8)
-            )
-        }
-
-        val actualSha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
-        if (!actualSha256Hex.equals(expectedSha256Hex, ignoreCase = true)) {
-            throw CryptoIntegrityException(
-                "Document verification failed! Expected SHA-256: $expectedSha256Hex, Actual: $actualSha256Hex"
-            )
-        }
+            var accepted: ByteArray? = null
+            var failure: Exception? = null
+            for (candidate in candidates) {
+                try {
+                    decrypt(candidate, object : OutputStream() { override fun write(value: Int) {} ; override fun write(bytes: ByteArray, offset: Int, length: Int) {} })
+                    accepted = candidate
+                    break
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (error: Exception) { failure = error }
+            }
+            val key = accepted ?: throw (failure ?: CryptoIntegrityException("Document authentication failed"))
+            // Do not send partial output from an unsuccessful key candidate to the caller.
+            decrypt(key, outputStream)
+        } finally { candidates.forEach { it.fill(0) } }
     }
 
     override suspend fun verifyIntegrity(

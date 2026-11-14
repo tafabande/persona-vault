@@ -1,5 +1,6 @@
 package com.pims.vault.domain.usecase.backup
 
+import com.pims.vault.core.crypto.ZeroizingByteArrayOutputStream
 import com.pims.vault.core.crypto.BackupCryptoEngine
 import com.pims.vault.domain.model.*
 import com.pims.vault.domain.rules.BackupRules
@@ -92,8 +93,8 @@ class CreateBackupUseCase @Inject constructor(
                 appVersion = appVersion,
                 schemaVersion = schemaVersion,
                 backupId = backupId,
-                kdfAlgorithm = BackupCryptoEngine.KDF_ALGO_ARGON2ID,
-                kdfParameters = BackupCryptoEngine.KDF_ARGON2_PARAMS,
+                kdfAlgorithm = BackupCryptoEngine.KDF_ALGO_PBKDF2_LEGACY,
+                kdfParameters = "iterations=${BackupCryptoEngine.KDF_ITERATIONS_FALLBACK}",
                 snapshotTimestampEpochMs = now,
                 monotonicSequence = now,
                 databaseChecksum = dbHash,
@@ -108,7 +109,7 @@ class CreateBackupUseCase @Inject constructor(
             val signedManifest = manifest.copy(hmacSignature = manifestHmac.joinToString("") { "%02x".format(it) })
 
             // Serialize signed manifest JSON & encrypt with Auth Key
-            val manifestJson = serializeManifest(signedManifest).toByteArray(StandardCharsets.UTF_8)
+            val manifestJson = BackupManifestCodec.encode(signedManifest).toByteArray(StandardCharsets.UTF_8)
             val encryptedManifest = cryptoEngine.encryptAesGcm(manifestJson, domainKeys.authKey, "PIMS:BACKUP:MANIFEST".toByteArray(StandardCharsets.UTF_8))
 
             // Write final package file format:
@@ -151,9 +152,7 @@ class CreateBackupUseCase @Inject constructor(
         out.write(data)
     }
 
-    private fun serializeManifest(m: BackupManifest): String {
-        return """{"formatVersion":${m.formatVersion},"cryptoVersion":${m.cryptoVersion},"appVersion":"${m.appVersion}","schemaVersion":${m.schemaVersion},"backupId":"${m.backupId}","kdfAlgorithm":"${m.kdfAlgorithm}","kdfParams":"${m.kdfParameters}","snapshotTimestamp":${m.snapshotTimestampEpochMs},"dbChecksum":"${m.databaseChecksum}","dbSize":${m.databaseSizeBytes},"blobCount":${m.blobCount},"hmac":"${m.hmacSignature}"}"""
-    }
+
 }
 
 class RestoreBackupUseCase @Inject constructor(
@@ -169,11 +168,12 @@ class RestoreBackupUseCase @Inject constructor(
         journalFile: File,
         localAntiRollbackWatermarkMs: Long = 0L,
         emergencyOverrideToken: DisasterRecoveryOverrideToken? = null,
-        onCommitToLiveStorage: (decryptedDb: ByteArray, decryptedBlobs: Map<String, ByteArray>) -> Unit
+        onCommitToLiveStorage: suspend (decryptedDb: ByteArray, decryptedBlobs: Map<String, ByteArray>) -> Unit
     ): Flow<BackupProgressState> = flow {
         emit(BackupProgressState.ValidatingHeader)
 
         require(backupFile.exists()) { "Backup file does not exist" }
+        require(backupFile.length() <= BackupCryptoEngine.MAX_PACKAGE_SIZE_BYTES) { "Package exceeds maximum allowed size bound" }
         val fileBytes = backupFile.readBytes()
         require(fileBytes.size > 76) { "Package corrupted: file too small" }
 
@@ -197,6 +197,9 @@ class RestoreBackupUseCase @Inject constructor(
         val masterKey = cryptoEngine.deriveMasterKey(passphrase, salt)
         val domainKeys = cryptoEngine.deriveDomainKeys(masterKey)
 
+        var decryptedDbBytes: ByteArray? = null
+        val decryptedBlobs = mutableMapOf<String, ByteArray>()
+        var commitStarted = false
         try {
             // Verify Global HMAC envelope
             val isGlobalValid = cryptoEngine.verifyHmac(packageBytes, expectedHmac, domainKeys.authKey)
@@ -216,47 +219,54 @@ class RestoreBackupUseCase @Inject constructor(
 
             // Encrypted Manifest
             val manifestLen = buffer.int
-            require(manifestLen in 1..BackupCryptoEngine.MAX_MANIFEST_SIZE_BYTES) { "Manifest size exceeds sanity bound: $manifestLen" }
+            require(manifestLen in 1..BackupCryptoEngine.MAX_MANIFEST_SIZE_BYTES && manifestLen <= buffer.remaining()) { "Manifest size exceeds sanity bound: $manifestLen" }
             val encManifest = ByteArray(manifestLen).apply { buffer.get(this) }
             val decryptedManifestJson = cryptoEngine.decryptAesGcm(encManifest, domainKeys.authKey, "PIMS:BACKUP:MANIFEST".toByteArray(StandardCharsets.UTF_8))
-            val manifestString = String(decryptedManifestJson, StandardCharsets.UTF_8)
+            val manifest = try {
+                BackupManifestCodec.decode(String(decryptedManifestJson, StandardCharsets.UTF_8))
+            } finally { decryptedManifestJson.fill(0) }
 
             // Encrypted Database
             val dbLen = buffer.int
+            require(dbLen > 0 && dbLen <= buffer.remaining()) { "Invalid database payload length" }
             val encDb = ByteArray(dbLen).apply { buffer.get(this) }
 
-            val decDbStream = ByteArrayOutputStream()
-            cryptoEngine.decryptStreamChunked(
-                inputStream = ByteArrayInputStream(encDb),
-                outputStream = decDbStream,
-                key = domainKeys.dbKey,
-                streamAadPrefix = "PIMS:BACKUP:DB"
-            )
-            val decryptedDbBytes = decDbStream.toByteArray()
+            val databaseBytes = ZeroizingByteArrayOutputStream().use { stream ->
+                cryptoEngine.decryptStreamChunked(
+                    inputStream = ByteArrayInputStream(encDb), outputStream = stream,
+                    key = domainKeys.dbKey, streamAadPrefix = "PIMS:BACKUP:DB"
+                )
+                stream.takeBytesAndWipe()
+            }
+            decryptedDbBytes = databaseBytes
+            require(databaseBytes.size.toLong() == manifest.databaseSize &&
+                BackupRules.computeSha256Hex(databaseBytes) == manifest.databaseChecksum) { "Database checksum or size does not match the authenticated manifest" }
 
             // Encrypted Blobs
             val blobsCount = buffer.int
             require(blobsCount in 0..BackupCryptoEngine.MAX_BLOB_COUNT) { "Blob count exceeds sanity limit: $blobsCount" }
-            val decryptedBlobs = mutableMapOf<String, ByteArray>()
+            require(blobsCount == manifest.blobCount) { "Blob count does not match the authenticated manifest" }
 
             for (i in 0 until blobsCount) {
                 val idLen = buffer.int
+                require(idLen in 1..65536 && idLen <= buffer.remaining()) { "Invalid blob identifier length" }
                 val idBytes = ByteArray(idLen).apply { buffer.get(this) }
                 val blobId = String(idBytes, StandardCharsets.UTF_8)
 
+                require(!decryptedBlobs.containsKey(blobId)) { "Duplicate backup blob identifier" }
                 val bLen = buffer.int
-                require(bLen in 0..BackupCryptoEngine.MAX_SINGLE_BLOB_SIZE_BYTES) { "Single blob size exceeds bound: $bLen" }
+                require(bLen.toLong() in 1..BackupCryptoEngine.MAX_SINGLE_BLOB_SIZE_BYTES && bLen <= buffer.remaining()) { "Single blob size exceeds bound: $bLen" }
                 val encBlobBytes = ByteArray(bLen).apply { buffer.get(this) }
 
-                val decBlobStream = ByteArrayOutputStream()
-                cryptoEngine.decryptStreamChunked(
-                    inputStream = ByteArrayInputStream(encBlobBytes),
-                    outputStream = decBlobStream,
-                    key = domainKeys.blobKey,
-                    streamAadPrefix = "PIMS:BACKUP:BLOB:$blobId"
-                )
-                decryptedBlobs[blobId] = decBlobStream.toByteArray()
+                decryptedBlobs[blobId] = ZeroizingByteArrayOutputStream().use { stream ->
+                    cryptoEngine.decryptStreamChunked(
+                        inputStream = ByteArrayInputStream(encBlobBytes), outputStream = stream,
+                        key = domainKeys.blobKey, streamAadPrefix = "PIMS:BACKUP:BLOB:$blobId"
+                    )
+                    stream.takeBytesAndWipe()
+                }
             }
+            require(!buffer.hasRemaining()) { "Trailing package data" }
 
             writeJournal(journalFile, RestoreJournalStep.STAGING_DECRYPTED, "staged_${decryptedBlobs.size}_blobs")
 
@@ -264,7 +274,7 @@ class RestoreBackupUseCase @Inject constructor(
 
             // Anti-rollback check with optional disaster recovery override
             val (antiRollbackPassed, overrideMessage) = BackupRules.validateAntiRollback(
-                snapshotEpochMs = 1_757_100_000_000L, // snapshot timestamp from manifest
+                snapshotEpochMs = manifest.timestamp,
                 localBaselineEpochMs = localAntiRollbackWatermarkMs,
                 overrideToken = emergencyOverrideToken
             )
@@ -280,30 +290,40 @@ class RestoreBackupUseCase @Inject constructor(
             emit(BackupProgressState.CommittingRestore)
 
             // Atomic Commit into Live Storage Callback
-            onCommitToLiveStorage(decryptedDbBytes, decryptedBlobs)
+            commitStarted = true
+            try {
+                onCommitToLiveStorage(databaseBytes, decryptedBlobs)
+            } finally {
+                decryptedBlobs.values.forEach { it.fill(0) }
+                databaseBytes.fill(0)
+            }
 
             writeJournal(journalFile, RestoreJournalStep.RESTORE_COMPLETED, "completed")
 
             val report = BackupIntegrityReport(
-                backupId = "bak_restored",
-                schemaVersion = 1,
-                verifiedTableCount = 5,
-                verifiedRowCount = 100L,
+                backupId = manifest.backupId,
+                schemaVersion = manifest.schemaVersion,
+                verifiedTableCount = 0,
+                verifiedRowCount = 0L,
                 verifiedBlobCount = decryptedBlobs.size,
-                totalSizeDecryptedBytes = decryptedDbBytes.size.toLong() + decryptedBlobs.values.sumOf { it.size.toLong() },
+                totalSizeDecryptedBytes = databaseBytes.size.toLong() + decryptedBlobs.values.sumOf { it.size.toLong() },
                 antiRollbackPassed = antiRollbackPassed,
-                isEmergencyOverrideUsed = emergencyOverrideToken != null,
-                auditChainIntact = true
+                isEmergencyOverrideUsed = overrideMessage != null,
+                auditChainIntact = false
             )
 
             emit(BackupProgressState.RestoreSuccess(report))
         } catch (e: Exception) {
-            writeJournal(journalFile, RestoreJournalStep.ROLLED_BACK, "error: ${e.message}")
+            // A failed callback may already have changed storage. Preserve the committing
+            // journal for recovery instead of claiming that rollback happened.
+            if (!commitStarted) writeJournal(journalFile, RestoreJournalStep.ROLLED_BACK, "validation_failed")
             throw e
         } finally {
+            decryptedDbBytes?.fill(0)
+            decryptedBlobs.values.forEach { it.fill(0) }
             domainKeys.zeroize()
             masterKey.fill(0)
-            stagingDir.deleteRecursively() // Cleanup staging sandbox unconditionally
+            if (!commitStarted || journalFile.readText().contains("RESTORE_COMPLETED")) stagingDir.deleteRecursively()
             if (journalFile.exists() && journalFile.readText().contains("RESTORE_COMPLETED")) {
                 journalFile.delete() // Cleanup journal on clean success
             }

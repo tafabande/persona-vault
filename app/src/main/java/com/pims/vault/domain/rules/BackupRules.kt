@@ -18,7 +18,7 @@ import java.security.MessageDigest
 object BackupRules {
 
     const val MIN_PASSPHRASE_LENGTH = 12
-    const val CURRENT_SCHEMA_VERSION = 1
+    const val CURRENT_SCHEMA_VERSION = 16
     const val CURRENT_CRYPTO_VERSION = 1
     const val CURRENT_FORMAT_VERSION = 1
 

@@ -2,6 +2,7 @@ package com.pims.vault.core.sync
 
 import android.content.Context
 import com.pims.vault.core.crypto.PortableFileKeyManager
+import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.presentation.avatar.PersonaAvatarManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,7 +34,8 @@ class PhotoBackupCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val photoSync: ProfilePhotoSyncService,
     private val firestoreSync: FirestoreSyncService,
-    private val portableFileKeyManager: PortableFileKeyManager
+    private val portableFileKeyManager: PortableFileKeyManager,
+    private val cryptoEngine: CryptoEngine
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val restorePrefs = context.getSharedPreferences("pims_photo_restore_prefs", Context.MODE_PRIVATE)
@@ -249,8 +251,9 @@ class PhotoBackupCoordinator @Inject constructor(
         clearPhotoDeleted(photoId)
         val bytes = photoSync.readLocalJpegBytes(localPath) ?: return
         try {
-            portableFileKeyManager.getOrCreatePortableKey()
-        } catch (_: Exception) {}
+            try {
+                portableFileKeyManager.getOrCreatePortableKey()
+            } catch (_: Exception) {}
         val result = photoSync.uploadPhoto(uid, kind, photoId, bytes)
         val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
             .joinToString("") { "%02x".format(it) }
@@ -258,38 +261,41 @@ class PhotoBackupCoordinator @Inject constructor(
         var photoCiphertextBase64: String? = null
         var ivHex = result?.ivHex ?: ""
         val pfk = try { portableFileKeyManager.copyKeyBytes() } catch (_: Exception) { null }
-        if (pfk != null && bytes.size < 800 * 1024) {
+        if (pfk != null) {
             try {
-                val enc = com.pims.vault.core.crypto.HardenedCryptoEngine().encrypt(bytes, pfk)
-                photoCiphertextBase64 = android.util.Base64.encodeToString(enc.combinedCiphertextWithTag, android.util.Base64.NO_WRAP)
-                if (ivHex.isBlank()) {
-                    ivHex = enc.iv.joinToString("") { "%02x".format(it) }
+                if (bytes.size < 800 * 1024) {
+                    val enc = cryptoEngine.encrypt(bytes, pfk)
+                    photoCiphertextBase64 = android.util.Base64.encodeToString(enc.combinedCiphertextWithTag, android.util.Base64.NO_WRAP)
+                    if (ivHex.isBlank()) {
+                        ivHex = enc.iv.joinToString("") { "%02x".format(it) }
+                    }
                 }
             } catch (_: Exception) {
             } finally {
                 java.util.Arrays.fill(pfk, 0)
             }
         }
-        java.util.Arrays.fill(bytes, 0)
+            if (result == null && photoCiphertextBase64 == null) return
 
-        if (result == null && photoCiphertextBase64 == null) return
-
-        firestoreSync.syncProfilePhoto(
-            null,
-            ProfilePhotoSyncService.PhotoMetadata(
-                photoId = photoId,
-                kind = kind,
-                ownerKey = ownerKey,
-                b2RemotePath = result?.remotePath ?: "",
-                b2DownloadUrl = result?.downloadUrl ?: "",
-                b2IvHex = ivHex,
-                sha256Hex = sha,
-                mimeType = "image/jpeg",
-                sizeBytes = result?.sizeBytes ?: 0L,
-                updatedAt = System.currentTimeMillis(),
-                photoCiphertextBase64 = photoCiphertextBase64
+            firestoreSync.syncProfilePhoto(
+                null,
+                ProfilePhotoSyncService.PhotoMetadata(
+                    photoId = photoId,
+                    kind = kind,
+                    ownerKey = ownerKey,
+                    b2RemotePath = result?.remotePath ?: "",
+                    b2DownloadUrl = result?.downloadUrl ?: "",
+                    b2IvHex = ivHex,
+                    sha256Hex = sha,
+                    mimeType = "image/jpeg",
+                    sizeBytes = result?.sizeBytes ?: 0L,
+                    updatedAt = System.currentTimeMillis(),
+                    photoCiphertextBase64 = photoCiphertextBase64
+                )
             )
-        )
+        } finally {
+            java.util.Arrays.fill(bytes, 0)
+        }
     }
 
     /**

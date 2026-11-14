@@ -50,9 +50,11 @@ import com.pims.vault.domain.usecase.vault.SaveGenericSecretUseCase
 import com.pims.vault.domain.usecase.vault.ReadGenericSecretUseCase
 import com.pims.vault.domain.usecase.vault.SaveIdentityCredentialUseCase
 import com.pims.vault.domain.usecase.vault.ReadIdentityCredentialUseCase
+import com.pims.vault.domain.usecase.vault.MigrateLegacyVaultItemUseCase
 import com.pims.vault.domain.model.IdentityCredentialSecret
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -88,7 +90,10 @@ data class VaultUiState(
     val proposedLinkedBankAccountName: String? = null,
     val clipboardMessage: String? = null,
     val errorMessage: String? = null,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val isSaving: Boolean = false,
+    val isMigratingLegacyItems: Boolean = false,
+    val legacyMigrationPendingCount: Int = 0
 )
 
 @HiltViewModel
@@ -119,6 +124,7 @@ class VaultViewModel @Inject constructor(
     private val saveIdentityCredentialUseCase: SaveIdentityCredentialUseCase,
     private val readIdentityCredentialUseCase: ReadIdentityCredentialUseCase,
     private val deleteVaultItemUseCase: DeleteVaultItemUseCase,
+    private val migrateLegacyVaultItemUseCase: MigrateLegacyVaultItemUseCase,
     private val sessionManager: BiometricSessionManager,
     private val personDao: com.pims.vault.data.local.dao.PersonDao,
     private val vaultDao: com.pims.vault.data.local.dao.VaultDao,
@@ -131,6 +137,7 @@ class VaultViewModel @Inject constructor(
     private var sessionKey: ByteArray? = null
     private var tickerJob: Job? = null
     private var timeoutJob: Job? = null
+    private var migrationJob: Job? = null
     private var revealTimers: MutableMap<String, Job> = mutableMapOf()
     private var activePersonId: String = CANONICAL_PRIMARY_OWNER_ID
 
@@ -167,11 +174,20 @@ class VaultViewModel @Inject constructor(
     // Session & Elevation Lifecycle
     // ---------------------------------------------------------
 
-    fun elevateAndUnlockVault(onSuccess: (() -> Unit)? = null, onError: ((String) -> Unit)? = null) {
+    fun elevateAndUnlockVault(
+        cryptoObject: androidx.biometric.BiometricPrompt.CryptoObject,
+        onSuccess: (() -> Unit)? = null,
+        onError: ((String) -> Unit)? = null
+    ) {
         viewModelScope.launch {
             try {
-                val secretKey = sessionManager.unlockZone4Vault()
-                unlockVault(secretKey.copyBytes())
+                val secretKey = sessionManager.unlockZone4Vault(cryptoObject)
+                try {
+                    unlockVault(secretKey.copyBytes())
+                } finally {
+                    secretKey.close()
+                }
+                startLegacyMigration()
                 onSuccess?.invoke()
             } catch (e: Exception) {
                 val msg = e.message ?: "Failed to elevate to Zone 4 Vault"
@@ -195,6 +211,8 @@ class VaultViewModel @Inject constructor(
     }
 
     fun lockVault() {
+        migrationJob?.cancel()
+        migrationJob = null
         sessionKey?.fill(0)
         sessionKey = null
         timeoutJob?.cancel()
@@ -381,21 +399,21 @@ class VaultViewModel @Inject constructor(
 
     private suspend fun getCandidateVaultKeys(): List<ByteArray> {
         val keys = mutableListOf<ByteArray>()
+        fun addCandidate(candidate: ByteArray) {
+            if (keys.any { it.contentEquals(candidate) }) candidate.fill(0) else keys.add(candidate)
+        }
 
         // 1. Current active session key if already unsealed
         sessionKey?.let { keys.add(it) }
 
         // 2. Zone 4 hardware derived key from BiometricSessionManager
         try {
-            val secretKey = sessionManager.unlockZone4Vault()
-            val bytes = secretKey.copyBytes()
+            val bytes = sessionManager.getZone4VaultKey()
             if (sessionKey == null) {
                 sessionKey = bytes
                 _uiState.update { it.copy(isVaultUnlocked = true) }
             }
-            if (keys.none { it.contentEquals(bytes) }) {
-                keys.add(bytes)
-            }
+            addCandidate(bytes)
         } catch (e: Exception) {
             VaultLogger.w("VaultViewModel", "Zone 4 hardware key unwrap failed: ${e.message}")
         }
@@ -403,53 +421,41 @@ class VaultViewModel @Inject constructor(
         // 3. Alternate hardware root subkey candidate (e.g. if wrapped under rootKeyAlias)
         try {
             val rootSubkey = sessionManager.getHardwareSubkey(isZone4 = false)
-            if (rootSubkey != null && keys.none { it.contentEquals(rootSubkey) }) {
-                keys.add(rootSubkey)
-            }
+            rootSubkey?.let(::addCandidate)
         } catch (_: Exception) {}
 
         // 4. Deterministic person-scoped fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val fallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${activePersonId}".toByteArray(Charsets.UTF_8))
-            if (keys.none { it.contentEquals(fallbackKey) }) {
-                keys.add(fallbackKey)
-            }
+            addCandidate(fallbackKey)
         } catch (_: Exception) {}
 
         // 5. Deterministic canonical primary owner fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val primaryFallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${CANONICAL_PRIMARY_OWNER_ID}".toByteArray(Charsets.UTF_8))
-            if (keys.none { it.contentEquals(primaryFallbackKey) }) {
-                keys.add(primaryFallbackKey)
-            }
+            addCandidate(primaryFallbackKey)
         } catch (_: Exception) {}
 
         // 6. Historical persistent fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val histFallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_FALLBACK_V1".toByteArray(Charsets.UTF_8))
-            if (keys.none { it.contentEquals(histFallbackKey) }) {
-                keys.add(histFallbackKey)
-            }
+            addCandidate(histFallbackKey)
         } catch (_: Exception) {}
 
         // 7. Historical subkey fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val subkeyFallbackKey = digest.digest("PIMS_VAULT_SUBKEY_${HkdfKeyDerivation.CONTEXT_VAULT}".toByteArray(Charsets.UTF_8))
-            if (keys.none { it.contentEquals(subkeyFallbackKey) }) {
-                keys.add(subkeyFallbackKey)
-            }
+            addCandidate(subkeyFallbackKey)
         } catch (_: Exception) {}
 
         // 8. Database domain subkey
         try {
             val dbKey = sessionManager.getDatabaseKey()
-            if (keys.none { it.contentEquals(dbKey) }) {
-                keys.add(dbKey)
-            }
+            addCandidate(dbKey)
         } catch (_: Exception) {}
 
         if (keys.isEmpty()) {
@@ -464,11 +470,58 @@ class VaultViewModel @Inject constructor(
         sessionKey?.let { return it }
         // Fail closed for writes: only the authoritative hardware-backed session key may be used for writes and edits.
         // Never fall back to candidate/legacy/deterministic keys for write operations.
-        val secretKey = sessionManager.unlockZone4Vault()
-        val bytes = secretKey.copyBytes()
+        val bytes = sessionManager.getZone4VaultKey()
         sessionKey = bytes
         _uiState.update { it.copy(isVaultUnlocked = true) }
         return bytes
+    }
+
+    private fun startLegacyMigration() {
+        if (migrationJob?.isActive == true) return
+        migrationJob = viewModelScope.launch {
+            _uiState.update { it.copy(isMigratingLegacyItems = true, legacyMigrationPendingCount = 0) }
+            var pending = 0
+            val targetKey = sessionKey
+            var candidates: List<ByteArray> = emptyList()
+            try {
+                if (targetKey == null) return@launch
+                candidates = getCandidateVaultKeys()
+                val legacyItems = vaultDao.getAllVaultItems().filter { it.encryptionKeyVersion != 2 }
+                for (item in legacyItems) {
+                    if (!isActive || !_uiState.value.isVaultUnlocked) break
+                    var migrated = false
+                    for (candidate in candidates) {
+                        try {
+                            if (migrateLegacyVaultItemUseCase(item.id, candidate, targetKey)) {
+                                migrated = true
+                                break
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            // Try the next historical key candidate. The source row remains untouched on failure.
+                        }
+                    }
+                    val currentVersion = vaultDao.getVaultItemById(item.id)?.encryptionKeyVersion ?: continue
+                    if (migrated) {
+                        runCatching {
+                            vaultDao.getVaultItemById(item.id)?.let { firestoreSyncService?.syncVaultItem(null, it) }
+                        }.onFailure { VaultLogger.w("VaultViewModel", "Vault crypto version sync will retry later: ${it.message}") }
+                    } else if (currentVersion != 2) {
+                        pending++
+                    }
+                    _uiState.update { it.copy(legacyMigrationPendingCount = pending) }
+                }
+            } finally {
+                candidates.forEach { if (it !== sessionKey) it.fill(0) }
+                _uiState.update {
+                    it.copy(
+                        isMigratingLegacyItems = false,
+                        legacyMigrationPendingCount = pending
+                    )
+                }
+            }
+        }
     }
 
     fun openItem(item: VaultItemHeader) {
@@ -556,6 +609,19 @@ class VaultViewModel @Inject constructor(
                         }
                     }
                     if (decryptedSuccessfully) {
+                        val targetKey = sessionKey
+                        if (targetKey != null) {
+                            runCatching {
+                                val upgraded = migrateLegacyVaultItemUseCase(item.id, key, targetKey)
+                                if (upgraded) {
+                                    vaultDao.getVaultItemById(item.id)?.let { migrated ->
+                                        firestoreSyncService?.syncVaultItem(null, migrated)
+                                    }
+                                }
+                            }.onFailure { migrationError ->
+                                VaultLogger.w("VaultViewModel", "Could not upgrade legacy payload for ${item.id}: ${migrationError.message}")
+                            }
+                        }
                         // Scope candidate keys strictly to reading this item.
                         // A candidate/fallback key that decrypts an existing record must NEVER
                         // mutate or contaminate the authoritative sessionKey used for new writes and edits.
@@ -568,6 +634,17 @@ class VaultViewModel @Inject constructor(
             }
 
             if (!decryptedSuccessfully) {
+                val restored = candidateKeys.any { sourceKey ->
+                    runCatching { migrateLegacyVaultItemUseCase.restoreAuthenticatedArchive(item.id, listOf(sourceKey)) }
+                        .getOrDefault(false)
+                }
+                if (restored) {
+                    candidateKeys.forEach { candidate -> if (candidate !== sessionKey) candidate.fill(0) }
+                    VaultLogger.w("VaultViewModel", "Restored the retained legacy ciphertext for item ${item.id}")
+                    openItem(item)
+                    return@launch
+                }
+                candidateKeys.forEach { candidate -> if (candidate !== sessionKey) candidate.fill(0) }
                 VaultLogger.e("VaultViewModel", "Decryption failed for item ${item.id}: ${lastException?.message}", lastException)
                 _uiState.update {
                     it.copy(
@@ -575,6 +652,8 @@ class VaultViewModel @Inject constructor(
                         errorMessage = "This secret cannot be decrypted with your device's current security keys."
                     )
                 }
+            } else {
+                candidateKeys.forEach { candidate -> if (candidate !== sessionKey) candidate.fill(0) }
             }
         }
     }
@@ -667,6 +746,8 @@ class VaultViewModel @Inject constructor(
         }
     }
 
+    fun clearError() { _uiState.update { it.copy(errorMessage = null) } }
+
     fun closeEditor(keepActiveItem: Boolean = true) {
         recordUserActivity()
         _uiState.update {
@@ -719,8 +800,11 @@ class VaultViewModel @Inject constructor(
         passwordPlain: String,
         websiteUrl: String?,
         notes: String?,
-        existingId: String? = null
+        existingId: String? = null,
+        onSaved: () -> Unit = {}
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -737,8 +821,13 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+                onSaved()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -752,6 +841,8 @@ class VaultViewModel @Inject constructor(
         periodSeconds: Int = 30,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -769,8 +860,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -781,6 +876,8 @@ class VaultViewModel @Inject constructor(
         codes: List<String>,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -795,8 +892,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -819,8 +920,11 @@ class VaultViewModel @Inject constructor(
         title: String,
         noteContent: String,
         existingId: String? = null,
-        tags: List<String> = emptyList()
+        tags: List<String> = emptyList(),
+        onSaved: () -> Unit = {}
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -835,8 +939,13 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+                onSaved()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -855,8 +964,11 @@ class VaultViewModel @Inject constructor(
         cvv: String? = null,
         linkedBankAccountId: String? = null,
         linkedBankAccountName: String? = null,
-        cardType: String = "PHYSICAL"
+        cardType: String = "PHYSICAL",
+        onSaved: () -> Unit = {}
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -917,8 +1029,13 @@ class VaultViewModel @Inject constructor(
                 }
                 syncItemToRemote(id)
                 closeEditor()
+                onSaved()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1185,8 +1302,11 @@ class VaultViewModel @Inject constructor(
         existingId: String? = null,
         linkedCardId: String? = null,
         linkedCardSummary: String? = null,
-        currency: String = "USD"
+        currency: String = "USD",
+        onSaved: () -> Unit = {}
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1226,8 +1346,13 @@ class VaultViewModel @Inject constructor(
                     )
                 }
                 syncItemToRemote(id)
+                onSaved()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1269,6 +1394,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1287,8 +1414,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1303,6 +1434,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1321,8 +1454,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1336,6 +1473,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1353,8 +1492,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1367,6 +1510,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1383,8 +1528,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1400,6 +1549,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1419,8 +1570,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }

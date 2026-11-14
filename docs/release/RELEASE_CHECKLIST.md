@@ -13,8 +13,13 @@ Every release must satisfy 100% of the checklist items below before progressing 
 - [ ] **Manifest Gate**: Verified `allowBackup="false"`, `usesCleartextTraffic="false"`, and `networkSecurityConfig` configured.
 - [ ] **R8 Verification**: Minification enabled (`isMinifyEnabled = true`), resource shrinking enabled.
 - [ ] **Cloud integrity verification**: On a staging account, verify one primary-owner and one relationship-person avatar (encrypted bytes and metadata), person-scoped notes after restart, a sparse optional profile update, and Firebase Auth UID/account-document/person-ID mappings. Confirm that no duplicate records were created.
-- [ ] **Crypto upgrade recovery**: Verify representative legacy vault payloads remain readable, a failed/interrupted migration preserves the old version, a successful migration authenticates the new version on read-back, and person/item IDs and links are unchanged. Exercise restore from a backup created before the upgrade.
+- [ ] **Protected note sync verification**: Confirm protected note titles, content, reminders, and attachment captions are ciphertext-only in Firestore; restore on a second device, migrate a legacy plaintext cloud note/caption, and verify malformed or unsupported payloads are skipped without logging their contents.
+- [ ] **Crypto upgrade recovery**: Verify representative legacy vault payloads remain readable, an interrupted migration preserves archived v1 ciphertext and the active row, a successful migration authenticates the new version on read-back, and person/item IDs and links are unchanged. Exercise restore from a backup created before the upgrade and confirm deleting a vault item removes its migration archive.
+- [ ] **Zone 4 key authorization**: Verify vault key bytes are unavailable before a `BIOMETRIC_STRONG` `CryptoObject` succeeds, the auth-bound envelope reopens afterward, and a recovered portable key derives the same v2 vault key on a second device. Confirm unsupported biometric setup fails closed without modifying legacy key material.
 - [ ] **Photo source recovery**: Verify selected, restored, and explicitly imported Google profile images are encrypted before upload, remain scoped to their stable Person ID, and resync after reinstall. Verify deleting a photo keeps the deletion tombstone from resurrecting it.
+- [ ] **Relationship note attachments**: Verify owner-only subcollection rules, ciphertext-only public attachment payloads, private-note non-upload, object-storage cleanup, in-memory secure preview, downsync, and encrypted blob backup/restore on a second install.
+- [ ] **Integrated editor and session checks**: Edit a note without losing its attachments; inject an attachment write failure and retry; switch between people without stale note content; elevate/expire Zone 4 while viewing private notes; verify secure windows, keyboard scrolling, large text, and drag/discard behavior for both profile editors.
+- [ ] **Migration concurrency and recovery**: Preserve metadata edits during re-encryption, reject changed source ciphertext and changed archives, and refuse automatic rollback after a later user edit. Older archives without target-IV binding remain retained but require explicit recovery tooling.
 - [ ] **Wallpaper recovery verification**: Import a custom carousel wallpaper, verify its encrypted object and metadata, then restore it on a clean signed-in device. Confirm its alignment, ordering, and active selection are restored and built-in presets were not uploaded.
 - [ ] **Financial record verification**: Decrypt a staged bank record through the authorized path and confirm its display mask is derived from that record’s verified account number; do not infer or bulk-correct disputed historical suffixes.
 
@@ -50,3 +55,35 @@ Halt rollout immediately if any of the following occur:
 - Any `DATABASE_OPEN_FAILED` or `MIGRATION_FAILED` crash.
 - Keystore `UserNotAuthenticatedException` loop.
 - Crash-free user rate falls below 99.8%.
+
+- [ ] **Final device stage — full-vault recovery**: Run `EncryptedSnapshotDeviceTest` for native WAL snapshot/export-key compatibility. Export with notes, legacy/current vault secrets, encrypted attachments, photos and custom wallpaper; restore on a second install after Zone 4 elevation, restart, and confirm local-only mode, cloud sign-out, readable content, stable IDs and empty source sync queues. Interrupt replacement and verify rollback before Room starts. Exercise malformed/wrong-passphrase/oversized packages, missing attachments, timeout/lock, cancelled file selection, failed destination writes, stale preference `.bak` files and retry. Never use the user's only vault for destructive recovery testing.
+- [ ] **Final device stage — relationship lifecycle**: Offline public-note/attachment deletion must retain retry markers and never resurrect on downsync; reconnect and verify encrypted object cleanup before metadata removal. Historical private cloud copies and cross-person IDs must not replace local notes or create conflicts containing private content.
+
+
+### Calendar/settings redesign acceptance (ADR-020)
+
+- [ ] On the final device build, check system/Compose splash continuity, reduced motion, light/dark, large text and safe areas.
+- [ ] Calendar shows distinct note/reminder dots and both on overlapping dates; selecting a day includes due reminders once and completed reminders disappear. Navigate months/Today, search and open full history.
+- [ ] Pin/unpin from note actions, edit/restart and verify pin persistence. Default overview shows at most four pins, otherwise four recent notes. Authentication protects open/copy/share/duplicate/unlock.
+- [ ] Settings quick lock, backup, account, theme and grouped navigation preserve their existing behavior.
+- [ ] Restore the user's schema-15 export on an isolated second install; confirm additive schema-16 migration and attachments. Preserve the user's original vault.
+
+Pre-redesign device evidence (2026-11-14): native encrypted WAL snapshot test passed on API 36; user confirmed strong-biometric Security Vault unlock and successful backup export. This does not certify a full cross-device restore.
+
+Redesign verification (2026-11-14): 366 JVM tests passed; debug and test APKs built; lint zero errors/197 warnings/one informational finding; security gate passed. Both `EncryptedSnapshotDeviceTest` and `NotePinMigrationDeviceTest` passed on the connected API-36 phone. In-place installation retained app data; an encrypted app-private snapshot was preserved before installation. Cold launch succeeded. The manual visual checks above and isolated schema-15 full recovery remain pending.
+
+User UI feedback was applied: a shorter calendar and unboxed note overview. The UI-only refinement passed `assembleDebug` and `lintDebug`, was installed over the existing phone app, and launched successfully. Further visual preferences remain iterative.
+
+Settings review revision uses visible groups, shared rows and theme/palette pickers, with a consolidated Backup & Recovery entry. Debug packaging and lint passed with zero errors. Installation over the existing phone app and launch succeeded. Visual acceptance is pending.
+
+
+### Unified design phone review
+
+- [ ] Review checked, unchecked and disabled switches in dark/light modes across Settings, Security, relationship-note privacy and social profiles.
+- [ ] Review vault sync feedback, selection surfaces, vault action buttons and note previews under the selected colour mood.
+- [ ] Open person details and review the identity header, contact values and relationship notes.
+- [ ] Review add/edit person, identity, password, card and bank-account forms, including focused fields, errors, keyboard actions and transformed card/password values.
+- [ ] Review personal-note previews, pinned indicators and protected-note metadata suppression.
+- [x] Run synthetic-data native controls/notes checks and inspect dark-mode and large-text renders before user visual acceptance. Three tests passed and renders were inspected on 2026-11-14.
+
+The unified design source passed 369 JVM tests, both APK builds, lint (zero errors, 197 warnings, one informational finding) and the static security gate. The updated APK installed and launched on the connected API-36 phone with FLAG_SECURE. Full screen-family visual acceptance is pending.

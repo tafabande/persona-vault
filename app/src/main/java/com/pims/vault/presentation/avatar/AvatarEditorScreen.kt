@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.res.AppResources
 import com.pims.vault.presentation.ui.theme.tactilePress
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import com.pims.vault.presentation.ui.util.rememberPimsSoundManager
 import kotlinx.coroutines.launch
@@ -175,7 +176,7 @@ fun AvatarEditorContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = pimsPageGutter())
             .padding(bottom = 36.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally

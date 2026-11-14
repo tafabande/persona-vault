@@ -78,7 +78,7 @@ data class CarouselPausePolicy(
  */
 data class PersonaCarouselConfig(
     val autoplay: Boolean = true,
-    val autoplayIntervalMs: Long = 6000L,
+    val autoplayIntervalMs: Long = 3000L,
     val endBehaviour: CarouselEndBehaviour = CarouselEndBehaviour.CONTINUOUS_LOOP,
     val pausePolicy: CarouselPausePolicy = CarouselPausePolicy(),
     val indicatorStyle: CarouselIndicatorStyle = CarouselIndicatorStyle.NONE,
@@ -105,7 +105,7 @@ data class PersonaCarouselConfig(
          */
         val HeroWallpaper = PersonaCarouselConfig(
             autoplay = true,
-            autoplayIntervalMs = 6000L,
+            autoplayIntervalMs = 3000L,
             endBehaviour = CarouselEndBehaviour.CONTINUOUS_LOOP,
             indicatorStyle = CarouselIndicatorStyle.NONE,
             slideDurationMs = 280,

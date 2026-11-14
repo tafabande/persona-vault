@@ -78,9 +78,10 @@ import com.pims.vault.data.local.entity.EmploymentRecordEntity
 import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.domain.model.DocumentWithHistory
 import com.pims.vault.presentation.ui.state.PersonaEmptyState
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.success as StateSuccess
+import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 
 // =========================================================================
 // 1. EDUCATION & PORTFOLIO FACET SHEET
@@ -107,7 +108,7 @@ fun EducationPortfolioSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 36.dp)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -211,7 +212,7 @@ fun HealthSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 36.dp)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -777,7 +778,7 @@ fun VaultSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

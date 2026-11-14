@@ -835,20 +835,7 @@ fun MinimalEmergencyProjectionCard(
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = getVaultTextPrimary()
                     )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(VaultDesignTokens.AccentGreen.copy(alpha = 0.15f))
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = "Ready",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = VaultDesignTokens.AccentGreen
-                        )
-                    }
+
                 }
                 Text(
                     text = "Blood: ${projection.bloodType?.displayLabel?.substringBefore(" ") ?: "Unknown"}${if (projection.severeAllergies.isNotEmpty()) " · Allergies: ${projection.severeAllergies.joinToString()}" else ""}",

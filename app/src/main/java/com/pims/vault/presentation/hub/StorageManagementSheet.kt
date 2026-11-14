@@ -55,8 +55,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,7 +92,7 @@ fun StorageManagementSheet(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
         ) {
             // Header
             Row(
@@ -167,13 +165,13 @@ fun StorageManagementSheet(
                                 }
 
                                 Surface(
-                                    color = StateSuccess.copy(alpha = 0.15f),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text(
                                         text = "✓ Health Optimal",
                                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = StateSuccess,
+                                        color = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                     )
                                 }
@@ -254,12 +252,12 @@ fun StorageManagementSheet(
                     item {
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = StateSuccess.copy(alpha = 0.12f),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 text = cacheClearedMessage ?: "",
-                                color = StateSuccess,
+                                color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                                 modifier = Modifier.padding(12.dp)
                             )

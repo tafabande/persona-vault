@@ -44,7 +44,7 @@ class BankAccountManagementRegressionTests {
     private val inMemoryVaultItems = mutableMapOf<String, VaultItemEntity>()
     private val inMemoryAudits = mutableListOf<AuditEventEntity>()
 
-    private val fakeVaultDao = object : VaultDao {
+    private val fakeVaultDao = object : com.pims.vault.testing.TestVaultDao() {
         override fun getVaultItemsFlow(personId: String): Flow<List<VaultItemEntity>> {
             return flowOf(inMemoryVaultItems.values.filter { it.personId == personId })
         }

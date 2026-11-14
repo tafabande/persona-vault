@@ -2,6 +2,10 @@ package com.pims.vault.presentation
 
 import android.content.Context
 import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import com.pims.vault.presentation.profile.ProfileEvent
 import com.pims.vault.presentation.profile.ProfileUiState
 import com.pims.vault.presentation.profile.ProfileViewModel
@@ -52,7 +56,7 @@ internal fun saveIdentityDetailsHelper(
     soundManager.success()
 }
 
-internal fun handleCentralizedInfoSave(
+internal suspend fun handleCentralizedInfoSave(
     context: Context,
     profileViewModel: ProfileViewModel,
     profileState: ProfileUiState,
@@ -81,19 +85,17 @@ internal fun handleCentralizedInfoSave(
     onCtryUpdated: (String) -> Unit,
     onComplete: () -> Unit
 ) {
-    val localPhotoPath = photoUri?.let { uri ->
+    val localPhotoPath = if (photoUri == null) profileState.idPhotoPath else withContext(Dispatchers.IO) {
+        val destFile = java.io.File(context.filesDir, "identity_id_photo_${System.currentTimeMillis()}.jpg")
         try {
-            val destFile = java.io.File(context.filesDir, "identity_id_photo_${System.currentTimeMillis()}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
+            val input = context.contentResolver.openInputStream(photoUri) ?: error("Could not read the selected photo")
+            input.use { source -> destFile.outputStream().use { target -> source.copyTo(target) } }
             destFile.absolutePath
-        } catch (_: Exception) {
-            null
+        } catch (error: Exception) {
+            destFile.delete()
+            throw error
         }
-    } ?: profileState.idPhotoPath
+    }
 
     val currentPerson = profileState.person
     var fName = currentPerson?.firstName.orEmpty()
@@ -101,31 +103,29 @@ internal fun handleCentralizedInfoSave(
     if (name.isNotBlank()) {
         fName = name.substringBefore(" ")
         lName = name.substringAfter(" ", "")
-        onNameUpdated(fName, lName)
     }
-    if (occ.isNotBlank()) onOccUpdated(occ)
-    if (ctry.isNotBlank()) onCtryUpdated(ctry)
 
-    val effectiveOcc = if (occ.isNotBlank()) occ else currentPerson?.occupation.orEmpty()
+    val effectiveOcc = occ
 
-    profileViewModel.onEvent(
+    awaitProfileEvent(profileViewModel,
         ProfileEvent.SavePersonalDetails(
             firstName = fName,
             lastName = lName,
             dob = currentDob,
             nationality = currentNationality,
-            country = if (ctry.isNotBlank()) ctry else currentPerson?.countryOfResidence ?: "",
+            country = ctry,
             gender = currentGender,
             sexuality = currentSexuality,
             bloodGroup = currentBloodGroup,
             occupation = effectiveOcc,
             nationalIdNumber = natId,
-            idPhotoPath = localPhotoPath
+            idPhotoPath = localPhotoPath,
+            clearBlankOptionalFields = true
         )
     )
 
-    profileViewModel.reconcileContacts(phonesList, emailsList)
-    profileViewModel.reconcileAddresses(addrsList)
+    awaitProfileSave { completion -> profileViewModel.reconcileContacts(phonesList, emailsList, completion) }
+    awaitProfileSave { completion -> profileViewModel.reconcileAddresses(addrsList, completion) }
 
     allergiesList.forEach { al ->
         if (al.allergen.isNotBlank()) {
@@ -134,8 +134,9 @@ internal fun handleCentralizedInfoSave(
             } catch (_: Exception) {
                 AllergySeverity.MODERATE
             }
-            profileViewModel.onEvent(
+            awaitProfileEvent(profileViewModel,
                 ProfileEvent.AddAllergy(
+                    recordId = al.id,
                     allergen = al.allergen.trim(),
                     severity = sev,
                     reaction = al.reaction.trim().ifBlank { null }
@@ -146,8 +147,9 @@ internal fun handleCentralizedInfoSave(
 
     conditionsList.forEach { cd ->
         if (cd.name.isNotBlank()) {
-            profileViewModel.onEvent(
+            awaitProfileEvent(profileViewModel,
                 ProfileEvent.AddMedicalCondition(
+                    recordId = cd.id,
                     condition = cd.name.trim(),
                     status = try { ConditionStatus.valueOf(cd.status.uppercase()) } catch (_: Exception) { ConditionStatus.ACTIVE },
                     notes = cd.diagnosedDate.trim().ifBlank { null }
@@ -158,8 +160,9 @@ internal fun handleCentralizedInfoSave(
 
     medsList.forEach { md ->
         if (md.name.isNotBlank()) {
-            profileViewModel.onEvent(
+            awaitProfileEvent(profileViewModel,
                 ProfileEvent.AddMedication(
+                    recordId = md.id,
                     name = md.name.trim(),
                     dosage = md.dosage.trim(),
                     frequency = md.frequency.trim(),
@@ -171,8 +174,9 @@ internal fun handleCentralizedInfoSave(
 
     edusList.forEach { ed ->
         if (ed.institution.isNotBlank() || ed.qualification.isNotBlank()) {
-            profileViewModel.onEvent(
+            awaitProfileEvent(profileViewModel,
                 ProfileEvent.AddQualification(
+                    recordId = ed.id,
                     institution = ed.institution.trim(),
                     qualification = ed.qualification.trim(),
                     fieldOfStudy = ed.fieldOfStudy.trim().ifBlank { null },
@@ -187,8 +191,9 @@ internal fun handleCentralizedInfoSave(
 
     worksList.forEach { wk ->
         if (wk.company.isNotBlank() || wk.position.isNotBlank()) {
-            profileViewModel.onEvent(
+            awaitProfileEvent(profileViewModel,
                 ProfileEvent.AddWorkHistory(
+                    recordId = wk.id,
                     company = wk.company.trim(),
                     position = wk.position.trim(),
                     department = null,
@@ -204,8 +209,9 @@ internal fun handleCentralizedInfoSave(
 
     socialsList.forEach { sc ->
         if (sc.usernameOrUrl.isNotBlank()) {
-            profileViewModel.onEvent(
+            awaitProfileEvent(profileViewModel,
                 ProfileEvent.AddSocialAccount(
+                    recordId = sc.id,
                     platform = sc.platform.trim(),
                     username = sc.usernameOrUrl.trim(),
                     url = sc.usernameOrUrl.trim()
@@ -216,7 +222,7 @@ internal fun handleCentralizedInfoSave(
 
     customList.forEach { cf ->
         if (cf.label.isNotBlank() && cf.value.isNotBlank()) {
-            profileViewModel.onEvent(
+            awaitProfileEvent(profileViewModel,
                 ProfileEvent.AddCustomField(
                     label = cf.label.trim(),
                     value = cf.value.trim()
@@ -225,5 +231,19 @@ internal fun handleCentralizedInfoSave(
         }
     }
 
+    onNameUpdated(fName, lName)
+    onOccUpdated(effectiveOcc)
+    onCtryUpdated(ctry)
     onComplete()
+}
+
+/** Waits for local persistence; remote synchronization remains independently retryable. */
+private suspend fun awaitProfileEvent(viewModel: ProfileViewModel, event: ProfileEvent) =
+    awaitProfileSave { completion -> viewModel.onEvent(event, completion) }
+
+private suspend fun awaitProfileSave(start: ((Result<Unit>) -> Unit) -> Unit) {
+    val result = suspendCancellableCoroutine<Result<Unit>> { continuation ->
+        start { outcome -> if (continuation.isActive) continuation.resume(outcome) }
+    }
+    result.getOrThrow()
 }

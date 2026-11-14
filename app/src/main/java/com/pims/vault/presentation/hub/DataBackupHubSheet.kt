@@ -42,8 +42,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,7 +65,7 @@ fun DataBackupHubSheet(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
         ) {
             // Header
             Row(
@@ -103,7 +101,7 @@ fun DataBackupHubSheet(
                             .fillMaxWidth()
                             .tactilePress(onClick = onOpenSyncConflicts),
                         shape = RoundedCornerShape(14.dp),
-                        color = if (syncIsGood) StateSuccess.copy(alpha = 0.12f) else StateWarning.copy(alpha = 0.12f)
+                        color = if (syncIsGood) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else com.pims.vault.presentation.ui.theme.PimsColors.warning.copy(alpha = 0.12f)
                     ) {
                         Row(
                             modifier = Modifier
@@ -121,7 +119,7 @@ fun DataBackupHubSheet(
                                     modifier = Modifier
                                         .size(38.dp)
                                         .background(
-                                            color = if (syncIsGood) StateSuccess.copy(alpha = 0.2f) else StateWarning.copy(alpha = 0.2f),
+                                            color = if (syncIsGood) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else com.pims.vault.presentation.ui.theme.PimsColors.warning.copy(alpha = 0.2f),
                                             shape = RoundedCornerShape(10.dp)
                                         ),
                                     contentAlignment = Alignment.Center
@@ -129,7 +127,7 @@ fun DataBackupHubSheet(
                                     Icon(
                                         imageVector = if (syncIsGood) Icons.Default.CheckCircle else Icons.Default.Warning,
                                         contentDescription = null,
-                                        tint = if (syncIsGood) StateSuccess else StateWarning,
+                                        tint = if (syncIsGood) MaterialTheme.colorScheme.primary else com.pims.vault.presentation.ui.theme.PimsColors.warning,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }

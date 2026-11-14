@@ -10,12 +10,14 @@ import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.PersonProfile
 import com.pims.vault.domain.model.RelatedPersonDossier
 import com.pims.vault.domain.model.RelationshipNote
+import com.pims.vault.domain.model.RelationshipNoteAttachmentDraft
 import com.pims.vault.domain.repository.RelationshipNotesRepository
 import com.pims.vault.domain.usecase.relationship.CreateRelationshipUseCase
 import com.pims.vault.domain.usecase.relationship.EndRelationshipUseCase
 import com.pims.vault.domain.usecase.relationship.GetPersonGraphUseCase
 import com.pims.vault.domain.usecase.relationship.PromoteRelatedPersonUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,11 +65,12 @@ sealed interface RelationshipEvent {
         val content: String,
         val format: NoteFormat,
         val isPrivate: Boolean,
-        val noteId: String? = null
+        val noteId: String? = null,
+        val attachmentsToAdd: List<RelationshipNoteAttachmentDraft> = emptyList(),
+        val attachmentIdsToRemove: Set<String> = emptySet()
     ) : RelationshipEvent
     data class DeleteNote(val noteId: String) : RelationshipEvent
     data class ToggleNotePrivacy(val noteId: String, val makePrivate: Boolean) : RelationshipEvent
-    data object UnlockVaultSession : RelationshipEvent
     data class LoadNotes(val relationshipId: String) : RelationshipEvent
 }
 
@@ -81,10 +84,47 @@ class RelationshipViewModel @Inject constructor(
     private val sessionManager: BiometricSessionManager
 ) : ViewModel() {
 
+    suspend fun readAttachment(noteId: String, attachmentId: String): Pair<ByteArray, String>? =
+        relationshipNotesRepository.readAttachment(noteId, attachmentId)
+
+    suspend fun saveRelationshipNote(
+        relationshipId: String,
+        topic: String?,
+        content: String,
+        format: NoteFormat,
+        isPrivate: Boolean,
+        noteId: String? = null,
+        attachmentsToAdd: List<RelationshipNoteAttachmentDraft> = emptyList(),
+        attachmentIdsToRemove: Set<String> = emptySet()
+    ): Boolean {
+        return try {
+            relationshipNotesRepository.saveNote(
+                relationshipId, topic, content, format, isPrivate, noteId, attachmentsToAdd, attachmentIdsToRemove
+            )
+            _uiState.update {
+                it.copy(
+                    isAddingNote = false,
+                    activeEditingNote = null,
+                    errorMessage = null,
+                    feedbackMessage = if (noteId == null) "Note added" else "Note updated"
+                )
+            }
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            _uiState.update { it.copy(errorMessage = error.message ?: "Could not save note") }
+            false
+        } finally {
+            attachmentsToAdd.forEach { it.bytes.fill(0) }
+        }
+    }
+
     private val _uiState = MutableStateFlow(RelationshipUiState())
     val uiState: StateFlow<RelationshipUiState> = _uiState.asStateFlow()
 
     private var notesJob: Job? = null
+    private var activeRelationshipId: String? = null
 
     init {
         observeSessionAndGraph()
@@ -93,30 +133,33 @@ class RelationshipViewModel @Inject constructor(
     private fun observeSessionAndGraph() {
         viewModelScope.launch {
             sessionManager.sessionState.collectLatest { state ->
-                val isUnlocked = state is SessionState.Unlocked
+                val isUnlocked = state is SessionState.Unlocked && state.isZone4Elevated
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         isVaultUnlocked = isUnlocked,
-                        errorMessage = null
+                        errorMessage = null,
+                        relationshipNotes = if (isUnlocked) it.relationshipNotes else it.relationshipNotes.map { note ->
+                            if (note.isPrivate) note.copy(content = "", isDecrypted = false, attachments = emptyList()) else note
+                        },
+                        activeEditingNote = if (isUnlocked) it.activeEditingNote else it.activeEditingNote?.takeUnless { note -> note.isPrivate }
                     )
                 }
 
                 // Re-observe notes for active dossier with new lock state
-                val currentDossier = _uiState.value.selectedDossier
-                if (currentDossier != null) {
-                    loadNotesForRelationship(currentDossier.relationship.id, isUnlocked)
-                }
+                activeRelationshipId?.let { loadNotesForRelationship(it, isUnlocked) }
             }
         }
     }
 
     private fun loadNotesForRelationship(relationshipId: String, isUnlocked: Boolean) {
         notesJob?.cancel()
+        if (activeRelationshipId != relationshipId) _uiState.update { it.copy(relationshipNotes = emptyList()) }
+        activeRelationshipId = relationshipId
         notesJob = viewModelScope.launch {
             relationshipNotesRepository.getNotesForRelationshipFlow(relationshipId, isUnlocked)
                 .collect { notes ->
-                    _uiState.update { it.copy(relationshipNotes = notes) }
+                    if (activeRelationshipId == relationshipId) _uiState.update { it.copy(relationshipNotes = notes) }
                 }
         }
     }
@@ -153,6 +196,7 @@ class RelationshipViewModel @Inject constructor(
                             )
                         } else {
                             notesJob?.cancel()
+                            activeRelationshipId = null
                             _uiState.update { it.copy(relationshipNotes = emptyList()) }
                         }
                     }
@@ -163,6 +207,7 @@ class RelationshipViewModel @Inject constructor(
 
                     RelationshipEvent.DismissDialogs -> {
                         notesJob?.cancel()
+                        activeRelationshipId = null
                         _uiState.update {
                             it.copy(
                                 isAddingRelationship = false,
@@ -192,21 +237,10 @@ class RelationshipViewModel @Inject constructor(
                     }
 
                     is RelationshipEvent.SaveNote -> {
-                        relationshipNotesRepository.saveNote(
-                            relationshipId = event.relationshipId,
-                            topic = event.topic,
-                            content = event.content,
-                            format = event.format,
-                            isPrivate = event.isPrivate,
-                            existingId = event.noteId
+                        saveRelationshipNote(
+                            event.relationshipId, event.topic, event.content, event.format, event.isPrivate,
+                            event.noteId, event.attachmentsToAdd, event.attachmentIdsToRemove
                         )
-                        _uiState.update {
-                            it.copy(
-                                isAddingNote = false,
-                                activeEditingNote = null,
-                                feedbackMessage = if (event.noteId == null) "Note added" else "Note updated"
-                            )
-                        }
                     }
 
                     is RelationshipEvent.DeleteNote -> {
@@ -225,19 +259,12 @@ class RelationshipViewModel @Inject constructor(
                         }
                     }
 
-                    RelationshipEvent.UnlockVaultSession -> {
-                        try {
-                            sessionManager.onAuthenticationSuccess()
-                            _uiState.update { it.copy(isVaultUnlocked = true) }
-                        } catch (e: Exception) {
-                            _uiState.update { it.copy(errorMessage = e.message ?: "Authentication required") }
-                        }
-                    }
-
                     is RelationshipEvent.LoadNotes -> {
                         loadNotesForRelationship(event.relationshipId, _uiState.value.isVaultUnlocked)
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = e.message ?: "Action failed") }
             }

@@ -62,6 +62,14 @@ interface PersonDao {
         return rowId
     }
 
+    @Transaction
+    suspend fun updateNotesIfMatches(id: String, expected: String?, replacement: String): Boolean {
+        val current = getPersonById(id) ?: return false
+        if (current.notes != expected) return false
+        update(current.copy(notes = replacement))
+        return true
+    }
+
     @Query("DELETE FROM persons WHERE id = :id AND id != 'primary_owner' AND is_primary_owner = 0")
     suspend fun deleteById(id: String)
 

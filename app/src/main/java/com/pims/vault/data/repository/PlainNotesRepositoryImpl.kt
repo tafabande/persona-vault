@@ -75,7 +75,8 @@ class PlainNotesRepositoryImpl @Inject constructor(
             reminderTag = reminderTag ?: existing?.reminderTag,
             reminderRepeat = reminderRepeat ?: existing?.reminderRepeat,
             isReminderDone = isReminderDone,
-            isLocked = isLocked
+            isLocked = isLocked,
+            isPinned = existing?.isPinned ?: false
         )
         // 1. Primary local database save (Room/SQLCipher) — runs synchronously and immediately
         dao.upsert(entity)
@@ -103,6 +104,13 @@ class PlainNotesRepositoryImpl @Inject constructor(
 
         val attachments = dao.getAttachments(noteId).map { toDomain(it) }
         return toDomain(entity, attachments)
+    }
+
+    override suspend fun setPinned(noteId: String, isPinned: Boolean) {
+        dao.setPinned(noteId, isPinned, System.currentTimeMillis())
+        dao.getById(noteId)?.let {
+            dispatchRemoteSyncOrQueue(it, com.pims.vault.data.local.entity.SyncAction.UPDATE)
+        }
     }
 
     override suspend fun toggleLock(noteId: String, isLocked: Boolean) {
@@ -283,8 +291,7 @@ class PlainNotesRepositoryImpl @Inject constructor(
             if (isOnline) {
                 try {
                     val syncSucceeded = kotlinx.coroutines.withTimeoutOrNull(3000L) {
-                        firestoreSyncService?.syncNote(null, entity, isDeleted = (action == com.pims.vault.data.local.entity.SyncAction.DELETE))
-                        true
+                        firestoreSyncService?.syncNote(null, entity, isDeleted = (action == com.pims.vault.data.local.entity.SyncAction.DELETE)) ?: false
                     } ?: false
                     if (!syncSucceeded) {
                         VaultLogger.w("PlainNotesRepository", "Immediate sync timed out; queuing offline mutation")
@@ -332,6 +339,7 @@ class PlainNotesRepositoryImpl @Inject constructor(
             entity.reminderRepeat?.let { json.put("reminderRepeat", it) }
             json.put("isReminderDone", entity.isReminderDone)
             json.put("isLocked", entity.isLocked)
+            json.put("isPinned", entity.isPinned)
             (json.toString() as String?) ?: "{}"
         } catch (_: Throwable) {
             "{}"
@@ -355,7 +363,8 @@ class PlainNotesRepositoryImpl @Inject constructor(
             reminderTag = entity.reminderTag,
             reminderRepeat = entity.reminderRepeat,
             isReminderDone = entity.isReminderDone,
-            isLocked = entity.isLocked
+            isLocked = entity.isLocked,
+            isPinned = entity.isPinned
         )
     }
 

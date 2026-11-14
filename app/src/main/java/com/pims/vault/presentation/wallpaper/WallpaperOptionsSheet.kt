@@ -199,7 +199,7 @@ fun WallpaperOptionsSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .padding(bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {

@@ -8,6 +8,9 @@ import com.pims.vault.domain.model.DisasterRecoveryOverrideToken
 import com.pims.vault.domain.rules.BackupRules
 import com.pims.vault.domain.usecase.backup.CreateBackupUseCase
 import com.pims.vault.domain.usecase.backup.RestoreBackupUseCase
+import com.pims.vault.core.storage.FileStorageService
+import com.pims.vault.core.crypto.ZeroizingByteArrayOutputStream
+import com.pims.vault.data.local.dao.RelationshipNoteDao
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.ByteArrayInputStream
 import javax.inject.Inject
 
 /**
@@ -25,7 +29,10 @@ import javax.inject.Inject
 @HiltViewModel
 class BackupViewModel @Inject constructor(
     private val createBackupUseCase: CreateBackupUseCase,
-    private val restoreBackupUseCase: RestoreBackupUseCase
+    private val restoreBackupUseCase: RestoreBackupUseCase,
+    private val relationshipNoteDao: RelationshipNoteDao,
+    private val fileStorage: FileStorageService,
+    private val fullBackup: com.pims.vault.core.storage.FullVaultBackupService
 ) : ViewModel() {
 
     private val _progressState = MutableStateFlow<BackupProgressState>(BackupProgressState.Idle)
@@ -38,61 +45,52 @@ class BackupViewModel @Inject constructor(
         _isPassphraseValid.value = BackupRules.validatePassphraseStrength(passphrase)
     }
 
-    fun triggerFullVaultBackup(
-        context: Context,
-        passphrase: CharArray
-    ) {
-        viewModelScope.launch {
+    private var operation: kotlinx.coroutines.Job? = null
+
+    fun triggerFullVaultBackup(context: Context, passphrase: CharArray, destination: android.net.Uri? = null) {
+        if (operation?.isActive == true) { passphrase.fill('\u0000'); return }
+        _progressState.value = BackupProgressState.ExportingDatabase(0f)
+        operation = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val output = File(context.noBackupFilesDir, "vault-export.pimsbak")
             try {
-                val dbFile = context.getDatabasePath(com.pims.vault.data.local.database.PimsDatabase.DATABASE_NAME)
-                val dbBytes = if (dbFile.exists()) dbFile.readBytes() else ByteArray(0)
-                val backupDir = File(context.filesDir, "backups").apply { mkdirs() }
-                val outputFile = File(backupDir, "pims_vault_backup_${System.currentTimeMillis()}.pimsbak")
-
-                val tableMetrics = listOf(
-                    BackupTableMetric("vault_items", 1L, "vault_items_chk"),
-                    BackupTableMetric("persons", 1L, "persons_chk"),
-                    BackupTableMetric("documents", 0L, "documents_chk")
-                )
-
-                startBackup(
-                    passphrase = passphrase,
-                    databaseBytes = dbBytes,
-                    documentBlobs = emptyMap(),
-                    tableMetrics = tableMetrics,
-                    outputFile = outputFile
-                )
-            } catch (e: Exception) {
-                _progressState.value = BackupProgressState.Error("Backup preparation failed: ${e.message}", e)
-            }
+                fullBackup.export(passphrase, output) { state ->
+                    if (state !is BackupProgressState.ExportSuccess) _progressState.value = state
+                }
+                if (destination != null) {
+                    val stream = context.contentResolver.openOutputStream(destination, "wt") ?: error("Could not open the selected destination")
+                    stream.use { target -> output.inputStream().use { it.copyTo(target, 64 * 1024) } }
+                }
+                _progressState.value = BackupProgressState.ExportSuccess(destination?.toString() ?: output.absolutePath, output.length())
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { _progressState.value = BackupProgressState.Error(error.message ?: "Could not create backup")
+            } finally { passphrase.fill('\u0000'); if (destination != null) output.delete() }
         }
     }
 
-    fun triggerFullVaultRestore(
-        context: Context,
-        passphrase: CharArray,
-        backupFile: File? = null
-    ) {
-        val targetBackup = backupFile ?: run {
-            val backupDir = File(context.filesDir, "backups")
-            backupDir.listFiles()?.filter { it.name.endsWith(".pimsbak") }?.maxByOrNull { it.lastModified() }
-        }
-
-        if (targetBackup == null || !targetBackup.exists()) {
-            _progressState.value = BackupProgressState.Error("No backup package (.pimsbak) found to restore", null)
-            return
-        }
-
-        val stagingDir = File(context.cacheDir, "restore_staging").apply { mkdirs() }
-        val journalFile = File(context.filesDir, "restore_journal.log")
-        startRestore(
-            passphrase = passphrase,
-            backupFile = targetBackup,
-            stagingDir = stagingDir,
-            journalFile = journalFile
-        ) { restoredDbBytes, _ ->
-            val dbFile = context.getDatabasePath(com.pims.vault.data.local.database.PimsDatabase.DATABASE_NAME)
-            dbFile.writeBytes(restoredDbBytes)
+    fun triggerFullVaultRestore(context: Context, passphrase: CharArray, backupFile: File? = null, source: android.net.Uri? = null) {
+        if (operation?.isActive == true) { passphrase.fill('\u0000'); return }
+        operation = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val input = backupFile ?: File(context.noBackupFilesDir, "vault-import.pimsbak")
+            try {
+                _progressState.value = BackupProgressState.ValidatingHeader
+                if (source != null) {
+                    val stream = context.contentResolver.openInputStream(source) ?: error("Could not read the selected backup")
+                    stream.use { data -> input.outputStream().use { target ->
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0L
+                        try { while (true) {
+                            val count = data.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= com.pims.vault.core.crypto.BackupCryptoEngine.MAX_PACKAGE_SIZE_BYTES) { "Backup is too large" }
+                            target.write(buffer, 0, count)
+                        } } finally { buffer.fill(0) }
+                    } }
+                } else require(backupFile != null) { "Choose a backup file to restore" }
+                fullBackup.stageRestore(passphrase, input) { _progressState.value = it }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { _progressState.value = BackupProgressState.Error(error.message ?: "Could not prepare restore")
+            } finally { passphrase.fill('\u0000'); if (backupFile == null) input.delete() }
         }
     }
 
@@ -117,7 +115,9 @@ class BackupViewModel @Inject constructor(
             } catch (e: Exception) {
                 _progressState.value = BackupProgressState.Error(e.message ?: "Backup creation failed", e)
             } finally {
-                passphrase.fill('0') // Wipe passphrase from memory
+                documentBlobs.values.forEach { it.fill(0) }
+                databaseBytes.fill(0)
+                passphrase.fill('\u0000') // Wipe passphrase from memory
             }
         }
     }
@@ -128,7 +128,7 @@ class BackupViewModel @Inject constructor(
         stagingDir: File,
         journalFile: File,
         emergencyOverrideToken: DisasterRecoveryOverrideToken? = null,
-        onCommitToLiveStorage: (ByteArray, Map<String, ByteArray>) -> Unit
+        onCommitToLiveStorage: suspend (ByteArray, Map<String, ByteArray>) -> Unit
     ) {
         viewModelScope.launch {
             try {
@@ -145,12 +145,14 @@ class BackupViewModel @Inject constructor(
             } catch (e: Exception) {
                 _progressState.value = BackupProgressState.Error(e.message ?: "Backup restoration failed", e)
             } finally {
-                passphrase.fill('0') // Wipe passphrase from memory
+                passphrase.fill('\u0000') // Wipe passphrase from memory
             }
         }
     }
 
     fun resetState() {
-        _progressState.value = BackupProgressState.Idle
+        if (operation?.isActive != true && _progressState.value !is BackupProgressState.RestorePrepared) {
+            _progressState.value = BackupProgressState.Idle
+        }
     }
 }

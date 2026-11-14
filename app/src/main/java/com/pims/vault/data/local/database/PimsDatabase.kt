@@ -36,12 +36,14 @@ import com.pims.vault.data.local.entity.PlainNoteEntity
 import com.pims.vault.data.local.entity.PlainNoteAttachmentEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
 import com.pims.vault.data.local.entity.RelationshipNoteEntity
+import com.pims.vault.data.local.entity.RelationshipNoteAttachmentEntity
 import com.pims.vault.data.local.entity.SocialAccountEntity
 import com.pims.vault.data.local.entity.SyncConflictEntity
 import com.pims.vault.data.local.entity.SyncQueueEntity
 import com.pims.vault.data.local.entity.SharingProfileEntity
 import com.pims.vault.data.local.entity.SharingProfileDao
 import com.pims.vault.data.local.entity.VaultItemEntity
+import com.pims.vault.data.local.entity.VaultItemMigrationArchiveEntity
 
 @Database(
     entities = [
@@ -50,6 +52,7 @@ import com.pims.vault.data.local.entity.VaultItemEntity
         AddressEntity::class,
         RelationshipEntity::class,
         RelationshipNoteEntity::class,
+        RelationshipNoteAttachmentEntity::class,
         DocumentEntity::class,
         DocumentVersionEntity::class,
         MedicalProfileEntity::class,
@@ -58,6 +61,7 @@ import com.pims.vault.data.local.entity.VaultItemEntity
         EmploymentRecordEntity::class,
         SocialAccountEntity::class,
         VaultItemEntity::class,
+        VaultItemMigrationArchiveEntity::class,
         AuditEventEntity::class,
         SyncQueueEntity::class,
         SyncConflictEntity::class,
@@ -65,7 +69,7 @@ import com.pims.vault.data.local.entity.VaultItemEntity
         PlainNoteEntity::class,
         PlainNoteAttachmentEntity::class
     ],
-    version = 12,
+    version = 16,
     exportSchema = true
 )
 @TypeConverters(RoomConverters::class)
@@ -312,6 +316,60 @@ abstract class PimsDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds version markers while preserving all existing ciphertext as legacy v1. */
+        val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `vault_items` ADD COLUMN `encryption_format_version` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `vault_items` ADD COLUMN `encryption_key_version` INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        /** Stores source ciphertext during lazy key upgrades so interrupted upgrades remain recoverable. */
+        val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `vault_item_migration_archive` (
+                        `archive_id` TEXT NOT NULL,
+                        `vault_item_id` TEXT NOT NULL,
+                        `encryption_format_version` INTEGER NOT NULL,
+                        `encryption_key_version` INTEGER NOT NULL,
+                        `encrypted_payload` BLOB NOT NULL,
+                        `encryption_iv` TEXT NOT NULL,
+                        `archived_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`archive_id`),
+                        FOREIGN KEY(`vault_item_id`) REFERENCES `vault_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_vault_item_migration_archive_vault_item_id` ON `vault_item_migration_archive` (`vault_item_id`)")
+            }
+        }
+
+        /** Adds encrypted attachment metadata scoped to its relationship note. */
+        val MIGRATION_15_16 = object : androidx.room.migration.Migration(15, 16) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE plain_notes ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `relationship_note_attachments` (
+                        `id` TEXT NOT NULL,
+                        `note_id` TEXT NOT NULL,
+                        `storage_path` TEXT NOT NULL,
+                        `mime_type` TEXT NOT NULL,
+                        `file_size_bytes` INTEGER NOT NULL,
+                        `sha256_hash` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`note_id`) REFERENCES `relationship_notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_relationship_note_attachments_note_id` ON `relationship_note_attachments` (`note_id`)")
+            }
+        }
+
         /**
          * Builder helper for instantiating the database.
          * The open helper factory can be plugged in later for SQLCipher / encryption
@@ -337,7 +395,11 @@ abstract class PimsDatabase : RoomDatabase() {
                 MIGRATION_8_9,
                 MIGRATION_9_10,
                 MIGRATION_10_11,
-                MIGRATION_11_12
+                MIGRATION_11_12,
+                MIGRATION_12_13,
+                MIGRATION_13_14,
+                MIGRATION_14_15,
+                MIGRATION_15_16
             ).addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     super.onOpen(db)

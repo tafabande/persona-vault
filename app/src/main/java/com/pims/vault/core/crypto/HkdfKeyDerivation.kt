@@ -14,6 +14,7 @@ object HkdfKeyDerivation {
     const val CONTEXT_DATABASE = "PIMS/database/v1"
     const val CONTEXT_FILES = "PIMS/files/v1"
     const val CONTEXT_VAULT = "PIMS/vault/v1"
+    const val CONTEXT_VAULT_V2 = "PIMS/vault/v2"
     const val CONTEXT_AUDIT = "PIMS/audit/v1"
     const val CONTEXT_SHARING_MASTER = "PIMS/sharing/master/v1"
 

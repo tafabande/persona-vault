@@ -159,6 +159,24 @@ class SyncQueueManager @Inject constructor(
         return operationId
     }
 
+    /** Never route SQLCipher note drafts through the generic plaintext document gateway. */
+    private suspend fun commitQueuedNote(op: SyncQueueEntity): GatewayCommitResult {
+        val service = firestoreSyncService ?: return GatewayCommitResult.Failure("Note sync is unavailable")
+        val note = if (op.action == SyncAction.DELETE) {
+            val payload = try { org.json.JSONObject(op.payloadJson) } catch (_: Exception) {
+                return GatewayCommitResult.Failure("Invalid note deletion metadata")
+            }
+            com.pims.vault.data.local.entity.PlainNoteEntity(
+                id = op.entityId, ownerPersonId = payload.optString("ownerPersonId"),
+                title = "", content = "", isLocked = payload.optBoolean("isLocked", false)
+            )
+        } else plainNoteDao?.getById(op.entityId)
+            ?: return GatewayCommitResult.Failure("Queued note is unavailable")
+        return if (service.syncNote(null, note, op.action == SyncAction.DELETE)) {
+            GatewayCommitResult.Success(op.localVersion + 1L, System.currentTimeMillis())
+        } else GatewayCommitResult.NetworkUnavailable
+    }
+
     /**
      * Triggers sync of pending operations when connectivity is restored.
      * Uses RemoteSyncGateway with optimistic concurrency verification.
@@ -177,7 +195,10 @@ class SyncQueueManager @Inject constructor(
             for (op in pending) {
                 syncQueueDao.update(op.copy(status = SyncOperationStatus.IN_PROGRESS, attempts = op.attempts + 1))
 
-                when (val result = remoteSyncGateway.commitOperation(userId, op)) {
+                val commitResult = if (op.entityType == "PLAIN_NOTE") {
+                    commitQueuedNote(op)
+                } else remoteSyncGateway.commitOperation(userId, op)
+                when (val result = commitResult) {
                     is GatewayCommitResult.Success -> {
                         syncQueueDao.delete(op)
                         processed++

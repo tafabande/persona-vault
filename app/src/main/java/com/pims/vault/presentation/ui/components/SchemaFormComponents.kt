@@ -3,6 +3,7 @@ package com.pims.vault.presentation.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -47,8 +49,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import com.pims.vault.presentation.ui.components.PersonaSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.window.Dialog
@@ -70,6 +71,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -79,7 +81,7 @@ import com.pims.vault.presentation.ui.theme.PimsControlSize
 import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.theme.PimsTheme
 import com.pims.vault.presentation.ui.theme.PimsColors
-import com.pims.vault.presentation.ui.theme.StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 import com.pims.vault.presentation.ui.theme.tactilePress
 
 /**
@@ -108,7 +110,10 @@ fun PersonaTextInput(
     readOnly: Boolean = false,
     leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
-    onFocusChanged: ((Boolean) -> Unit)? = null
+    onFocusChanged: ((Boolean) -> Unit)? = null,
+    keyboardOptions: KeyboardOptions? = null,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -116,7 +121,7 @@ fun PersonaTextInput(
     ) {
         if (!label.isNullOrBlank()) {
             Text(
-                text = label,
+                text = label.removeSuffix(" · optional").removeSuffix(" (optional)"),
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp
@@ -135,11 +140,10 @@ fun PersonaTextInput(
             enabled = enabled,
             singleLine = singleLine,
             maxLines = maxLines,
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, capitalization = keyboardCapitalization),
-            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                fontSize = 14.sp,
-                color = PimsTheme.text.primary
-            ),
+            keyboardOptions = keyboardOptions ?: KeyboardOptions(keyboardType = keyboardType, capitalization = keyboardCapitalization),
+            keyboardActions = keyboardActions,
+            visualTransformation = visualTransformation,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = PimsTheme.text.primary),
             placeholder = placeholder?.let {
                 {
                     Text(
@@ -152,20 +156,7 @@ fun PersonaTextInput(
             leadingIcon = leadingIcon,
             trailingIcon = trailingIcon,
             isError = isError,
-            colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = if (readOnly) PimsColors.inputSurface else PimsColors.focus.copy(alpha = 0.055f),
-                unfocusedContainerColor = if (readOnly) PimsColors.inputSurface else PimsColors.inputSurface,
-                disabledContainerColor = PimsColors.disabledSurface,
-                focusedBorderColor = if (readOnly) Color.Transparent else PimsColors.focus,
-                unfocusedBorderColor = Color.Transparent,
-                disabledBorderColor = Color.Transparent,
-                cursorColor = MaterialTheme.colorScheme.primary,
-                focusedTextColor = if (readOnly) PimsTheme.text.secondary else PimsTheme.text.primary,
-                unfocusedTextColor = if (readOnly) PimsTheme.text.secondary else PimsTheme.text.primary,
-                disabledTextColor = PimsTheme.text.disabled,
-                errorBorderColor = PimsColors.error,
-                errorContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.20f)
-            )
+            colors = personaFieldColors(readOnly = readOnly)
         )
 
         if (isError && !errorMessage.isNullOrBlank()) {
@@ -212,7 +203,7 @@ fun PersonaDropdownSelector(
     ) {
         if (!label.isNullOrBlank()) {
             Text(
-                text = label,
+                text = label.removeSuffix(" · optional").removeSuffix(" (optional)"),
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp
@@ -370,7 +361,7 @@ fun PersonaSearchableCombobox(
     ) {
         if (!label.isNullOrBlank()) {
             Text(
-                text = label,
+                text = label.removeSuffix(" · optional").removeSuffix(" (optional)"),
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp
@@ -550,7 +541,7 @@ fun PersonaToggleRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .toggleable(value = checked, enabled = enabled, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onCheckedChange)
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -575,16 +566,8 @@ fun PersonaToggleRow(
 
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-            modifier = Modifier.scale(0.82f),
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                uncheckedThumbColor = MaterialTheme.colorScheme.surface,
-                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                uncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
-            )
+            onCheckedChange = null,
+            enabled = enabled
         )
     }
 }
@@ -787,42 +770,25 @@ fun PersonaFormSection(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.fillMaxWidth().padding(vertical = PimsSpacing.s),
         verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(PimsRadius.section),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f),
-            border = null
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = PimsSpacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = PimsSpacing.sm, vertical = PimsSpacing.m),
-                verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (icon != null) {
-                            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                        }
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 14.sp),
-                            color = PimsTheme.text.primary
-                        )
-                    }
-                    headerAction?.invoke()
-                }
-                content()
+            if (icon != null) {
+                Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             }
+            Text(
+                title, modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            headerAction?.invoke()
         }
+        content()
     }
 }
 

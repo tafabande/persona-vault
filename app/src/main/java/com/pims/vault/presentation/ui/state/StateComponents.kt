@@ -56,19 +56,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.success as StateSuccess
+import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
 
 /**
  * 4 Semantic Levels in the Persona Design System.
  * Never use fluorescent colors; calm and restrained.
  */
-enum class AlertLevel(val color: Color, val defaultIcon: ImageVector) {
-    SUCCESS(StateSuccess, Icons.Default.CheckCircle),      // #58745D (calm sage green)
-    WARNING(StateWarning, Icons.Default.Warning),          // #B28745 (warm amber)
-    DANGER(StateError, Icons.Default.ErrorOutline),        // #A94C4C (muted crimson)
-    INFO(Color(0xFF6F6B63), Icons.Default.Info)            // #6F6B63 (charcoal neutral)
+enum class AlertLevel(val defaultIcon: ImageVector) {
+    SUCCESS(Icons.Default.CheckCircle),
+    WARNING(Icons.Default.Warning),
+    DANGER(Icons.Default.ErrorOutline),
+    INFO(Icons.Default.Info);
+
+    val color: Color
+        @Composable get() = when (this) {
+            SUCCESS -> MaterialTheme.colorScheme.primary
+            WARNING -> com.pims.vault.presentation.ui.theme.PimsColors.warning
+            DANGER -> MaterialTheme.colorScheme.error
+            INFO -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
 }
 
 /**

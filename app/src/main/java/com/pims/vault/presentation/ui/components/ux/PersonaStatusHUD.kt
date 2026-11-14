@@ -135,6 +135,7 @@ fun PersonaToastHost(
     modifier: Modifier = Modifier
 ) {
     val toast = controller.currentToast
+    val reducedMotion = com.pims.vault.presentation.ui.theme.LocalReducedMotion.current
     val feedback = rememberPimsFeedback()
     val isDark = com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme.current
 
@@ -162,11 +163,11 @@ fun PersonaToastHost(
     ) {
         AnimatedVisibility(
             visible = toast != null,
-            enter = slideInVertically(
+            enter = if (reducedMotion) androidx.compose.animation.EnterTransition.None else slideInVertically(
                 animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
                 initialOffsetY = { -it }
             ) + fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)),
-            exit = slideOutVertically(
+            exit = if (reducedMotion) androidx.compose.animation.ExitTransition.None else slideOutVertically(
                 animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
                 targetOffsetY = { -it }
             ) + fadeOut()
@@ -198,9 +199,10 @@ private fun PersonaToastPill(
         ToastType.INFO -> colorScheme.primary to PersonaIcons.Info
     }
 
-    val iconBounce = remember { Animatable(0.7f) }
-    LaunchedEffect(toast.id) {
-        iconBounce.animateTo(
+    val reducedMotion = com.pims.vault.presentation.ui.theme.LocalReducedMotion.current
+    val iconBounce = remember { Animatable(if (reducedMotion) 1f else 0.7f) }
+    LaunchedEffect(toast.id, reducedMotion) {
+        if (reducedMotion) iconBounce.snapTo(1f) else iconBounce.animateTo(
             targetValue = 1.0f,
             animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh)
         )

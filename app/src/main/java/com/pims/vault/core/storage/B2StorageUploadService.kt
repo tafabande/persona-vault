@@ -7,6 +7,7 @@ import com.pims.vault.core.crypto.PortableFileKeyManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -116,45 +117,25 @@ class B2StorageUploadService @Inject constructor(
 
     override suspend fun delete(remotePath: String) = withContext(Dispatchers.IO) {
         if (remotePath.isBlank()) return@withContext
-        try {
-            ensureAuthToken()
-            val token = cachedAuthToken ?: return@withContext
-            val api = apiUrl ?: return@withContext
-
-            val listUrl = "$api/b2_list_file_names?bucketId=$B2_BUCKET_ID&prefix=$remotePath&maxFileCount=1"
-            val listReq = Request.Builder()
-                .url(listUrl)
-                .header("Authorization", token)
-                .build()
-
-            val listResp = httpClient.newCall(listReq).execute()
-            if (!listResp.isSuccessful) {
-                Log.w(TAG, "Delete failed for path $remotePath: ${listResp.code}")
-                return@withContext
-            }
-
-            val listBody = listResp.body?.string().orEmpty()
-            val fileId = extractJsonValue(listBody, "fileId")
-            val fileName = extractJsonValue(listBody, "fileName")
-
-            if (fileId != null && fileName != null) {
-                val deleteUrl = "$api/b2_delete_file_version"
-                val deleteJson = """{"fileId": "$fileId", "fileName": "$fileName"}"""
-                val deleteReq = Request.Builder()
-                    .url(deleteUrl)
-                    .header("Authorization", token)
-                    .post(deleteJson.toRequestBody("application/json".toMediaTypeOrNull()))
-                    .build()
-
-                val deleteResp = httpClient.newCall(deleteReq).execute()
-                if (!deleteResp.isSuccessful) {
-                    Log.w(TAG, "Delete failed for path $remotePath: ${deleteResp.code}")
-                }
-            } else {
-                Log.w(TAG, "Delete: fileId not found for path $remotePath")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Delete failed for path $remotePath: ${e.message}")
+        ensureAuthToken()
+        val token = cachedAuthToken ?: error("Object storage authorization is unavailable")
+        val api = apiUrl ?: error("Object storage endpoint is unavailable")
+        val listUrl = "$api/b2_list_file_names".toHttpUrl().newBuilder()
+            .addQueryParameter("bucketId", B2_BUCKET_ID).addQueryParameter("prefix", remotePath)
+            .addQueryParameter("maxFileCount", "1").build()
+        val listReq = Request.Builder().url(listUrl).header("Authorization", token).build()
+        val file = httpClient.newCall(listReq).execute().use { response ->
+            check(response.isSuccessful) { "Object lookup failed (${response.code})" }
+            val files = org.json.JSONObject(response.body?.string() ?: error("Empty object lookup")).getJSONArray("files")
+            if (files.length() == 0) null else files.getJSONObject(0)
+        }
+        // Prefix searches may return an adjacent name. Never delete that object.
+        if (file == null || file.getString("fileName") != remotePath) return@withContext
+        val body = org.json.JSONObject().put("fileId", file.getString("fileId")).put("fileName", remotePath).toString()
+        val request = Request.Builder().url("$api/b2_delete_file_version").header("Authorization", token)
+            .post(body.toRequestBody("application/json".toMediaTypeOrNull())).build()
+        httpClient.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "Object deletion failed (${response.code})" }
         }
     }
 

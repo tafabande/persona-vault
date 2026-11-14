@@ -85,7 +85,7 @@ fun SharePreviewModal(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .padding(bottom = 36.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -136,8 +136,7 @@ fun SharePreviewModal(
             ) {
                 OutlinedButton(
                     onClick = {
-                        val shareUrl = "https://persona.vault/p/${personName.lowercase().replace(" ", "")}"
-                        onCopyShareLink(shareUrl)
+                        onCopyShareLink(cleanSeed)
                     },
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
@@ -147,7 +146,7 @@ fun SharePreviewModal(
                 ) {
                     Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Copy Link", fontWeight = FontWeight.SemiBold)
+                    Text("Copy contact", fontWeight = FontWeight.SemiBold)
                 }
 
                 Button(
@@ -167,13 +166,13 @@ fun SharePreviewModal(
                                 type = "image/png"
                                 putExtra(Intent.EXTRA_STREAM, uri)
                                 putExtra(Intent.EXTRA_SUBJECT, "$personName's Contact Card")
+                                clipData = android.content.ClipData.newUri(context.contentResolver, "Contact card", uri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share Contact Card"))
                             onDismissRequest()
                         } catch (_: Exception) {
-                            val shareUrl = "https://persona.vault/p/${personName.lowercase().replace(" ", "")}"
-                            onCopyShareLink(shareUrl)
+                            android.widget.Toast.makeText(context, "Could not share this image. Please try again.", android.widget.Toast.LENGTH_LONG).show()
                         }
                     },
                     shape = RoundedCornerShape(16.dp),
@@ -226,7 +225,11 @@ private fun generateCardBitmap(
         textSize = 62f
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
-    canvas.drawText(personName.ifBlank { "Personal Contact" }, 88f, (height / 2f) + 20f, namePaint)
+    val availableNameWidth = 560f
+    val name = personName.ifBlank { "Personal Contact" }
+    while (namePaint.measureText(name) > availableNameWidth && namePaint.textSize > 24f) namePaint.textSize -= 2f
+    val displayName = android.text.TextUtils.ellipsize(name, android.text.TextPaint(namePaint), availableNameWidth, android.text.TextUtils.TruncateAt.END)
+    canvas.drawText(displayName.toString(), 88f, (height / 2f) + 20f, namePaint)
 
     // QR Code on the right side
     val qrSize = 340
@@ -239,16 +242,16 @@ private fun generateCardBitmap(
     }
     canvas.drawRoundRect(qrBgRect, 28f, 28f, qrBgPaint)
 
-    val qrBitmap = QrCodeGenerator.generateQrBitmap(qrSeed, qrSize)
-    if (qrBitmap != null) {
-        canvas.drawBitmap(qrBitmap, qrLeft, qrTop, null)
-    }
+    val qrBitmap = checkNotNull(QrCodeGenerator.generateQrBitmap(qrSeed, qrSize)) { "Could not render contact QR" }
+    canvas.drawBitmap(qrBitmap, qrLeft, qrTop, null)
+    qrBitmap.recycle()
 
     // Save to cache
-    val cacheDir = File(context.cacheDir, "shares").apply { if (!exists()) mkdirs() }
+    val cacheDir = File(context.cacheDir, "shared_cards").apply { if (!exists()) mkdirs() }
     val file = File(cacheDir, "persona_card_${System.currentTimeMillis()}.png")
     FileOutputStream(file).use { out ->
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
     }
+    bitmap.recycle()
     return file
 }

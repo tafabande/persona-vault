@@ -135,7 +135,7 @@ fun DocumentUploadSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .padding(bottom = 36.dp)
                 .verticalScroll(rememberScrollState())
         ) {
