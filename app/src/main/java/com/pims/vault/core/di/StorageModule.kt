@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.storage.B2StorageUploadService
 import com.pims.vault.core.storage.StorageUploadService
+import com.pims.vault.core.storage.AccountMediaStorageUploadService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -28,6 +29,6 @@ object StorageModule {
     @Provides
     @Singleton
     fun provideStorageUploadService(
-        b2Service: B2StorageUploadService
-    ): StorageUploadService = b2Service
+        accountMedia: AccountMediaStorageUploadService
+    ): StorageUploadService = accountMedia
 }

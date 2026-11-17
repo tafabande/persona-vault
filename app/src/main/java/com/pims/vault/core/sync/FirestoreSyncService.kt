@@ -85,7 +85,10 @@ class FirestoreSyncService @Inject constructor(
     private val portableFileKeyManager: com.pims.vault.core.crypto.PortableFileKeyManager,
     private val keySecurityManager: com.pims.vault.core.crypto.KeySecurityManager,
     private val photoBackupCoordinatorProvider: javax.inject.Provider<PhotoBackupCoordinator>,
-    private val syncConflictDao: SyncConflictDao
+    private val syncConflictDao: SyncConflictDao,
+    private val vaultProofSync: VaultProofSyncService? = null,
+    private val vaultDeletions: VaultDeletionStore? = null,
+    private val documentDeletions: DocumentDeletionStore? = null
 ) {
     data class RemoteWallpaper(
         val id: String,
@@ -364,27 +367,32 @@ class FirestoreSyncService @Inject constructor(
 
     suspend fun deleteRemoteDocument(documentId: String) = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(null) ?: return@withContext
-        try {
-            // Delete version subcollection first, then the envelope.
-            val versions = firestore.collection("accounts").document(uid)
-                .collection("documents").document(documentId)
-                .collection("versions").get().await()
-            for (v in versions.documents) {
-                // Purge the object so restores don't resurrect the binary.
-                try {
-                    val remotePath = v.getString("b2RemotePath") ?: v.getString("objectKey") ?: ""
-                    if (remotePath.isNotBlank()) storageUploadService.delete(remotePath)
-                } catch (_: Exception) {}
-                try { v.reference.delete().await() } catch (_: Exception) {}
-            }
-            firestore.collection("accounts").document(uid)
-                .collection("documents").document(documentId)
-                .delete().await()
-            VaultLogger.i("FirestoreSync", "Document $documentId deleted from Firestore (+storage)")
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Failed to delete remote document: ${e.message}")
-        }
+        try { syncDocumentDeletions(uid) }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { VaultLogger.w("FirestoreSync", "Document deletion is pending and will retry") }
     }
+
+    private suspend fun syncDocumentDeletions(uid: String): Boolean =
+        documentDeletions?.syncPending(uid) { deletion ->
+            val reference = firestore.collection("accounts").document(uid).collection("documents").document(deletion.documentId)
+            check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+            reference.set(mapOf("documentId" to deletion.documentId, "personId" to deletion.personId,
+                "isDeleted" to true, "updatedAt" to deletion.deletedAt)).await()
+            val versions = reference.collection("versions").get().await()
+            versions.documents.forEach { version ->
+                check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+                val path = version.getString("b2RemotePath") ?: version.getString("objectKey") ?: ""
+                if (path.isNotBlank()) {
+                    if (!path.startsWith("pims-cloud:")) {
+                        // Keep the legacy object pointer for provider-side cleanup. The confirmed
+                        // parent deletion already prevents its restoration, and no bucket key ships in the app.
+                        return@forEach
+                    }
+                    storageUploadService.delete(path)
+                }
+                version.reference.delete().await()
+            }
+        } ?: true
 
     suspend fun deleteRemoteNoteAttachment(noteId: String, attachmentId: String) =
         withContext(Dispatchers.IO) {
@@ -703,7 +711,6 @@ class FirestoreSyncService @Inject constructor(
                 "zip" to (address.postalCode ?: ""),
                 "country" to address.country,
                 "isCurrent" to address.isCurrent,
-                "validFrom" to address.validFrom,
                 "validTo" to (address.validTo ?: 0L),
                 "notes" to (address.notes ?: ""),
                 "securityClassification" to address.securityClassification.name,
@@ -712,6 +719,7 @@ class FirestoreSyncService @Inject constructor(
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
+            address.validFrom?.let { addressData["validFrom"] = it }
             firestore.collection("accounts").document(uid)
                 .collection("addresses").document(address.id)
                 .set(addressData, SetOptions.merge()).await()
@@ -940,6 +948,10 @@ class FirestoreSyncService @Inject constructor(
         }
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
+            if (vaultDeletions?.isDeleted(item.id) == true) {
+                syncVaultDeletions(uid)
+                return@withContext
+            }
             val payloadBase64 = Base64.encodeToString(item.encryptedPayload, Base64.NO_WRAP)
             val vaultData = hashMapOf(
                 "id" to item.id,
@@ -955,32 +967,49 @@ class FirestoreSyncService @Inject constructor(
                 "version" to 1L,
                 "updatedAt" to item.updatedAt
             )
-            withTimeoutOrNull(4000L) {
-                firestore.collection("accounts").document(uid)
-                    .collection("vault").document(item.id)
-                    .set(vaultData, SetOptions.merge()).await()
+            val reference = firestore.collection("accounts").document(uid).collection("vault").document(item.id)
+            val uploaded = firestore.runTransaction { transaction ->
+                check(auth.currentUser?.uid == uid) { "The account changed during vault sync" }
+                val current = transaction.get(reference)
+                if (current.getBoolean("isDeleted") == true) false else {
+                    transaction.set(reference, vaultData, SetOptions.merge())
+                    true
+                }
+            }.await()
+            check(auth.currentUser?.uid == uid) { "The account changed during vault sync" }
+            if (!uploaded) {
+                vaultDeletions?.markRemote(uid, item.id, item.personId, System.currentTimeMillis())
+                return@withContext
             }
-            VaultLogger.i("FirestoreSync", "Vault item ${item.id} (${item.title}) synced to Firestore")
+            // A local delete may have committed while the network transaction was running.
+            if (vaultDeletions?.isDeleted(item.id) == true) syncVaultDeletions(uid)
+            else vaultProofSync?.syncItem(uid, item.id)
+            VaultLogger.i("FirestoreSync", "Vault item synced to Firestore")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync vault item: ${e.message}", e)
         }
     }
 
     suspend fun deleteVaultItem(userId: String?, itemId: String) = withContext(Dispatchers.IO) {
-        if (!networkMonitor.isCurrentlyConnected()) {
-            VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore delete for vault item $itemId")
-            return@withContext
-        }
+        if (!networkMonitor.isCurrentlyConnected()) return@withContext
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
-            withTimeoutOrNull(4000L) {
-                firestore.collection("accounts").document(uid)
-                    .collection("vault").document(itemId)
-                    .delete().await()
-            }
-            VaultLogger.i("FirestoreSync", "Vault item $itemId deleted from Firestore")
-        } catch (e: Exception) {
-            VaultLogger.e("FirestoreSync", "Failed to delete vault item from Firestore: ${e.message}", e)
+            syncVaultDeletions(uid)
+            vaultProofSync?.syncItem(uid, itemId)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Vault deletion is pending for the next sync")
+        }
+    }
+
+    private suspend fun syncVaultDeletions(uid: String) {
+        vaultDeletions?.syncPending(uid) { deletion ->
+            check(auth.currentUser?.uid == uid) { "The account changed during vault sync" }
+            firestore.collection("accounts").document(uid).collection("vault").document(deletion.itemId)
+                .set(mapOf("id" to deletion.itemId, "personId" to deletion.personId,
+                    "isDeleted" to true, "updatedAt" to deletion.deletedAt)).await()
+            vaultProofSync?.syncItem(uid, deletion.itemId)
         }
     }
 
@@ -1360,124 +1389,226 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
-    suspend fun syncDocument(userId: String?, document: DocumentEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
-        try {
-            val docData = hashMapOf(
-                "documentId" to document.id,
-                "personId" to document.personId,
-                "documentType" to document.documentType.name,
-                "title" to document.title,
-                "issuingAuthority" to (document.issuingAuthority ?: ""),
-                "expirationDate" to (document.expirationDate ?: ""),
-                "isEncrypted" to true,
-                "version" to 1L,
-                "updatedAt" to System.currentTimeMillis()
-            )
-            firestore.collection("accounts").document(uid)
-                .collection("documents").document(document.id)
-                .set(docData, SetOptions.merge()).await()
-
-            // Sync all versions and upload binaries
-            val versions = documentDao.getAllVersions(document.id)
-            for (version in versions) {
-                syncDocumentVersion(uid, document.id, version)
+    private fun documentMetadataBody(uid: String, documentId: String, ownerId: String,
+        fields: Map<String, Any?>, versionId: String? = null): Map<String, Any?> {
+        if (!DocumentMetadataCodec.hasEnvelope(fields)) {
+            val names = if (versionId == null) DocumentMetadataCodec.HEADER_FIELDS + "updatedAt" else DocumentMetadataCodec.VERSION_BOUND_FIELDS
+            return fields.filterKeys { it in names }.mapValues { (name, value) ->
+                if (name in setOf("createdAt", "updatedAt")) DocumentSyncPolicy.legacyTimeMillis(value) ?: value else value
             }
-            VaultLogger.i("FirestoreSync", "Document ${document.id} synced to Firestore")
-        } catch (e: Exception) {
-            VaultLogger.e("FirestoreSync", "Failed to sync document: ${e.message}", e)
+        }
+        val key = portableFileKeyManager.copyKeyBytes()
+        return try { DocumentMetadataCodec(cryptoEngine).open(fields, key, uid, documentId, ownerId, versionId) }
+        finally { key.fill(0) }
+    }
+
+    private fun decodedDocumentFields(uid: String, documentId: String, ownerId: String,
+        fields: Map<String, Any?>, versionId: String? = null): Map<String, Any?> =
+        fields + documentMetadataBody(uid, documentId, ownerId, fields, versionId)
+
+    private fun protectedDocumentVersionPatch(uid: String, documentId: String, ownerId: String,
+        allowedOwners: Set<String>, version: DocumentVersionEntity, fields: Map<String, Any?>): Map<String, Any> {
+        val previousOwner = fields["personId"] as? String ?: ownerId
+        require(previousOwner in allowedOwners) { "Document version ownership mismatch" }
+        val previous = documentMetadataBody(uid, documentId, previousOwner, fields, version.id)
+        val body = previous.toMutableMap().apply {
+            putAll(mapOf("documentId" to documentId, "versionId" to version.id, "versionNumber" to version.versionNumber,
+                "fileSizeBytes" to version.fileSizeBytes, "mimeType" to version.mimeType, "sha256Hash" to version.sha256Hash))
+            if (version.createdAt > 0 || !containsKey("createdAt")) put("createdAt", version.createdAt)
+            version.notes?.let { put("notes", it) }
+            version.originalFilename?.let { put("originalFilename", it) }
+        }
+        if (DocumentMetadataCodec.hasEnvelope(fields) && body == previous && previousOwner == ownerId &&
+            DocumentMetadataCodec.VERSION_PRIVATE_FIELDS.none { fields.containsKey(it) }) return emptyMap()
+        val key = portableFileKeyManager.copyKeyBytes()
+        return try {
+            buildMap {
+                putAll(DocumentMetadataCodec(cryptoEngine).seal(body, key, uid, documentId, ownerId, version.id))
+                put("personId", ownerId)
+                DocumentMetadataCodec.VERSION_PRIVATE_FIELDS.forEach { put(it, com.google.firebase.firestore.FieldValue.delete()) }
+            }
+        } finally { key.fill(0) }
+    }
+
+    suspend fun syncDocument(userId: String?, document: DocumentEntity): Boolean = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
+        try {
+            check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+            if (documentDeletions?.isDeleted(document.id) == true) {
+                return@withContext syncDocumentDeletions(uid)
+            }
+            val localRecord = documentDao.getDocumentWithVersions(document.id) ?: return@withContext false
+            if (localRecord.versions.isEmpty()) return@withContext false
+            val current = localRecord.document
+            require(current.personId == document.personId) { "Document ownership changed" }
+            val ownerAliases = if (isPrimaryOwner(current.personId)) {
+                personDao.getAllPersons().filter { it.isPrimaryOwner }.map { it.id }.toSet() +
+                    setOf(current.personId, uid, CANONICAL_PRIMARY_OWNER_ID, "primary", "primary_owner")
+            } else setOf(current.personId)
+            val reference = firestore.collection("accounts").document(uid).collection("documents").document(current.id)
+            val active = firestore.runTransaction { transaction ->
+                check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+                val remote = transaction.get(reference)
+                val owner = remote.getString("personId")
+                require(owner == null || owner in ownerAliases) { "Document ownership mismatch" }
+                if (remote.getBoolean("isDeleted") == true) false else {
+                    val previousFields = remote.data.orEmpty()
+                    val previousOwner = owner ?: current.personId
+                    val previousBody = documentMetadataBody(uid, current.id, previousOwner, previousFields)
+                    val decoded = previousFields + previousBody
+                    val patch = DocumentSyncPolicy.headerPatchForRemote(current, decoded)
+                    val body = previousBody.toMutableMap().apply {
+                        putAll(patch.filterKeys { it in DocumentMetadataCodec.HEADER_FIELDS || it == "updatedAt" })
+                    }
+                    if (!DocumentMetadataCodec.hasEnvelope(previousFields) || body != previousBody ||
+                        previousOwner != current.personId || DocumentMetadataCodec.HEADER_FIELDS.any { previousFields.containsKey(it) }) {
+                        val key = portableFileKeyManager.copyKeyBytes()
+                        val protected = try { DocumentMetadataCodec(cryptoEngine).seal(body, key, uid, current.id, current.personId) }
+                        finally { key.fill(0) }
+                        val publicPatch = mutableMapOf<String, Any>("documentId" to current.id, "personId" to current.personId,
+                            "isEncrypted" to true, "updatedAt" to ((body["updatedAt"] as? Number)?.toLong() ?: current.updatedAt))
+                        publicPatch.putAll(protected)
+                        DocumentMetadataCodec.HEADER_FIELDS.forEach { publicPatch[it] = com.google.firebase.firestore.FieldValue.delete() }
+                        transaction.set(reference, publicPatch, SetOptions.merge())
+                    }
+                    true
+                }
+            }.await()
+            if (!active) {
+                documentDeletions?.markRemote(uid, current.id, current.personId, System.currentTimeMillis())
+                return@withContext true
+            }
+            if (documentDeletions?.isDeleted(current.id) == true) {
+                return@withContext syncDocumentDeletions(uid)
+            }
+            check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+            documentDao.getAllVersions(current.id).map { syncDocumentVersion(uid, current.id, it) }.all { it }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Document backup is pending and will retry")
+            false
         }
     }
 
-    suspend fun syncDocumentVersion(
-        userId: String?,
-        documentId: String,
-        version: DocumentVersionEntity
-    ) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+    suspend fun syncDocumentVersion(userId: String?, documentId: String, version: DocumentVersionEntity): Boolean = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
-            var b2DownloadUrl = ""
-            var b2RemotePath = ""
-            var b2IvHex = ""
-            var binaryMissing = false
-            var ciphertextBase64 = ""
-
-            var bytes = ByteArray(0)
-            val versionOut = ZeroizingByteArrayOutputStream(version.fileSizeBytes.toInt().coerceAtLeast(32))
-            try {
-                fileStorage.readDecryptedFile(
-                    relativePath = version.fileStoragePath,
-                    encryptionIvHex = version.encryptionIv,
-                    expectedSha256Hex = version.sha256Hash,
-                    outputStream = versionOut
-                )
-                bytes = versionOut.takeBytesAndWipe()
-            } catch (e: Exception) {
-                VaultLogger.w("FirestoreSync", "Document version binary read failed: ${e.message}")
-            } finally {
-                versionOut.wipe()
-            }
-
-            if (bytes.isNotEmpty()) {
-                // If small enough (< 800KB), generate inline encrypted base64 payload for zero-dependency sync
-                val pfk = try { portableFileKeyManager.copyKeyBytes() } catch (_: Exception) { null }
-                if (pfk != null && bytes.size <= 800 * 1024) {
-                    try {
-                        val enc = com.pims.vault.core.crypto.HardenedCryptoEngine().encrypt(bytes, pfk)
-                        ciphertextBase64 = Base64.encodeToString(enc.combinedCiphertextWithTag, Base64.NO_WRAP)
-                        b2IvHex = enc.iv.joinToString("") { "%02x".format(it) }
-                    } catch (_: Exception) {
-                    } finally {
-                        java.util.Arrays.fill(pfk, 0)
-                    }
-                }
-
-                if (storageUploadService.isConfigured()) {
-                    try {
-                        val uploadResult = storageUploadService.uploadDocumentVersion(
-                            personId = uid,
-                            documentId = documentId,
-                            mimeType = version.mimeType,
-                            plaintextBytes = bytes
-                        )
-                        if (uploadResult.remotePath.isNotBlank() && uploadResult.downloadUrl.isNotBlank()) {
-                            b2DownloadUrl = uploadResult.downloadUrl
-                            b2RemotePath = uploadResult.remotePath
-                            b2IvHex = uploadResult.ivHex
-                        }
-                    } catch (e: Exception) {
-                        VaultLogger.w("FirestoreSync", "Document version cloud upload failed: ${e.message}")
-                    }
-                }
-            } else {
-                binaryMissing = true
-            }
-
-            val versionData = hashMapOf(
-                "versionId" to version.id,
-                "documentId" to documentId,
-                "versionNumber" to version.versionNumber,
-                "fileStoragePath" to version.fileStoragePath,
-                "storageProvider" to if (b2RemotePath.isNotBlank()) "storage" else "firestore_inline",
-                "objectKey" to b2RemotePath,
-                "b2RemotePath" to b2RemotePath,
-                "b2DownloadUrl" to b2DownloadUrl,
-                "b2IvHex" to b2IvHex,
-                "ciphertextBase64" to ciphertextBase64,
-                "binaryMissing" to (binaryMissing && ciphertextBase64.isBlank() && b2DownloadUrl.isBlank()),
-                "fileSizeBytes" to version.fileSizeBytes,
-                "mimeType" to version.mimeType,
-                "sha256Hash" to version.sha256Hash,
-                "notes" to (version.notes ?: ""),
-                "createdAt" to version.createdAt
-            )
-            firestore.collection("accounts").document(uid)
-                .collection("documents").document(documentId)
+            require(version.documentId == documentId && version.versionNumber > 0)
+            require(version.fileSizeBytes in 1..com.pims.vault.domain.rules.DocumentRules.MAX_DOCUMENT_SIZE_BYTES)
+            require(DocumentSyncPolicy.isHash(version.sha256Hash))
+            check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+            val reference = firestore.collection("accounts").document(uid).collection("documents").document(documentId)
                 .collection("versions").document(version.id)
-                .set(versionData, SetOptions.merge()).await()
-            VaultLogger.i("FirestoreSync", "Document version ${version.id} synced to Firestore & storage")
-        } catch (e: Exception) {
-            VaultLogger.e("FirestoreSync", "Failed to sync document version: ${e.message}", e)
+            if (documentDeletions?.isDeleted(documentId) == true) return@withContext true
+            val previous = reference.get().await()
+            check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+            val localDocument = documentDao.getDocumentWithVersions(documentId)?.document ?: return@withContext false
+            val ownerId = localDocument.personId
+            val ownerAliases = if (isPrimaryOwner(ownerId)) {
+                personDao.getAllPersons().filter { it.isPrimaryOwner }.map { it.id }.toSet() +
+                    setOf(ownerId, uid, CANONICAL_PRIMARY_OWNER_ID, "primary", "primary_owner")
+            } else setOf(ownerId)
+            val previousOwner = previous.getString("personId") ?: ownerId
+            require(previousOwner in ownerAliases) { "Document version ownership mismatch" }
+            val previousFields = decodedDocumentFields(uid, documentId, previousOwner, previous.data.orEmpty(), version.id)
+            require(DocumentSyncPolicy.matchesVersion(previousFields, version)) { "Immutable document version conflict" }
+            if (DocumentSyncPolicy.hasConfirmedBinary(previousFields) && storageUploadService.isPreferredRemote(
+                    previousFields["b2RemotePath"] as? String ?: "", previousFields["b2DownloadUrl"] as? String ?: "")) {
+                firestore.runTransaction { transaction ->
+                    val parent = transaction.get(reference.parent.parent ?: error("Missing document parent"))
+                    val latest = transaction.get(reference)
+                    check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+                    if (parent.getBoolean("isDeleted") != true) {
+                        val latestOwner = latest.getString("personId") ?: ownerId
+                        require(latestOwner in ownerAliases)
+                        val decoded = decodedDocumentFields(uid, documentId, latestOwner, latest.data.orEmpty(), version.id)
+                        require(DocumentSyncPolicy.matchesVersion(decoded, version)) { "Immutable document version conflict" }
+                        val protected = protectedDocumentVersionPatch(uid, documentId, ownerId, ownerAliases, version, latest.data.orEmpty())
+                        if (protected.isNotEmpty()) transaction.set(reference, protected, SetOptions.merge())
+                    }
+                }.await()
+                return@withContext true
+            }
+
+            var uploadedPath: String? = null
+            var published = false
+            var commitAttempted = false
+            var publicationResolved = false
+            var remoteComplete = false
+            try {
+                val data = mutableMapOf<String, Any>("versionId" to version.id, "documentId" to documentId,
+                    "versionNumber" to version.versionNumber, "fileSizeBytes" to version.fileSizeBytes,
+                    "mimeType" to version.mimeType, "sha256Hash" to version.sha256Hash,
+                    "binaryMissing" to false)
+                if (storageUploadService.isConfigured()) {
+                    fileStorage.prepareEncryptedExport(version.fileStoragePath, version.encryptionIv, version.sha256Hash).use { export ->
+                        val uploaded = storageUploadService.uploadEncryptedDocumentVersion(uid, documentId, version.id, export)
+                        require(uploaded.remotePath.isNotBlank() && uploaded.downloadUrl.isNotBlank() &&
+                            uploaded.sha256Hex.equals(export.cipherSha256Hex, true) && uploaded.sizeBytes == export.sizeBytes)
+                        uploadedPath = uploaded.remotePath
+                        data.putAll(mapOf("b2RemotePath" to uploaded.remotePath, "objectKey" to uploaded.remotePath,
+                            "b2DownloadUrl" to uploaded.downloadUrl,
+                            "storageProvider" to if (uploaded.downloadUrl.startsWith("pims-cloud:")) "account_media" else "storage",
+                            "storageFormat" to "PCSF1", "storageId" to export.storageId,
+                            "cipherSha256Hash" to export.cipherSha256Hex, "cipherSizeBytes" to export.sizeBytes,
+                            "transportFormatVersion" to 2, "ciphertextBase64" to com.google.firebase.firestore.FieldValue.delete(),
+                            "b2IvHex" to com.google.firebase.firestore.FieldValue.delete()))
+                    }
+                } else {
+                    require(version.fileSizeBytes <= DocumentSyncPolicy.INLINE_LIMIT_BYTES) { "Object storage is unavailable" }
+                    val output = ZeroizingByteArrayOutputStream(version.fileSizeBytes.toInt())
+                    var bytes: ByteArray? = null
+                    try {
+                        fileStorage.readDecryptedFile(version.fileStoragePath, version.encryptionIv, version.sha256Hash, output)
+                        bytes = output.takeBytesAndWipe()
+                        require(bytes.size.toLong() == version.fileSizeBytes)
+                        val key = portableFileKeyManager.copyKeyBytes()
+                        val encrypted = try { cryptoEngine.encrypt(bytes, key) } finally { key.fill(0) }
+                        data.putAll(mapOf("ciphertextBase64" to Base64.encodeToString(encrypted.combinedCiphertextWithTag, Base64.NO_WRAP),
+                            "b2IvHex" to encrypted.iv.toHexString(), "storageProvider" to "firestore_inline", "storageFormat" to "GCM1",
+                            "transportFormatVersion" to 1, "b2DownloadUrl" to com.google.firebase.firestore.FieldValue.delete(),
+                            "b2RemotePath" to com.google.firebase.firestore.FieldValue.delete(), "objectKey" to com.google.firebase.firestore.FieldValue.delete(),
+                            "storageId" to com.google.firebase.firestore.FieldValue.delete(), "cipherSha256Hash" to com.google.firebase.firestore.FieldValue.delete(),
+                            "cipherSizeBytes" to com.google.firebase.firestore.FieldValue.delete()))
+                    } finally { bytes?.fill(0); output.wipe() }
+                }
+                check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+                commitAttempted = true
+                published = firestore.runTransaction { transaction ->
+                    check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+                    val parent = transaction.get(reference.parent.parent ?: error("Missing document parent"))
+                    val latest = transaction.get(reference)
+                    if (!parent.exists() || parent.getBoolean("isDeleted") == true) return@runTransaction false
+                    val latestOwner = latest.getString("personId") ?: ownerId
+                    require(latestOwner in ownerAliases) { "Document version ownership mismatch" }
+                    val decoded = decodedDocumentFields(uid, documentId, latestOwner, latest.data.orEmpty(), version.id)
+                    require(DocumentSyncPolicy.matchesVersion(decoded, version)) { "Immutable document version conflict" }
+                    val protected = protectedDocumentVersionPatch(uid, documentId, ownerId, ownerAliases, version, latest.data.orEmpty())
+                    if (DocumentSyncPolicy.hasConfirmedBinary(decoded) && storageUploadService.isPreferredRemote(
+                            decoded["b2RemotePath"] as? String ?: "", decoded["b2DownloadUrl"] as? String ?: "")) {
+                        if (protected.isNotEmpty()) transaction.set(reference, protected, SetOptions.merge())
+                        remoteComplete = true
+                        false
+                    } else {
+                        data.putAll(protected)
+                        transaction.set(reference, data, SetOptions.merge())
+                        true
+                    }
+                }.await()
+                publicationResolved = true
+                published || remoteComplete
+            } finally {
+                // A network failure can occur after the server committed the pointer.
+                if (!commitAttempted || (publicationResolved && !published)) {
+                    uploadedPath?.let { path -> try { storageUploadService.delete(path) } catch (_: Exception) {} }
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Document version backup is pending and will retry")
+            false
         }
     }
 
@@ -1637,6 +1768,7 @@ class FirestoreSyncService @Inject constructor(
         syncAccountFileKey(uid)
 
         var count = 0
+        var documentFailures = 0
         try {
             // 1. Account Identity Document - local name is king, never send email as displayName
             val currentFbUser = auth.currentUser
@@ -1697,11 +1829,14 @@ class FirestoreSyncService @Inject constructor(
             }
 
             // 7. Fortress Vault Items (Credentials, Logins, Passwords)
+            syncVaultDeletions(uid)
             val vaultItems = vaultDao.getAllVaultItems()
             for (item in vaultItems) {
                 syncVaultItem(uid, item)
                 count++
             }
+
+            vaultProofSync?.syncPendingDeletions(uid)
 
             // 8. Plain Notes & Photo Attachments (Backed up to Backblaze B2 + Firebase Storage)
             val notes = plainNoteDao.getAllNotes()
@@ -1716,10 +1851,10 @@ class FirestoreSyncService @Inject constructor(
             }
 
             // 9. Documents & Document Versions (Backed up to Backblaze B2)
+            if (!syncDocumentDeletions(uid)) documentFailures++
             val documents = documentDao.getAllDocuments()
             for (doc in documents) {
-                syncDocument(uid, doc)
-                count++
+                if (syncDocument(uid, doc)) count++ else documentFailures++
             }
 
             // 10. Education Records
@@ -1782,7 +1917,8 @@ class FirestoreSyncService @Inject constructor(
             }
 
             VaultLogger.i("FirestoreSync", "Complete multi-tiered sync finished: $count items & files backed up to Firestore & Backblaze B2")
-            SyncResult(true, count, "Successfully synced $count records & media files to Cloud Firestore & Backblaze B2")
+            if (documentFailures > 0) SyncResult(false, count, "Some documents are saved locally and still need cloud backup. Retry sync.")
+            else SyncResult(true, count, "Synced $count records and media files")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Sync error: ${e.message}", e)
             SyncResult(false, count, "Firestore & Backblaze sync error: ${e.localizedMessage}")
@@ -1821,68 +1957,64 @@ class FirestoreSyncService @Inject constructor(
                     alternateKeyProvider = {
                         keySecurityManager.deriveDomainSubkey(
                             com.pims.vault.core.crypto.HkdfKeyDerivation.CONTEXT_FILES
-                        ).copyBytes()
+                        ).use { it.copyBytes() }
                     }
                 )
-            } else {
-                // Legacy fallback: raw passthrough (readable only if already PCSF).
-                fileStorage.storePreEncryptedFile(
-                    documentId = "note_${noteId}_${attachmentId}",
-                    versionNumber = 1,
-                    mimeType = mimeType,
-                    inputStream = java.io.ByteArrayInputStream(ciphertext)
-                )
-            }
+            } else null
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Failed to download remote attachment: ${e.message}")
             null
         }
     }
 
+    private suspend fun cleanupUnpublishedDocumentCopy(path: String) = withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+        try {
+            if (documentDao.getAllDocumentVersions().none { it.fileStoragePath == path }) fileStorage.deleteFile(path)
+        } catch (_: Exception) {
+            // An uncertain database read cannot authorize deletion of a potentially published copy.
+        }
+    }
+
     private suspend fun downloadAndStoreDocumentVersion(
-        docId: String,
-        versionId: String,
-        versionNum: Int,
-        downloadUrl: String,
+        fields: Map<String, Any?>,
         mimeType: String,
-        ivHex: String,
         expectedPlaintextSha256: String,
-        ciphertextBase64: String? = null
+        expectedPlaintextSize: Long
     ): StoredFileMetadata? = withContext(Dispatchers.IO) {
         try {
-            val remoteBytes = if (downloadUrl.isNotBlank()) {
-                storageUploadService.downloadEncryptedBytes(downloadUrl)
-            } else null
-
-            val ciphertext = remoteBytes ?: ciphertextBase64?.takeIf { it.isNotBlank() }?.let {
-                try { Base64.decode(it, Base64.NO_WRAP) } catch (_: Exception) { null }
-            } ?: return@withContext null
-
-            val impl = fileStorage as? com.pims.vault.data.local.storage.EncryptedFileStorageImpl
-            if (impl != null && ivHex.isNotBlank() && expectedPlaintextSha256.isNotBlank()) {
-                impl.storeRestoredCiphertext(
-                    documentId = "doc_${docId}_${versionId}",
-                    versionNumber = versionNum,
-                    mimeType = mimeType,
-                    ciphertextBytes = ciphertext,
-                    ivHex = ivHex,
-                    expectedPlaintextSha256Hex = expectedPlaintextSha256,
-                    alternateKeyProvider = {
-                        keySecurityManager.deriveDomainSubkey(
-                            com.pims.vault.core.crypto.HkdfKeyDerivation.CONTEXT_FILES
-                        ).copyBytes()
-                    }
-                )
+            require(DocumentSyncPolicy.isSupportedTransport(fields) && DocumentSyncPolicy.isHash(expectedPlaintextSha256))
+            val url = fields["b2DownloadUrl"] as? String ?: ""
+            if ((fields["transportFormatVersion"] as? Number)?.toInt() == 2) {
+                require(fields["storageFormat"] == "PCSF1")
+                val storageId = fields["storageId"] as? String ?: return@withContext null
+                val cipherHash = fields["cipherSha256Hash"] as? String ?: return@withContext null
+                val cipherSize = (fields["cipherSizeBytes"] as? Number)?.toLong() ?: return@withContext null
+                require(DocumentSyncPolicy.isStorageId(storageId) && expectedPlaintextSize in 1..com.pims.vault.domain.rules.DocumentRules.MAX_DOCUMENT_SIZE_BYTES)
+                val input = storageUploadService.openEncryptedDocument(url) ?: return@withContext null
+                VerifiedDocumentCipherInputStream(input, cipherSize, cipherHash).use { verified ->
+                    fileStorage.storeRestoredChunkedCiphertext(storageId, 1, mimeType, verified,
+                        expectedPlaintextSha256, expectedPlaintextSize)
+                }
             } else {
-                fileStorage.storePreEncryptedFile(
-                    documentId = "doc_${docId}_${versionId}",
-                    versionNumber = versionNum,
-                    mimeType = mimeType,
-                    inputStream = java.io.ByteArrayInputStream(ciphertext)
-                )
+                val iv = fields["b2IvHex"] as? String ?: return@withContext null
+                require(DocumentSyncPolicy.isIv(iv))
+                val downloaded = if (url.isNotBlank()) storageUploadService.downloadEncryptedBytes(url) else null
+                val inline = fields["ciphertextBase64"] as? String
+                val cipher = downloaded ?: inline?.takeIf { it.isNotBlank() && it.length <= 1_100_000 }
+                    ?.let { Base64.decode(it, Base64.NO_WRAP) } ?: return@withContext null
+                try {
+                    val storage = fileStorage as? com.pims.vault.data.local.storage.EncryptedFileStorageImpl ?: return@withContext null
+                    storage.storeRestoredCiphertext("document-restore-${UUID.randomUUID()}", 1, mimeType, cipher, iv,
+                        expectedPlaintextSha256, alternateKeyProvider = {
+                            keySecurityManager.deriveDomainSubkey(com.pims.vault.core.crypto.HkdfKeyDerivation.CONTEXT_FILES)
+                                .use { it.copyBytes() }
+                        })
+                } finally { cipher.fill(0) }
             }
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Failed to download remote document version: ${e.message}")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Encrypted document download is pending and will retry")
             null
         }
     }
@@ -2062,6 +2194,7 @@ class FirestoreSyncService @Inject constructor(
         syncAccountFileKey(uid)
 
         var count = 0
+        var documentRecoveryPending = false
         try {
             VaultLogger.i("FirestoreSync", "Starting remote-to-local synchronization for uid $uid")
             val accountDocRef = firestore.collection("accounts").document(uid)
@@ -2284,7 +2417,7 @@ class FirestoreSyncService @Inject constructor(
                     val state = (doc.getString("stateProvince") ?: doc.getString("state"))?.takeIf { it.isNotBlank() }
                     val postal = (doc.getString("postalCode") ?: doc.getString("zip"))?.takeIf { it.isNotBlank() }
                     val country = doc.getString("country") ?: ""
-                    val validFrom = doc.getLong("validFrom") ?: System.currentTimeMillis()
+                    val validFrom = doc.getLong("validFrom")
                     val validTo = doc.getLong("validTo")?.takeIf { it > 0L }
                     val notes = doc.getString("notes")?.takeIf { it.isNotBlank() }
 
@@ -2482,10 +2615,15 @@ class FirestoreSyncService @Inject constructor(
 
             // 7. Fortress Vault Items (Local is king — preserve local items, record conflicts)
             try {
+                syncVaultDeletions(uid)
                 val vaultSnap = accountDocRef.collection("vault").get().await()
                 for (doc in vaultSnap.documents) {
                     val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
+                    if (doc.getBoolean("isDeleted") == true) {
+                        vaultDeletions?.markRemote(uid, doc.id, targetPersonId, doc.getLong("updatedAt") ?: 0L)
+                        continue
+                    }
                     val payloadBase64 = doc.getString("encryptedPayload")
                     val payloadBytes = if (payloadBase64 != null) {
                         try { Base64.decode(payloadBase64, Base64.NO_WRAP) } catch (_: Exception) { ByteArray(0) }
@@ -2517,10 +2655,13 @@ class FirestoreSyncService @Inject constructor(
                     if (action == VaultDownsyncAction.APPLY_INSERT_OR_UPDATE) {
                         count++
                     }
+                    vaultProofSync?.syncItem(uid, doc.id)
                 }
             } catch (e: Exception) {
                 VaultLogger.e("FirestoreSync", "Error pulling vault items: ${e.message}", e)
             }
+
+            vaultProofSync?.syncPendingDeletions(uid)
 
             // 8. Plain Notes & Attachments (stable note IDs; conflicts are explicit)
             try {
@@ -2676,112 +2817,98 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.e("FirestoreSync", "Error pulling notes: ${e.message}", e)
             }
 
-            // 9. Documents & Versions (Local is king — preserve local documents & versions)
+            // 9. Documents retain local metadata and immutable version identity through sparse or stale snapshots.
             try {
+                if (!syncDocumentDeletions(uid)) documentRecoveryPending = true
                 val docSnap = accountDocRef.collection("documents").get().await()
                 for (doc in docSnap.documents) {
+                    check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
                     val docId = doc.id
                     val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
-                    val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
-                    val docTypeStr = doc.getString("documentType") ?: "OTHER"
-                    val docType = try { DocumentType.valueOf(docTypeStr) } catch (_: Exception) { DocumentType.OTHER }
-                    val remoteTitle = doc.getString("title") ?: "Document"
-
-                    val existingDoc = documentDao.getAllDocuments().find { it.id == docId }
-                    if (existingDoc != null) {
-                        if (existingDoc.title.trim() != remoteTitle.trim()) {
-                            recordConflictIfNeeded(
-                                entityType = "Document",
-                                entityId = docId,
-                                fieldName = "Title",
-                                localValue = existingDoc.title,
-                                remoteValue = remoteTitle,
-                                localVersion = 1L,
-                                serverVersion = 2L
-                            )
-                        }
-                        // Local is king — preserve existing local document!
-                    } else {
-                        val docEntity = DocumentEntity(
-                            id = docId,
-                            personId = targetPersonId,
-                            documentType = docType,
-                            title = remoteTitle,
-                            issuingAuthority = doc.getString("issuingAuthority")?.takeIf { it.isNotBlank() },
-                            expirationDate = doc.getString("expirationDate")?.takeIf { it.isNotBlank() }
-                        )
-                        documentDao.insertDocument(docEntity)
-                        count++
+                    val ownerId = personIdMap[rawPersonId] ?: rawPersonId
+                    if (doc.getBoolean("isDeleted") == true) {
+                        documentDeletions?.markRemote(uid, docId, ownerId, doc.getLong("updatedAt") ?: 0L)
+                        continue
                     }
-
+                    if (documentDeletions?.isDeleted(docId) == true) continue
+                    val headerFields = try { decodedDocumentFields(uid, docId, rawPersonId, doc.data.orEmpty()) }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (_: Exception) { documentRecoveryPending = true; continue }
+                    val local = documentDao.getDocumentWithVersions(docId)
+                    if (local != null && local.document.personId != ownerId) continue
+                    val restoredHeader = DocumentSyncPolicy.restoreHeader(docId, ownerId, headerFields)
+                    if (local == null) {
+                        if (restoredHeader == null) { documentRecoveryPending = true; continue }
+                        val restored = restoredHeader
+                        val inserted = documentDeletions?.insertIfAlive(restored) ?: (documentDao.insertDoc(restored) != -1L)
+                        if (inserted) count++
+                    } else if (restoredHeader != null) {
+                        documentDao.fillMissingDocumentMetadata(local.document, restoredHeader)
+                    }
+                    val versionOwnerAliases = if (isPrimaryOwner(ownerId)) {
+                        personDao.getAllPersons().filter { it.isPrimaryOwner }.map { it.id }.toSet() +
+                            setOf(rawPersonId, ownerId, uid, CANONICAL_PRIMARY_OWNER_ID, "primary", "primary_owner")
+                    } else setOf(rawPersonId, ownerId)
                     try {
-                        val verSnap = doc.reference.collection("versions").get().await()
-                        for (vDoc in verSnap.documents) {
-                            val vId = vDoc.id
-                            val vNum = (vDoc.getLong("versionNumber") ?: 1L).toInt()
-                            var storagePath = vDoc.getString("fileStoragePath") ?: ""
-                            var fileSizeBytes = vDoc.getLong("fileSizeBytes") ?: 0L
-                            val mimeType = vDoc.getString("mimeType") ?: "application/pdf"
-                            var sha256Hash = vDoc.getString("sha256Hash") ?: ""
-                            var encryptionIv = vDoc.getString("encryptionIv") ?: ""
-                            val notes = vDoc.getString("notes")
-                            val vCreatedAt = vDoc.getLong("createdAt") ?: System.currentTimeMillis()
-                            val b2DownloadUrl = vDoc.getString("b2DownloadUrl")
-                            val b2IvHex = vDoc.getString("b2IvHex") ?: ""
-                            val ciphertextBase64 = vDoc.getString("ciphertextBase64")
-                            val binaryMissing = vDoc.getBoolean("binaryMissing") ?: false
-
-                            var fileExistsLocally = false
-                            if (storagePath.isNotBlank() && sha256Hash.isNotBlank()) {
-                                fileExistsLocally = try {
-                                    fileStorage.verifyIntegrity(storagePath, encryptionIv, sha256Hash)
-                                } catch (_: Exception) {
-                                    false
-                                }
+                        val versions = doc.reference.collection("versions").get().await()
+                        for (remote in versions.documents) {
+                            check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+                            if (documentDeletions?.isDeleted(docId) == true) break
+                            val versionOwner = remote.getString("personId") ?: rawPersonId
+                            if (versionOwner !in versionOwnerAliases && (personIdMap[versionOwner] ?: versionOwner) != ownerId) continue
+                            val fields = try { decodedDocumentFields(uid, docId, versionOwner, remote.data.orEmpty(), remote.id) }
+                            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                            catch (_: Exception) { documentRecoveryPending = true; continue }
+                            if (!DocumentSyncPolicy.isSupportedTransport(fields)) { documentRecoveryPending = true; continue }
+                            if ((fields["documentId"] as? String)?.let { it != docId } == true) continue
+                            val number = (fields["versionNumber"] as? Number)?.toLong() ?: continue
+                            if (number !in 1..Int.MAX_VALUE.toLong()) continue
+                            val hash = fields["sha256Hash"] as? String ?: continue
+                            if (!DocumentSyncPolicy.isHash(hash)) continue
+                            var existing = documentDao.getVersionById(remote.id)
+                            if (existing != null && (existing.documentId != docId || existing.versionNumber.toLong() != number || !existing.sha256Hash.equals(hash, true))) continue
+                            if (existing == null && documentDao.getAllVersions(docId).any { it.versionNumber.toLong() == number }) continue
+                            if (existing != null) {
+                                documentDao.fillMissingVersionMetadata(existing.id, docId, existing.sha256Hash,
+                                    fields["originalFilename"] as? String, fields["notes"] as? String,
+                                    (fields["createdAt"] as? Number)?.toLong() ?: 0L)
+                                existing = documentDao.getVersionById(remote.id) ?: continue
+                                if (!DocumentSyncPolicy.matchesVersion(fields, existing)) continue
                             }
-
-                            if (!binaryMissing && !fileExistsLocally && (!b2DownloadUrl.isNullOrBlank() || !ciphertextBase64.isNullOrBlank())) {
-                                val stored = downloadAndStoreDocumentVersion(
-                                    docId, vId, vNum, b2DownloadUrl ?: "", mimeType, b2IvHex, sha256Hash, ciphertextBase64
-                                )
-                                if (stored != null) {
-                                    storagePath = stored.relativePath
-                                    fileSizeBytes = stored.sizeBytes
-                                    sha256Hash = stored.sha256Hex
-                                    encryptionIv = stored.encryptionIvHex
-                                    fileExistsLocally = true
-                                }
+                            if (existing != null && fileStorage.verifyIntegrity(existing.fileStoragePath, existing.encryptionIv, existing.sha256Hash)) continue
+                            if (fields["binaryMissing"] == true) { documentRecoveryPending = true; continue }
+                            val mime = existing?.mimeType ?: fields["mimeType"] as? String ?: "application/octet-stream"
+                            if (mime !in com.pims.vault.domain.rules.DocumentRules.ALLOWED_MIME_TYPES) continue
+                            val size = (fields["fileSizeBytes"] as? Number)?.toLong() ?: 0L
+                            if (size !in 0..com.pims.vault.domain.rules.DocumentRules.MAX_DOCUMENT_SIZE_BYTES) continue
+                            val stored = downloadAndStoreDocumentVersion(fields, mime, hash, size)
+                            if (stored == null) { documentRecoveryPending = true; continue }
+                            var committed = false
+                            try {
+                                val candidate = existing?.copy(fileStoragePath = stored.relativePath, fileSizeBytes = stored.sizeBytes,
+                                    encryptionIv = stored.encryptionIvHex) ?: DocumentVersionEntity(remote.id, docId, number.toInt(), stored.relativePath,
+                                    stored.sizeBytes, mime, stored.sha256Hex, stored.encryptionIvHex,
+                                    notes = fields["notes"] as? String, createdAt = (fields["createdAt"] as? Number)?.toLong() ?: 0L,
+                                    originalFilename = fields["originalFilename"] as? String)
+                                check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
+                                committed = documentDeletions?.publishVersionIfAlive(candidate, existing) ?: if (existing == null) {
+                                    documentDao.publishRemoteVersion(candidate)
+                                } else documentDao.repairVersionStorage(existing, candidate)
+                                if (committed) count++
+                            } finally {
+                                if (!committed) cleanupUnpublishedDocumentCopy(stored.relativePath)
                             }
-
-                            if (!fileExistsLocally) {
-                                VaultLogger.w(
-                                    "FirestoreSync",
-                                    "Skipping document version $vId for doc $docId: binary not available locally"
-                                )
-                                continue
-                            }
-
-                            val vEntity = DocumentVersionEntity(
-                                id = vId,
-                                documentId = docId,
-                                versionNumber = vNum,
-                                fileStoragePath = storagePath,
-                                fileSizeBytes = fileSizeBytes,
-                                mimeType = mimeType,
-                                sha256Hash = sha256Hash,
-                                encryptionIv = encryptionIv,
-                                notes = notes,
-                                createdAt = vCreatedAt
-                            )
-                            documentDao.insertVersion(vEntity)
-                            count++
                         }
-                    } catch (e: Exception) {
-                        VaultLogger.w("FirestoreSync", "Document version sync error for $docId: ${e.message}")
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                    } catch (_: Exception) {
+                        documentRecoveryPending = true
+                        VaultLogger.w("FirestoreSync", "Document version recovery is pending and will retry")
                     }
                 }
-            } catch (e: Exception) {
-                VaultLogger.e("FirestoreSync", "Error pulling documents: ${e.message}", e)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (_: Exception) {
+                documentRecoveryPending = true
+                VaultLogger.w("FirestoreSync", "Document recovery is pending and will retry")
             }
 
             // 10. Education (Local is king — preserve local education records, create n+1 on clash)
@@ -3136,7 +3263,8 @@ class FirestoreSyncService @Inject constructor(
             }
 
             VaultLogger.i("FirestoreSync", "Remote-to-local sync complete: $count records synchronized from Firestore into Room")
-            SyncResult(true, count, "Successfully synchronized $count items from Cloud Firestore")
+            if (documentRecoveryPending) SyncResult(false, count, "Some document files need recovery. Local copies were preserved; retry sync.")
+            else SyncResult(true, count, "Synchronized $count items from cloud storage")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Remote-to-local pull error: ${e.message}", e)
             SyncResult(false, count, "Firestore pull error: ${e.localizedMessage}")
@@ -3155,8 +3283,9 @@ class FirestoreSyncService @Inject constructor(
         val pullResult = pullRemoteChanges(userId)
         val pushResult = syncAllData(userId)
         val totalCount = pullResult.processedCount + pushResult.processedCount
-        val overallSuccess = pullResult.success || pushResult.success
-        val msg = "Bidirectional sync: ${pullResult.processedCount} pulled, ${pushResult.processedCount} pushed"
+        val overallSuccess = pullResult.success && pushResult.success
+        val msg = if (!pushResult.success) pushResult.message else if (!pullResult.success) pullResult.message
+            else "Synced ${pullResult.processedCount} downloaded and ${pushResult.processedCount} backed-up records"
         VaultLogger.i("FirestoreSync", msg)
         SyncResult(overallSuccess, totalCount, msg)
     }
@@ -3191,6 +3320,7 @@ class FirestoreSyncService @Inject constructor(
         encryptionKeyVersion: Int = 1,
         remoteUpdated: Long
     ): VaultDownsyncAction {
+        if (vaultDeletions?.isDeleted(docId) == true) return VaultDownsyncAction.PRESERVE_LOCAL_AND_SKIP
         val isSupportedVersion = encryptionFormatVersion == 1 && encryptionKeyVersion in 1..2
         val isStructurallyValid = isSupportedVersion && shouldDownsyncVaultItem(payloadBytes, remoteIv)
         if (!isStructurallyValid) {
@@ -3245,8 +3375,8 @@ class FirestoreSyncService @Inject constructor(
             notes = notes,
             updatedAt = remoteUpdated
         )
-        vaultDao.insertOrUpdate(item)
-        return VaultDownsyncAction.APPLY_INSERT_OR_UPDATE
+        val inserted = vaultDeletions?.insertIfAlive(item) ?: run { vaultDao.insertOrUpdate(item); true }
+        return if (inserted) VaultDownsyncAction.APPLY_INSERT_OR_UPDATE else VaultDownsyncAction.PRESERVE_LOCAL_AND_SKIP
     }
 
     companion object {

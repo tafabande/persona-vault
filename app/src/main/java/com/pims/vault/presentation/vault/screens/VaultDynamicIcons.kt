@@ -1,7 +1,6 @@
 package com.pims.vault.presentation.vault.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,7 +29,6 @@ import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -223,7 +221,6 @@ fun IdCategoryThemedBadge(
     iconSize: Dp = 20.dp,
     modifier: Modifier = Modifier
 ) {
-    val isDark = LocalPimsDarkTheme.current
     val icon = when {
         categoryName.contains("National", ignoreCase = true) -> NationalIdVector
         categoryName.contains("School", ignoreCase = true) || categoryName.contains("Student", ignoreCase = true) -> SchoolIdVector
@@ -232,20 +229,20 @@ fun IdCategoryThemedBadge(
         else -> CustomMembershipVector
     }
 
-    val badgeBg = if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+    val badgeBg = MaterialTheme.colorScheme.primaryContainer
 
     Box(
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(12.dp))
             .background(badgeBg)
-            .border(1.dp, getVaultBorder(), RoundedCornerShape(12.dp)),
+,
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = categoryName,
-            tint = getVaultTextPrimary(),
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.size(iconSize)
         )
     }
@@ -258,7 +255,6 @@ fun SecretTypeThemedBadge(
     iconSize: Dp = 18.dp,
     modifier: Modifier = Modifier
 ) {
-    val isDark = LocalPimsDarkTheme.current
     val icon = when (type) {
         SecretPickerType.PAYMENT_CARD -> Icons.Default.CreditCard
         SecretPickerType.BANK_ACCOUNT -> Icons.Default.AccountBalance
@@ -279,20 +275,20 @@ fun SecretTypeThemedBadge(
         SecretPickerType.CUSTOM_SECRET -> Icons.Default.Lock
     }
 
-    val badgeBg = if (isDark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+    val badgeBg = MaterialTheme.colorScheme.primaryContainer
 
     Box(
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(10.dp))
             .background(badgeBg)
-            .border(1.dp, getVaultBorder(), RoundedCornerShape(10.dp)),
+,
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = type.displayName,
-            tint = getVaultTextPrimary(),
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.size(iconSize)
         )
     }

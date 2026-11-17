@@ -23,6 +23,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -46,6 +50,35 @@ class SyncQueueManager @Inject constructor(
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    val pendingCount: Flow<Int> = syncQueueDao.getPendingCountFlow()
+    val conflictCount: Flow<Int> = syncConflictDao.getUnresolvedCountFlow()
+    val unresolvedConflicts: Flow<List<SyncConflictEntity>> = syncConflictDao.getUnresolvedConflictsFlow()
+
+    private val _isSyncing = MutableStateFlow(false)
+    private val queueMutex = Mutex()
+    private val lastFailure = MutableStateFlow<String?>(null)
+    private val failure = combine(lastFailure, syncQueueDao.getAllOperationsFlow()) { message, operations ->
+        message ?: if (operations.any { it.status == SyncOperationStatus.FAILED }) "Some changes need another sync attempt" else null
+    }
+
+    val syncState: StateFlow<SyncState> = combine(
+        networkMonitor.networkState,
+        _isSyncing,
+        pendingCount,
+        conflictCount,
+        failure
+    ) { network, syncing, pending, conflicts, failure ->
+        when {
+            conflicts > 0 -> SyncState.Conflict(conflicts)
+            syncing -> SyncState.Syncing
+            network == NetworkState.OFFLINE && pending > 0 -> SyncState.Waiting(pending)
+            network == NetworkState.OFFLINE -> SyncState.Failed("Offline")
+            failure != null -> SyncState.Failed(failure)
+            pending > 0 -> SyncState.Waiting(pending)
+            else -> SyncState.Idle
+        }
+    }.stateIn(coroutineScope, SharingStarted.Eagerly, SyncState.Idle)
+
     init {
         coroutineScope.launch {
             networkMonitor.networkState.collect { state ->
@@ -55,28 +88,6 @@ class SyncQueueManager @Inject constructor(
             }
         }
     }
-
-    val pendingCount: Flow<Int> = syncQueueDao.getPendingCountFlow()
-    val conflictCount: Flow<Int> = syncConflictDao.getUnresolvedCountFlow()
-    val unresolvedConflicts: Flow<List<SyncConflictEntity>> = syncConflictDao.getUnresolvedConflictsFlow()
-
-    private val _isSyncing = MutableStateFlow(false)
-
-    val syncState: StateFlow<SyncState> = combine(
-        networkMonitor.networkState,
-        _isSyncing,
-        pendingCount,
-        conflictCount
-    ) { network, syncing, pending, conflicts ->
-        when {
-            conflicts > 0 -> SyncState.Conflict(conflicts)
-            syncing -> SyncState.Syncing
-            network == NetworkState.OFFLINE && pending > 0 -> SyncState.Waiting(pending)
-            network == NetworkState.OFFLINE -> SyncState.Failed("Offline")
-            pending > 0 -> SyncState.Waiting(pending)
-            else -> SyncState.Idle
-        }
-    }.stateIn(coroutineScope, SharingStarted.Eagerly, SyncState.Idle)
 
     /**
      * Enqueues an offline-first mutation with operation coalescing.
@@ -182,13 +193,15 @@ class SyncQueueManager @Inject constructor(
      * Uses RemoteSyncGateway with optimistic concurrency verification.
      * Stale updates are diverted to explicit conflict resolution.
      */
-    suspend fun processPendingQueue(userId: String = "local_user"): SyncResult {
+    suspend fun processPendingQueue(userId: String = "local_user"): SyncResult = queueMutex.withLock {
         if (!networkMonitor.isCurrentlyConnected()) {
-            return SyncResult(success = false, processedCount = 0, message = "Device is offline")
+            return@withLock SyncResult(success = false, processedCount = 0, message = "Device is offline")
         }
 
         _isSyncing.value = true
         var processed = 0
+        var incomplete: String? = null
+        lastFailure.value = null
 
         try {
             val pending = syncQueueDao.getPendingOperations()
@@ -210,6 +223,7 @@ class SyncQueueManager @Inject constructor(
                         )
                     }
                     is GatewayCommitResult.VersionConflict -> {
+                        incomplete = "Some changes need conflict resolution"
                         // Optimistic concurrency failure: Stale update detected!
                         syncQueueDao.update(op.copy(status = SyncOperationStatus.CONFLICT))
                         recordConflict(
@@ -224,12 +238,15 @@ class SyncQueueManager @Inject constructor(
                     }
                     is GatewayCommitResult.NetworkUnavailable -> {
                         syncQueueDao.update(op.copy(status = SyncOperationStatus.PENDING))
+                        incomplete = "Cloud sync is waiting for a connection"
                         break
                     }
                     is GatewayCommitResult.Unauthorized -> {
+                        incomplete = "Sign in again to resume cloud sync"
                         syncQueueDao.update(op.copy(status = SyncOperationStatus.FAILED, errorMessage = "Unauthorized"))
                     }
                     is GatewayCommitResult.Failure -> {
+                        incomplete = result.message
                         syncQueueDao.update(op.copy(status = SyncOperationStatus.FAILED, errorMessage = result.message))
                     }
                 }
@@ -237,20 +254,25 @@ class SyncQueueManager @Inject constructor(
 
             // Bidirectional sync: Pull remote changes down into Room, and push local data up to Firestore
             val firestoreResult = firestoreSyncService?.syncBidirectional(userId)
-            val totalProcessed = processed + if (firestoreResult?.success == true) firestoreResult.processedCount else 0
+            val totalProcessed = processed + (firestoreResult?.processedCount ?: 0)
+            if (firestoreResult?.success == false) incomplete = firestoreResult.message
 
             // Ensure all cached/offline photos are backed up
             try {
                 photoBackupCoordinatorProvider?.get()?.backupAllPhotos()
-            } catch (_: Exception) {}
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (_: Exception) { incomplete = "Some media is saved locally and waiting for cloud backup" }
 
-            return SyncResult(
-                success = true,
+            lastFailure.value = incomplete
+            return@withLock SyncResult(
+                success = incomplete == null,
                 processedCount = totalProcessed,
-                message = "Synced $totalProcessed records with Cloud Firestore"
+                message = incomplete ?: "Synced $totalProcessed records with Cloud Firestore"
             )
+        } catch (cancelled: CancellationException) { throw cancelled
         } catch (e: Exception) {
-            return SyncResult(success = false, processedCount = processed, message = e.message ?: "Sync failed")
+            lastFailure.value = "Cloud sync is pending. Your local copies are preserved."
+            return@withLock SyncResult(success = false, processedCount = processed, message = lastFailure.value!!)
         } finally {
             _isSyncing.value = false
         }

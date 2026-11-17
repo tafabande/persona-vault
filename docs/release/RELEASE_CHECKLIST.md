@@ -87,3 +87,16 @@ Settings review revision uses visible groups, shared rows and theme/palette pick
 - [x] Run synthetic-data native controls/notes checks and inspect dark-mode and large-text renders before user visual acceptance. Three tests passed and renders were inspected on 2026-11-14.
 
 The unified design source passed 369 JVM tests, both APK builds, lint (zero errors, 197 warnings, one informational finding) and the static security gate. The updated APK installed and launched on the connected API-36 phone with FLAG_SECURE. Full screen-family visual acceptance is pending.
+
+
+### People, calendar and wallet completion
+
+- [ ] Verify calendar permission denial/revocation, selected destination, automatic reminder create/edit/complete/delete/repeat, and external device events.
+- [ ] Verify all month dates and note edit-date markers at large font sizes.
+- [ ] Verify multiple currency accounts, reciprocal multi-card links, unlink, independent cards/accounts, legacy migration and failed-save retry.
+- [ ] Verify card/ID proof add/open/remove, Zone 4 relock, ciphertext integrity, sync deletion retry and backup recovery across supported schemas.
+- [ ] Verify person-note draft retention/private relock, avatar import and the shared PNG QR scan.
+
+Firestore owner/anonymous/cross-account and deletion-marker emulator checks passed on 2026-11-16. The checked rules compiled on the service and were deployed to the app project.
+
+The user deferred device checks for this implementation pass on 2026-11-16. The 417 JVM tests, debug/instrumentation APK builds, lint and static security checks passed. Native instrumentation, installation of this APK on the phone, device calendar setup and cross-device restore acceptance remain unverified. The unchecked device items above retain that status.

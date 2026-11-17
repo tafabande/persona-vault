@@ -846,8 +846,7 @@ fun RecentActivityItem(
 }
 
 /**
- * Default Avatar: Simple WhatsApp-style profile icon
- * Shows male or female silhouette based on gender hint or name hash
+ * One neutral avatar with a stable accent variation from the active palette.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable

@@ -8,13 +8,21 @@ import com.pims.vault.core.storage.FileStorageService
 import com.pims.vault.core.storage.StoredFileMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
+import com.pims.vault.core.storage.EncryptedFileExport
+import com.pims.vault.core.crypto.EncryptedPayload
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.UUID
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.security.DigestInputStream
 import java.security.MessageDigest
 
 class EncryptedFileStorageImpl(
@@ -26,8 +34,9 @@ class EncryptedFileStorageImpl(
 ) : FileStorageService {
 
     private val baseDir: File
-        get() = File(context.filesDir, baseDirectoryName).apply {
-            if (!exists()) mkdirs()
+        get() = File(context.filesDir, baseDirectoryName).canonicalFile.also {
+            require(baseDirectoryName.matches(Regex("[A-Za-z0-9_-]+")))
+            check(it.isDirectory || it.mkdirs()) { "Could not open encrypted storage" }
         }
 
     override suspend fun storeEncryptedFile(
@@ -36,55 +45,47 @@ class EncryptedFileStorageImpl(
         mimeType: String,
         inputStream: InputStream
     ): StoredFileMetadata = withContext(Dispatchers.IO) {
-        val docFolder = File(baseDir, documentId).apply {
-            if (!exists()) mkdirs()
+        inputStream.use {
+            val target = target(documentId, versionNumber)
+            val staged = File.createTempFile(".pending-", ".penc", target.parentFile)
+            try {
+                val key = keyProvider()
+                try {
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var count = 0L
+                    val iv = inputStream.use { source ->
+                        FileOutputStream(staged).use { output ->
+                            val counted = object : InputStream() {
+                                override fun read(): Int {
+                                    val value = source.read()
+                                    if (value >= 0) {
+                                        check(++count <= MAX_PLAIN_BYTES) { "File exceeds the supported size" }
+                                        digest.update(value.toByte())
+                                    }
+                                    return value
+                                }
+                                override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                                    val read = source.read(bytes, offset, length)
+                                    if (read > 0) {
+                                        count += read
+                                        check(count <= MAX_PLAIN_BYTES) { "File exceeds the supported size" }
+                                        digest.update(bytes, offset, read)
+                                    }
+                                    return read
+                                }
+                            }
+                            val iv = cryptoEngine.encryptChunkedStream(counted, output, key, documentId.toByteArray(Charsets.UTF_8))
+                            output.fd.sync()
+                            iv
+                        }
+                    }
+                    val hash = digest.digest().hex()
+                    FileInputStream(staged).use { verify(it, key, documentId, iv, hash, sink()) }
+                    publish(staged, target)
+                    metadata(target, count, mimeType, hash, iv)
+                } finally { key.fill(0) }
+            } finally { staged.delete() }
         }
-        val targetFile = File(docFolder, "v_${versionNumber}.penc")
-        val relativePath = "$baseDirectoryName/$documentId/v_${versionNumber}.penc"
-
-        // Enforce sandbox boundary check
-        ensureSafePath(targetFile)
-
-        // Stream through DigestInputStream to calculate SHA-256 on the fly without heap spikes
-        val sha256Digest = MessageDigest.getInstance("SHA-256")
-        val digestStream = DigestInputStream(inputStream, sha256Digest)
-
-        var totalPlaintextBytes = 0L
-        val fileKey = keyProvider()
-
-        val ivHex = try { FileOutputStream(targetFile).use { fos ->
-            val countingStream = object : InputStream() {
-                override fun read(): Int {
-                    val b = digestStream.read()
-                    if (b != -1) totalPlaintextBytes++
-                    return b
-                }
-                override fun read(b: ByteArray, off: Int, len: Int): Int {
-                    val read = digestStream.read(b, off, len)
-                    if (read != -1) totalPlaintextBytes += read
-                    return read
-                }
-            }
-            cryptoEngine.encryptChunkedStream(
-                input = countingStream,
-                output = fos,
-                keyBytes = fileKey,
-                associatedDataPrefix = documentId.toByteArray(Charsets.UTF_8)
-            )
-        }
-
-        } finally { fileKey.fill(0) }
-
-        val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
-
-        StoredFileMetadata(
-            relativePath = relativePath,
-            sizeBytes = totalPlaintextBytes,
-            mimeType = mimeType,
-            sha256Hex = sha256Hex,
-            encryptionIvHex = ivHex,
-            timestamp = System.currentTimeMillis()
-        )
     }
 
     override suspend fun readDecryptedFile(
@@ -93,63 +94,35 @@ class EncryptedFileStorageImpl(
         expectedSha256Hex: String,
         outputStream: OutputStream
     ): Unit = withContext(Dispatchers.IO) {
-        val targetFile = File(context.filesDir, relativePath)
-        ensureSafePath(targetFile)
-
-        if (!targetFile.exists()) {
-            throw java.io.FileNotFoundException("Encrypted document not found at $relativePath")
-        }
-
-        val normalizedPath = relativePath.replace('\\', '/')
-        val pathSegments = normalizedPath.split("/")
-        val documentId = if (pathSegments.size >= 2) pathSegments[pathSegments.size - 2] else ""
-        val candidates = mutableListOf(keyProvider())
+        val file = resolve(relativePath)
+        val storageId = file.parentFile?.name ?: throw CryptoIntegrityException("Missing file identity")
+        val candidates = keyCandidates()
         try {
-            legacyKeyProvider?.invoke()?.let { legacy ->
-                if (candidates.any { it.contentEquals(legacy) }) legacy.fill(0) else candidates.add(legacy)
-            }
-            fun decrypt(key: ByteArray, destination: OutputStream) {
-                val digest = MessageDigest.getInstance("SHA-256")
-                val verifying = object : OutputStream() {
-                    override fun write(value: Int) { digest.update(value.toByte()); destination.write(value) }
-                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
-                        digest.update(bytes, offset, length); destination.write(bytes, offset, length)
-                    }
+            // Keep the same descriptor throughout verification and release. Atomic publication
+            // cannot switch this reader to a different file between the two passes.
+            FileInputStream(file).use { input ->
+                var accepted: ByteArray? = null
+                var lastFailure: Exception? = null
+                for (key in candidates) {
+                    try {
+                        verify(input, key, storageId, encryptionIvHex, expectedSha256Hex, sink())
+                        accepted = key
+                        break
+                    } catch (cancelled: CancellationException) { throw cancelled
+                    } catch (failure: Exception) { lastFailure = failure }
                 }
-                FileInputStream(targetFile).use { input ->
-                    cryptoEngine.decryptChunkedStream(input, verifying, key, documentId.toByteArray(Charsets.UTF_8))
-                }
-                val actual = digest.digest().joinToString("") { "%02x".format(it) }
-                if (!actual.equals(expectedSha256Hex, true)) throw CryptoIntegrityException("Document checksum verification failed")
+                val key = accepted ?: throw CryptoIntegrityException("Could not authenticate this encrypted file", lastFailure)
+                verify(input, key, storageId, encryptionIvHex, expectedSha256Hex, outputStream)
             }
-            var accepted: ByteArray? = null
-            var failure: Exception? = null
-            for (candidate in candidates) {
-                try {
-                    decrypt(candidate, object : OutputStream() { override fun write(value: Int) {} ; override fun write(bytes: ByteArray, offset: Int, length: Int) {} })
-                    accepted = candidate
-                    break
-                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
-                } catch (error: Exception) { failure = error }
-            }
-            val key = accepted ?: throw (failure ?: CryptoIntegrityException("Document authentication failed"))
-            // Do not send partial output from an unsuccessful key candidate to the caller.
-            decrypt(key, outputStream)
         } finally { candidates.forEach { it.fill(0) } }
     }
 
-    override suspend fun verifyIntegrity(
-        relativePath: String,
-        encryptionIvHex: String,
-        expectedSha256Hex: String
-    ): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val sink = object : OutputStream() { override fun write(b: Int) {} }
-            readDecryptedFile(relativePath, encryptionIvHex, expectedSha256Hex, sink)
+    override suspend fun verifyIntegrity(relativePath: String, encryptionIvHex: String, expectedSha256Hex: String): Boolean {
+        return try {
+            readDecryptedFile(relativePath, encryptionIvHex, expectedSha256Hex, sink())
             true
-        } catch (e: Exception) {
-            false
-        }
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (_: Exception) { false }
     }
 
     override suspend fun storePreEncryptedFile(
@@ -158,141 +131,259 @@ class EncryptedFileStorageImpl(
         mimeType: String,
         inputStream: InputStream
     ): StoredFileMetadata = withContext(Dispatchers.IO) {
-        // Sanitize the folder segment: B2 callers pass composite ids like
-        // "note_<noteId>_<attId>" / "doc_<docId>_<versionId>" while local
-        // readers derive the chunked-stream AAD from the parent folder name.
-        // Keep the on-disk layout identical on both paths so the AAD prefix
-        // used at read time matches the one used at write time.
-        val safeDocumentId = documentId.replace(Regex("[^A-Za-z0-9_-]"), "_")
-            .takeIf { it.isNotBlank() } ?: "restored_blob"
-        val docFolder = File(baseDir, safeDocumentId).apply {
-            if (!exists()) mkdirs()
+        inputStream.use {
+            val target = target(documentId, versionNumber)
+            val staged = File.createTempFile(".pending-", ".penc", target.parentFile)
+            try {
+                val digest = MessageDigest.getInstance("SHA-256")
+                val size = inputStream.use { source ->
+                    FileOutputStream(staged).use { output ->
+                        val count = copyBounded(source, output, digest)
+                        output.fd.sync()
+                        count
+                    }
+                }
+                require(size > 0) { "Downloaded file is empty" }
+                publish(staged, target)
+                metadata(target, size, mimeType, digest.digest().hex(), "")
+            } finally { staged.delete() }
         }
-        val targetFile = File(docFolder, "v_${versionNumber}.penc")
-        val relativePath = "$baseDirectoryName/$safeDocumentId/v_${versionNumber}.penc"
-
-        ensureSafePath(targetFile)
-
-        // The bytes arriving here are the RAW CIPHERTEXT downloaded from B2
-        // (AES-GCM single-shot envelope: ciphertext || 16B tag, produced by
-        // B2StorageUploadService.uploadEncrypted with CryptoEngine.encrypt).
-        // They are NOT a PCSF chunked stream, so they must be decrypted with
-        // the single-shot envelope first, then re-encrypted into the local
-        // PCSF chunked format via storeEncryptedFile. Writing them raw (old
-        // behaviour) produced files that readDecryptedFile could never open.
-        val encryptedBytes = inputStream.use { it.readBytes() }
-        require(encryptedBytes.isNotEmpty()) { "Downloaded blob is empty" }
-
-        // Caller supplies ivHex + plaintext sha via the wrapping helpers in
-        // FirestoreSyncService; this low-level overload keeps the old contract
-        // (raw passthrough) for tests but validates non-empty input.
-        val sha256Digest = MessageDigest.getInstance("SHA-256")
-        var totalBytes = 0L
-
-        FileOutputStream(targetFile).use { fos ->
-            val buffer = ByteArray(64 * 1024)
-            var read: Int
-            val stream = java.io.ByteArrayInputStream(encryptedBytes)
-            while (stream.read(buffer).also { read = it } != -1) {
-                sha256Digest.update(buffer, 0, read)
-                fos.write(buffer, 0, read)
-                totalBytes += read
-            }
-        }
-
-        val sha256Hex = sha256Digest.digest().joinToString("") { "%02x".format(it) }
-
-        StoredFileMetadata(
-            relativePath = relativePath,
-            sizeBytes = totalBytes,
-            mimeType = mimeType,
-            sha256Hex = sha256Hex,
-            encryptionIvHex = "", // IV is embedded in the ciphertext from the original upload
-            timestamp = System.currentTimeMillis()
-        )
     }
 
-    /**
-     * Restore path for B2 blobs: decrypts the single-shot AES-GCM envelope
-     * into plaintext, verifies the expected plaintext SHA-256, then
-     * re-encrypts into the local PCSF chunked format so [readDecryptedFile]
-     * can open it afterwards.
-     *
-     * Key trial order (backward compatible):
-     *  1. Portable file key (post-migration blobs + recovered devices).
-     *  2. Legacy device-bound CONTEXT_FILES key (pre-migration blobs on the
-     *     originating device).
-     * Callers may pass [legacyKeyProvider] explicitly; otherwise [keyProvider]
-     * is tried first and the legacy Keystore key second via reflection-free
-     * fallback: if the first decrypt fails, the caller retries with the
-     * legacy key. To keep this class DI-simple, both attempts happen here
-     * when [alternateKeyProvider] is supplied.
-     */
-    suspend fun storeRestoredCiphertext(
+    override suspend fun storeRestoredChunkedCiphertext(
         documentId: String,
         versionNumber: Int,
         mimeType: String,
-        ciphertextBytes: ByteArray,
-        ivHex: String,
+        inputStream: InputStream,
         expectedPlaintextSha256Hex: String,
-        alternateKeyProvider: (() -> ByteArray)? = null
-    ): StoredFileMetadata = withContext(Dispatchers.IO) {
-        require(ciphertextBytes.isNotEmpty()) { "Downloaded blob is empty" }
-        val iv = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-        require(iv.size == 12) { "Invalid IV for restored blob" }
-        val candidates = listOfNotNull(
-            try { keyProvider() } catch (_: Exception) { null },
-            try { alternateKeyProvider?.invoke() } catch (_: Exception) { null }
-        )
-        require(candidates.isNotEmpty()) { "No file key available for restore" }
-        var plaintext: ByteArray? = null
-        var lastError: Exception? = null
-        for (key in candidates) {
-            try {
-                plaintext = cryptoEngine.decrypt(
-                    com.pims.vault.core.crypto.EncryptedPayload(ciphertextBytes, iv),
-                    key
-                )
-                break
-            } catch (e: Exception) {
-                lastError = e
-            } finally {
-                java.util.Arrays.fill(key, 0)
+        expectedPlaintextSizeBytes: Long
+    ): StoredFileMetadata {
+        var ownedTarget: File? = null
+        try {
+            return withContext(Dispatchers.IO) {
+                require(expectedPlaintextSizeBytes in 1..MAX_PLAIN_BYTES)
+                val folder = checkNotNull(target(documentId, versionNumber).parentFile)
+                val target = File(folder, "restored_${UUID.randomUUID()}.penc").also { ownedTarget = it }
+                val staged = File.createTempFile(".pending-", ".penc", target.parentFile)
+                var candidates = mutableListOf<ByteArray>()
+                try {
+                    candidates = keyCandidates()
+                    inputStream.use { source -> FileOutputStream(staged).use { output ->
+                        copyBounded(source, output)
+                        output.fd.sync()
+                    } }
+                    val iv = FileInputStream(staged).use { input ->
+                        val header = ByteArray(16)
+                        java.io.DataInputStream(input).readFully(header)
+                        require(header.copyOfRange(0, 4).contentEquals(MAGIC)) { "Unsupported encrypted file format" }
+                        header.copyOfRange(4, 16).hex()
+                    }
+                    FileInputStream(staged).use { input ->
+                        var authenticated = false
+                        for (key in candidates) {
+                            try {
+                                val size = verify(input, key, documentId, iv, expectedPlaintextSha256Hex, sink())
+                                check(size == expectedPlaintextSizeBytes) { "Downloaded file size does not match" }
+                                authenticated = true
+                                break
+                            } catch (cancelled: CancellationException) { throw cancelled
+                            } catch (_: Exception) { }
+                        }
+                        check(authenticated) { "Downloaded file authentication failed" }
+                    }
+                    publish(staged, target)
+                    metadata(target, expectedPlaintextSizeBytes, mimeType, expectedPlaintextSha256Hex, iv)
+                } finally { candidates.forEach { it.fill(0) }; staged.delete(); inputStream.close() }
+            }
+        } catch (failure: Throwable) { ownedTarget?.delete(); throw failure }
+        finally { inputStream.close() }
+    }
+
+    override suspend fun prepareEncryptedExport(
+        relativePath: String,
+        encryptionIvHex: String,
+        expectedSha256Hex: String
+    ): EncryptedFileExport {
+        var completed: EncryptedFileExport? = null
+        try {
+            return withContext(Dispatchers.IO) {
+                val original = resolve(relativePath)
+                val storageId = checkNotNull(original.parentFile).name
+                val cache = File(context.cacheDir, "encrypted_uploads").canonicalFile
+                check(cache.isDirectory || cache.mkdirs())
+                val staged = File.createTempFile("upload-", ".penc", cache)
+                try {
+                    val key = keyProvider()
+                    try {
+                        coroutineScope {
+                            val pipe = WipingPipe()
+                            val writer = PipedOutputStream(pipe)
+                            val producer = launch(Dispatchers.IO) {
+                                try { readDecryptedFile(relativePath, encryptionIvHex, expectedSha256Hex, writer) }
+                                finally { writer.close() }
+                            }
+                            try {
+                                FileOutputStream(staged).use { output ->
+                                    cryptoEngine.encryptChunkedStream(pipe, output, key, storageId.toByteArray(Charsets.UTF_8))
+                                    output.fd.sync()
+                                }
+                                producer.join()
+                            } finally { pipe.close(); producer.cancel() }
+                        }
+                        FileInputStream(staged).use { verify(it, key, storageId, "", expectedSha256Hex, sink()) }
+                    } finally { key.fill(0) }
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    FileInputStream(staged).use { input -> copyBounded(input, sink(), digest) }
+                    EncryptedFileExport(storageId, staged.length(), digest.digest().hex(),
+                        source = { FileInputStream(staged) }, dispose = { staged.delete(); Unit }).also { completed = it }
+                } catch (failure: Throwable) { staged.delete(); throw failure }
+            }
+        } catch (failure: Throwable) { completed?.close(); throw failure }
+    }
+
+    /** Reads legacy raw GCM envelopes and current PCSF without changing the source copy. */
+    private fun verify(input: FileInputStream, key: ByteArray, storageId: String, ivHex: String,
+                       expectedHash: String, destination: OutputStream): Long {
+        require(expectedHash.matches(Regex("[0-9a-fA-F]{64}"))) { "Invalid file integrity metadata" }
+        val digest = MessageDigest.getInstance("SHA-256")
+        var count = 0L
+        val output = object : OutputStream() {
+            override fun write(value: Int) { write(byteArrayOf(value.toByte()), 0, 1) }
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                count += length
+                check(count <= MAX_PLAIN_BYTES) { "File exceeds the supported size" }
+                digest.update(bytes, offset, length)
+                destination.write(bytes, offset, length)
             }
         }
-        val plain = plaintext ?: throw com.pims.vault.core.crypto.CryptoIntegrityException(
-            "Restored blob authentication failed (wrong key or tampered download)", lastError
-        )
-        val actualSha = MessageDigest.getInstance("SHA-256").digest(plain)
-            .joinToString("") { "%02x".format(it) }
-        if (!actualSha.equals(expectedPlaintextSha256Hex, ignoreCase = true)) {
-            java.util.Arrays.fill(plain, 0)
-            throw com.pims.vault.core.crypto.CryptoIntegrityException(
-                "Restored blob SHA-256 mismatch: expected $expectedPlaintextSha256Hex"
-            )
+        input.channel.position(0)
+        val magic = ByteArray(4)
+        val read = input.read(magic)
+        input.channel.position(0)
+        if (read == 4 && magic.contentEquals(MAGIC)) {
+            cryptoEngine.decryptChunkedStream(input, output, key, storageId.toByteArray(Charsets.UTF_8))
+        } else {
+            require(input.channel.size() <= MAX_CIPHER_BYTES) { "Legacy file exceeds the supported size" }
+            val encrypted = input.readBytes()
+            try {
+                var plain: ByteArray? = null
+                fun attempt(envelope: EncryptedPayload) {
+                    for (aad in listOf<ByteArray?>(null, storageId.toByteArray(Charsets.UTF_8))) {
+                        try { plain = cryptoEngine.decrypt(envelope, key, aad); return }
+                        catch (_: CryptoIntegrityException) { }
+                    }
+                }
+                if (ivHex.matches(Regex("[0-9a-fA-F]{24}"))) {
+                    attempt(EncryptedPayload(encrypted, ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()))
+                }
+                if (plain == null && encrypted.size >= 28) {
+                    val ciphertext = encrypted.copyOfRange(12, encrypted.size)
+                    try { attempt(EncryptedPayload(ciphertext, encrypted.copyOfRange(0, 12))) }
+                    finally { ciphertext.fill(0) }
+                }
+                val bytes = plain ?: throw CryptoIntegrityException("Unsupported or unauthenticated legacy file")
+                try { output.write(bytes) } finally { bytes.fill(0) }
+            } finally { encrypted.fill(0) }
         }
-        // Re-encrypt into local chunked format (computes plaintext SHA itself).
-        val meta = storeEncryptedFile(
-            documentId = documentId,
-            versionNumber = versionNumber,
-            mimeType = mimeType,
-            inputStream = java.io.ByteArrayInputStream(plain)
-        )
-        java.util.Arrays.fill(plain, 0)
-        meta
+        if (!digest.digest().hex().equals(expectedHash, true)) throw CryptoIntegrityException("File checksum verification failed")
+        return count
+    }
+
+    suspend fun storeRestoredCiphertext(documentId: String, versionNumber: Int, mimeType: String,
+        ciphertextBytes: ByteArray, ivHex: String, expectedPlaintextSha256Hex: String,
+        alternateKeyProvider: (() -> ByteArray)? = null): StoredFileMetadata = withContext(Dispatchers.IO) {
+        require(ciphertextBytes.isNotEmpty() && ciphertextBytes.size <= MAX_CIPHER_BYTES)
+        require(ivHex.matches(Regex("[0-9a-fA-F]{24}"))) { "Invalid encrypted file nonce" }
+        val iv = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val candidates = keyCandidates(alternateKeyProvider)
+        var plain: ByteArray? = null
+        try {
+            for (key in candidates) {
+                try { plain = cryptoEngine.decrypt(EncryptedPayload(ciphertextBytes, iv), key); break }
+                catch (_: CryptoIntegrityException) { }
+            }
+            val bytes = plain ?: throw CryptoIntegrityException("Restored file authentication failed")
+            require(MessageDigest.getInstance("SHA-256").digest(bytes).hex().equals(expectedPlaintextSha256Hex, true)) {
+                "Restored file checksum does not match"
+            }
+            storeEncryptedFile(documentId, versionNumber, mimeType, bytes.inputStream())
+        } finally { plain?.fill(0); candidates.forEach { it.fill(0) } }
     }
 
     override suspend fun deleteFile(relativePath: String): Boolean = withContext(Dispatchers.IO) {
-        val targetFile = File(context.filesDir, relativePath)
-        ensureSafePath(targetFile)
-        if (targetFile.exists()) targetFile.delete() else false
+        resolve(relativePath).let { if (it.isFile) it.delete() else !it.exists() }
+    }
+
+    private fun target(documentId: String, versionNumber: Int): File {
+        if (!documentId.matches(Regex("[A-Za-z0-9_-]+")) || versionNumber < 1) {
+            throw PathTraversalException("Invalid encrypted file identity")
+        }
+        val file = File(File(baseDir, documentId), "v_${versionNumber}.penc")
+        ensureSafePath(file)
+        check(checkNotNull(file.parentFile).isDirectory || file.parentFile!!.mkdirs())
+        return file
+    }
+
+    private fun resolve(path: String): File {
+        val supplied = File(path)
+        return (if (supplied.isAbsolute) supplied else File(context.filesDir, path)).canonicalFile.also { ensureSafePath(it) }
     }
 
     private fun ensureSafePath(file: File) {
-        val canonicalTarget = file.canonicalPath
-        val canonicalBase = baseDir.canonicalPath
-        if (!canonicalTarget.startsWith(canonicalBase)) {
-            throw PathTraversalException("Path traversal attempt blocked: $canonicalTarget is outside $canonicalBase")
+        val root = baseDir.toPath()
+        val resolved = file.canonicalFile.toPath()
+        if (resolved == root || !resolved.startsWith(root)) throw PathTraversalException("Encrypted file path is outside its storage area")
+    }
+
+    private fun publish(staged: File, target: File) {
+        Files.move(staged.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    private fun metadata(file: File, size: Long, mime: String, sha: String, iv: String) = StoredFileMetadata(
+        file.relativeTo(context.filesDir.canonicalFile).invariantSeparatorsPath, size, mime, sha, iv, System.currentTimeMillis())
+
+    private fun keyCandidates(extra: (() -> ByteArray)? = null): MutableList<ByteArray> {
+        val keys = mutableListOf<ByteArray>()
+        var failure: Exception? = null
+        for (provider in listOfNotNull(keyProvider, legacyKeyProvider, extra)) {
+            val key = try { provider() } catch (cancelled: CancellationException) { keys.forEach { it.fill(0) }; throw cancelled
+            } catch (error: Exception) { failure = error; continue }
+            if (keys.any { it.contentEquals(key) }) key.fill(0) else keys.add(key)
         }
+        if (keys.isEmpty()) throw CryptoIntegrityException("File keys are unavailable", failure)
+        return keys
+    }
+
+    private fun copyBounded(input: InputStream, output: OutputStream, digest: MessageDigest? = null): Long {
+        val buffer = ByteArray(64 * 1024)
+        var total = 0L
+        try {
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+                require(total <= MAX_CIPHER_BYTES) { "Encrypted file exceeds the supported size" }
+                digest?.update(buffer, 0, count)
+                output.write(buffer, 0, count)
+            }
+            return total
+        } finally { buffer.fill(0) }
+    }
+
+    private class WipingPipe : PipedInputStream(64 * 1024) {
+        override fun close() { synchronized(this) { super.close(); buffer.fill(0) } }
+    }
+
+    private fun sink() = object : OutputStream() {
+        override fun write(value: Int) { }
+        override fun write(bytes: ByteArray, offset: Int, length: Int) { }
+    }
+
+    private fun ByteArray.hex() = joinToString("") { "%02x".format(it) }
+
+    private companion object {
+        val MAGIC = "PCSF".toByteArray(Charsets.US_ASCII)
+        const val MAX_PLAIN_BYTES = 50L * 1024 * 1024
+        const val MAX_CIPHER_BYTES = MAX_PLAIN_BYTES + 1024 * 1024
     }
 }

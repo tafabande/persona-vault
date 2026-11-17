@@ -795,7 +795,10 @@ fun VaultDashboardView(
                     initialLinkedBankAccountId = initialPayment?.linkedBankAccountId ?: uiState.proposedLinkedBankAccountId,
                     initialLinkedBankAccountName = initialPayment?.linkedBankAccountName ?: uiState.proposedLinkedBankAccountName,
                     initialCardType = initialPayment?.cardType ?: "PHYSICAL",
-                    onSaveCard = { bankName, holder, number, expiry, cvv, linkedAccId, linkedAccName, cardType ->
+                initialLinkedBankAccountIds = initialPayment?.linkedBankAccountIds ?: listOfNotNull(uiState.proposedLinkedBankAccountId),
+                availableBankAccounts = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT },
+                isSaving = uiState.isSaving,
+                    onSaveCard = { bankName, holder, number, expiry, cvv, linkedAccId, linkedAccName, cardType, linkedAccIds ->
                         val cleanExpiry = expiry.filter { it.isDigit() }
                         val rawMonth = if (expiry.contains("/")) {
                             expiry.split("/").getOrNull(0)?.filter { it.isDigit() } ?: ""
@@ -853,8 +856,9 @@ fun VaultDashboardView(
                             status = initialPayment?.status ?: CardStatus.IN_USE,
                             fullCardNumber = fullNumberToSave,
                             cvv = cvvToSave,
-                            linkedBankAccountId = linkedAccId ?: initialPayment?.linkedBankAccountId ?: uiState.proposedLinkedBankAccountId,
-                            linkedBankAccountName = linkedAccName ?: initialPayment?.linkedBankAccountName ?: uiState.proposedLinkedBankAccountName,
+                            linkedBankAccountId = linkedAccId,
+                            linkedBankAccountName = linkedAccName,
+                        linkedBankAccountIds = linkedAccIds,
                             cardType = cardType
                         )
                     }
@@ -891,6 +895,9 @@ fun VaultDashboardView(
                     initialBranchName = initialBanking?.branchName.orEmpty(),
                     initialNotes = initialBanking?.notes.orEmpty(),
                     initialLinkedCardId = initialBanking?.linkedCardId,
+                initialLinkedCardIds = initialBanking?.linkedCardIds.orEmpty(),
+                knownBankNames = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT }.map { it.title },
+                isSaving = uiState.isSaving,
                     initialLinkedCardSummary = initialBanking?.linkedCardSummary,
                     onSaveAccount = { result ->
                         viewModel.saveBankAccount(
@@ -907,6 +914,7 @@ fun VaultDashboardView(
                             branchName = result.branchName,
                             notes = result.notes.ifBlank { null },
                             linkedCardId = result.linkedCardId,
+                        linkedCardIds = result.linkedCardIds,
                             linkedCardSummary = result.linkedCardSummary,
                             existingId = uiState.activeItemId
                         )
@@ -3092,10 +3100,6 @@ private fun BankingSection(
 
                             // List of accounts under this institution
                             accounts.forEach { account ->
-                                val linkedCards = availableCards.filter { card ->
-                                    account.accountIdentifier?.contains(card.title, ignoreCase = true) == true && card.title.isNotBlank()
-                                }
-
                                 Surface(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -3139,29 +3143,7 @@ private fun BankingSection(
                                             }
                                         }
 
-                                        if (linkedCards.isNotEmpty()) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Default.CreditCard,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                                Text(
-                                                    text = "${linkedCards.size} linked card(s)",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                                )
-                                            }
-                                        }
+
                                     }
                                 }
                             }
@@ -3670,229 +3652,19 @@ private fun BankAccountDetailScreen(
                 }
             }
 
-            // Linked Cards Section
-            val linkedCard = availableCards.find { it.id == activeBanking?.linkedCardId }
-            var showLinkCardDialog by remember { mutableStateOf(false) }
+            com.pims.vault.presentation.vault.components.WalletLinksPicker(
+                "Cards", availableCards, activeBanking?.linkedCardIds.orEmpty(),
+                onSelectionChange = { ids ->
+                    val before = activeBanking?.linkedCardIds.orEmpty()
+                    (ids - before.toSet()).forEach { viewModel.linkBankAccountToCard(account.id, it, "") }
+                    (before - ids.toSet()).forEach { viewModel.unlinkBankAccountFromCard(account.id, it) }
+                }, enabled = !uiState.isSaving
+            )
+            TextButton(onClick = {
+                viewModel.openCardEditorForBankAccount(account.id, activeBanking?.bankName?.ifBlank { account.title } ?: account.title)
+            }) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Add card") }
 
-            if (linkedCard != null) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "LINKED PAYMENT CARD",
-                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.primaryContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CreditCard,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = linkedCard.title,
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = linkedCard.accountIdentifier ?: "Linked Debit/Credit Card",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            IconButton(
-                                onClick = { viewModel.unlinkBankAccountFromCard(account.id) },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Unlink card",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "LINKED PAYMENT CARD",
-                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp, fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showLinkCardDialog = true }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CreditCard,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "Link Payment Card",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = "Associate an existing or brand-new card",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Link card",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-            }
 
-            if (showLinkCardDialog) {
-                AlertDialog(
-                    onDismissRequest = { showLinkCardDialog = false },
-                    title = { Text("Link Payment Card", fontWeight = FontWeight.Bold) },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            // Option 1: Add New Card
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showLinkCardDialog = false
-                                        viewModel.openCardEditorForBankAccount(
-                                            account.id,
-                                            activeBanking?.bankName?.ifBlank { account.title } ?: account.title
-                                        )
-                                    },
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
-                                        Text(
-                                            "+ Add New Card",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Text(
-                                            "Create a new card and link it to this account",
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Option 2: Link Existing Card
-                            if (availableCards.isNotEmpty()) {
-                                Text(
-                                    "Or select an existing card:",
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                                availableCards.forEach { cardItem ->
-                                    Surface(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                showLinkCardDialog = false
-                                                viewModel.linkBankAccountToCard(account.id, cardItem.id, cardItem.title)
-                                            },
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(Icons.Default.CreditCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column {
-                                                Text(cardItem.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                                cardItem.accountIdentifier?.let {
-                                                    Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = {},
-                    dismissButton = {
-                        TextButton(onClick = { showLinkCardDialog = false }) {
-                            Text("Cancel")
-                        }
-                    }
-                )
-            }
 
             // Copy All Details Button
             Button(

@@ -594,12 +594,15 @@ class SavePaymentReferenceUseCase @Inject constructor(
         linkedBankAccountId: String? = null,
         linkedBankAccountName: String? = null,
         cardType: String = "PHYSICAL",
-        isVirtual: Boolean = (cardType.equals("VIRTUAL", ignoreCase = true))
+        isVirtual: Boolean = (cardType.equals("VIRTUAL", ignoreCase = true)),
+        linkedBankAccountIds: List<String>? = null
     ): String {
         VaultRules.validatePaymentReference(nickname, provider, lastFour, month, year)
         val id = existingId ?: UUID.randomUUID().toString()
 
         val existingEntity = if (existingId != null) vaultDao.getVaultItemById(existingId) else null
+        if (existingId != null) requireNotNull(existingEntity) { "Card no longer exists" }
+        if (existingEntity != null) require(existingEntity.personId == personId && existingEntity.category == VaultCategory.PAYMENT_REFERENCE) { "Card ownership does not match the selected person" }
         val targetVersion = if (existingEntity != null && incomingVersion != null && incomingVersion > 1L) {
             VaultRules.validateVersionMonotonicity(incomingVersion, 1L)
             incomingVersion
@@ -609,9 +612,12 @@ class SavePaymentReferenceUseCase @Inject constructor(
         val aad = VaultRules.constructItemAad(id, VaultCategory.PAYMENT_REFERENCE, targetVersion)
 
         val payloadBytes = "$nickname\u0000$provider\u0000${cardholderName ?: ""}\u0000$lastFour\u0000$month\u0000$year\u0000${notes ?: ""}\u0000${status.name}\u0000${fullCardNumber ?: ""}\u0000${cvv ?: ""}\u0000${linkedBankAccountId ?: ""}\u0000${linkedBankAccountName ?: ""}\u0000$cardType\u0000$isVirtual".toByteArray(Charsets.UTF_8)
-        val encrypted = cryptoEngine.encrypt(payloadBytes, itemKey, aad)
-        payloadBytes.fill(0)
-        itemKey.fill(0)
+        val encrypted = try {
+            cryptoEngine.encrypt(payloadBytes, itemKey, aad)
+        } finally {
+            payloadBytes.fill(0)
+            itemKey.fill(0)
+        }
 
         val entity = VaultItemEntity(
             id = id,
@@ -621,10 +627,11 @@ class SavePaymentReferenceUseCase @Inject constructor(
             accountIdentifier = "$provider •••• $lastFour",
             encryptedPayload = encrypted.combinedCiphertextWithTag,
             encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
-            notes = notes,
+            notes = null,
+            createdAt = existingEntity?.createdAt ?: System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )
-        vaultDao.insertOrUpdate(entity)
+        WalletLinkUpdater(vaultDao, cryptoEngine).save(existingEntity, entity, vaultRootKey, linkedBankAccountIds ?: linkedBankAccountId?.let { listOf(it) }, targetVersion)
 
         auditLogger.recordEvent(
             eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
@@ -683,7 +690,8 @@ class ReadPaymentReferenceUseCase @Inject constructor(
             linkedBankAccountId = parts.getOrNull(10)?.takeIf { it.isNotBlank() },
             linkedBankAccountName = parts.getOrNull(11)?.takeIf { it.isNotBlank() },
             cardType = rawCardType,
-            isVirtual = rawIsVirtual
+            isVirtual = rawIsVirtual,
+            linkedBankAccountIds = parts.getOrNull(14)?.split(',')?.filter(String::isNotBlank) ?: listOfNotNull(parts.getOrNull(10)?.takeIf(String::isNotBlank))
         )
     }
 }
@@ -715,7 +723,8 @@ class SaveBankAccountUseCase @Inject constructor(
         incomingVersion: Long? = null,
         linkedCardId: String? = null,
         linkedCardSummary: String? = null,
-        currency: String = "USD"
+        currency: String = "USD",
+        linkedCardIds: List<String>? = null
     ): String {
         VaultRules.validateBankAccount(bankName, accountHolderName)
         val id = existingId ?: UUID.randomUUID().toString()
@@ -746,8 +755,11 @@ class SaveBankAccountUseCase @Inject constructor(
                 val existingItemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.BANK_ACCOUNT, existingId!!)
                 val existingAad = VaultRules.constructItemAad(existingId, VaultCategory.BANK_ACCOUNT, 1L)
                 val iv = existingEntity.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-                val decrypted = cryptoEngine.decrypt(EncryptedPayload(existingEntity.encryptedPayload, iv), existingItemKey, existingAad)
-                existingItemKey.fill(0)
+                val decrypted = try {
+                    cryptoEngine.decrypt(EncryptedPayload(existingEntity.encryptedPayload, iv), existingItemKey, existingAad)
+                } finally {
+                    existingItemKey.fill(0)
+                }
                 val parts = String(decrypted, Charsets.UTF_8).split("\u0000")
                 decrypted.fill(0)
                 existingSecret = BankingDetailsSecret(
@@ -764,7 +776,8 @@ class SaveBankAccountUseCase @Inject constructor(
                     notes = parts.getOrNull(10)?.takeIf { it.isNotBlank() },
                     linkedCardId = parts.getOrNull(11)?.takeIf { it.isNotBlank() },
                     linkedCardSummary = parts.getOrNull(12)?.takeIf { it.isNotBlank() },
-                    currency = parts.getOrNull(13)?.takeIf { it.isNotBlank() } ?: "USD"
+                    currency = parts.getOrNull(13)?.takeIf { it.isNotBlank() } ?: "USD",
+                    linkedCardIds = parts.getOrNull(14)?.split(',')?.filter(String::isNotBlank) ?: listOfNotNull(parts.getOrNull(11)?.takeIf(String::isNotBlank))
                 )
             } catch (e: Exception) {
                 throw IllegalStateException("Unable to safely edit this bank account", e)
@@ -796,14 +809,16 @@ class SaveBankAccountUseCase @Inject constructor(
         val aad = VaultRules.constructItemAad(id, VaultCategory.BANK_ACCOUNT, targetVersion)
 
         val payloadBytes = "$resolvedBankName\u0000$resolvedHolder\u0000$resolvedAccNum\u0000$resolvedType\u0000$resolvedSortCode\u0000$resolvedSwift\u0000$resolvedIban\u0000$resolvedRouting\u0000$resolvedBsb\u0000$resolvedBranch\u0000${resolvedNotes ?: ""}\u0000${resolvedCardId ?: ""}\u0000${resolvedCardSummary ?: ""}\u0000$resolvedCurrency".toByteArray(Charsets.UTF_8)
-        val encrypted = cryptoEngine.encrypt(payloadBytes, itemKey, aad)
-        payloadBytes.fill(0)
-        itemKey.fill(0)
+        val encrypted = try {
+            cryptoEngine.encrypt(payloadBytes, itemKey, aad)
+        } finally {
+            payloadBytes.fill(0)
+            itemKey.fill(0)
+        }
 
-        val cardSuffix = if (!resolvedCardSummary.isNullOrBlank()) " • Card: $resolvedCardSummary" else ""
         val typeSuffix = if (resolvedType.isNotBlank()) " ($resolvedType, $resolvedCurrency)" else " ($resolvedCurrency)"
         val lastFour = if (resolvedAccNum.length >= 4) resolvedAccNum.takeLast(4) else resolvedAccNum.ifBlank { "----" }
-        val displayRef = "$resolvedBankName$typeSuffix •••• $lastFour$cardSuffix"
+        val displayRef = "$resolvedBankName$typeSuffix •••• $lastFour"
 
         val entity = VaultItemEntity(
             id = id,
@@ -819,7 +834,7 @@ class SaveBankAccountUseCase @Inject constructor(
             createdAt = existingEntity?.createdAt ?: System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )
-        vaultDao.insertOrUpdate(entity)
+        WalletLinkUpdater(vaultDao, cryptoEngine).save(existingEntity, entity, vaultRootKey, linkedCardIds ?: linkedCardId?.let { listOf(it) }, targetVersion)
 
         auditLogger.recordEvent(
             eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
@@ -875,7 +890,8 @@ class ReadBankAccountUseCase @Inject constructor(
             notes = parts.getOrNull(10)?.takeIf { it.isNotBlank() },
             linkedCardId = parts.getOrNull(11)?.takeIf { it.isNotBlank() },
             linkedCardSummary = parts.getOrNull(12)?.takeIf { it.isNotBlank() },
-            currency = parts.getOrNull(13)?.takeIf { it.isNotBlank() } ?: "USD"
+            currency = parts.getOrNull(13)?.takeIf { it.isNotBlank() } ?: "USD",
+                    linkedCardIds = parts.getOrNull(14)?.split(',')?.filter(String::isNotBlank) ?: listOfNotNull(parts.getOrNull(11)?.takeIf(String::isNotBlank))
         )
     }
 }
@@ -887,13 +903,26 @@ class ReadBankAccountUseCase @Inject constructor(
 class DeleteVaultItemUseCase @Inject constructor(
     private val vaultDao: VaultDao,
     private val auditLogger: HardenedAuditLogger,
-    private val firestoreSyncServiceProvider: javax.inject.Provider<com.pims.vault.core.sync.FirestoreSyncService>? = null
+    private val evidenceStore: com.pims.vault.core.storage.VaultEvidenceStore? = null,
+    private val cryptoEngine: CryptoEngine? = null,
+    private val deletions: com.pims.vault.core.sync.VaultDeletionStore? = null
 ) {
-    suspend operator fun invoke(itemId: String) {
-        vaultDao.deleteVaultItem(itemId)
-        try {
-            firestoreSyncServiceProvider?.get()?.deleteVaultItem(null, itemId)
-        } catch (_: Exception) {}
+    suspend operator fun invoke(itemId: String, vaultRootKey: ByteArray? = null, personId: String? = null) {
+        val source = vaultDao.getVaultItemById(itemId) ?: return
+        require(personId == null || personId == source.personId) { "Item ownership does not match the selected person" }
+        val beforeDelete: suspend () -> Unit = {
+            if (source.category in setOf(VaultCategory.PAYMENT_REFERENCE, VaultCategory.BANK_ACCOUNT) && cryptoEngine != null) {
+                val key = requireNotNull(vaultRootKey) { "Unlock the Security Vault before deleting a linked record" }
+                WalletLinkUpdater(vaultDao, cryptoEngine).save(source, source, key, emptyList())
+            }
+            deletions?.recordLocal(source)
+        }
+        if (evidenceStore != null) {
+            evidenceStore.deleteItem(itemId, beforeDelete)
+        } else {
+            beforeDelete()
+            vaultDao.deleteVaultItem(itemId)
+        }
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,
             entityType = "VaultItem",

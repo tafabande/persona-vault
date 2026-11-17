@@ -108,49 +108,35 @@ class HardenedCryptoEngine : CryptoEngine {
     ): String {
         val dataOut = DataOutputStream(output)
         val masterNonce = generateRandomBytes(ivLengthBytes)
-
-        // Write Magic Header & Master Nonce
-        dataOut.write("PCSF".toByteArray(Charsets.US_ASCII))
-        dataOut.write(masterNonce)
-
         val buffer = ByteArray(streamChunkSizeBytes)
-        var chunkIndex = 0L
-
-        var bytesRead = input.read(buffer)
-        while (bytesRead != -1) {
-            val nextBuffer = ByteArray(streamChunkSizeBytes)
-            val nextBytesRead = input.read(nextBuffer)
-            val isLastChunk = (nextBytesRead == -1)
-
-            // Derive deterministic Chunk IV by XORing masterNonce with chunkIndex
-            val chunkIv = masterNonce.clone()
-            val indexBytes = ByteBuffer.allocate(8).putLong(chunkIndex).array()
-            for (i in 0..7) {
-                chunkIv[i] = (chunkIv[i].toInt() xor indexBytes[i].toInt()).toByte()
-            }
-
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(gcmTagLengthBits, chunkIv))
-
-            // Build Chunk AAD
-            val aadStream = ByteArrayOutputStream()
-            associatedDataPrefix?.let { prefix: ByteArray -> aadStream.write(prefix) }
-            aadStream.write(indexBytes)
-            aadStream.write(if (isLastChunk) 1 else 0)
-            cipher.updateAAD(aadStream.toByteArray())
-
-            val encryptedChunk = cipher.doFinal(buffer, 0, bytesRead)
-            dataOut.writeInt(encryptedChunk.size)
-            dataOut.write(encryptedChunk)
-
-            chunkIndex++
-            bytesRead = nextBytesRead
-            if (!isLastChunk) {
-                System.arraycopy(nextBuffer, 0, buffer, 0, bytesRead)
-            }
-        }
-        dataOut.flush()
-        return masterNonce.joinToString("") { "%02x".format(it) }
+        val next = ByteArray(streamChunkSizeBytes)
+        try {
+            dataOut.write("PCSF".toByteArray(Charsets.US_ASCII))
+            dataOut.write(masterNonce)
+            var bytesRead = readChunk(input, buffer)
+            var index = 0L
+            do {
+                val nextRead = if (bytesRead < 0) -1 else readChunk(input, next)
+                val last = nextRead < 0
+                val indexBytes = ByteBuffer.allocate(8).putLong(index).array()
+                val iv = masterNonce.clone()
+                for (position in 0..7) iv[position] = (iv[position].toInt() xor indexBytes[position].toInt()).toByte()
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(gcmTagLengthBits, iv))
+                cipher.updateAAD(chunkAad(associatedDataPrefix, indexBytes, last))
+                val encrypted = cipher.doFinal(buffer, 0, bytesRead.coerceAtLeast(0))
+                dataOut.writeInt(encrypted.size)
+                dataOut.write(encrypted)
+                if (last) break
+                buffer.fill(0)
+                System.arraycopy(next, 0, buffer, 0, nextRead)
+                next.fill(0)
+                bytesRead = nextRead
+                index++
+            } while (true)
+            dataOut.flush()
+            return masterNonce.joinToString("") { "%02x".format(it) }
+        } finally { buffer.fill(0); next.fill(0) }
     }
 
     override fun decryptChunkedStream(
@@ -160,70 +146,72 @@ class HardenedCryptoEngine : CryptoEngine {
         associatedDataPrefix: ByteArray?
     ) {
         val dataIn = DataInputStream(input)
-
-        // Verify Magic Header
-        val magic = ByteArray(4)
-        dataIn.readFully(magic)
-        if (!magic.contentEquals("PCSF".toByteArray(Charsets.US_ASCII))) {
-            throw CryptoIntegrityException("Invalid chunked stream magic header: not a valid PCSF encrypted file")
-        }
-
-        val masterNonce = ByteArray(ivLengthBytes)
-        dataIn.readFully(masterNonce)
-
-        var chunkIndex = 0L
-        while (true) {
-            val chunkLength = try {
-                dataIn.readInt()
-            } catch (e: java.io.EOFException) {
-                break
+        try {
+            val magic = ByteArray(4)
+            dataIn.readFully(magic)
+            if (!magic.contentEquals("PCSF".toByteArray(Charsets.US_ASCII))) {
+                throw CryptoIntegrityException("Unsupported encrypted stream format")
             }
-
-            if (chunkLength <= 0 || chunkLength > streamChunkSizeBytes + 32) {
-                throw CryptoIntegrityException("Corrupted chunk length header: $chunkLength")
-            }
-
-            val encryptedChunk = ByteArray(chunkLength)
-            dataIn.readFully(encryptedChunk)
-
-            val chunkIv = masterNonce.clone()
-            val indexBytes = ByteBuffer.allocate(8).putLong(chunkIndex).array()
-            for (i in 0..7) {
-                chunkIv[i] = (chunkIv[i].toInt() xor indexBytes[i].toInt()).toByte()
-            }
-
-            // Peek or test if last chunk
-            val isLastChunk = (dataIn.available() == 0) // note: checked against AAD
-            var decrypted: ByteArray? = null
-
-            // Authenticate against AAD (trying isLast = true or false)
-            for (candidateIsLast in booleanArrayOf(false, true)) {
-                try {
-                    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                    cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(gcmTagLengthBits, chunkIv))
-
-                    val aadStream = ByteArrayOutputStream()
-                    associatedDataPrefix?.let { prefix: ByteArray -> aadStream.write(prefix) }
-                    aadStream.write(indexBytes)
-                    aadStream.write(if (candidateIsLast) 1 else 0)
-                    cipher.updateAAD(aadStream.toByteArray())
-
-                    decrypted = cipher.doFinal(encryptedChunk)
-                    break
-                } catch (e: Exception) {
-                    // try next candidate
+            val masterNonce = ByteArray(ivLengthBytes)
+            dataIn.readFully(masterNonce)
+            var index = 0L
+            while (true) {
+                val first = dataIn.read()
+                if (first < 0) throw CryptoIntegrityException("Encrypted stream is missing its authenticated final chunk")
+                val length = (first shl 24) or (dataIn.readUnsignedByte() shl 16) or
+                    (dataIn.readUnsignedByte() shl 8) or dataIn.readUnsignedByte()
+                if (length < 16 || length > streamChunkSizeBytes + 16) throw CryptoIntegrityException("Invalid encrypted chunk length")
+                val encrypted = ByteArray(length)
+                dataIn.readFully(encrypted)
+                val indexBytes = ByteBuffer.allocate(8).putLong(index).array()
+                val iv = masterNonce.clone()
+                for (position in 0..7) iv[position] = (iv[position].toInt() xor indexBytes[position].toInt()).toByte()
+                var plain: ByteArray? = null
+                var final = false
+                for (candidateFinal in booleanArrayOf(false, true)) {
+                    try {
+                        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(gcmTagLengthBits, iv))
+                        cipher.updateAAD(chunkAad(associatedDataPrefix, indexBytes, candidateFinal))
+                        plain = cipher.doFinal(encrypted)
+                        final = candidateFinal
+                        break
+                    } catch (_: java.security.GeneralSecurityException) { }
                 }
+                val bytes = plain ?: throw CryptoIntegrityException("Encrypted chunk authentication failed")
+                try { output.write(bytes) } finally { bytes.fill(0) }
+                if (final) {
+                    if (dataIn.read() != -1) throw CryptoIntegrityException("Unexpected data after the authenticated final chunk")
+                    output.flush()
+                    return
+                }
+                index++
             }
-
-            if (decrypted == null) {
-                throw CryptoIntegrityException("Chunk $chunkIndex authentication failed: stream tampered, reordered, or truncated")
-            }
-
-            output.write(decrypted)
-            chunkIndex++
+        } catch (failure: java.io.EOFException) {
+            throw CryptoIntegrityException("Encrypted stream was truncated", failure)
         }
-        output.flush()
     }
+
+    private fun readChunk(input: InputStream, buffer: ByteArray): Int {
+        var count = 0
+        while (count < buffer.size) {
+            val read = input.read(buffer, count, buffer.size - count)
+            if (read < 0) break
+            if (read == 0) {
+                val value = input.read()
+                if (value < 0) break
+                buffer[count++] = value.toByte()
+            } else count += read
+        }
+        return if (count == 0) -1 else count
+    }
+
+    private fun chunkAad(prefix: ByteArray?, index: ByteArray, final: Boolean): ByteArray =
+        ByteArrayOutputStream().apply {
+            prefix?.let { write(it) }
+            write(index)
+            write(if (final) 1 else 0)
+        }.toByteArray()
 
     override fun generateRandomBytes(length: Int): ByteArray {
         val bytes = ByteArray(length)

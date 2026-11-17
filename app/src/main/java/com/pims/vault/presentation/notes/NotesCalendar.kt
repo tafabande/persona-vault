@@ -80,7 +80,7 @@ internal fun NotesCalendar(
                                 .clickable(role = Role.Button) { onSelectDate(date) }
                                 .semantics(mergeDescendants = true) {
                                     selected = isSelected
-                                    contentDescription = "${date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", locale))}, ${marks.notes} notes, ${marks.reminders} reminders${if (date == today) ", today" else ""}"
+                                    contentDescription = "${date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", locale))}, ${marks.notes} notes, ${marks.reminders} reminders, ${marks.events} device events${if (date == today) ", today" else ""}"
                                 }.padding(vertical = 3.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -106,6 +106,7 @@ internal fun NotesCalendar(
                             Row(Modifier.height(6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                 if (marks.notes > 0) Box(Modifier.size(5.dp).background(noteColor, CircleShape))
                                 if (marks.reminders > 0) Box(Modifier.size(5.dp).background(reminderColor, CircleShape))
+                                if (marks.events > 0) Box(Modifier.size(5.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape))
                             }
                         }
                     }
@@ -118,6 +119,9 @@ internal fun NotesCalendar(
                 Spacer(Modifier.width(6.dp))
                 Box(Modifier.size(6.dp).background(reminderColor, CircleShape))
                 Text("Reminder", style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.width(6.dp))
+                Box(Modifier.size(6.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape))
+                Text("Device event", style = MaterialTheme.typography.labelSmall)
             }
         }
     }

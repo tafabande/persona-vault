@@ -296,7 +296,8 @@ class BankCardSeparationRegressionTests {
             fullCardNumber = currentCard.fullCardNumber,
             cvv = currentCard.cvv,
             linkedBankAccountId = null,
-            linkedBankAccountName = null
+            linkedBankAccountName = null,
+            linkedBankAccountIds = emptyList()
         )
 
         val unlinkedCard = readPaymentUseCase(cardId, rootKey)
@@ -764,7 +765,8 @@ class BankCardSeparationRegressionTests {
             fullCardNumber = current.fullCardNumber,
             cvv = current.cvv,
             linkedBankAccountId = null,
-            linkedBankAccountName = null
+            linkedBankAccountName = null,
+            linkedBankAccountIds = emptyList()
         )
 
         // Perform other edits / operations
@@ -1057,4 +1059,226 @@ class BankCardSeparationRegressionTests {
         assertEquals("123", edited.cvv)
         assertEquals("9010", edited.lastFourDigits)
     }
+
+    @Test
+    fun cardLinksTwoCurrencyAccountsAndUnlinksOnlyOne() = runBlocking {
+        val usd = createWalletBank("USD")
+        val zwg = createWalletBank("ZWG")
+        val card = createWalletCard(listOf(usd, zwg))
+
+        assertEquals(listOf(usd, zwg), readPaymentUseCase(card, rootKey).linkedBankAccountIds)
+        assertEquals(listOf(card), readBankUseCase(usd, rootKey).linkedCardIds)
+        assertEquals(listOf(card), readBankUseCase(zwg, rootKey).linkedCardIds)
+
+        updateWalletCard(card, listOf(zwg))
+
+        val remaining = readPaymentUseCase(card, rootKey)
+        assertEquals(listOf(zwg), remaining.linkedBankAccountIds)
+        assertEquals(zwg, remaining.linkedBankAccountId)
+        assertEquals("4000123456789010", remaining.fullCardNumber)
+        assertEquals("321", remaining.cvv)
+        assertTrue(readBankUseCase(usd, rootKey).linkedCardIds.isEmpty())
+        assertEquals(listOf(card), readBankUseCase(zwg, rootKey).linkedCardIds)
+    }
+
+    @Test
+    fun bankLinksTwoCardsAndPreservesSiblingWhenOneIsRemoved() = runBlocking {
+        val bank = createWalletBank("USD")
+        val first = createWalletCard()
+        val second = createWalletCard()
+        updateWalletBank(bank, listOf(first, second))
+        assertEquals(listOf(bank), readPaymentUseCase(first, rootKey).linkedBankAccountIds)
+        assertEquals(listOf(bank), readPaymentUseCase(second, rootKey).linkedBankAccountIds)
+        updateWalletBank(bank, listOf(second))
+        assertTrue(readPaymentUseCase(first, rootKey).linkedBankAccountIds.isEmpty())
+        assertEquals(listOf(bank), readPaymentUseCase(second, rootKey).linkedBankAccountIds)
+        assertEquals(listOf(second), readBankUseCase(bank, rootKey).linkedCardIds)
+    }
+
+    @Test
+    fun ordinaryCardEditRetainsAllReciprocalLinks() = runBlocking {
+        val usd = createWalletBank("USD")
+        val zwg = createWalletBank("ZWG")
+        val card = createWalletCard(listOf(usd, zwg))
+        updateWalletCard(card, null)
+        assertEquals(listOf(usd, zwg), readPaymentUseCase(card, rootKey).linkedBankAccountIds)
+        assertEquals(listOf(card), readBankUseCase(usd, rootKey).linkedCardIds)
+        assertEquals(listOf(card), readBankUseCase(zwg, rootKey).linkedCardIds)
+    }
+
+    @Test
+    fun legacySingularLinksRemainReadableAndCanBeCleared() = runBlocking {
+        val bank = createWalletBank("USD")
+        val card = createWalletCard(listOf(bank))
+        val source = checkNotNull(inMemoryItems[card])
+        val key = com.pims.vault.domain.rules.VaultRules.deriveItemKey(rootKey, source.category, source.id)
+        val aad = com.pims.vault.domain.rules.VaultRules.constructItemAad(source.id, source.category, 1L)
+        val plain = cryptoEngine.decrypt(EncryptedPayload(source.encryptedPayload,
+            source.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()), key, aad)
+        val legacy = try { String(plain, Charsets.UTF_8).split('\u0000').take(14).joinToString("\u0000").toByteArray() }
+            finally { plain.fill(0) }
+        val encrypted = try { cryptoEngine.encrypt(legacy, key, aad) } finally { legacy.fill(0); key.fill(0) }
+        inMemoryItems[card] = source.copy(encryptedPayload = encrypted.combinedCiphertextWithTag,
+            encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) })
+        assertEquals(listOf(bank), readPaymentUseCase(card, rootKey).linkedBankAccountIds)
+        updateWalletCard(card, emptyList())
+        assertTrue(readPaymentUseCase(card, rootKey).linkedBankAccountIds.isEmpty())
+        assertTrue(readBankUseCase(bank, rootKey).linkedCardIds.isEmpty())
+    }
+
+    @Test
+    fun linkFailureDoesNotChangeEitherRecord() = runBlocking {
+        val bank = createWalletBank("USD", personId = "someone_else")
+        val card = createWalletCard()
+        val before = inMemoryItems.mapValues { it.value.encryptedPayload.copyOf() }
+        var rejected = false
+        try { updateWalletCard(card, listOf(bank)) } catch (_: IllegalArgumentException) { rejected = true }
+        assertTrue(rejected)
+        before.forEach { (id, ciphertext) -> assertTrue(ciphertext.contentEquals(inMemoryItems.getValue(id).encryptedPayload)) }
+    }
+
+    @Test
+    fun staleWalletTransactionRejectsAllUpdatesBeforeWriting() = runBlocking {
+        val bank = createWalletBank("USD")
+        val card = createWalletCard()
+        val originals = listOf(inMemoryItems.getValue(bank), inMemoryItems.getValue(card))
+        inMemoryItems[card] = inMemoryItems.getValue(card).copy(title = "Changed concurrently")
+        var rejected = false
+        try {
+            fakeVaultDao.persistWalletItems(originals, originals.map { it.copy(title = "Must not commit") })
+        } catch (_: IllegalStateException) { rejected = true }
+        assertTrue(rejected)
+        assertEquals(originals.first().title, inMemoryItems.getValue(bank).title)
+        assertEquals("Changed concurrently", inMemoryItems.getValue(card).title)
+    }
+
+    @Test
+    fun deletingLinkedCardClearsBothCurrencyAccountLinks() = runBlocking {
+        val usd = createWalletBank("USD")
+        val zwg = createWalletBank("ZWG")
+        val card = createWalletCard(listOf(usd, zwg))
+        val delete = com.pims.vault.domain.usecase.vault.DeleteVaultItemUseCase(fakeVaultDao, auditLogger,
+            cryptoEngine = cryptoEngine)
+        delete(card, rootKey, "wallet_owner")
+        assertNull(inMemoryItems[card])
+        assertTrue(readBankUseCase(usd, rootKey).linkedCardIds.isEmpty())
+        assertTrue(readBankUseCase(zwg, rootKey).linkedCardIds.isEmpty())
+        assertEquals("1234567890", readBankUseCase(usd, rootKey).accountNumber)
+    }
+
+    @Test
+    fun deletingOneBankRetainsOtherAccountOnSharedCard() = runBlocking {
+        val usd = createWalletBank("USD")
+        val zwg = createWalletBank("ZWG")
+        val card = createWalletCard(listOf(usd, zwg))
+        val delete = com.pims.vault.domain.usecase.vault.DeleteVaultItemUseCase(fakeVaultDao, auditLogger,
+            cryptoEngine = cryptoEngine)
+        delete(usd, rootKey, "wallet_owner")
+        assertNull(inMemoryItems[usd])
+        assertEquals(listOf(zwg), readPaymentUseCase(card, rootKey).linkedBankAccountIds)
+        assertEquals(listOf(card), readBankUseCase(zwg, rootKey).linkedCardIds)
+    }
+
+    @Test
+    fun ordinaryEditPreservesUnknownEncryptedExtensionFields() = runBlocking {
+        val bank = createWalletBank("USD")
+        val card = createWalletCard(listOf(bank))
+        val source = inMemoryItems.getValue(card)
+        val key = com.pims.vault.domain.rules.VaultRules.deriveItemKey(rootKey, source.category, source.id)
+        val aad = com.pims.vault.domain.rules.VaultRules.constructItemAad(source.id, source.category, 1L)
+        val plain = cryptoEngine.decrypt(EncryptedPayload(source.encryptedPayload,
+            source.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()), key, aad)
+        val extended = try { plain + "\u0000future field".toByteArray() } finally { plain.fill(0) }
+        val encrypted = try { cryptoEngine.encrypt(extended, key, aad) } finally { extended.fill(0); key.fill(0) }
+        inMemoryItems[card] = source.copy(encryptedPayload = encrypted.combinedCiphertextWithTag,
+            encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) })
+
+        updateWalletCard(card, null)
+
+        val result = inMemoryItems.getValue(card)
+        val resultKey = com.pims.vault.domain.rules.VaultRules.deriveItemKey(rootKey, result.category, result.id)
+        val resultBytes = try { cryptoEngine.decrypt(EncryptedPayload(result.encryptedPayload,
+            result.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()), resultKey, aad) }
+            finally { resultKey.fill(0) }
+        try { assertEquals("future field", String(resultBytes, Charsets.UTF_8).split('\u0000')[15]) }
+            finally { resultBytes.fill(0) }
+    }
+
+    @Test
+    fun ordinaryEditPrunesLegacyMissingLink() = runBlocking {
+        val card = createWalletCard()
+        writeLegacyCardLink(card, "deleted-bank")
+        assertEquals("deleted-bank", readPaymentUseCase(card, rootKey).linkedBankAccountId)
+        updateWalletCard(card, null)
+        val updated = readPaymentUseCase(card, rootKey)
+        assertTrue(updated.linkedBankAccountIds.isEmpty())
+        assertNull(updated.linkedBankAccountId)
+        assertEquals("4000123456789010", updated.fullCardNumber)
+    }
+
+    @Test
+    fun ordinaryEditPrunesLegacyForeignLinkWithoutChangingForeignBank() = runBlocking {
+        val foreign = createWalletBank("USD", personId = "other_owner")
+        val card = createWalletCard()
+        writeLegacyCardLink(card, foreign)
+        val before = inMemoryItems.getValue(foreign).encryptedPayload.copyOf()
+        updateWalletCard(card, null)
+        assertTrue(readPaymentUseCase(card, rootKey).linkedBankAccountIds.isEmpty())
+        assertTrue(before.contentEquals(inMemoryItems.getValue(foreign).encryptedPayload))
+    }
+
+    @Test
+    fun ordinaryEditPrunesLegacyWrongCategoryLinkWithoutChangingTarget() = runBlocking {
+        val target = createWalletCard()
+        val card = createWalletCard()
+        writeLegacyCardLink(card, target)
+        val before = inMemoryItems.getValue(target).encryptedPayload.copyOf()
+        updateWalletCard(card, null)
+        assertTrue(readPaymentUseCase(card, rootKey).linkedBankAccountIds.isEmpty())
+        assertTrue(before.contentEquals(inMemoryItems.getValue(target).encryptedPayload))
+    }
+
+    private fun writeLegacyCardLink(id: String, targetId: String) {
+        val source = inMemoryItems.getValue(id)
+        val key = com.pims.vault.domain.rules.VaultRules.deriveItemKey(rootKey, source.category, source.id)
+        val aad = com.pims.vault.domain.rules.VaultRules.constructItemAad(source.id, source.category, 1L)
+        val plain = cryptoEngine.decrypt(EncryptedPayload(source.encryptedPayload,
+            source.encryptionIv.chunked(2).map { it.toInt(16).toByte() }.toByteArray()), key, aad)
+        val fields = try { String(plain, Charsets.UTF_8).split('\u0000').take(14).toMutableList() }
+            finally { plain.fill(0) }
+        while (fields.size < 14) fields.add("")
+        fields[10] = targetId
+        fields[11] = "Old link"
+        val legacy = fields.joinToString("\u0000").toByteArray()
+        val encrypted = try { cryptoEngine.encrypt(legacy, key, aad) }
+            finally { legacy.fill(0); key.fill(0) }
+        inMemoryItems[id] = source.copy(encryptedPayload = encrypted.combinedCiphertextWithTag,
+            encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) })
+    }
+
+    private suspend fun createWalletBank(currency: String, personId: String = "wallet_owner"): String = saveBankUseCase(
+        personId, "Same Bank", "Alex", "1234567890", if (currency == "USD") "Nostro" else "Local",
+        "", "", "", "", "", "", "Keep bank notes", rootKey, currency = currency
+    )
+
+    private suspend fun createWalletCard(links: List<String> = emptyList()): String = savePaymentUseCase(
+        "wallet_owner", "Personal card", "Visa", "Alex", "9010", "12", "2030", "Keep card notes", rootKey,
+        fullCardNumber = "4000123456789010", cvv = "321", linkedBankAccountIds = links
+    )
+
+    private suspend fun updateWalletCard(id: String, links: List<String>?) {
+        val card = readPaymentUseCase(id, rootKey)
+        savePaymentUseCase("wallet_owner", card.nickname, card.provider, card.cardholderName, card.lastFourDigits,
+            card.expiryMonth, card.expiryYear, card.notes, rootKey, existingId = id,
+            status = CardStatus.IN_USE, fullCardNumber = card.fullCardNumber, cvv = card.cvv,
+            linkedBankAccountIds = links)
+    }
+
+    private suspend fun updateWalletBank(id: String, links: List<String>) {
+        val bank = readBankUseCase(id, rootKey)
+        saveBankUseCase("wallet_owner", bank.bankName, bank.accountHolderName, bank.accountNumber, bank.accountType,
+            bank.sortCode, bank.swiftBic, bank.iban, bank.routingNumber, bank.bsb, bank.branchName, bank.notes,
+            rootKey, existingId = id, currency = bank.currency, linkedCardIds = links)
+    }
+
 }

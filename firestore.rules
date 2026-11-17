@@ -71,13 +71,43 @@ service cloud.firestore {
         allow read, write: if isAccountOwner(accountId);
       }
 
-      // Document Envelopes (Civic Metadata + Encrypted Restricted Attributes)
+      // Document metadata upgrades keep encrypted fields protected against stale writers.
       match /documents/{docId} {
-        allow read, write: if isAccountOwner(accountId);
+        function protectedHeader() {
+          return request.resource.data.metadataFormatVersion == 2 &&
+            request.resource.data.metadataCiphertext is string && request.resource.data.metadataIv is string &&
+            !request.resource.data.keys().hasAny(['documentType', 'title', 'documentNumber', 'issuingAuthority',
+              'issuingCountry', 'issueDate', 'expirationDate', 'securityClassification', 'isLocked', 'notes', 'createdAt']);
+        }
+        function compactDeletion() {
+          return ('isDeleted' in request.resource.data) && request.resource.data.isDeleted == true &&
+            request.resource.data.keys().hasOnly(['documentId', 'personId', 'isDeleted', 'updatedAt']);
+        }
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) &&
+          (!('metadataFormatVersion' in request.resource.data) || protectedHeader());
+        allow update: if isAccountOwner(accountId) &&
+          (!(('isDeleted' in resource.data) && resource.data.isDeleted == true) || compactDeletion()) &&
+          (compactDeletion() || !('metadataFormatVersion' in resource.data) || protectedHeader());
+        allow delete: if isAccountOwner(accountId) &&
+          !(('isDeleted' in resource.data) && resource.data.isDeleted == true);
 
-        // Document Versions: Strictly IMMUTABLE historical snapshots
         match /versions/{versionId} {
-          allow read, write: if isAccountOwner(accountId);
+          function protectedVersion() {
+            return request.resource.data.metadataFormatVersion == 2 &&
+              request.resource.data.metadataCiphertext is string && request.resource.data.metadataIv is string &&
+              !request.resource.data.keys().hasAny(['notes', 'originalFilename', 'createdAt']);
+          }
+          function activeParent() {
+            return exists(/databases/$(database)/documents/accounts/$(accountId)/documents/$(docId)) &&
+              !(('isDeleted' in get(/databases/$(database)/documents/accounts/$(accountId)/documents/$(docId)).data) &&
+                get(/databases/$(database)/documents/accounts/$(accountId)/documents/$(docId)).data.isDeleted == true);
+          }
+          allow read, delete: if isAccountOwner(accountId);
+          allow create: if isAccountOwner(accountId) && activeParent() &&
+            (!('metadataFormatVersion' in request.resource.data) || protectedVersion());
+          allow update: if isAccountOwner(accountId) && activeParent() &&
+            (!('metadataFormatVersion' in resource.data) || protectedVersion());
         }
       }
 
@@ -98,6 +128,27 @@ service cloud.firestore {
         allow read, write: if isAccountOwner(accountId);
       }
 
+      // App-owned encrypted originals. Chunks are immutable after publication.
+      match /media/{blobId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) && request.resource.data.ownerUid == accountId;
+        allow update: if isAccountOwner(accountId) && resource.data.ownerUid == accountId &&
+          request.resource.data.ownerUid == accountId && request.resource.data.isDeleted == true;
+        allow delete: if false;
+        match /chunks/{chunkId} {
+          allow read: if isAccountOwner(accountId) &&
+            exists(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)) &&
+            get(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)).data.isDeleted == false;
+          allow create, update: if isAccountOwner(accountId) &&
+            !exists(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)) &&
+            request.resource.data.keys().hasOnly(['data']) &&
+            request.resource.data.data is bytes && request.resource.data.data.size() <= 524288;
+          allow delete: if isAccountOwner(accountId) &&
+            exists(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)) &&
+            get(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)).data.isDeleted == true;
+        }
+      }
+
       // Active Devices & Sessions
       match /sessions/{sessionId} {
         allow read, write: if isAccountOwner(accountId);
@@ -105,7 +156,10 @@ service cloud.firestore {
 
       // Local Tombstones for Offline Sync Horizon
       match /tombstones/{tombstoneId} {
-        allow read, write: if isAccountOwner(accountId);
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) &&
+                         request.resource.data.timestamp <= request.time;
+        allow update, delete: if false;
       }
 
       // Plain Notes & Rich Journal
@@ -119,7 +173,20 @@ service cloud.firestore {
 
       // Fortress Vault (Credentials, Logins, Secure Items)
       match /vault/{itemId} {
-        allow read, write: if isAccountOwner(accountId);
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId);
+        allow update: if isAccountOwner(accountId) &&
+          (!(('isDeleted' in resource.data) && resource.data.isDeleted == true) ||
+            (request.resource.data.isDeleted == true &&
+             request.resource.data.keys().hasOnly(['id', 'personId', 'isDeleted', 'updatedAt'])));
+        allow delete: if isAccountOwner(accountId) &&
+          !(('isDeleted' in resource.data) && resource.data.isDeleted == true);
+        match /proofs/{proofId} {
+          allow read, write: if isAccountOwner(accountId);
+          match /chunks/{chunkId} {
+            allow read, write: if isAccountOwner(accountId);
+          }
+        }
       }
 
       // Social & Online Accounts

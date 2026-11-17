@@ -28,7 +28,8 @@ class PlainNotesRepositoryImpl @Inject constructor(
     private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null,
     private val reminderScheduler: com.pims.vault.core.reminder.NoteReminderScheduler? = null,
     private val syncQueueManager: com.pims.vault.core.sync.SyncQueueManager? = null,
-    private val networkMonitor: com.pims.vault.core.sync.NetworkStateMonitor? = null
+    private val networkMonitor: com.pims.vault.core.sync.NetworkStateMonitor? = null,
+    private val calendarCoordinator: com.pims.vault.core.calendar.NoteCalendarCoordinator? = null
 ) : PlainNotesRepository {
 
     private val repositoryScope = kotlinx.coroutines.CoroutineScope(

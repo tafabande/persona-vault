@@ -7,13 +7,13 @@ import java.time.ZoneId
 
 internal fun Long.noteDate(zone: ZoneId): LocalDate = Instant.ofEpochMilli(this).atZone(zone).toLocalDate()
 
-internal data class NoteDayMarkers(val notes: Int = 0, val reminders: Int = 0)
+internal data class NoteDayMarkers(val notes: Int = 0, val reminders: Int = 0, val events: Int = 0)
 
 internal fun noteCalendarMarkers(notes: List<PlainNote>, zone: ZoneId): Map<LocalDate, NoteDayMarkers> {
     val markers = mutableMapOf<LocalDate, NoteDayMarkers>()
     notes.forEach { note ->
-        val created = note.updatedAt.noteDate(zone)
-        markers[created] = (markers[created] ?: NoteDayMarkers()).let { it.copy(notes = it.notes + 1) }
+        val displayedDate = note.updatedAt.noteDate(zone)
+        markers[displayedDate] = (markers[displayedDate] ?: NoteDayMarkers()).let { it.copy(notes = it.notes + 1) }
         note.reminderAt?.takeUnless { note.isReminderDone }?.let { time ->
             val due = time.noteDate(zone)
             markers[due] = (markers[due] ?: NoteDayMarkers()).let { it.copy(reminders = it.reminders + 1) }

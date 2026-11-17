@@ -66,7 +66,7 @@ interface PersonDao {
     suspend fun updateNotesIfMatches(id: String, expected: String?, replacement: String): Boolean {
         val current = getPersonById(id) ?: return false
         if (current.notes != expected) return false
-        update(current.copy(notes = replacement))
+        update(current.copy(notes = replacement, updatedAt = System.currentTimeMillis()))
         return true
     }
 

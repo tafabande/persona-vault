@@ -834,7 +834,7 @@ class ProfileViewModel @Inject constructor(
                         val saved = try {
                             require(field.label.isNotBlank() && field.value.isNotBlank())
                             val list = changeCustomFields { fields -> fields.filterNot { it.id == field.id } + field }
-                            _uiState.update { it.copy(customFields = list, userFeedbackMessage = "Information saved") }
+                            _uiState.update { it.copy(customFields = list, errorMessage = null, userFeedbackMessage = "Information saved") }
                             true
                         } catch (cancelled: kotlinx.coroutines.CancellationException) {
                             throw cancelled
@@ -1435,7 +1435,18 @@ class ProfileViewModel @Inject constructor(
             val person = checkNotNull(personDao.getPersonById(ownerId))
             val meta = parseNotesMeta(person.notes)
             val fields = change(meta.customFields)
-            if (personDao.updateNotesIfMatches(ownerId, person.notes, serializeNotesMeta(meta.copy(customFields = fields)))) return fields
+            if (personDao.updateNotesIfMatches(ownerId, person.notes, serializeNotesMeta(meta.copy(customFields = fields), person.notes))) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        personDao.getPersonById(ownerId)?.let { firestoreSyncService.syncPerson(null, it) }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The local write has succeeded. Cloud retry follows the normal sync path.
+                    }
+                }
+                return fields
+            }
         }
         error("Profile changed while saving")
     }
@@ -1461,7 +1472,8 @@ class ProfileViewModel @Inject constructor(
             if (arr != null) {
                 for (i in 0 until arr.length()) {
                     val item = arr.getJSONObject(i)
-                    val id = item.optString("id", UUID.randomUUID().toString())
+                    val id = item.optString("id", "").takeIf(String::isNotBlank)
+                        ?: UUID.nameUUIDFromBytes("PIMS/custom-field/legacy/v1/$i".toByteArray(Charsets.UTF_8)).toString()
                     val l = item.optString("label", "")
                     val v = item.optString("value", "")
                     val cat = InformationCategory.fromName(item.optString("category", "PERSONAL"))
@@ -1475,8 +1487,8 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    private fun serializeNotesMeta(meta: NotesMeta): String {
-        val obj = JSONObject()
+    private fun serializeNotesMeta(meta: NotesMeta, original: String? = null): String {
+        val obj = original?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
         obj.put("sexuality", meta.sexuality)
         obj.put("bloodGroup", meta.bloodGroup)
         if (!meta.idPhotoPath.isNullOrBlank()) {

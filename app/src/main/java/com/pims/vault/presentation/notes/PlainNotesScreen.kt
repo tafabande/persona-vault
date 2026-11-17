@@ -121,6 +121,8 @@ fun PlainNotesScreen(
     onRequestAuth: ((title: String, subtitle: String, onSuccess: () -> Unit) -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val deviceCalendar by viewModel.calendarState.collectAsStateWithLifecycle()
+    val calendarContext = LocalContext.current
     var showCumulativeOverview by remember { mutableStateOf(false) }
     var noteToDelete by remember { mutableStateOf<PlainNote?>(null) }
     var searchQuery by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
@@ -132,7 +134,24 @@ fun PlainNotesScreen(
     val today = java.time.LocalDate.now(zone)
     val month = java.time.YearMonth.parse(monthValue)
     val selectedDate = selectedValue?.let(java.time.LocalDate::parse)
-    val markers = remember(state.notes, zone) { noteCalendarMarkers(state.notes, zone) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner, month) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.refreshCalendar(month)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    androidx.compose.runtime.LaunchedEffect(month) { viewModel.refreshCalendar(month) }
+    val markers = remember(state.notes, deviceCalendar.events, month, zone) {
+        val result = noteCalendarMarkers(state.notes, zone).toMutableMap()
+        notesMonthDates(month, java.time.temporal.WeekFields.of(Locale.getDefault()).firstDayOfWeek).forEach { date ->
+            result[date] = (result[date] ?: NoteDayMarkers()).copy(events = deviceCalendar.events.count { it.occursOn(date, zone) })
+        }
+        result
+    }
+    val eventDate = selectedDate ?: today
+    val dayEvents = deviceCalendar.events.filter { it.occursOn(eventDate, zone) }
     val isFiltering = searchQuery.isNotBlank() || activeFilter != NoteFilter.ALL
     val filtered = remember(state.notes, searchQuery, activeFilter) {
         state.notes.filter { note ->
@@ -191,6 +210,31 @@ fun PlainNotesScreen(
                     onMonthChange = { monthValue = it.toString(); selectedValue = null },
                     onSelectDate = { selectedValue = if (selectedDate == it) null else it.toString(); monthValue = java.time.YearMonth.from(it).toString(); searchQuery = ""; activeFilter = NoteFilter.ALL },
                     onToday = { monthValue = java.time.YearMonth.from(today).toString(); selectedValue = today.toString(); searchQuery = ""; activeFilter = NoteFilter.ALL })
+            }
+            item(key = "calendar_setup") {
+                DeviceCalendarSetup(deviceCalendar, { viewModel.refreshCalendar(month) }, viewModel::selectCalendar, viewModel::disconnectCalendar)
+            }
+            if (!isFiltering && deviceCalendar.hasPermission && dayEvents.isNotEmpty()) {
+                item(key = "device_events_heading") {
+                    Text(if (selectedDate == null) "Today's calendar" else "Device calendar",
+                        style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+                }
+                items(dayEvents, key = { "event_${it.id}_${it.begin}" }) { event ->
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            runCatching {
+                                calendarContext.startActivity(Intent(Intent.ACTION_VIEW,
+                                    android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, event.id)))
+                            }.onFailure { Toast.makeText(calendarContext, "No calendar app is available", Toast.LENGTH_SHORT).show() }
+                        }) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(event.title, style = MaterialTheme.typography.titleSmall)
+                            Text(if (event.allDay) "All day" else java.time.Instant.ofEpochMilli(event.begin).atZone(zone)
+                                .format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM · HH:mm", Locale.getDefault())),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
             }
             item(key = "filters") {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

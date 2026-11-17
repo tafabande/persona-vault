@@ -301,21 +301,16 @@ fun PersonaDashboardScreen(
     LaunchedEffect(snackbarHostState.currentSnackbarData) {
         snackbarHostState.currentSnackbarData?.let { data ->
             val msg = data.visuals.message
-            val type = when {
-                msg.startsWith("✓") || msg.contains("success", ignoreCase = true) || msg.contains("copied", ignoreCase = true) -> ToastType.SUCCESS
-                msg.contains("fail", ignoreCase = true) || msg.contains("error", ignoreCase = true) || msg.contains("locked", ignoreCase = true) -> ToastType.ERROR
-                msg.contains("warning", ignoreCase = true) || msg.contains("declined", ignoreCase = true) || msg.contains("wiped", ignoreCase = true) -> ToastType.WARNING
-                else -> ToastType.INFO
-            }
+            val type = com.pims.vault.presentation.ui.components.ux.personaFeedbackType(msg)
             toastController.show(
                 PersonaToastMessage(
                     message = msg,
                     type = type,
                     actionLabel = data.visuals.actionLabel,
-                    onAction = { data.performAction() }
+                    onAction = { data.performAction() },
+                    onDismiss = { data.dismiss() }
                 )
             )
-            data.dismiss()
         }
     }
 
@@ -773,7 +768,9 @@ fun PersonaDashboardScreen(
     var uploadDocSizeBytes by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     var uploadDocMimeType by remember { mutableStateOf("application/pdf") }
     var isEncryptingAndSavingDoc by remember { mutableStateOf(false) }
-    var pendingUploadBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var uploadDocImportId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
+    var uploadDocError by remember { mutableStateOf<String?>(null) }
+    var versionUploadTarget by remember { mutableStateOf<DocumentWithHistory?>(null) }
     var documentToDelete by remember { mutableStateOf<DocumentWithHistory?>(null) }
 
     fun queryUploadMetadata(ctx: android.content.Context, uri: Uri): Pair<String, Long> {
@@ -896,62 +893,51 @@ fun PersonaDashboardScreen(
         dialogStates.value = dialogStates.value.toMutableMap().apply { this[dialogName] = false }
     }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                val meta = queryUploadMetadata(context, uri)
-                val fileName = meta.first
-                var size = meta.second
-
-                // Safeguard against unusually large files (> 50 MB threshold)
-                if (size > DocumentRules.MAX_DOCUMENT_SIZE_BYTES) {
-                    scope.launch {
-                        snackbarHostState.showSnackbar("File exceeds the 50 MB maximum allowed threshold.")
-                    }
-                    return@rememberLauncherForActivityResult
-                }
-
-                // Immediately read file into byte buffer and close stream safely
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                if (bytes == null || bytes.isEmpty()) {
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Selected file is empty or inaccessible.")
-                    }
-                    return@rememberLauncherForActivityResult
-                }
-
-                size = bytes.size.toLong()
-                if (size > DocumentRules.MAX_DOCUMENT_SIZE_BYTES) {
-                    scope.launch {
-                        snackbarHostState.showSnackbar("File exceeds the 50 MB maximum allowed threshold.")
-                    }
-                    return@rememberLauncherForActivityResult
-                }
-
-                val guessed = guessUploadDocumentTypeAndTitle(fileName)
-                val mime = resolveUploadMimeType(context, uri, fileName)
-
-                pendingUploadUri = uri
-                pendingUploadBytes = bytes
-                uploadDocFileName = fileName
-                uploadDocSizeBytes = size
-                uploadDocMimeType = mime
-                uploadDocType = guessed.first
-                uploadDocTitle = guessed.second
-                uploadDocNumber = ""
-                uploadDocAuthority = ""
-                uploadDocExpiryDate = ""
-                uploadDocClassification = DocumentRules.resolveDefaultClassification(guessed.first)
-
-                showSheet("uploadDoc")
-            } catch (e: Exception) {
-                scope.launch {
-                    snackbarHostState.showSnackbar("Could not read selected file: ${e.localizedMessage}")
-                }
-            }
+    fun clearDocumentDraft() {
+        pendingUploadUri?.let { uri ->
+            runCatching { context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         }
+        pendingUploadUri = null
+        versionUploadTarget = null
+        uploadDocError = null
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val metadata = withContext(Dispatchers.IO) {
+                        val value = queryUploadMetadata(context, uri)
+                        require(value.second <= DocumentRules.MAX_DOCUMENT_SIZE_BYTES) { "File exceeds the 50 MB limit" }
+                        runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                        Triple(value.first, value.second, resolveUploadMimeType(context, uri, value.first))
+                    }
+                    val replacing = pendingUploadUri != null
+                    val previous = pendingUploadUri
+                    pendingUploadUri = uri
+                    if (previous != null && previous != uri) runCatching {
+                        context.contentResolver.releasePersistableUriPermission(previous, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    uploadDocImportId = java.util.UUID.randomUUID().toString()
+                    uploadDocFileName = metadata.first
+                    uploadDocSizeBytes = metadata.second
+                    uploadDocMimeType = metadata.third
+                    uploadDocError = null
+                    if (!replacing) {
+                        val target = versionUploadTarget
+                        val guessed = guessUploadDocumentTypeAndTitle(metadata.first)
+                        uploadDocType = target?.document?.documentType ?: guessed.first
+                        uploadDocTitle = target?.document?.title ?: guessed.second
+                        uploadDocNumber = target?.document?.documentNumber.orEmpty()
+                        uploadDocAuthority = target?.document?.issuingAuthority.orEmpty()
+                        uploadDocExpiryDate = target?.document?.expirationDate.orEmpty()
+                        uploadDocClassification = target?.document?.securityClassification ?: DocumentRules.resolveDefaultClassification(guessed.first)
+                    }
+                    showSheet("uploadDoc")
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (_: Exception) { snackbarHostState.showSnackbar("Could not select this file. Choose an accessible file up to 50 MB.") }
+            }
+        } else if (pendingUploadUri == null) versionUploadTarget = null
     }
 
     var pendingExportDoc by remember { mutableStateOf<com.pims.vault.domain.model.DocumentWithHistory?>(null) }
@@ -968,7 +954,7 @@ fun PersonaDashboardScreen(
                 onComplete = {
                     soundManager.success()
                     scope.launch {
-                        snackbarHostState.showSnackbar("✓ Exported \"${doc.document.title}\" successfully")
+                        snackbarHostState.showSnackbar("Document copy saved")
                     }
                 },
                 onError = { err ->
@@ -981,81 +967,58 @@ fun PersonaDashboardScreen(
         pendingExportDoc = null
     }
 
-    val performDocumentDecryptionAndView: (com.pims.vault.domain.model.DocumentWithHistory) -> Unit = { doc ->
-        val version = doc.currentVersion
-        if (version == null) {
-            scope.launch { snackbarHostState.showSnackbar("No version available for this document") }
-        } else {
-            documentViewModel.decryptForViewing(
-                context = context,
-                version = version,
-                title = doc.document.title,
-                onReady = { uri, mimeType ->
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, mimeType)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(Intent.createChooser(intent, "Open Document"))
-                    } catch (e: Exception) {
-                        scope.launch {
-                            snackbarHostState.showSnackbar("No app found to open ${doc.document.title}")
-                        }
-                    }
-                },
-                onError = { err ->
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Decryption error: $err")
-                    }
-                }
-            )
+    fun authorizeDocumentAction(doc: DocumentWithHistory, action: () -> Unit) {
+        when {
+            doc.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL -> withPrivateNotesUnlocked(action)
+            (doc.document.isLocked || (doc.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE &&
+                pinSecurityManager.requireAuthForSensitive.value)) && !isLevel2Unlocked ->
+                requestGatedAccess(SecurityTier.LEVEL_2_SENSITIVE, "Unlock document", "Confirm your identity", action)
+            else -> action()
         }
     }
 
-    val onOpenDocumentForViewing: (com.pims.vault.domain.model.DocumentWithHistory) -> Unit = { doc ->
-        val isSensitive = (doc.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE ||
-                doc.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL) &&
-                pinSecurityManager.requireAuthForSensitive.value &&
-                !isLevel2Unlocked
-
-        if (isSensitive && pinSecurityManager.hasPin()) {
-            pendingSensitiveAction = { performDocumentDecryptionAndView(doc) }
-            pendingSecurityTier = SecurityTier.LEVEL_2_SENSITIVE
-            isPinChallengeVisible = true
-        } else {
-            performDocumentDecryptionAndView(doc)
+    val openDocumentExternally: (DocumentWithHistory) -> Unit = { doc ->
+        authorizeDocumentAction(doc) {
+            doc.currentVersion?.let { version ->
+                documentViewModel.decryptForViewing(context, version, doc.document.title, onReady = { uri, mime ->
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, mime)
+                        clipData = android.content.ClipData.newUri(context.contentResolver, "Document", uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Open with another app"))
+                }, onError = { message -> scope.launch { snackbarHostState.showSnackbar(message) } })
+            }
         }
     }
 
-    val onInitiateDocumentExport: (com.pims.vault.domain.model.DocumentWithHistory) -> Unit = { doc ->
-        val isSensitive = (doc.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE ||
-                doc.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL) &&
-                pinSecurityManager.requireAuthForSensitive.value &&
-                !isLevel2Unlocked
-
-        val launchExport = {
-            pendingExportDoc = doc
+    val onOpenDocumentForViewing: (DocumentWithHistory) -> Unit = { doc ->
+        authorizeDocumentAction(doc) {
             val version = doc.currentVersion
-            val extension = when {
-                version?.mimeType?.contains("pdf", ignoreCase = true) == true -> ".pdf"
-                version?.mimeType?.contains("png", ignoreCase = true) == true -> ".png"
-                version?.mimeType?.contains("jpeg", ignoreCase = true) == true || version?.mimeType?.contains("jpg", ignoreCase = true) == true -> ".jpg"
-                version?.mimeType?.contains("text", ignoreCase = true) == true -> ".txt"
+            if (version == null) scope.launch { snackbarHostState.showSnackbar("No file version is available. Check the version history.") }
+            else {
+                documentViewModel.onEvent(DocumentEvent.SelectDocument(doc))
+                documentViewModel.onEvent(DocumentEvent.PreviewVersion(version))
+            }
+        }
+    }
+
+    val onInitiateDocumentExport: (DocumentWithHistory) -> Unit = { doc ->
+        authorizeDocumentAction(doc) {
+            pendingExportDoc = doc
+            val original = doc.currentVersion?.originalFilename
+            val suffix = when (doc.currentVersion?.mimeType) {
+                "application/pdf", "application/x-pdf" -> ".pdf"
+                "image/jpeg", "image/jpg" -> ".jpg"
+                "image/png" -> ".png"
+                "text/plain" -> ".txt"
                 else -> ""
             }
-            val defaultName = "${doc.document.title.replace(Regex("[^a-zA-Z0-9._-]"), "_")}$extension"
-            exportDocLauncher.launch(defaultName)
-        }
-
-        if (isSensitive && pinSecurityManager.hasPin()) {
-            pendingSensitiveAction = launchExport
-            pendingSecurityTier = SecurityTier.LEVEL_2_SENSITIVE
-            isPinChallengeVisible = true
-        } else {
-            launchExport()
+            val filename = original?.takeIf { it.isNotBlank() } ?: "${doc.document.title}$suffix"
+            exportDocLauncher.launch(filename.replace(Regex("[^a-zA-Z0-9._ -]"), "_").take(120))
         }
     }
+
     
     var relationshipToDelete by remember { mutableStateOf<KinRelationshipItem?>(null) }
 
@@ -1888,7 +1851,8 @@ fun PersonaDashboardScreen(
                             accountModeManager.upgradeToCloudAccount(email)
                             soundManager.success()
                             haptics.success()
-                            scope.launch { snackbarHostState.showSnackbar("✓ Your data is now synced") }
+                            syncViewModel.processSyncNow()
+                            scope.launch { snackbarHostState.showSnackbar("Cloud account enabled. Backup is starting.") }
                         },
                         onRevisitWalkthrough = { accountModeManager.revisitWalkthrough() },
                         onExplain = { contextualExplanation = it }
@@ -1913,7 +1877,7 @@ fun PersonaDashboardScreen(
                 when (actionType) {
                     // Identity
                     AddActionType.PERSONAL_DETAILS -> showDialog("editProfile")
-                    AddActionType.IDENTIFICATION_DOC -> filePickerLauncher.launch("*/*")
+                    AddActionType.IDENTIFICATION_DOC -> filePickerLauncher.launch(arrayOf("*/*"))
                     AddActionType.NAMES_HISTORY -> {
                         customFieldInitialLabel = "Previous Name / Alias"
                         customFieldCategory = "Names & History"
@@ -1971,7 +1935,7 @@ fun PersonaDashboardScreen(
                     AddActionType.MEDICATIONS -> showDialog("addMedication")
                     AddActionType.EMERGENCY_INFO -> showDialog("addRelationship")
                     AddActionType.DOCTORS_PROVIDERS -> showDialog("addRelationship")
-                    AddActionType.HEALTH_DOCUMENTS -> filePickerLauncher.launch("*/*")
+                    AddActionType.HEALTH_DOCUMENTS -> filePickerLauncher.launch(arrayOf("*/*"))
 
                     // Personal
                     AddActionType.INTERESTS_HOBBIES -> {
@@ -2010,7 +1974,7 @@ fun PersonaDashboardScreen(
                     }
 
                     // Top-Level / Direct
-                    AddActionType.DOCUMENT -> filePickerLauncher.launch("*/*")
+                    AddActionType.DOCUMENT -> filePickerLauncher.launch(arrayOf("*/*"))
                     AddActionType.CUSTOM_FIELD -> {
                         customFieldInitialLabel = ""
                         customFieldCategory = "Custom Information"
@@ -2133,10 +2097,33 @@ fun PersonaDashboardScreen(
             documents = documentState.documents,
             sheetState = docsSheetState,
             onDismissRequest = { hideSheet("documents") },
-            onUploadClick = { filePickerLauncher.launch("*/*") },
+            onUploadClick = { filePickerLauncher.launch(arrayOf("*/*")) },
             onDeleteClick = { doc -> documentToDelete = doc },
             onViewClick = onOpenDocumentForViewing,
-            onExportClick = onInitiateDocumentExport
+            onExportClick = onInitiateDocumentExport,
+            onOpenExternal = openDocumentExternally,
+            onAddVersion = { doc -> authorizeDocumentAction(doc) {
+                versionUploadTarget = doc
+                filePickerLauncher.launch(arrayOf("*/*"))
+            } },
+            onRestoreVersion = { id, version ->
+                documentState.documents.find { it.document.id == id }?.let { doc ->
+                    authorizeDocumentAction(doc) { documentViewModel.onEvent(DocumentEvent.RestoreVersion(id, version)) }
+                }
+            },
+            onVerifyVersion = { version ->
+                documentState.documents.find { it.document.id == version.documentId }?.let { doc ->
+                    authorizeDocumentAction(doc) { documentViewModel.onEvent(DocumentEvent.VerifyIntegrity(version)) }
+                }
+            },
+            integrityResults = documentState.integrityResults,
+            isWorking = documentState.isSaving,
+            isLoading = documentState.isLoading,
+            loadError = documentState.loadError,
+            onRetryLoad = { documentViewModel.onEvent(DocumentEvent.RetryLoad) },
+            onRetryDownload = { doc -> authorizeDocumentAction(doc) {
+                documentViewModel.onEvent(DocumentEvent.RetryDownload(doc.document.id))
+            } }
         )
     }
 
@@ -2701,97 +2688,92 @@ fun PersonaDashboardScreen(
         },
         documentToDelete = documentToDelete,
         onDismissDocumentToDelete = { documentToDelete = null },
-        onConfirmDeleteDocument = { doc ->
-            documentViewModel.onEvent(DocumentEvent.DeleteDocument(doc.document.id))
-            recentActivityManager.recordActivity("Removed document from wallet", doc.document.title)
-            documentToDelete = null
-        },
+        onConfirmDeleteDocument = { doc -> authorizeDocumentAction(doc) {
+            documentViewModel.onEvent(DocumentEvent.DeleteDocument(doc.document.id, onSuccess = {
+                recentActivityManager.recordActivity("Removed document from wallet", "Document removed")
+                documentToDelete = null
+            }))
+        } },
         recentActivityManager = recentActivityManager,
         soundManager = soundManager,
         haptics = haptics
     )
 
 
-    // 11. Document Upload Bottom Sheet (Section 11)
-    if (sheetStates.value["uploadDoc"] == true && pendingUploadUri != null && pendingUploadBytes != null) {
-        DocumentUploadSheet(
-            sheetState = uploadDocSheetState,
-            fileName = uploadDocFileName,
-            fileSizeBytes = uploadDocSizeBytes,
-            mimeType = uploadDocMimeType,
-            title = uploadDocTitle,
-            onTitleChange = { uploadDocTitle = it },
-            documentType = uploadDocType,
-            onDocumentTypeChange = { uploadDocType = it },
-            docNumber = uploadDocNumber,
-            onDocNumberChange = { uploadDocNumber = it },
-            authority = uploadDocAuthority,
-            onAuthorityChange = { uploadDocAuthority = it },
-            expiryDate = uploadDocExpiryDate,
-            onExpiryDateChange = { uploadDocExpiryDate = it },
-            classification = uploadDocClassification,
-            onClassificationChange = { uploadDocClassification = it },
-            isProcessing = isEncryptingAndSavingDoc,
-            onChangeFileClick = { filePickerLauncher.launch("*/*") },
-            onDismissRequest = {
-                if (!isEncryptingAndSavingDoc) {
-                    hideSheet("uploadDoc")
-                    pendingUploadBytes = null
-                    pendingUploadUri = null
-                }
-            },
+    // Document import retains the selected source and details until local publication succeeds.
+    if (sheetStates.value["uploadDoc"] == true && pendingUploadUri != null) {
+        DocumentUploadSheet(sheetState = uploadDocSheetState, fileName = uploadDocFileName,
+            fileSizeBytes = uploadDocSizeBytes, mimeType = uploadDocMimeType, title = uploadDocTitle,
+            onTitleChange = { uploadDocTitle = it; uploadDocError = null }, documentType = uploadDocType,
+            onDocumentTypeChange = { uploadDocType = it }, docNumber = uploadDocNumber,
+            onDocNumberChange = { uploadDocNumber = it }, authority = uploadDocAuthority,
+            onAuthorityChange = { uploadDocAuthority = it }, expiryDate = uploadDocExpiryDate,
+            onExpiryDateChange = { uploadDocExpiryDate = it }, classification = uploadDocClassification,
+            onClassificationChange = { uploadDocClassification = it }, isProcessing = isEncryptingAndSavingDoc,
+            isAddingVersion = versionUploadTarget != null, errorMessage = uploadDocError,
+            onChangeFileClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+            onDismissRequest = { if (!isEncryptingAndSavingDoc) { hideSheet("uploadDoc"); clearDocumentDraft() } },
             onConfirmSave = {
-                val bytes = pendingUploadBytes
-                if (bytes != null && uploadDocTitle.isNotBlank()) {
+                val uri = pendingUploadUri
+                if (uri != null && uploadDocTitle.isNotBlank() && !isEncryptingAndSavingDoc) {
                     isEncryptingAndSavingDoc = true
-                    documentViewModel.onEvent(
-                        DocumentEvent.IngestDocument(
-                            type = uploadDocType,
-                            title = uploadDocTitle.trim(),
-                            docNumber = uploadDocNumber.trim().takeIf { it.isNotBlank() },
-                            authority = uploadDocAuthority.trim().takeIf { it.isNotBlank() },
-                            country = country.ifBlank { "ZW" },
-                            issueDate = null,
-                            expiryDate = uploadDocExpiryDate.trim().takeIf { it.isNotBlank() },
-                            classification = uploadDocClassification,
-                            fileBytes = bytes,
-                            mimeType = uploadDocMimeType,
-                            filename = uploadDocFileName,
-                            onSuccess = {
-                                recentActivityManager.recordActivity("Added document to wallet", uploadDocTitle.trim())
-                                soundManager.success()
-                                haptics.success()
-                                isEncryptingAndSavingDoc = false
-                                pendingUploadBytes = null
-                                pendingUploadUri = null
-                                hideSheet("uploadDoc")
-                            },
-                            onError = { _ ->
-                                isEncryptingAndSavingDoc = false
-                            }
-                        )
-                    )
+                    uploadDocError = null
+                    val openSource = { context.contentResolver.openInputStream(uri) ?: throw java.io.FileNotFoundException() }
+                    val success = {
+                        recentActivityManager.recordActivity("Saved document", "Document saved to this device")
+                        isEncryptingAndSavingDoc = false
+                        clearDocumentDraft()
+                        hideSheet("uploadDoc")
+                    }
+                    val failed: (String) -> Unit = { message -> isEncryptingAndSavingDoc = false; uploadDocError = message }
+                    val target = versionUploadTarget
+                    val save = {
+                    if (target != null) documentViewModel.onEvent(DocumentEvent.AddVersion(
+                        target.document.id, mimeType = uploadDocMimeType, notes = null,
+                        originalFilename = uploadDocFileName, openStream = openSource, onSuccess = success, onError = failed, versionId = uploadDocImportId))
+                    else documentViewModel.onEvent(DocumentEvent.IngestDocument(type = uploadDocType,
+                        title = uploadDocTitle.trim(), docNumber = uploadDocNumber.trim().takeIf(String::isNotBlank),
+                        authority = uploadDocAuthority.trim().takeIf(String::isNotBlank), country = country.ifBlank { "ZW" },
+                        expiryDate = uploadDocExpiryDate.trim().takeIf(String::isNotBlank), classification = uploadDocClassification,
+                        mimeType = uploadDocMimeType, filename = uploadDocFileName, openStream = openSource,
+                        importId = uploadDocImportId, onSuccess = success, onError = failed))
+                    }
+                    if (uploadDocClassification == SecurityClassification.ZONE_4_CRITICAL) {
+                        // The system picker can outlive a Zone 4 authorization window.
+                        isEncryptingAndSavingDoc = false
+                        withPrivateNotesUnlocked { isEncryptingAndSavingDoc = true; save() }
+                    } else save()
                 }
-            }
-        )
+            })
+    }
+
+    documentState.selectedVersionForPreview?.let { version ->
+        com.pims.vault.presentation.document.DocumentPreviewDialog(version = version,
+            title = documentState.selectedDocument?.document?.title ?: "Document",
+            onDismiss = { documentViewModel.onEvent(DocumentEvent.PreviewVersion(null)) },
+            render = { page -> documentViewModel.renderPreview(version, page) },
+            onOpenExternal = {
+                val selected = documentState.selectedDocument
+                documentViewModel.onEvent(DocumentEvent.PreviewVersion(null))
+                selected?.let { openDocumentExternally(it.copy(versions = listOf(version))) }
+            })
     }
 
     // 12. Add Custom Information Dialog
     if (dialogStates.value["addCustomField"] == true) {
         var customLabel by remember(customFieldInitialLabel) { mutableStateOf(customFieldInitialLabel) }
         var customVal by remember { mutableStateOf(customFieldInitialValue) }
+        val customFieldSaveId = remember { customFieldEditingId ?: java.util.UUID.randomUUID().toString() }
         var customSaving by remember { mutableStateOf(false) }
         var customSaveError by remember { mutableStateOf<String?>(null) }
         var selectedCategory by remember {
             mutableStateOf(InformationCategory.fromName(customFieldCategory))
         }
-        var categoryDropdownExpanded by remember { mutableStateOf(false) }
-
         val recognizedField = remember(customLabel) {
             com.pims.vault.core.domain.SemanticFieldRecognizer.resolve(customLabel)
         }
         LaunchedEffect(recognizedField) {
-            if (recognizedField != null) {
+            if (recognizedField != null && (customFieldEditingId == null || customLabel != customFieldInitialLabel)) {
                 selectedCategory = recognizedField.category
             }
         }
@@ -2808,7 +2790,7 @@ fun PersonaDashboardScreen(
                     profileViewModel.onEvent(
                         ProfileEvent.AddCustomField(
                             label = customLabel.trim(), value = customVal.trim(), category = selectedCategory,
-                            id = customFieldEditingId,
+                            id = customFieldSaveId,
                             onComplete = { success ->
                                 customSaving = false
                                 if (success) {
@@ -2826,86 +2808,27 @@ fun PersonaDashboardScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 customSaveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                // Category Picker
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Category / Type",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                    ExposedDropdownMenuBox(
-                        expanded = categoryDropdownExpanded,
-                        onExpandedChange = { categoryDropdownExpanded = !categoryDropdownExpanded }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedCategory.displayName,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryDropdownExpanded) },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .menuAnchor()
-                                .fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = categoryDropdownExpanded,
-                            onDismissRequest = { categoryDropdownExpanded = false },
-                            modifier = Modifier
-                                .exposedDropdownSize(matchTextFieldWidth = true)
-                                .heightIn(max = 240.dp)
-                        ) {
-                            InformationCategory.values().forEach { cat ->
-                                DropdownMenuItem(
-                                    text = { Text(cat.displayName) },
-                                    onClick = {
-                                        selectedCategory = cat
-                                        categoryDropdownExpanded = false
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
                 PersonaTextInput(
                     value = customLabel,
                     onValueChange = { customLabel = it },
-                    label = "Field name / identifier",
-                    placeholder = "e.g. Blood Type, Discord, Student ID, Secondary Email"
+                    label = "Field name",
+                    placeholder = "e.g. Student ID",
+                    enabled = !customSaving
                 )
-
-                if (recognizedField != null) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "💡 Recognized: ${recognizedField.canonicalName} (${recognizedField.category.displayName})",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-
                 PersonaTextInput(
                     value = customVal,
                     onValueChange = { customVal = it },
-                    label = "Value / detail",
-                    placeholder = "Enter the information here"
+                    label = "Value",
+                    enabled = !customSaving
+                )
+                PersonaDropdownSelector(
+                    selectedOption = selectedCategory.displayName,
+                    options = InformationCategory.entries.map { it.displayName },
+                    onOptionSelected = { label ->
+                        if (!customSaving) selectedCategory = InformationCategory.entries.first { it.displayName == label }
+                    },
+                    label = "Category",
+                    enabled = !customSaving
                 )
             }
         }

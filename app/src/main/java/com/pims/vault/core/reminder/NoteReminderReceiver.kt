@@ -37,6 +37,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
                             ReminderEntryPoint::class.java
                         )
                         entryPoint.noteReminderScheduler().rescheduleAllActiveReminders()
+                        entryPoint.noteCalendarCoordinator().refresh()
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to reschedule reminders on boot/reschedule: ${e.message}", e)
                     } finally {
@@ -64,6 +65,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
                         )
                         val dao = entryPoint.plainNoteDao()
                         val scheduler = entryPoint.noteReminderScheduler()
+                        entryPoint.noteCalendarCoordinator().refresh()
 
                         if (repeat.isNullOrBlank() || repeat == "NONE") {
                             // Single-shot: mark done or keep for history
@@ -107,6 +109,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
                         )
                         entryPoint.noteReminderScheduler().scheduleReminder(noteId, title, snippet, tag, snoozeTime)
                         entryPoint.plainNoteDao().updateReminder(noteId, snoozeTime, tag, "NONE")
+                        entryPoint.noteCalendarCoordinator().refresh()
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to snooze reminder: ${e.message}", e)
                     } finally {
@@ -128,6 +131,7 @@ class NoteReminderReceiver : BroadcastReceiver() {
                             ReminderEntryPoint::class.java
                         )
                         entryPoint.plainNoteDao().setReminderDone(noteId, true)
+                        entryPoint.noteCalendarCoordinator().refresh()
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to dismiss reminder: ${e.message}", e)
                     } finally {

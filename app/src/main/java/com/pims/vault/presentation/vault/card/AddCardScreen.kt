@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -80,7 +81,7 @@ import androidx.compose.runtime.LaunchedEffect
 @Composable
 fun AddCardScreen(
     onNavigateBack: () -> Unit,
-    onSaveCard: (bankName: String, holder: String, number: String, expiry: String, cvv: String, linkedBankAccountId: String?, linkedBankAccountName: String?, cardType: String) -> Unit,
+    onSaveCard: (bankName: String, holder: String, number: String, expiry: String, cvv: String, linkedBankAccountId: String?, linkedBankAccountName: String?, cardType: String, linkedBankAccountIds: List<String>) -> Unit,
     modifier: Modifier = Modifier,
     isEditingCard: Boolean = false,
     isLoading: Boolean = false,
@@ -93,7 +94,11 @@ fun AddCardScreen(
     initialCvv: String = "",
     initialLinkedBankAccountId: String? = null,
     initialLinkedBankAccountName: String? = null,
-    initialCardType: String = "PHYSICAL"
+    initialCardType: String = "PHYSICAL",
+    initialLinkedBankAccountIds: List<String> = listOfNotNull(initialLinkedBankAccountId),
+    availableBankAccounts: List<com.pims.vault.domain.model.VaultItemHeader> = emptyList(),
+    isSaving: Boolean = false,
+    proofSection: @Composable () -> Unit = {}
 ) {
     var bankName by remember { 
         mutableStateOf(initialBankName.ifBlank { initialLinkedBankAccountName.orEmpty() }) 
@@ -105,10 +110,19 @@ fun AddCardScreen(
     var cardType by remember { mutableStateOf(if (initialCardType.contains("VIRTUAL", ignoreCase = true)) "VIRTUAL" else "PHYSICAL") }
     var linkedBankAccountId by remember { mutableStateOf(initialLinkedBankAccountId) }
     var linkedBankAccountName by remember { mutableStateOf(initialLinkedBankAccountName) }
+    var linkedIds by remember(initialLinkedBankAccountIds) { mutableStateOf(initialLinkedBankAccountIds) }
     var showOptionsMenu by remember { mutableStateOf(false) }
     var showSecurityInfoDialog by remember { mutableStateOf(false) }
-
-    val isEditing = isEditingCard || initialBankName.isNotBlank() || initialCardNumber.isNotBlank() || initialCardHolder.isNotBlank()
+    var showDiscard by remember { mutableStateOf(false) }
+    val isDirty = bankName != initialBankName.ifBlank { initialLinkedBankAccountName.orEmpty() } ||
+        cardHolder != initialCardHolder || cardNumber != initialCardNumber || expiryDate != initialExpiryDate ||
+        cvv != initialCvv || cardType != initialCardType || linkedIds != initialLinkedBankAccountIds
+    val close = {
+        if (!isSaving) {
+            if (isDirty) showDiscard = true else onNavigateBack()
+        }
+    }
+    androidx.activity.compose.BackHandler { close() }
 
     // Dynamically synchronize form fields when decrypted data arrives asynchronously
     LaunchedEffect(
@@ -154,14 +168,14 @@ fun AddCardScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (isEditing) "Edit Card" else "Add New Card",
+                        text = if (isEditingCard) "Edit Card" else "Add New Card",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = close, enabled = !isSaving) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -237,6 +251,7 @@ fun AddCardScreen(
                     .padding(innerPadding)
                     .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                     .navigationBarsPadding()
+                    .imePadding()
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
@@ -272,41 +287,6 @@ fun AddCardScreen(
                         }
                     }
 
-                if (!linkedBankAccountName.isNullOrBlank()) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "🔗 Will link to: $linkedBankAccountName",
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(
-                                onClick = {
-                                    linkedBankAccountId = null
-                                    linkedBankAccountName = null
-                                },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Unlink",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
                 // Card Physicality Selector
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -327,7 +307,7 @@ fun AddCardScreen(
                 }
 
                 // 1. Live Interactive Card Preview Component
-                CardLivePreview(
+                if (listOf(bankName, cardHolder, cardNumber, expiryDate).any(String::isNotBlank)) CardLivePreview(
                     bankName = bankName,
                     holderName = cardHolder,
                     cardNumber = cardNumber,
@@ -340,14 +320,8 @@ fun AddCardScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // 2. Input Fields with Clean Floating Labels
-                CleanCardTextField(
-                    value = bankName,
-                    onValueChange = { bankName = it },
-                    label = "Bank or Provider Name",
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        keyboardType = KeyboardType.Text
-                    )
+                com.pims.vault.presentation.vault.components.BankNameInput(
+                    bankName, { bankName = it }, availableBankAccounts.map { it.title }
                 )
 
                 CleanCardTextField(
@@ -422,14 +396,7 @@ fun AddCardScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 visualTransformation = ExpiryDateVisualTransformation()
                             )
-                            if (expiryDate.isNotEmpty()) {
-                                Text(
-                                    text = if (expiryDate.length == 4) "MM/YY valid" else "${expiryDate.length}/4 digits entered",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (expiryDate.length == 4) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 4.dp)
-                                )
-                            }
+
                         }
                     }
                     Box(modifier = Modifier.weight(1f)) {
@@ -443,15 +410,25 @@ fun AddCardScreen(
                 }
             }
 
-            // 3. Bottom Full-Width Action Button (Always works and accepts nevertheless)
+            com.pims.vault.presentation.vault.components.WalletLinksPicker(
+                "Bank accounts", availableBankAccounts, linkedIds,
+                onSelectionChange = { ids ->
+                    linkedIds = ids
+                    linkedBankAccountId = ids.firstOrNull()
+                    linkedBankAccountName = availableBankAccounts.find { it.id == ids.firstOrNull() }?.title
+                }, enabled = !isSaving
+            )
+            proofSection()
+
+            // Save raw inputs only after required card fields are available.
             Button(
                 onClick = {
                     val finalBank = bankName.trim().ifBlank { detectedNetwork.displayName }
                     val finalHolder = cardHolder.trim()
-                    val finalNumber = cardNumber.trim().ifBlank { "0000" }
-                    val finalExpiry = expiryDate.trim().ifBlank { "1228" }
+                    val finalNumber = cardNumber.trim()
+                    val finalExpiry = expiryDate.trim()
                     val finalCvv = cvv.trim()
-                    onSaveCard(finalBank, finalHolder, finalNumber, finalExpiry, finalCvv, linkedBankAccountId, linkedBankAccountName, cardType)
+                    onSaveCard(finalBank, finalHolder, finalNumber, finalExpiry, finalCvv, linkedBankAccountId, linkedBankAccountName, cardType, linkedIds)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -462,10 +439,10 @@ fun AddCardScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                enabled = cleanNumber.length in 12..19 || (isEditing && (bankName.isNotBlank() || cardHolder.isNotBlank() || cardNumber.isNotBlank()))
+                enabled = !isSaving && (cleanNumber.length in 12..19 || isEditingCard) && expiryDate.filter(Char::isDigit).length == 4
             ) {
                 Text(
-                    text = if (isEditing) "Save Changes" else "Add Card",
+                    text = if (isSaving) "Saving…" else if (isEditingCard) "Save changes" else "Add card",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -474,6 +451,14 @@ fun AddCardScreen(
     }
     }
 
+    if (showDiscard) {
+        AlertDialog(
+            onDismissRequest = { showDiscard = false },
+            title = { Text("Discard changes?") },
+            confirmButton = { TextButton(onClick = onNavigateBack) { Text("Discard") } },
+            dismissButton = { TextButton(onClick = { showDiscard = false }) { Text("Keep editing") } }
+        )
+    }
     if (showSecurityInfoDialog) {
         AlertDialog(
             onDismissRequest = { showSecurityInfoDialog = false },
@@ -552,9 +537,16 @@ private fun CardLivePreview(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text(
                         text = bankName.ifBlank { network.displayName },
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         color = Color.White.copy(alpha = 0.9f),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
@@ -563,14 +555,14 @@ private fun CardLivePreview(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF38BDF8).copy(alpha = 0.25f))
+                                .background(MaterialTheme.colorScheme.primaryContainer)
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = "VIRTUAL",
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = Color(0xFF38BDF8)
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
                     }
@@ -601,7 +593,10 @@ private fun CardLivePreview(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = if (holderName.isBlank()) "YOUR NAME" else holderName.uppercase(),
+                        text = holderName.uppercase(),
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         color = Color.White.copy(alpha = 0.75f),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -623,6 +618,9 @@ private fun CardLivePreview(
                 ) {
                     Text(
                         text = formatCardNumber(cardNumber),
+                        modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         color = Color.White,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
@@ -660,8 +658,8 @@ private fun CleanCardTextField(
 // ---------------------------------------------------------------------------
 
 private fun formatCardNumber(raw: String): String {
-    val padded = raw.padEnd(16, '•')
-    return "${padded.substring(0, 4)} ${padded.substring(4, 8)} ${padded.substring(8, 12)} ${padded.substring(12, 16)}"
+    val digits = raw.filter(Char::isDigit)
+    return if (digits.length > 4) "•••• ${digits.takeLast(4)}" else digits
 }
 
 private fun formatExpiry(raw: String): String {
@@ -674,11 +672,11 @@ private fun formatExpiry(raw: String): String {
 
 class CardNumberVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val trimmed = if (text.text.length >= 16) text.text.substring(0..15) else text.text
+        val trimmed = text.text.take(19)
         var out = ""
         for (i in trimmed.indices) {
             out += trimmed[i]
-            if (i % 4 == 3 && i != 15) out += " "
+            if (i % 4 == 3 && i != trimmed.lastIndex) out += " "
         }
         val offsetMapping = object : OffsetMapping {
             override fun originalToTransformed(offset: Int): Int {

@@ -12,6 +12,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.security.MessageDigest
+import java.io.InputStream
+import java.io.FilterInputStream
+import java.security.DigestInputStream
+import okhttp3.RequestBody
+import okio.BufferedSink
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -139,154 +144,160 @@ class B2StorageUploadService @Inject constructor(
         }
     }
 
-    override suspend fun downloadEncryptedBytes(downloadUrl: String): ByteArray? =
+    override suspend fun openEncryptedDocument(downloadUrl: String): InputStream? = withContext(Dispatchers.IO) {
+        if (downloadUrl.isBlank()) return@withContext null
+        val uri = downloadUrl.toHttpUrl()
+        require(uri.isHttps && uri.host.endsWith(".backblazeb2.com") && uri.username.isEmpty() && uri.password.isEmpty()) {
+            "Unsupported encrypted object URL"
+        }
+        val response = httpClient.newCall(Request.Builder().url(uri).build()).execute()
+        if (!response.isSuccessful) {
+            response.close()
+            return@withContext null
+        }
+        val body = response.body ?: run { response.close(); return@withContext null }
+        val limit = 51L * 1024 * 1024
+        if (body.contentLength() > limit) {
+            response.close()
+            error("Encrypted object exceeds the document size limit")
+        }
+        object : FilterInputStream(body.byteStream()) {
+            private var count = 0L
+            override fun read(): Int {
+                val value = super.read()
+                if (value >= 0) { count++; require(count <= limit) { "Encrypted object exceeds the document size limit" } }
+                return value
+            }
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                val read = `in`.read(buffer, offset, length)
+                if (read > 0) { count += read; require(count <= limit) { "Encrypted object exceeds the document size limit" } }
+                return read
+            }
+            override fun close() { response.close() }
+        }
+    }
+
+    override suspend fun downloadEncryptedBytes(downloadUrl: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            openEncryptedDocument(downloadUrl)?.use { input ->
+                val bytes = input.readBoundedBytes((MAX_UPLOAD_BYTES + 16).toInt())
+                require(bytes.size <= MAX_UPLOAD_BYTES + 16) { "Encrypted object exceeds the supported size" }
+                bytes.takeIf { it.isNotEmpty() }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Log.w(TAG, "Encrypted object download is pending")
+            null
+        }
+    }
+
+    override suspend fun uploadEncryptedDocumentVersion(
+        accountUid: String,
+        documentId: String,
+        versionId: String,
+        export: EncryptedFileExport
+    ): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
+        require(export.sizeBytes in 1..51L * 1024 * 1024)
+        require(listOf(accountUid, documentId, versionId).all { it.isNotBlank() && '/' !in it && '\\' !in it })
+        val path = "users/documents/$accountUid/$documentId/$versionId/${UUID.randomUUID()}"
+        uploadCiphertext(path, export.sizeBytes, export.cipherSha256Hex, "", export::openStream)
+    }
+
+    private suspend fun uploadEncrypted(remotePath: String, plaintext: ByteArray, mimeType: String): StorageUploadService.UploadResult =
         withContext(Dispatchers.IO) {
-            if (downloadUrl.isBlank()) return@withContext null
+            val key = portableFileKeyManager.copyKeyBytes()
+            val payload = try { cryptoEngine.encrypt(plaintext, key) } finally { key.fill(0) }
+            val cipher = payload.combinedCiphertextWithTag
             try {
-                val url = java.net.URL(downloadUrl)
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 30000
-                conn.requestMethod = "GET"
-                conn.instanceFollowRedirects = true
-                if (conn.responseCode !in 200..299) {
-                    Log.w(TAG, "B2 download HTTP ${conn.responseCode} for $downloadUrl")
-                    return@withContext null
-                }
-                conn.inputStream.use { it.readBytes() }.takeIf { it.isNotEmpty() }
-            } catch (e: Exception) {
-                Log.w(TAG, "B2 download failed: ${e.message}")
-                null
+                uploadCiphertext(remotePath, cipher.size.toLong(), calculateSha256(cipher),
+                    payload.iv.joinToString("") { "%02x".format(it) }, { cipher.inputStream() }, mimeType)
+            } finally { cipher.fill(0) }
+        }
+
+    private fun uploadCiphertext(
+        remotePath: String,
+        size: Long,
+        sha256: String,
+        ivHex: String,
+        openStream: () -> InputStream,
+        mimeType: String = "application/octet-stream"
+    ): StorageUploadService.UploadResult {
+        check(isConfigured()) { "Object storage is unavailable" }
+        ensureAuthToken()
+        val token = checkNotNull(cachedAuthToken) { "Object storage authorization is unavailable" }
+        val api = checkNotNull(apiUrl) { "Object storage endpoint is unavailable" }
+        val downloads = checkNotNull(downloadUrl) { "Object storage download endpoint is unavailable" }
+        val request = Request.Builder().url("$api/b2_get_upload_url").header("Authorization", token)
+            .post("""{"bucketId":"$B2_BUCKET_ID"}""".toRequestBody("application/json".toMediaTypeOrNull())).build()
+        val uploadSettings = httpClient.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "Object upload preparation failed (${response.code})" }
+            val json = response.body?.string() ?: error("Missing upload settings")
+            checkNotNull(extractJsonValue(json, "uploadUrl")) to checkNotNull(extractJsonValue(json, "authorizationToken"))
+        }
+        val digest = MessageDigest.getInstance("SHA-1")
+        var counted = 0L
+        openStream().use { input ->
+            DigestInputStream(input, digest).use { hashed ->
+                val buffer = ByteArray(64 * 1024)
+                try {
+                    while (true) {
+                        val read = hashed.read(buffer)
+                        if (read < 0) break
+                        counted += read
+                    }
+                } finally { buffer.fill(0) }
             }
         }
-
-    private suspend fun uploadEncrypted(
-        remotePath: String,
-        plaintext: ByteArray,
-        mimeType: String
-    ): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
-        // Portable file key: same key on every device once recovery is set up.
-        // Ciphertext format is UNCHANGED (AES-256-GCM single-shot envelope),
-        // so new uploads stay byte-compatible with the existing download path.
-        val pfk = portableFileKeyManager.copyKeyBytes()
-        val encryptedPayload = try {
-            cryptoEngine.encrypt(plaintext, pfk)
-        } finally {
-            java.util.Arrays.fill(pfk, 0)
+        check(counted == size) { "Encrypted object changed before upload" }
+        val sha1 = digest.digest().joinToString("") { "%02x".format(it) }
+        val body = object : RequestBody() {
+            override fun contentType() = "application/octet-stream".toMediaTypeOrNull()
+            override fun contentLength() = size
+            override fun writeTo(sink: BufferedSink) {
+                openStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    var written = 0L
+                    try {
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            written += read
+                            check(written <= size) { "Encrypted object changed during upload" }
+                            sink.write(buffer, 0, read)
+                        }
+                        check(written == size) { "Encrypted object changed during upload" }
+                    } finally { buffer.fill(0) }
+                }
+            }
         }
-
-        val sha256 = calculateSha256(encryptedPayload.combinedCiphertextWithTag)
-        val ivHex = encryptedPayload.iv.joinToString("") { "%02x".format(it) }
-
-        ensureAuthToken()
-        val token = cachedAuthToken
-        val api = apiUrl
-        val dl = downloadUrl
-
-        if (token == null || api == null) {
-            val fallbackUrl = "${dl ?: "https://f006.backblazeb2.com"}/file/$B2_BUCKET_NAME/$remotePath"
-            return@withContext StorageUploadService.UploadResult(
-                remotePath = remotePath,
-                downloadUrl = fallbackUrl,
-                ivHex = ivHex,
-                sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
-                sha256Hex = sha256
-            )
+        val upload = Request.Builder().url(uploadSettings.first).header("Authorization", uploadSettings.second)
+            .header("X-Bz-File-Name", remotePath).header("X-Bz-Content-Sha1", sha1)
+            .header("X-Bz-Info-originalMimeType", mimeType).header("X-Bz-Info-ivHex", ivHex)
+            .header("X-Bz-Info-sha256Checksum", sha256).post(body).build()
+        httpClient.newCall(upload).execute().use { response ->
+            check(response.isSuccessful) { "Encrypted object upload failed (${response.code})" }
+            val confirmation = response.body?.string() ?: error("Missing upload confirmation")
+            check(extractJsonValue(confirmation, "fileName") == remotePath &&
+                extractJsonValue(confirmation, "contentSha1") == sha1 &&
+                !extractJsonValue(confirmation, "fileId").isNullOrBlank()) { "Object upload confirmation mismatch" }
         }
-
-        val getUploadUrlReq = Request.Builder()
-            .url("$api/b2_get_upload_url")
-            .header("Authorization", token)
-            .post("""{"bucketId": "$B2_BUCKET_ID"}""".toRequestBody("application/json".toMediaTypeOrNull()))
-            .build()
-
-        val uploadUrlResp = httpClient.newCall(getUploadUrlReq).execute()
-        if (!uploadUrlResp.isSuccessful) {
-            Log.e(TAG, "Encrypted upload failed for path $remotePath: ${uploadUrlResp.code}")
-            val fallbackUrl = "${dl ?: "https://f006.backblazeb2.com"}/file/$B2_BUCKET_NAME/$remotePath"
-            return@withContext StorageUploadService.UploadResult(
-                remotePath = remotePath,
-                downloadUrl = fallbackUrl,
-                ivHex = ivHex,
-                sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
-                sha256Hex = sha256
-            )
-        }
-
-        val uploadUrlBody = uploadUrlResp.body?.string().orEmpty()
-        val uploadUrl = extractJsonValue(uploadUrlBody, "uploadUrl")
-        val uploadAuthToken = extractJsonValue(uploadUrlBody, "authorizationToken")
-
-        if (uploadUrl == null || uploadAuthToken == null) {
-            val fallbackUrl = "${dl ?: "https://f006.backblazeb2.com"}/file/$B2_BUCKET_NAME/$remotePath"
-            return@withContext StorageUploadService.UploadResult(
-                remotePath = remotePath,
-                downloadUrl = fallbackUrl,
-                ivHex = ivHex,
-                sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
-                sha256Hex = sha256
-            )
-        }
-
-        val uploadReq = Request.Builder()
-            .url(uploadUrl)
-            .header("Authorization", uploadAuthToken)
-            .header("X-Bz-File-Name", remotePath)
-            .header("Content-Type", "application/octet-stream")
-            .header("X-Bz-Content-Sha1", calculateSha1(encryptedPayload.combinedCiphertextWithTag))
-            .header("X-Bz-Info-originalMimeType", mimeType)
-            .header("X-Bz-Info-encryptedWithCryptoEngine", "true")
-            .header("X-Bz-Info-ivHex", ivHex)
-            .header("X-Bz-Info-sha256Checksum", sha256)
-            .post(encryptedPayload.combinedCiphertextWithTag.toRequestBody("application/octet-stream".toMediaTypeOrNull()))
-            .build()
-
-        val uploadResp = httpClient.newCall(uploadReq).execute()
-        if (!uploadResp.isSuccessful) {
-            Log.e(TAG, "Encrypted upload failed for path $remotePath: ${uploadResp.code}")
-        }
-
-        val finalDownloadUrl = "${dl ?: "https://f006.backblazeb2.com"}/file/$B2_BUCKET_NAME/$remotePath"
-        StorageUploadService.UploadResult(
-            remotePath = remotePath,
-            downloadUrl = finalDownloadUrl,
-            ivHex = ivHex,
-            sizeBytes = encryptedPayload.combinedCiphertextWithTag.size.toLong(),
-            sha256Hex = sha256
-        )
+        return StorageUploadService.UploadResult(remotePath, "$downloads/file/$B2_BUCKET_NAME/$remotePath", ivHex, size, sha256)
     }
 
     private fun ensureAuthToken() {
-        if (cachedAuthToken != null && System.currentTimeMillis() < tokenExpiry) {
-            return
-        }
-
-        if (B2_KEY_ID.isBlank() || B2_APP_KEY.isBlank()) {
-            Log.w(TAG, "B2 credentials not configured (B2_KEY_ID/B2_APP_KEY missing). Rotate key and populate secrets.properties.")
-            return
-        }
-
-        try {
-            val credentials = "$B2_KEY_ID:$B2_APP_KEY"
-            val basicAuth = "Basic " + Base64.encodeToString(credentials.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-
-            val authReq = Request.Builder()
-                .url("$B2_API_BASE/b2_authorize_account")
-                .header("Authorization", basicAuth)
-                .build()
-
-            val resp = httpClient.newCall(authReq).execute()
-            if (resp.isSuccessful) {
-                val body = resp.body?.string().orEmpty()
-                cachedAuthToken = extractJsonValue(body, "authorizationToken")
-                apiUrl = extractJsonValue(body, "apiUrl")
-                downloadUrl = extractJsonValue(body, "downloadUrl")
-                tokenExpiry = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(23)
-            } else {
-                Log.w(TAG, "Failed to authorize B2 account: ${resp.code}")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to authorize B2 account: ${e.message}")
+        if (cachedAuthToken != null && System.currentTimeMillis() < tokenExpiry) return
+        check(hasCredentials()) { "Object storage is unavailable" }
+        val credentials = "$B2_KEY_ID:$B2_APP_KEY"
+        val basic = "Basic " + Base64.encodeToString(credentials.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val request = Request.Builder().url("$B2_API_BASE/b2_authorize_account").header("Authorization", basic).build()
+        httpClient.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "Object storage authorization failed (${response.code})" }
+            val json = response.body?.string() ?: error("Missing object storage authorization")
+            cachedAuthToken = checkNotNull(extractJsonValue(json, "authorizationToken"))
+            apiUrl = checkNotNull(extractJsonValue(json, "apiUrl"))
+            downloadUrl = checkNotNull(extractJsonValue(json, "downloadUrl"))
+            tokenExpiry = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(23)
         }
     }
 
@@ -301,9 +312,5 @@ class B2StorageUploadService @Inject constructor(
             .joinToString("") { "%02x".format(it) }
     }
 
-    private fun calculateSha1(bytes: ByteArray): String {
-        return MessageDigest.getInstance("SHA-1")
-            .digest(bytes)
-            .joinToString("") { "%02x".format(it) }
-    }
+
 }

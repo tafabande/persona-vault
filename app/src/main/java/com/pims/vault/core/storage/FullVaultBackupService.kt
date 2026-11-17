@@ -49,30 +49,40 @@ class FullVaultBackupService @Inject constructor(
             try {
                 database.runInTransaction {
                     db.query("SELECT sqlcipher_export('recovery_snapshot')").use { while (it.moveToNext()) { /* consume export */ } }
-                    db.execSQL("PRAGMA recovery_snapshot.user_version = 16")
-                    val root = context.filesDir
-                    FILE_ROOTS.forEach { name ->
-                        val source = safeChild(root, name)
-                        if (source.exists()) source.walkTopDown().filter { it.isFile }.forEach { file ->
-                            require(file.canonicalFile.toPath().startsWith(root.canonicalFile.toPath()))
-                            addBounded(blobs, "file:${file.relativeTo(root).invariantSeparatorsPath}", file)
-                        }
-                    }
-                    root.listFiles()?.filter { isLooseFile(it.name) && it.isFile }?.forEach { addBounded(blobs, "file:${it.name}", it) }
-                    // Metadata paths must resolve to a file included in this exact snapshot.
+                    db.execSQL("PRAGMA recovery_snapshot.user_version = 18")
+                    val root = context.filesDir.canonicalFile
+                    val referenced = mutableSetOf<String>()
                     listOf("document_versions" to "file_storage_path", "plain_note_attachments" to "storage_path",
-                        "relationship_note_attachments" to "storage_path").forEach { (table, column) ->
+                        "relationship_note_attachments" to "storage_path", "vault_proofs" to "storage_path").forEach { (table, column) ->
                         val hasColumn = db.query("PRAGMA table_info(`$table`)").use { cursor ->
                             var found = false
                             while (cursor.moveToNext()) if (cursor.getString(1) == column) found = true
                             found
                         }
-                        if (hasColumn) db.query("SELECT `$column` FROM `$table`").use { cursor ->
+                        val activeOnly = if (table == "vault_proofs") " WHERE is_deleted = 0" else ""
+                        if (hasColumn) db.query("SELECT `$column` FROM `$table`$activeOnly").use { cursor ->
                             while (cursor.moveToNext()) {
                                 val path = cursor.getString(0)
-                                require(blobs.containsKey("file:$path")) { "A referenced attachment is missing; backup was not created" }
+                                val file = if (File(path).isAbsolute) File(path).canonicalFile else safeChild(root, path)
+                                require(file.toPath().startsWith(root.canonicalFile.toPath())) { "An attachment path is outside encrypted storage" }
+                                referenced.add(file.relativeTo(root).invariantSeparatorsPath)
                             }
                         }
+                    }
+                    FILE_ROOTS.forEach { name ->
+                        val source = safeChild(root, name)
+                        if (source.exists()) source.walkTopDown().filter { it.isFile }.forEach { file ->
+                            require(file.canonicalFile.toPath().startsWith(root.canonicalFile.toPath()))
+                            val path = file.relativeTo(root).invariantSeparatorsPath
+                            // Staged writes and detached/deleted encrypted files have no live metadata reference.
+                            if (name !in listOf("vault_documents", "vault_proofs") || path in referenced) {
+                                addBounded(blobs, "file:$path", file)
+                            }
+                        }
+                    }
+                    root.listFiles()?.filter { isLooseFile(it.name) && it.isFile }?.forEach { addBounded(blobs, "file:${it.name}", it) }
+                    referenced.forEach { path ->
+                        require(blobs.containsKey("file:$path")) { "A referenced attachment is missing; backup was not created" }
                     }
                 }
             } finally { db.execSQL("DETACH DATABASE recovery_snapshot") }
@@ -82,12 +92,12 @@ class FullVaultBackupService @Inject constructor(
                 val file = File(context.applicationInfo.dataDir, "shared_prefs/$name.xml")
                 if (file.exists()) addBounded(blobs, "prefs:$name", file)
             }
-            blobs["metadata"] = JSONObject().put("version", 1).put("filesRoot", context.filesDir.absolutePath).toString().toByteArray()
+            blobs["metadata"] = JSONObject().put("version", 1).put("filesRoot", context.filesDir.absolutePath).put("canonicalFilesRoot", context.filesDir.canonicalPath).toString().toByteArray()
             require(snapshot.length() + blobs.values.sumOf { it.size.toLong() } < MAX_CONTENT_BYTES) { "The vault exceeds the backup size limit" }
             dbBytes = snapshot.readBytes()
             check(session.isZone4Unlocked()) { "The vault locked during backup; unlock and retry" }
             var exported = false
-            create.execute(passphrase, dbBytes, blobs, emptyList(), output, schemaVersion = 16).collect {
+            create.execute(passphrase, dbBytes, blobs, emptyList(), output, schemaVersion = 18).collect {
                 if (it is BackupProgressState.Error) error(it.message)
                 if (it is BackupProgressState.ExportSuccess) exported = true
                 progress(it)
@@ -117,6 +127,10 @@ class FullVaultBackupService @Inject constructor(
                 require(metadata.getInt("version") == 1)
                 val oldRoot = metadata.getString("filesRoot")
                 require(oldRoot.length > 15 && oldRoot.endsWith("/files"))
+                val sourceRoots = setOf(oldRoot, metadata.optString("canonicalFilesRoot", oldRoot))
+                    .filter { it.length > 15 && it.endsWith("/files") }
+                fun sourceRelative(path: String): String? = sourceRoots.firstOrNull { path.startsWith("$it/") }
+                    ?.let { path.removePrefix("$it/") }
                 val validationDb = File(work, "validate.db")
                 val preparedDatabase = try {
                     durableWrite(validationDb, dbBytes)
@@ -129,11 +143,35 @@ class FullVaultBackupService @Inject constructor(
                             // Pending cloud operations belong to the source account/device.
                             db.execSQL("DELETE FROM sync_queue")
                             db.execSQL("DELETE FROM sync_conflicts")
+                            val schema = db.rawQuery("PRAGMA user_version", emptyArray<String>()).use { it.moveToFirst(); it.getInt(0) }
+                            if (schema >= 17) db.execSQL("DELETE FROM calendar_reminder_links")
                             fun relocated(path: String): String {
-                                if (!path.startsWith("$oldRoot/")) return path
-                                val relative = path.removePrefix("$oldRoot/")
+                                val relative = sourceRelative(path) ?: return path
                                 require(isAllowedFile(relative) && blobs.containsKey("file:$relative")) { "A referenced photo is missing from the backup" }
                                 return safeChild(context.filesDir, relative).absolutePath
+                            }
+                            // Historical databases may contain absolute app-private encrypted paths.
+                            listOf("document_versions" to "file_storage_path", "plain_note_attachments" to "storage_path",
+                                "relationship_note_attachments" to "storage_path", "vault_proofs" to "storage_path").forEach { (table, column) ->
+                                val exists = db.rawQuery("PRAGMA table_info(`$table`)", emptyArray<String>()).use { cursor ->
+                                    var found = false
+                                    while (cursor.moveToNext()) if (cursor.getString(1) == column) found = true
+                                    found
+                                }
+                                if (exists) {
+                                    val changes = mutableListOf<Pair<String, String>>()
+                                    db.rawQuery("SELECT id, `$column` FROM `$table`", emptyArray<String>()).use { cursor ->
+                                        while (cursor.moveToNext()) {
+                                            val path = cursor.getString(1)
+                                            val relative = sourceRelative(path)
+                                            if (relative != null) {
+                                                require(isAllowedFile(relative)) { "Unsupported encrypted attachment path" }
+                                                changes.add(cursor.getString(0) to relative)
+                                            }
+                                        }
+                                    }
+                                    changes.forEach { (id, path) -> db.execSQL("UPDATE `$table` SET `$column` = ? WHERE id = ?", arrayOf(path, id)) }
+                                }
                             }
                             // Change only known local media fields, preserving user text and IDs.
                             val personPhotos = mutableListOf<Pair<String, String>>()
@@ -184,8 +222,8 @@ class FullVaultBackupService @Inject constructor(
                                 for (index in 0 until wallpapers.length()) {
                                     val item = wallpapers.getJSONObject(index)
                                     val sourcePath = item.optString("localFilePath", "")
-                                    if (sourcePath.startsWith("$oldRoot/")) {
-                                        val relative = sourcePath.removePrefix("$oldRoot/")
+                                    val relative = sourceRelative(sourcePath)
+                                    if (relative != null) {
                                         require(relative.startsWith("wallpapers/") && blobs.containsKey("file:$relative")) { "A wallpaper file is missing from the backup" }
                                         item.put("localFilePath", safeChild(context.filesDir, relative).absolutePath)
                                     }
@@ -205,6 +243,7 @@ class FullVaultBackupService @Inject constructor(
                     // Cloud identity/session credentials are never imported from a backup.
                     payloads["shared_prefs/pims_account_mode_prefs.xml"] = preferencesXml(mapOf(
                         "account_mode" to "LOCAL_ONLY", "walkthrough_completed" to true, "initial_profile_setup_completed" to true))
+                    payloads["shared_prefs/device_calendar.xml"] = preferencesXml(emptyMap())
                     payloads["shared_prefs/pims_restore_status.xml"] = preferencesXml(mapOf("sign_out" to true, "restore_applied" to true))
                     val stagingKey = stagingKeys(context).deriveDomainSubkey(STAGING_CONTEXT)
                     try {
@@ -249,6 +288,8 @@ class FullVaultBackupService @Inject constructor(
             val expectedIdentity = when (version) {
                 15 -> "ecbd2debb8974ce0e1edb23e956c623d"
                 16 -> "563033c0e51583b9678f6a9f13713a3b"
+                17 -> "344ab84df9133e409f6961d45814476f"
+                18 -> "PENDING_DOCUMENT_SCHEMA_HASH"
                 else -> error("Unsupported vault database version")
             }
             db.rawQuery("SELECT identity_hash FROM room_master_table WHERE id = 42", emptyArray<String>()).use {
@@ -263,7 +304,7 @@ class FullVaultBackupService @Inject constructor(
         private const val WORK = "pending-vault-restore"
         private const val STAGING_CONTEXT = "PIMS/restore-staging/v1"
         private const val MAX_CONTENT_BYTES = 70L * 1024 * 1024
-        private val FILE_ROOTS = listOf("vault_documents", "avatars", "contact_photos", "wallpapers", "wallpapers_meta.json", "wallpapers_active.txt")
+        private val FILE_ROOTS = listOf("vault_documents", "vault_proofs", "avatars", "contact_photos", "wallpapers", "wallpapers_meta.json", "wallpapers_active.txt")
         private val PREFS = listOf("persona_avatar_prefs", "persona_wallpaper_surfaces", "card_receipts_store",
             "pims_theme_prefs", "pims_haptics_prefs", "pims_sound_prefs", "persona_motion_prefs", "persona_mood_prefs")
         private val RECOVERY_DOMAINS = listOf(HkdfKeyDerivation.CONTEXT_DATABASE, HkdfKeyDerivation.CONTEXT_FILES,
@@ -330,7 +371,7 @@ class FullVaultBackupService @Inject constructor(
                     require(path == "databases/${PimsDatabase.DATABASE_NAME}" ||
                         path.startsWith("files/") && isAllowedFile(path.removePrefix("files/")) ||
                         path in listOf("shared_prefs/pims_keystore_wrapped_subkeys.xml", "shared_prefs/pims_portable_filekey_prefs.xml",
-                            "shared_prefs/pims_account_mode_prefs.xml", "shared_prefs/pims_restore_status.xml") || PREFS.any { path == "shared_prefs/$it.xml" })
+                            "shared_prefs/pims_account_mode_prefs.xml", "shared_prefs/pims_restore_status.xml", "shared_prefs/device_calendar.xml") || PREFS.any { path == "shared_prefs/$it.xml" })
                     val encrypted = File(work, "payloads/$index").readBytes()
                     require(encrypted.size >= 28)
                     val plain = crypto.decrypt(EncryptedPayload(encrypted.copyOfRange(12, encrypted.size), encrypted.copyOfRange(0, 12)), key.bytes, path.toByteArray())

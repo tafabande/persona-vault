@@ -90,7 +90,6 @@ import com.pims.vault.domain.model.MedicationItem
 import com.pims.vault.domain.model.PrescriptionItem
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
-import com.pims.vault.presentation.vault.screens.VaultDesignTokens
 import com.pims.vault.presentation.vault.screens.VaultGroupedCard
 import com.pims.vault.presentation.vault.screens.VaultPillActionButton
 import com.pims.vault.presentation.vault.screens.VaultUnderlineField

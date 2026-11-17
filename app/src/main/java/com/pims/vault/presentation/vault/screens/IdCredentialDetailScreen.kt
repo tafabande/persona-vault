@@ -31,6 +31,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -199,7 +200,7 @@ fun IdCredentialDetailScreen(
                             text = idType.replace("_", " "),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = VaultDesignTokens.AccentGreen,
+                            color = MaterialTheme.colorScheme.primary,
                             letterSpacing = 1.sp
                         )
                     }
@@ -338,6 +339,8 @@ fun IdCredentialDetailScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(20.dp))
+            com.pims.vault.presentation.vault.components.VaultProofSection(item.id, item.personId)
             Spacer(modifier = Modifier.height(40.dp))
         }
     }

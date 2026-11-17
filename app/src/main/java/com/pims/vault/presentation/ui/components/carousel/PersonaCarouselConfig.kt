@@ -69,7 +69,7 @@ data class CarouselPausePolicy(
  *
  * Defaults adhere to the Persona Android Carousel Specification:
  * - Autoplay: Enabled by default across carousels (configurable).
- * - Interval: 6,000 ms (6 seconds).
+ * - Interval: 3,000 ms (3 seconds).
  * - Motion: 280 ms slide duration, 220 ms swipe settling, 160 ms indicator transition.
  * - End Behaviour: Continuous loop.
  * - Indicator: None by default (clean hero aesthetic).
@@ -108,7 +108,7 @@ data class PersonaCarouselConfig(
             autoplayIntervalMs = 3000L,
             endBehaviour = CarouselEndBehaviour.CONTINUOUS_LOOP,
             indicatorStyle = CarouselIndicatorStyle.NONE,
-            slideDurationMs = 280,
+            slideDurationMs = 520,
             swipeSettlingDurationMs = 220,
             showNavigationArrows = false
         )

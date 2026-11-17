@@ -3,6 +3,8 @@ package com.pims.vault.notes
 import com.pims.vault.domain.model.PlainNote
 import com.pims.vault.presentation.notes.*
 import java.time.LocalDate
+import java.time.DayOfWeek
+import java.time.YearMonth
 import java.time.ZoneId
 import org.junit.Assert.*
 import org.junit.Test
@@ -26,11 +28,39 @@ class NotesCalendarModelTest {
         assertEquals(listOf("one"), notesOverview(listOf(note("one", pinned = true), note("two"))).map { it.id })
     }
 
-    @Test fun `creation and active reminder markers use separate dates`() {
+    @Test fun `displayed note and active reminder markers use separate dates`() {
         val markers = noteCalendarMarkers(listOf(note("a", due = time("2026-11-02")),
             note("b", due = time("2026-11-02"), done = true)), zone)
         assertEquals(NoteDayMarkers(2, 0), markers[LocalDate.parse("2026-11-01")])
         assertEquals(NoteDayMarkers(0, 1), markers[LocalDate.parse("2026-11-02")])
+    }
+
+    @Test fun `edited note date matches its row date and day selection`() {
+        val note = note("edited", created = time("2026-11-01"), updated = time("2026-11-14"))
+        val markers = noteCalendarMarkers(listOf(note), zone)
+        assertNull(markers[LocalDate.parse("2026-11-01")])
+        assertEquals(NoteDayMarkers(notes = 1), markers[LocalDate.parse("2026-11-14")])
+        assertEquals(listOf("edited"), notesForCalendarDay(listOf(note), LocalDate.parse("2026-11-14"), zone).map { it.id })
+    }
+
+    @Test fun `every month and locale week start renders every date once in complete weeks`() {
+        for (year in 2024..2028) for (monthNumber in 1..12) for (firstDay in DayOfWeek.values()) {
+            val month = YearMonth.of(year, monthNumber)
+            val dates = notesMonthDates(month, firstDay)
+            assertEquals(firstDay, dates.first().dayOfWeek)
+            assertEquals(0, dates.size % 7)
+            assertEquals(dates.size, dates.distinct().size)
+            assertEquals((1..month.lengthOfMonth()).toList(), dates.filter { YearMonth.from(it) == month }.map { it.dayOfMonth })
+            assertTrue(dates.zipWithNext().all { (a, b) -> a.plusDays(1) == b })
+        }
+    }
+
+    @Test fun `six week calendar uses real adjacent month dates instead of blank cells`() {
+        val dates = notesMonthDates(YearMonth.of(2026, 8), DayOfWeek.MONDAY)
+        assertEquals(42, dates.size)
+        assertEquals(LocalDate.of(2026, 7, 27), dates.first())
+        assertEquals(LocalDate.of(2026, 9, 6), dates.last())
+        assertEquals(LocalDate.of(2026, 8, 31), dates[35])
     }
 
     @Test fun `day selection includes due notes once and omits completed reminders`() {

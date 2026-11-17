@@ -137,7 +137,11 @@ fun VaultEditorScreen(
                 initialLinkedBankAccountId = decryptedPayment?.linkedBankAccountId ?: uiState.proposedLinkedBankAccountId,
                 initialLinkedBankAccountName = decryptedPayment?.linkedBankAccountName ?: uiState.proposedLinkedBankAccountName,
                 initialCardType = decryptedPayment?.cardType ?: "PHYSICAL",
-                onSaveCard = { bankName, holder, number, expiry, cvv, linkedAccId, linkedAccName, cardType ->
+                initialLinkedBankAccountIds = decryptedPayment?.linkedBankAccountIds ?: listOfNotNull(uiState.proposedLinkedBankAccountId),
+                proofSection = { existingItem?.let { com.pims.vault.presentation.vault.components.VaultProofSection(it.id, it.personId) } },
+                availableBankAccounts = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT },
+                isSaving = uiState.isSaving,
+                onSaveCard = { bankName, holder, number, expiry, cvv, linkedAccId, linkedAccName, cardType, linkedAccIds ->
                     val cleanExpiry = expiry.filter { it.isDigit() }
                     val month = cleanExpiry.take(2).ifBlank { decryptedPayment?.expiryMonth ?: "01" }.padStart(2, '0')
                     val year = cleanExpiry.drop(2).take(4).ifBlank { decryptedPayment?.expiryYear ?: "00" }
@@ -180,8 +184,9 @@ fun VaultEditorScreen(
                         status = decryptedPayment?.status ?: com.pims.vault.core.model.CardStatus.IN_USE,
                         fullCardNumber = fullNumberToSave,
                         cvv = cvvToSave,
-                        linkedBankAccountId = linkedAccId ?: decryptedPayment?.linkedBankAccountId ?: uiState.proposedLinkedBankAccountId,
-                        linkedBankAccountName = linkedAccName ?: decryptedPayment?.linkedBankAccountName ?: uiState.proposedLinkedBankAccountName,
+                        linkedBankAccountId = linkedAccId,
+                        linkedBankAccountName = linkedAccName,
+                        linkedBankAccountIds = linkedAccIds,
                         cardType = cardType,
                         onSaved = onNavigateBack
                     )
@@ -216,6 +221,9 @@ fun VaultEditorScreen(
                 initialBranchName = decryptedBanking?.branchName.orEmpty(),
                 initialNotes = decryptedBanking?.notes.orEmpty(),
                 initialLinkedCardId = decryptedBanking?.linkedCardId,
+                initialLinkedCardIds = decryptedBanking?.linkedCardIds.orEmpty(),
+                knownBankNames = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT }.map { it.title },
+                isSaving = uiState.isSaving,
                 initialLinkedCardSummary = decryptedBanking?.linkedCardSummary,
                 initialCurrency = decryptedBanking?.currency ?: "USD",
                 onSaveAccount = { result ->
@@ -237,6 +245,7 @@ fun VaultEditorScreen(
                         branchName = result.branchName,
                         notes = result.notes,
                         linkedCardId = result.linkedCardId,
+                        linkedCardIds = result.linkedCardIds,
                         linkedCardSummary = result.linkedCardSummary,
                         existingId = itemId,
                         currency = result.currency,

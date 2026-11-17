@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DocumentDao {
     @Transaction
-    @Query("SELECT * FROM documents WHERE person_id = :personId OR person_id = 'primary_owner' OR person_id IN (SELECT id FROM persons WHERE is_primary_owner = 1) ORDER BY created_at DESC")
+    @Query("SELECT * FROM documents WHERE person_id = :personId OR (:personId = 'primary_owner' AND person_id IN (SELECT id FROM persons WHERE is_primary_owner = 1)) ORDER BY created_at DESC")
     fun getDocumentsForPersonFlow(personId: String): Flow<List<DocumentWithVersions>>
 
     @Transaction
@@ -65,8 +65,88 @@ interface DocumentDao {
         }
     }
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertVersion(version: DocumentVersionEntity)
+
+    suspend fun getVersionById(id: String): DocumentVersionEntity? =
+        getAllDocumentVersions().firstOrNull { it.id == id }
+
+    /** A new document is visible only when its initial immutable version is committed. */
+    @Transaction
+    suspend fun createDocumentWithVersion(document: DocumentEntity, version: DocumentVersionEntity) {
+        require(version.documentId == document.id && version.versionNumber == 1)
+        check(insertDoc(document) != -1L) { "A document with this import ID already exists" }
+        insertVersion(version)
+    }
+
+    /** File creation precedes this short transaction; only the ordinal is allocated here. */
+    @Transaction
+    suspend fun appendVersion(documentId: String, version: DocumentVersionEntity): DocumentVersionEntity {
+        require(version.documentId == documentId)
+        val parent = checkNotNull(getDocumentWithVersions(documentId)?.document) { "Document no longer exists" }
+        val next = Math.addExact(getLatestVersionNumber(documentId) ?: 0, 1)
+        val allocated = version.copy(versionNumber = next)
+        insertVersion(allocated)
+        updateDoc(parent.copy(updatedAt = maxOf(parent.updatedAt, allocated.createdAt)))
+        return allocated
+    }
+
+    /** Remote snapshots cannot replace a known version or occupy an existing ordinal. */
+    @Transaction
+    suspend fun publishRemoteVersion(version: DocumentVersionEntity): Boolean {
+        if (getDocumentWithVersions(version.documentId) == null || getVersionById(version.id) != null) return false
+        if (getAllVersions(version.documentId).any { it.versionNumber == version.versionNumber }) return false
+        insertVersion(version)
+        return true
+    }
+
+    @Query("UPDATE document_versions SET file_storage_path = :path, file_size_bytes = :size, encryption_iv = :iv WHERE id = :id")
+    suspend fun updateVersionStorage(id: String, path: String, size: Long, iv: String): Int
+
+    /** Repair only the authenticated file reference while preserving immutable content and user metadata. */
+    @Transaction
+    suspend fun repairVersionStorage(expected: DocumentVersionEntity, replacement: DocumentVersionEntity): Boolean {
+        require(expected.id == replacement.id && expected.documentId == replacement.documentId &&
+            expected.versionNumber == replacement.versionNumber && expected.sha256Hash.equals(replacement.sha256Hash, true))
+        if (getVersionById(expected.id) != expected) return false
+        return updateVersionStorage(expected.id, replacement.fileStoragePath, replacement.fileSizeBytes, replacement.encryptionIv) == 1
+    }
+
+    /** Recover metadata omitted by earlier clients without replacing an edited local value. */
+    @Transaction
+    suspend fun fillMissingDocumentMetadata(expected: DocumentEntity, remote: DocumentEntity): Boolean {
+        require(expected.id == remote.id && expected.personId == remote.personId)
+        val current = getDocumentWithVersions(expected.id)?.document ?: return false
+        if (current != expected) return false
+        val restored = current.copy(
+            title = current.title.ifBlank { remote.title },
+            documentNumber = current.documentNumber ?: remote.documentNumber,
+            issuingAuthority = current.issuingAuthority ?: remote.issuingAuthority,
+            issuingCountry = current.issuingCountry ?: remote.issuingCountry,
+            issueDate = current.issueDate ?: remote.issueDate,
+            expirationDate = current.expirationDate ?: remote.expirationDate,
+            notes = current.notes ?: remote.notes,
+            createdAt = if (current.createdAt > 0) current.createdAt else remote.createdAt
+        )
+        if (restored == current) return false
+        updateDoc(restored)
+        return true
+    }
+
+    @Query("UPDATE document_versions SET original_filename = COALESCE(original_filename, :filename), notes = COALESCE(notes, :notes), created_at = CASE WHEN created_at <= 0 AND :createdAt > 0 THEN :createdAt ELSE created_at END WHERE id = :id AND document_id = :documentId AND LOWER(sha256_hash) = LOWER(:hash)")
+    suspend fun fillMissingVersionMetadata(id: String, documentId: String, hash: String, filename: String?, notes: String?, createdAt: Long): Int
+
+    /** Metadata and optional retry state detach together before ciphertext cleanup begins. */
+    @Transaction
+    suspend fun detachDocument(
+        documentId: String,
+        beforeDelete: suspend (DocumentEntity, List<DocumentVersionEntity>) -> Unit = { _, _ -> }
+    ): List<DocumentVersionEntity> {
+        val current = getDocumentWithVersions(documentId) ?: return emptyList()
+        beforeDelete(current.document, current.versions)
+        deleteDocumentById(documentId)
+        return current.versions
+    }
 
     @Query("SELECT MAX(version_number) FROM document_versions WHERE document_id = :documentId")
     suspend fun getLatestVersionNumber(documentId: String): Int?
@@ -209,6 +289,24 @@ interface VaultDao {
 
     @Update
     suspend fun updateVaultItem(item: VaultItemEntity): Int
+
+    /** All reciprocal wallet changes commit together only while their source rows still match. */
+    @Transaction
+    suspend fun persistWalletItems(expected: List<VaultItemEntity>, updated: List<VaultItemEntity>) {
+        require(updated.map { it.id }.distinct().size == updated.size)
+        updated.forEach { replacement ->
+            val source = expected.find { it.id == replacement.id }
+            val current = getVaultItemById(replacement.id)
+            check(if (source == null) current == null else current != null &&
+                current.personId == source.personId && current.category == source.category &&
+                current.updatedAt == source.updatedAt && current.title == source.title &&
+                current.accountIdentifier == source.accountIdentifier && current.notes == source.notes &&
+                current.encryptionFormatVersion == source.encryptionFormatVersion &&
+                current.encryptionKeyVersion == source.encryptionKeyVersion && current.encryptionIv == source.encryptionIv &&
+                current.encryptedPayload.contentEquals(source.encryptedPayload)) { "Wallet changed while saving. Reopen and try again." }
+        }
+        updated.forEach { insertOrUpdate(it) }
+    }
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun archiveLegacyPayload(archive: com.pims.vault.data.local.entity.VaultItemMigrationArchiveEntity): Long

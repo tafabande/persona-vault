@@ -1,65 +1,25 @@
 package com.pims.vault.presentation.document
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.SheetState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.pims.vault.core.model.DocumentType
 import com.pims.vault.core.model.SecurityClassification
 import com.pims.vault.domain.rules.DocumentRules
+import com.pims.vault.presentation.ui.components.PersonaTextInput
+import java.time.LocalDate
 
-/**
- * Compact, modern document ingestion bottom sheet conforming to
- * Section 11 of the Document Wallet overhaul specification.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentUploadSheet(
@@ -83,302 +43,126 @@ fun DocumentUploadSheet(
     onChangeFileClick: () -> Unit,
     onDismissRequest: () -> Unit,
     onConfirmSave: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    errorMessage: String? = null,
+    isAddingVersion: Boolean = false
 ) {
-    val documentTypeOptions = remember {
-        listOf(
-            DocumentType.NATIONAL_ID to "National ID",
-            DocumentType.PASSPORT to "Passport",
-            DocumentType.DRIVING_LICENCE to "Driving Licence",
-            DocumentType.BIRTH_CERTIFICATE to "Birth Certificate",
-            DocumentType.ACADEMIC_CERTIFICATE to "Degree / Certificate",
-            DocumentType.TRANSCRIPT to "Transcript",
-            DocumentType.CURRICULUM_VITAE to "CV / Resume",
-            DocumentType.EMPLOYMENT_CONTRACT to "Employment Contract",
-            DocumentType.MEDICAL_RECORD to "Medical / Health",
-            DocumentType.INSURANCE_POLICY to "Insurance Policy",
-            DocumentType.LEGAL_CONTRACT to "Legal Agreement",
-            DocumentType.PASSPORT_PHOTO to "ID / Passport Photo",
-            DocumentType.OTHER to "General Document"
-        )
-    }
-
-    val currentTypeLabel = documentTypeOptions.firstOrNull { it.first == documentType }?.second ?: "General Document"
-    var isTypeMenuExpanded by remember { mutableStateOf(false) }
-
-    val isPdf = fileName.endsWith(".pdf", ignoreCase = true) || mimeType.contains("pdf", ignoreCase = true)
-    val isImg = fileName.endsWith(".png", ignoreCase = true) || fileName.endsWith(".jpg", ignoreCase = true) ||
-            fileName.endsWith(".jpeg", ignoreCase = true) || mimeType.contains("image", ignoreCase = true)
-    val isDoc = fileName.endsWith(".doc", ignoreCase = true) || fileName.endsWith(".docx", ignoreCase = true) ||
-            mimeType.contains("word", ignoreCase = true)
-    val isSpreadsheet = fileName.endsWith(".xls", ignoreCase = true) || fileName.endsWith(".xlsx", ignoreCase = true) ||
-            fileName.endsWith(".csv", ignoreCase = true)
-
-    val fileBadgeColor = MaterialTheme.colorScheme.primary
-
-    val fileTypeTag = when {
-        isPdf -> "PDF"
-        isImg -> "IMAGE"
-        isDoc -> "DOC"
-        isSpreadsheet -> "SHEET"
-        else -> "FILE"
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = { if (!isProcessing) onDismissRequest() },
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
-                .padding(bottom = 36.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // Header: "Add document" with close button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "Add document",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                IconButton(
-                    onClick = onDismissRequest,
-                    enabled = !isProcessing,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+    val initial = remember { listOf(title, documentType.name, docNumber, authority, expiryDate, classification.name) }
+    val dirty = listOf(title, documentType.name, docNumber, authority, expiryDate, classification.name) != initial
+    var discard by remember { mutableStateOf(false) }
+    var typeMenu by remember { mutableStateOf(false) }
+    var privacyMenu by remember { mutableStateOf(false) }
+    var showDetails by remember { mutableStateOf(docNumber.isNotBlank() || authority.isNotBlank() || expiryDate.isNotBlank()) }
+    val validExpiry = expiryDate.isBlank() || runCatching { LocalDate.parse(expiryDate) }.isSuccess
+    val dismiss = { if (!isProcessing) { if (dirty) discard = true else onDismissRequest() } }
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+        Column(modifier.fillMaxWidth().imePadding().navigationBarsPadding()
+            .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (isAddingVersion) "Add version" else "Add document", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                IconButton(onClick = dismiss, enabled = !isProcessing) { Icon(Icons.Default.Close, "Close") }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 1. File Preview Card (Section 12 spec)
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(fileBadgeColor.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.Description,
-                                contentDescription = null,
-                                tint = fileBadgeColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = fileTypeTag,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = fileBadgeColor
-                            )
-                        }
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = fileName.ifBlank { "Selected Document" },
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = formatFileSize(fileSizeBytes),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    // Change file button
-                    IconButton(
-                        onClick = onChangeFileClick,
-                        enabled = !isProcessing,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Change file",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(fileName.ifBlank { "Selected file" }, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    Text(if (fileSizeBytes > 0) formatDocumentSize(fileSizeBytes) else mimeType.substringAfterLast('/').uppercase(),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                TextButton(onClick = onChangeFileClick, enabled = !isProcessing) { Text("Change") }
             }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // 2. Category Section
-            Text(
-                text = "Category",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !isProcessing) { isTypeMenuExpanded = true },
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = currentTypeLabel,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+            if (isAddingVersion) Text(title, style = MaterialTheme.typography.titleMedium)
+            if (!isAddingVersion) {
+            PersonaTextInput(title, onTitleChange, label = "Name", enabled = !isProcessing)
+            Box {
+                OutlinedButton(onClick = { typeMenu = true }, enabled = !isProcessing, modifier = Modifier.fillMaxWidth()) {
+                    Text(documentTypeLabel(documentType), Modifier.weight(1f))
+                    Icon(Icons.Default.ArrowDropDown, null)
                 }
-
-                DropdownMenu(
-                    expanded = isTypeMenuExpanded,
-                    onDismissRequest = { isTypeMenuExpanded = false }
-                ) {
-                    documentTypeOptions.forEach { (type, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            onClick = {
-                                onDocumentTypeChange(type)
+                DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
+                    DocumentType.entries.forEach { type ->
+                        DropdownMenuItem(text = { Text(documentTypeLabel(type)) }, onClick = {
+                            onDocumentTypeChange(type)
+                            if (classification != SecurityClassification.ZONE_4_CRITICAL) {
                                 onClassificationChange(DocumentRules.resolveDefaultClassification(type))
-                                isTypeMenuExpanded = false
                             }
-                        )
+                            typeMenu = false
+                        })
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // 3. Details Section
-            Text(
-                text = "Name",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Title / Name (Required)
-            OutlinedTextField(
-                value = title,
-                onValueChange = onTitleChange,
-                label = { Text("Document Name *") },
-                placeholder = { Text("e.g. Passport, National ID, Degree") },
-                singleLine = true,
-                enabled = !isProcessing,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Action Button: Save
-            Button(
-                onClick = onConfirmSave,
-                enabled = title.isNotBlank() && !isProcessing,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                    disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                )
-            ) {
-                if (isProcessing) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                        Text("Saving…", fontWeight = FontWeight.SemiBold)
-                    }
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Save Document",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
+            TextButton(onClick = { showDetails = !showDetails }, enabled = !isProcessing,
+                contentPadding = PaddingValues(0.dp)) { Text(if (showDetails) "Hide details" else "More details") }
+            if (showDetails) {
+                PersonaTextInput(docNumber, onDocNumberChange, label = "Document number", enabled = !isProcessing)
+                PersonaTextInput(authority, onAuthorityChange, label = "Issued by", enabled = !isProcessing)
+                PersonaTextInput(expiryDate, onExpiryDateChange, label = "Expiry date", placeholder = "YYYY-MM-DD",
+                    enabled = !isProcessing, isError = !validExpiry)
+                if (!validExpiry) Text("Enter a date as YYYY-MM-DD", color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            Box {
+                TextButton(onClick = { privacyMenu = true }, enabled = !isProcessing && classification != SecurityClassification.ZONE_4_CRITICAL,
+                    contentPadding = PaddingValues(0.dp)) {
+                    Text("Privacy · ${documentPrivacyLabel(classification)}")
+                    Icon(Icons.Default.ArrowDropDown, null)
+                }
+                DropdownMenu(expanded = privacyMenu, onDismissRequest = { privacyMenu = false }) {
+                    listOf(SecurityClassification.ZONE_1_PERSONAL, SecurityClassification.ZONE_2_PRIVATE,
+                        SecurityClassification.ZONE_3_SENSITIVE).forEach { privacy ->
+                        DropdownMenuItem(text = { Text(documentPrivacyLabel(privacy)) }, onClick = {
+                            onClassificationChange(privacy); privacyMenu = false
+                        })
                     }
                 }
+            }
+            }
+            errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            Button(onClick = onConfirmSave, enabled = title.isNotBlank() && validExpiry && !isProcessing,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                if (isProcessing) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(if (isProcessing) "Saving…" else if (isAddingVersion) "Save version" else "Save document")
             }
         }
     }
+    if (discard) AlertDialog(onDismissRequest = { discard = false }, title = { Text("Discard document details?") },
+        confirmButton = { TextButton(onClick = { discard = false; onDismissRequest() }) { Text("Discard") } },
+        dismissButton = { TextButton(onClick = { discard = false }) { Text("Keep editing") } })
 }
 
-private fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val kb = bytes / 1024.0
-    val mb = kb / 1024.0
-    return when {
-        mb >= 1.0 -> String.format("%.1f MB", mb)
-        kb >= 1.0 -> String.format("%.0f KB", kb)
-        else -> "$bytes B"
-    }
+internal fun documentTypeLabel(type: DocumentType): String = when (type) {
+    DocumentType.NATIONAL_ID -> "National ID"
+    DocumentType.PASSPORT -> "Passport"
+    DocumentType.DRIVING_LICENCE -> "Driving licence"
+    DocumentType.BIRTH_CERTIFICATE -> "Birth certificate"
+    DocumentType.ACADEMIC_CERTIFICATE -> "Certificate or degree"
+    DocumentType.TRANSCRIPT -> "Transcript"
+    DocumentType.CURRICULUM_VITAE -> "CV or résumé"
+    DocumentType.EMPLOYMENT_CONTRACT -> "Employment contract"
+    DocumentType.MEDICAL_RECORD -> "Medical record"
+    DocumentType.INSURANCE_POLICY -> "Insurance policy"
+    DocumentType.LEGAL_CONTRACT -> "Legal agreement"
+    DocumentType.PASSPORT_PHOTO -> "ID photo"
+    DocumentType.OTHER -> "Other document"
+}
+
+internal fun documentPrivacyLabel(value: SecurityClassification): String = when (value) {
+    SecurityClassification.ZONE_0_PUBLIC -> "Public"
+    SecurityClassification.ZONE_1_PERSONAL -> "Personal"
+    SecurityClassification.ZONE_2_PRIVATE -> "Private"
+    SecurityClassification.ZONE_3_SENSITIVE -> "Sensitive"
+    SecurityClassification.ZONE_4_CRITICAL -> "Security Vault"
+}
+
+internal fun formatDocumentSize(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+    bytes >= 1024 -> "${bytes / 1024} KB"
+    else -> "$bytes B"
 }

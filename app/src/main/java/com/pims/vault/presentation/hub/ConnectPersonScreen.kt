@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.core.storage.readBoundedBytes
+
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -61,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -92,6 +95,9 @@ import com.pims.vault.core.model.ContactType
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
 
@@ -160,24 +166,40 @@ fun ConnectPersonScreen(
     var selectedPhotoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var selectedPhotoPath by remember { mutableStateOf<String?>(null) }
 
+    var isPickingPhoto by remember { mutableStateOf(false) }
+    var photoError by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(selectedPhotoBitmap) {
+        val bitmap = selectedPhotoBitmap
+        onDispose { bitmap?.recycle() }
+    }
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            try {
-                context.contentResolver.openInputStream(it)?.use { stream ->
-                    val bmp = BitmapFactory.decodeStream(stream)
-                    if (bmp != null) {
-                        selectedPhotoBitmap = bmp
-                        val photosDir = File(context.filesDir, "contact_photos").apply { mkdirs() }
-                        val destFile = File(photosDir, "contact_${System.currentTimeMillis()}.jpg")
-                        FileOutputStream(destFile).use { out ->
-                            bmp.compress(Bitmap.CompressFormat.JPEG, 92, out)
-                        }
-                        selectedPhotoPath = destFile.absolutePath
+        if (uri != null && !isPickingPhoto) {
+            isPickingPhoto = true
+            photoError = null
+            coroutineScope.launch {
+                var imported: Pair<Bitmap, String>? = null
+                try {
+                    withContext(Dispatchers.IO) { imported = importContactPhoto(context, uri) }
+                    val photo = checkNotNull(imported)
+                    val previousPath = selectedPhotoPath
+                    selectedPhotoBitmap = photo.first
+                    selectedPhotoPath = photo.second
+                    imported = null
+                    withContext(Dispatchers.IO) { removeDraftContactPhoto(context, previousPath) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    photoError = "Could not add this photo. Choose an image up to 8 MB and try again."
+                } finally {
+                    imported?.let { (bitmap, path) ->
+                        bitmap.recycle()
+                        removeDraftContactPhoto(context, path)
                     }
+                    isPickingPhoto = false
                 }
-            } catch (_: Exception) {}
+            }
         }
     }
 
@@ -260,20 +282,33 @@ fun ConnectPersonScreen(
                     if (photo != null) {
                         Image(
                             bitmap = photo.asImageBitmap(), contentDescription = "Contact photo", contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(80.dp).clip(CircleShape).clickable { photoPickerLauncher.launch("image/*") }
+                            modifier = Modifier.size(80.dp).clip(CircleShape).clickable(enabled = !isPickingPhoto) { photoPickerLauncher.launch("image/*") }
                         )
                     } else {
                         com.pims.vault.presentation.ui.components.DefaultAvatar(
                             name = relName.ifBlank { "Person" }, size = 80.dp,
-                            onClick = { photoPickerLauncher.launch("image/*") }
+                            onClick = { if (!isPickingPhoto) photoPickerLauncher.launch("image/*") }
                         )
                     }
-                    IconButton(onClick = { photoPickerLauncher.launch("image/*") }) {
+                    IconButton(enabled = !isPickingPhoto, onClick = { photoPickerLauncher.launch("image/*") }) {
                         Icon(Icons.Default.CameraAlt, "Upload a photo", tint = MaterialTheme.colorScheme.primary)
                     }
                     if (photo != null) {
-                        TextButton(onClick = { selectedPhotoBitmap = null; selectedPhotoPath = null }) { Text("Remove photo") }
+                        TextButton(enabled = !isPickingPhoto, onClick = {
+                            val path = selectedPhotoPath
+                            selectedPhotoBitmap = null
+                            selectedPhotoPath = null
+                            photoError = null
+                            coroutineScope.launch(Dispatchers.IO) { removeDraftContactPhoto(context, path) }
+                        }) { Text("Remove photo") }
                     }
+                }
+
+                if (isPickingPhoto) {
+                    Text("Adding photo…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+                photoError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
 
                 // Section 1: Relationship & Identity
@@ -475,7 +510,9 @@ fun ConnectPersonScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Button(
+                    enabled = !isPickingPhoto,
                     onClick = {
+                        if (isPickingPhoto) return@Button
                         attemptedSave = true
                         if (relRole.isBlank()) {
                             haptics.warning()
@@ -647,4 +684,42 @@ private fun RelationshipContactEditor(
             if (index < entries.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f))
         }
     }
+}
+
+private fun importContactPhoto(context: android.content.Context, uri: Uri): Pair<Bitmap, String> {
+    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBoundedBytes(8 * 1024 * 1024) }
+        ?: error("Could not read photo")
+    try {
+        require(bytes.isNotEmpty() && bytes.size <= 8 * 1024 * 1024)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 48_000_000)
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1024) sample *= 2
+        val bitmap = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+            BitmapFactory.Options().apply { inSampleSize = sample }))
+        var file: File? = null
+        try {
+            val photos = File(context.filesDir, "contact_photos").apply { check(isDirectory || mkdirs()) }
+            val destination = File.createTempFile("contact_", ".jpg", photos)
+            file = destination
+            FileOutputStream(destination).use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output))
+            }
+            return bitmap to destination.absolutePath
+        } catch (error: Exception) {
+            bitmap.recycle()
+            file?.delete()
+            throw error
+        }
+    } finally {
+        bytes.fill(0)
+    }
+}
+
+private fun removeDraftContactPhoto(context: android.content.Context, path: String?) {
+    if (path == null) return
+    val root = File(context.filesDir, "contact_photos").canonicalFile
+    val file = File(path).canonicalFile
+    if (file.parentFile == root && file.name.startsWith("contact_")) file.delete()
 }

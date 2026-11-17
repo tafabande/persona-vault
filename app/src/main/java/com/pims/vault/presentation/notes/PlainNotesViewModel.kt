@@ -35,11 +35,17 @@ class PlainNotesViewModel @Inject constructor(
     private val repository: PlainNotesRepository,
     private val personDao: PersonDao,
     private val relationshipDao: RelationshipDao,
-    private val vaultDao: VaultDao
+    private val vaultDao: VaultDao,
+    private val calendarCoordinator: com.pims.vault.core.calendar.NoteCalendarCoordinator
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlainNotesUiState())
     val uiState: StateFlow<PlainNotesUiState> = _uiState.asStateFlow()
+    val calendarState = calendarCoordinator.state
+
+    fun refreshCalendar(month: java.time.YearMonth) = calendarCoordinator.refresh(month)
+    fun selectCalendar(id: Long) = calendarCoordinator.selectCalendar(id)
+    fun disconnectCalendar() = calendarCoordinator.disconnect()
 
     private val isSavingInProgress = AtomicBoolean(false)
 

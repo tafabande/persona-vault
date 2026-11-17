@@ -3,8 +3,6 @@ package com.pims.vault.core.crypto
 import android.content.Context
 import android.util.Base64
 import dagger.hilt.android.qualifiers.ApplicationContext
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -47,6 +45,7 @@ class PortableFileKeyManager @Inject constructor(
         private const val KEY_CIPHER = "pfk_wrap_cipher"
         private const val KEY_ID = "pfk_key_id"
         private const val AAD = "PIMS/portable-filekey/v1"
+        private const val ARCHIVE_PREFIX = "pfk_archive_"
     }
 
     private val prefs get() = sharedPreferences ?: context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -104,11 +103,45 @@ class PortableFileKeyManager @Inject constructor(
     @Synchronized
     fun importRecoveredKey(portableKey: ByteArray, keyId: String? = null) {
         require(portableKey.size == 32) { "Portable key must be 32 bytes" }
-        cachedPfk?.close()
-        cachedPfk = null
+        // Authentication of existing material must succeed before an import can replace it.
+        // The old wrapped envelope is archived in the same preference commit as the new key.
+        val previous = cachedPfk ?: tryUnwrapLocal()
         val secret = SecretBytes(portableKey)
-        try { wrapLocal(secret, keyId) } catch (error: Exception) { secret.close(); throw error }
+        try {
+            wrapLocal(secret, keyId, previous)
+        } catch (failure: Exception) {
+            secret.close()
+            if (previous !== cachedPfk) previous?.close()
+            throw failure
+        }
+        cachedPfk?.close()
+        if (previous !== cachedPfk) previous?.close()
         cachedPfk = secret
+    }
+
+    /** Historical keys remain device-wrapped and are returned only as owned, wipeable copies. */
+    @Synchronized
+    fun historicalKeyBytes(): List<ByteArray> {
+        val keys = mutableListOf<ByteArray>()
+        try {
+            prefs.all.keys.filter { it.startsWith(ARCHIVE_PREFIX) && it.endsWith("_cipher") }.sorted().forEach { name ->
+                val prefix = name.removeSuffix("_cipher")
+                val iv = prefs.getString(prefix + "_iv", null) ?: return@forEach
+                val cipher = prefs.getString(name, null) ?: return@forEach
+                try { unwrap(iv, cipher).use { keys.add(it.copyBytes()) } }
+                catch (_: WrappedPortableKeyDecryptionException) { /* Retain unreadable archived material for recovery. */ }
+            }
+            return keys
+        } catch (failure: Exception) { keys.forEach { it.fill(0) }; throw failure }
+    }
+
+    @Synchronized
+    fun copyReadKeyCandidates(): List<ByteArray> {
+        val keys = mutableListOf(copyKeyBytes())
+        try {
+            historicalKeyBytes().forEach { old -> if (keys.any { it.contentEquals(old) }) old.fill(0) else keys.add(old) }
+            return keys
+        } catch (failure: Exception) { keys.forEach { it.fill(0) }; throw failure }
     }
 
     /** Forgets the in-memory copy (lock). Local wrapped copy stays for next unlock. */
@@ -144,43 +177,43 @@ class PortableFileKeyManager @Inject constructor(
             )
         }
 
+        return unwrap(ivB64, cipherB64)
+    }
+
+    private fun unwrap(ivBase64: String, cipherBase64: String): SecretBytes {
         return try {
-            val master = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
-            try {
-                val iv = base64Decode(ivB64)
-                val cipherBytes = base64Decode(cipherB64)
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                cipher.init(Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(master.bytes, "AES"), GCMParameterSpec(128, iv))
-                cipher.updateAAD(AAD.toByteArray(Charsets.UTF_8))
-                val raw = cipher.doFinal(cipherBytes)
+            keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES).use { master ->
+                val raw = cryptoEngine.decrypt(EncryptedPayload(base64Decode(cipherBase64), base64Decode(ivBase64)),
+                    master.bytes, AAD.toByteArray(Charsets.UTF_8))
                 try { SecretBytes(raw) } finally { raw.fill(0) }
-            } finally {
-                master.close()
             }
-        } catch (e: Exception) {
-            throw WrappedPortableKeyDecryptionException(
-                "Existing wrapped portable file key failed to decrypt or authenticate",
-                cause = e
-            )
+        } catch (failure: Exception) {
+            throw WrappedPortableKeyDecryptionException(cause = failure)
         }
     }
 
-    private fun wrapLocal(secret: SecretBytes, keyId: String? = null) {
-        val master = keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES)
-        try {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, javax.crypto.spec.SecretKeySpec(master.bytes, "AES"))
-            cipher.updateAAD(AAD.toByteArray(Charsets.UTF_8))
-            val wrapped = cipher.doFinal(secret.bytes)
-            val iv = base64Encode(cipher.iv)
-            val ciphertext = base64Encode(wrapped)
-            val editor = prefs.edit().putString(KEY_IV, iv).putString(KEY_CIPHER, ciphertext)
-            if (keyId != null) editor.putString(KEY_ID, keyId)
-            check(editor.commit() && prefs.getString(KEY_IV, null) == iv && prefs.getString(KEY_CIPHER, null) == ciphertext) {
-                "Portable key persistence failed; refusing an ephemeral key"
+    private fun wrapLocal(secret: SecretBytes, keyId: String? = null, previous: SecretBytes? = null) {
+        keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES).use { master ->
+            val wrapped = cryptoEngine.encrypt(secret.bytes, master.bytes, AAD.toByteArray(Charsets.UTF_8))
+            val verified = cryptoEngine.decrypt(wrapped, master.bytes, AAD.toByteArray(Charsets.UTF_8))
+            try { check(java.security.MessageDigest.isEqual(secret.bytes, verified)) { "Portable key read-back failed" } }
+            finally { verified.fill(0) }
+            val iv = base64Encode(wrapped.iv)
+            val cipher = base64Encode(wrapped.combinedCiphertextWithTag)
+            val editor = prefs.edit().putString(KEY_IV, iv).putString(KEY_CIPHER, cipher)
+            if (previous != null && !java.security.MessageDigest.isEqual(previous.bytes, secret.bytes)) {
+                val fingerprint = java.security.MessageDigest.getInstance("SHA-256").digest(previous.bytes)
+                    .joinToString("") { "%02x".format(it) }
+                val oldIv = prefs.getString(KEY_IV, null)
+                val oldCipher = prefs.getString(KEY_CIPHER, null)
+                check(oldIv != null && oldCipher != null) { "Previous key envelope is missing" }
+                editor.putString(ARCHIVE_PREFIX + fingerprint + "_iv", oldIv)
+                    .putString(ARCHIVE_PREFIX + fingerprint + "_cipher", oldCipher)
             }
-        } finally {
-            master.close()
+            if (keyId != null) editor.putString(KEY_ID, keyId)
+            check(editor.commit() && prefs.getString(KEY_IV, null) == iv && prefs.getString(KEY_CIPHER, null) == cipher) {
+                "Portable key persistence failed; previous key material was retained"
+            }
         }
     }
 }

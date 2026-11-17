@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
@@ -58,6 +59,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import com.pims.vault.presentation.ui.components.PersonaSwitch as Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -616,10 +618,12 @@ fun AddOrEditRelationshipNoteDialog(
     val changeContent: (TextFieldValue) -> Unit = { next ->
         if (next.text != contentValue.text) {
             undo.add(contentValue)
+            if (undo.size > 50) undo.removeAt(0)
             redo.clear()
         }
         contentValue = next
     }
+    val privateLocked = (isPrivate || initialNote?.isPrivate == true) && !isVaultUnlocked
     Dialog(
         onDismissRequest = requestDismiss,
         properties = DialogProperties(
@@ -642,7 +646,7 @@ fun AddOrEditRelationshipNoteDialog(
                         Modifier.weight(1f), style = MaterialTheme.typography.titleLarge
                     )
                     Box {
-                        IconButton(onClick = { editMenuExpanded = true }, enabled = !isSaving) {
+                        IconButton(onClick = { editMenuExpanded = true }, enabled = !isSaving && !privateLocked) {
                             Icon(Icons.Default.MoreVert, "Editing actions")
                         }
                         DropdownMenu(editMenuExpanded, { editMenuExpanded = false }) {
@@ -702,41 +706,43 @@ fun AddOrEditRelationshipNoteDialog(
                     Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = topic, onValueChange = { topic = it }, enabled = !isSaving,
-                        textStyle = MaterialTheme.typography.headlineMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                        decorationBox = { field ->
-                            if (topic.isEmpty()) Text("Title", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            field()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = contentValue,
-                        onValueChange = { next -> changeContent(com.pims.vault.presentation.notes.NoteEditorLogic.handleEnterKeyForBullets(contentValue, next)) },
-                        enabled = !isSaving,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, lineHeight = 26.sp),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                        decorationBox = { field ->
-                            if (contentValue.text.isEmpty()) Text("Write a note…", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            field()
-                        },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp)
-                    )
-                    initialNote?.attachments?.filterNot { it.id in removals }?.forEach { attachment ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${attachment.mimeType.substringAfter('/').uppercase()} · ${attachment.fileSizeBytes / 1024} KB", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                            IconButton(onClick = { removals.add(attachment.id) }, enabled = !isSaving) {
-                                Icon(Icons.Default.DeleteOutline, "Remove attachment")
+                    if (!privateLocked) {
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = topic, onValueChange = { topic = it }, enabled = !isSaving,
+                            textStyle = MaterialTheme.typography.headlineMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { field ->
+                                if (topic.isEmpty()) Text("Title", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                field()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = contentValue,
+                            onValueChange = { next -> changeContent(com.pims.vault.presentation.notes.NoteEditorLogic.handleEnterKeyForBullets(contentValue, next)) },
+                            enabled = !isSaving,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, lineHeight = 26.sp),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { field ->
+                                if (contentValue.text.isEmpty()) Text("Write a note…", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                field()
+                            },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp)
+                        )
+                        initialNote?.attachments?.filterNot { it.id in removals }?.forEach { attachment ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("${attachment.mimeType.substringAfter('/').uppercase()} · ${attachment.fileSizeBytes / 1024} KB", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                IconButton(onClick = { removals.add(attachment.id) }, enabled = !isSaving) {
+                                    Icon(Icons.Default.DeleteOutline, "Remove attachment")
+                                }
                             }
                         }
-                    }
-                    attachments.forEachIndexed { index, attachment ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${attachment.mimeType.substringAfter('/').uppercase()} · ${attachment.bytes.size / 1024} KB", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                            IconButton(onClick = { attachments.removeAt(index).bytes.fill(0) }, enabled = !isSaving) {
-                                Icon(Icons.Default.DeleteOutline, "Remove attachment")
+                        attachments.forEachIndexed { index, attachment ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("${attachment.mimeType.substringAfter('/').uppercase()} · ${attachment.bytes.size / 1024} KB", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                IconButton(onClick = { attachments.removeAt(index).bytes.fill(0) }, enabled = !isSaving) {
+                                    Icon(Icons.Default.DeleteOutline, "Remove attachment")
+                                }
                             }
                         }
                     }
@@ -745,15 +751,15 @@ fun AddOrEditRelationshipNoteDialog(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(enabled = !isSaving, onClick = {
+                    IconButton(enabled = !isSaving && !privateLocked, onClick = {
                         changeContent(com.pims.vault.presentation.notes.NoteEditorLogic.toggleBulletAtCurrentLine(contentValue))
                         format = NoteFormat.BULLETS
                     }) { Icon(Icons.Default.FormatListBulleted, "Bullet list") }
-                    IconButton(enabled = !isSaving, onClick = {
+                    IconButton(enabled = !isSaving && !privateLocked, onClick = {
                         changeContent(com.pims.vault.presentation.notes.NoteEditorLogic.toggleNumberedListAtCurrentLine(contentValue))
                         format = NoteFormat.NUMBERED
                     }) { Icon(Icons.Default.FormatListNumbered, "Numbered list") }
-                    IconButton(enabled = !isSaving && !isPicking, onClick = {
+                    IconButton(enabled = !isSaving && !isPicking && !privateLocked, onClick = {
                         picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf"))
                     }) { Icon(Icons.Default.AttachFile, if (isPicking) "Adding attachment" else "Attach photo or PDF") }
                     Spacer(Modifier.weight(1f))

@@ -118,7 +118,10 @@ data class DocumentVersionEntity(
     val notes: String? = null,
 
     @ColumnInfo(name = "created_at")
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "original_filename")
+    val originalFilename: String? = null
 )
 
 @Entity(

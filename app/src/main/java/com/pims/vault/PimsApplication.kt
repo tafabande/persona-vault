@@ -66,6 +66,7 @@ class PimsApplication : Application() {
             )
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 entryPoint.noteReminderScheduler().rescheduleAllActiveReminders()
+                entryPoint.noteCalendarCoordinator().refresh()
             }
         } catch (e: Exception) {
             VaultLogger.e("PimsApplication", "Failed to reschedule note reminders on startup", e)

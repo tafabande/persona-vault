@@ -174,7 +174,7 @@ data class AddressEntity(
     val isCurrent: Boolean = true,
 
     @ColumnInfo(name = "valid_from")
-    val validFrom: Long = System.currentTimeMillis(),
+    val validFrom: Long? = null,
 
     @ColumnInfo(name = "valid_to")
     val validTo: Long? = null,

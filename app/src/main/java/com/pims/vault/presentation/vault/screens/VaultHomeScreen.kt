@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -631,13 +632,13 @@ private fun VaultCardItem(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(VaultDesignTokens.AccentGreen.copy(alpha = 0.20f))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f))
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
                             text = "Linked",
                             fontSize = 10.sp,
-                            color = VaultDesignTokens.AccentGreen,
+                            color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -701,13 +702,13 @@ private fun VaultBankAccountRow(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(VaultDesignTokens.AccentGreen.copy(alpha = 0.12f)),
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.AccountBalance,
                     contentDescription = null,
-                    tint = VaultDesignTokens.AccentGreen,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -731,13 +732,13 @@ private fun VaultBankAccountRow(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(VaultDesignTokens.AccentGreen.copy(alpha = 0.15f))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
                                 .padding(horizontal = 5.dp, vertical = 1.dp)
                         ) {
                             Text(
                                 text = "Linked",
                                 fontSize = 9.sp,
-                                color = VaultDesignTokens.AccentGreen,
+                                color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -812,7 +813,7 @@ private fun IdMembershipRow(
             text = statusText,
             fontSize = 12.sp,
             fontWeight = if (isNotAdded) FontWeight.Normal else FontWeight.SemiBold,
-            color = if (!isNotAdded) VaultDesignTokens.AccentGreen else getVaultTextSecondary().copy(alpha = 0.7f)
+            color = if (!isNotAdded) MaterialTheme.colorScheme.primary else getVaultTextSecondary().copy(alpha = 0.7f)
         )
         Spacer(modifier = Modifier.width(6.dp))
         Icon(

@@ -54,17 +54,12 @@ android {
             useSupportLibrary = true
         }
 
-        // Backblaze B2 credentials — NEVER hardcode. Resolve via
-        // Environment > secrets.properties > local.properties.
-        // Rotate the exposed key in the B2 console, then populate these locally/CI.
-        val b2KeyId = resolveSecret("B2_KEY_ID") ?: ""
-        val b2AppKey = resolveSecret("B2_APP_KEY") ?: ""
-        val b2BucketId = resolveSecret("B2_BUCKET_ID") ?: ""
-        val b2BucketName = resolveSecret("B2_BUCKET_NAME") ?: ""
-        buildConfigField("String", "B2_KEY_ID", "\"$b2KeyId\"")
-        buildConfigField("String", "B2_APP_KEY", "\"$b2AppKey\"")
-        buildConfigField("String", "B2_BUCKET_ID", "\"$b2BucketId\"")
-        buildConfigField("String", "B2_BUCKET_NAME", "\"$b2BucketName\"")
+        // New media uses authenticated account storage. Keep legacy configuration
+        // slots empty so provider credentials cannot be compiled into the APK.
+        buildConfigField("String", "B2_KEY_ID", "\"\"")
+        buildConfigField("String", "B2_APP_KEY", "\"\"")
+        buildConfigField("String", "B2_BUCKET_ID", "\"\"")
+        buildConfigField("String", "B2_BUCKET_NAME", "\"\"")
     }
 
     signingConfigs {
@@ -144,6 +139,8 @@ android {
             )
         }
     }
+
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -222,6 +219,7 @@ dependencies {
 
     // Unit & Integration Testing
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
     testImplementation(libs.mockito.kotlin)
     testImplementation(libs.kotlinx.coroutines.test)

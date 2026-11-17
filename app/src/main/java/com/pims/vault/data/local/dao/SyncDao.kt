@@ -26,16 +26,16 @@ interface SyncQueueDao {
     @Query("DELETE FROM sync_queue WHERE id = :id")
     suspend fun deleteById(id: String)
 
-    @Query("SELECT * FROM sync_queue WHERE status = 'PENDING' ORDER BY created_at ASC")
+    @Query("SELECT * FROM sync_queue WHERE status IN ('PENDING', 'IN_PROGRESS', 'FAILED') ORDER BY created_at ASC")
     fun getPendingOperationsFlow(): Flow<List<SyncQueueEntity>>
 
-    @Query("SELECT * FROM sync_queue WHERE status = 'PENDING' ORDER BY created_at ASC")
+    @Query("SELECT * FROM sync_queue WHERE status IN ('PENDING', 'IN_PROGRESS', 'FAILED') ORDER BY created_at ASC")
     suspend fun getPendingOperations(): List<SyncQueueEntity>
 
     @Query("SELECT * FROM sync_queue WHERE entity_type = :entityType AND entity_id = :entityId AND status = 'PENDING' LIMIT 1")
     suspend fun findPendingByEntity(entityType: String, entityId: String): SyncQueueEntity?
 
-    @Query("SELECT COUNT(*) FROM sync_queue WHERE status = 'PENDING'")
+    @Query("SELECT COUNT(*) FROM sync_queue WHERE status IN ('PENDING', 'IN_PROGRESS')")
     fun getPendingCountFlow(): Flow<Int>
 
     @Query("SELECT COUNT(*) FROM sync_queue WHERE status = 'CONFLICT'")

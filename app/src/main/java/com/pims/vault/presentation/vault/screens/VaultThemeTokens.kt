@@ -47,49 +47,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.ui.theme.DarkCanvas
-import com.pims.vault.presentation.ui.theme.DarkSurfaceGrouped
-import com.pims.vault.presentation.ui.theme.DarkBorderSubtle
-import com.pims.vault.presentation.ui.theme.LightCanvas
-import com.pims.vault.presentation.ui.theme.LightSurfaceGrouped
-import com.pims.vault.presentation.ui.theme.LightBorderSubtle
 import com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import com.pims.vault.presentation.ui.theme.PimsRadius
 import com.pims.vault.presentation.ui.theme.PimsTheme
 import com.pims.vault.presentation.ui.theme.PimsColors
 import androidx.compose.foundation.BorderStroke
-
-object VaultDesignTokens {
-    val BackgroundLight = LightCanvas
-    val BackgroundDark = DarkCanvas
-
-    val CardSurfaceLight = LightSurfaceGrouped
-    val CardSurfaceDark = DarkSurfaceGrouped
-
-    val BorderLight = LightBorderSubtle
-    val BorderDark = DarkBorderSubtle
-
-    val TextPrimaryLight = Color(0xFF111827)
-    val TextPrimaryDark = Color(0xFFF9FAFB)
-
-    val TextSecondaryLight = Color(0xFF6B7280)
-    val TextSecondaryDark = Color(0xFF9CA3AF)
-
-    val PillButtonLight = Color(0xFF18181B)
-    val PillButtonDark = Color(0xFF2C323D)
-
-    val PillTextLight = Color(0xFFFFFFFF)
-    val PillTextDark = Color(0xFFF9FAFB)
-
-    // Card background brand gradients
-    val CardDebit = Color(0xFF1A5336)
-    val CardCredit = Color(0xFF0284C7)
-    val CardVirtual = Color(0xFF7A0C2E)
-    val CardEcocash = Color(0xFF790D2D)
-    val CardCabs = Color(0xFF1E2A3A)
-    val AccentGreen = Color(0xFF10B981)
-}
 
 @Composable
 fun getVaultBackground(): Color =

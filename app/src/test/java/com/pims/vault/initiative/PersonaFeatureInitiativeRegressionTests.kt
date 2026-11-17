@@ -110,6 +110,12 @@ class PersonaFeatureInitiativeRegressionTests {
         auditLogger = auditLogger
     )
 
+    private suspend fun createOwnedBank(): String =
+        com.pims.vault.domain.usecase.vault.SaveBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger)(
+            CANONICAL_PRIMARY_OWNER_ID, "Fixture Bank", "Jane Doe", "1234567890", "Current",
+            "", "", "", "", "", "", null, rootKey
+        )
+
     @Before
     fun setUp() {
         inMemoryVaultItems.clear()
@@ -122,6 +128,7 @@ class PersonaFeatureInitiativeRegressionTests {
 
     @Test
     fun testPhysicalCardCreationAndProperties() = runBlocking {
+        val bankId = createOwnedBank()
         val cardId = savePaymentReferenceUseCase(
             personId = CANONICAL_PRIMARY_OWNER_ID,
             nickname = "Personal Visa Debit",
@@ -132,7 +139,7 @@ class PersonaFeatureInitiativeRegressionTests {
             year = "2028",
             notes = "Physical standard debit",
             vaultRootKey = rootKey,
-            linkedBankAccountId = "bank-acc-1",
+            linkedBankAccountId = bankId,
             cardType = "PHYSICAL"
         )
 
@@ -142,11 +149,12 @@ class PersonaFeatureInitiativeRegressionTests {
         assertFalse(secret.isVirtual)
         assertFalse(secret.isVirtualCard)
         assertEquals("VISA", secret.provider)
-        assertEquals("bank-acc-1", secret.linkedBankAccountId)
+        assertEquals(bankId, secret.linkedBankAccountId)
     }
 
     @Test
     fun testVirtualCardCreationAndProperties() = runBlocking {
+        val bankId = createOwnedBank()
         val cardId = savePaymentReferenceUseCase(
             personId = CANONICAL_PRIMARY_OWNER_ID,
             nickname = "Online Subscriptions Card",
@@ -157,7 +165,7 @@ class PersonaFeatureInitiativeRegressionTests {
             year = "2029",
             notes = "Virtual subscription card",
             vaultRootKey = rootKey,
-            linkedBankAccountId = "bank-acc-2",
+            linkedBankAccountId = bankId,
             cardType = "VIRTUAL"
         )
 
@@ -214,6 +222,8 @@ class PersonaFeatureInitiativeRegressionTests {
             override suspend fun insertDoc(document: DocumentEntity): Long = 1L
             override suspend fun updateDoc(document: DocumentEntity) {}
             override suspend fun insertVersion(version: DocumentVersionEntity) {}
+            override suspend fun updateVersionStorage(id: String, path: String, size: Long, iv: String): Int = 0
+            override suspend fun fillMissingVersionMetadata(id: String, documentId: String, hash: String, filename: String?, notes: String?, createdAt: Long): Int = 0
             override suspend fun getLatestVersionNumber(documentId: String): Int? = 1
             override suspend fun getAllVersions(documentId: String): List<DocumentVersionEntity> = emptyList()
             override suspend fun deleteDocument(document: DocumentEntity) {}
