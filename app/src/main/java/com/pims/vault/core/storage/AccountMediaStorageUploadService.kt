@@ -46,20 +46,20 @@ class AccountMediaStorageUploadService @Inject constructor(
     }
 
     override suspend fun uploadDocumentVersion(personId: String, documentId: String, mimeType: String,
-        plaintextBytes: ByteArray): StorageUploadService.UploadResult = uploadEnvelope(plaintextBytes)
+        plaintextBytes: ByteArray): StorageUploadService.UploadResult = uploadEnvelope(plaintextBytes, owner())
 
     override suspend fun uploadNoteAttachment(ownerPersonId: String, noteId: String, mimeType: String,
-        plaintextBytes: ByteArray): StorageUploadService.UploadResult = uploadEnvelope(plaintextBytes)
+        plaintextBytes: ByteArray): StorageUploadService.UploadResult = uploadEnvelope(plaintextBytes, ownerPersonId)
 
     override suspend fun uploadProfilePhoto(ownerUid: String, photoKind: String, photoId: String, mimeType: String,
         plaintextBytes: ByteArray): StorageUploadService.UploadResult {
-        requireOwner(ownerUid)
-        return uploadEnvelope(plaintextBytes)
+        return uploadEnvelope(plaintextBytes, ownerUid)
     }
 
-    private suspend fun uploadEnvelope(plain: ByteArray): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
+    private suspend fun uploadEnvelope(plain: ByteArray, expectedOwnerUid: String): StorageUploadService.UploadResult = withContext(Dispatchers.IO) {
+        requireOwner(expectedOwnerUid)
         require(plain.isNotEmpty() && plain.size <= MAX_ENVELOPE_PLAIN_BYTES) { "Media exceeds the supported size" }
-        val uid = owner()
+        val uid = expectedOwnerUid
         val key = portable.copyKeyBytes()
         val payload = try { crypto.encrypt(plain, key) } finally { key.fill(0) }
         val bytes = payload.combinedCiphertextWithTag

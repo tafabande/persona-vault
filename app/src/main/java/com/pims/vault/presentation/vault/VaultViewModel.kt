@@ -135,6 +135,7 @@ class VaultViewModel @Inject constructor(
     val uiState: StateFlow<VaultUiState> = _uiState.asStateFlow()
 
     private var sessionKey: ByteArray? = null
+    private var hardwareSessionActive = false
     private var tickerJob: Job? = null
     private var timeoutJob: Job? = null
     private var migrationJob: Job? = null
@@ -142,6 +143,11 @@ class VaultViewModel @Inject constructor(
     private var activePersonId: String = CANONICAL_PRIMARY_OWNER_ID
 
     init {
+        viewModelScope.launch {
+            sessionManager.sessionState.collect {
+                if (hardwareSessionActive && !sessionManager.isZone4Unlocked()) lockVault()
+            }
+        }
         viewModelScope.launch {
             val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
             if (owner != null) {
@@ -183,6 +189,7 @@ class VaultViewModel @Inject constructor(
             try {
                 val secretKey = sessionManager.unlockZone4Vault(cryptoObject)
                 try {
+                    hardwareSessionActive = true
                     unlockVault(secretKey.copyBytes())
                 } finally {
                     secretKey.close()
@@ -197,7 +204,8 @@ class VaultViewModel @Inject constructor(
         }
     }
 
-    fun unlockVault(vaultKey: ByteArray) {
+    internal fun unlockVault(vaultKey: ByteArray) {
+        sessionKey?.fill(0)
         sessionKey = vaultKey
         _uiState.update {
             it.copy(
@@ -211,6 +219,7 @@ class VaultViewModel @Inject constructor(
     }
 
     fun lockVault() {
+        hardwareSessionActive = false
         migrationJob?.cancel()
         migrationJob = null
         sessionKey?.fill(0)
@@ -235,6 +244,11 @@ class VaultViewModel @Inject constructor(
                 activeDecryptedNote = null,
                 activeDecryptedPayment = null,
                 activeDecryptedBanking = null,
+                activeDecryptedApiKey = null,
+                activeDecryptedSshKey = null,
+                activeDecryptedAccessToken = null,
+                activeDecryptedGeneric = null,
+                activeDecryptedIdentity = null,
                 activeItemId = null,
                 isEditing = false,
                 editorCategory = null,
@@ -398,6 +412,11 @@ class VaultViewModel @Inject constructor(
     }
 
     private suspend fun getCandidateVaultKeys(): List<ByteArray> {
+        check(_uiState.value.isVaultUnlocked) { "Unlock the security vault to read this item" }
+        if (hardwareSessionActive && !sessionManager.isZone4Unlocked()) {
+            lockVault()
+            throw SecurityException("The security vault session expired")
+        }
         val keys = mutableListOf<ByteArray>()
         fun addCandidate(candidate: ByteArray) {
             if (keys.any { it.contentEquals(candidate) }) candidate.fill(0) else keys.add(candidate)
@@ -417,6 +436,8 @@ class VaultViewModel @Inject constructor(
         } catch (e: Exception) {
             VaultLogger.w("VaultViewModel", "Zone 4 hardware key unwrap failed: ${e.message}")
         }
+
+        try { sessionManager.getHistoricalZone4Keys().forEach(::addCandidate) } catch (_: Exception) {}
 
         // 3. Alternate hardware root subkey candidate (e.g. if wrapped under rootKeyAlias)
         try {
@@ -467,6 +488,10 @@ class VaultViewModel @Inject constructor(
     }
 
     private suspend fun getOrDeriveVaultKey(): ByteArray {
+        if (hardwareSessionActive && !sessionManager.isZone4Unlocked()) {
+            lockVault()
+            throw SecurityException("The security vault session expired")
+        }
         sessionKey?.let { return it }
         // Fail closed for writes: only the authoritative hardware-backed session key may be used for writes and edits.
         // Never fall back to candidate/legacy/deterministic keys for write operations.

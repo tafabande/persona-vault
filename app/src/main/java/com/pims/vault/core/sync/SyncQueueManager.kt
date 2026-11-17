@@ -206,7 +206,8 @@ class SyncQueueManager @Inject constructor(
         try {
             val pending = syncQueueDao.getPendingOperations()
             for (op in pending) {
-                syncQueueDao.update(op.copy(status = SyncOperationStatus.IN_PROGRESS, attempts = op.attempts + 1))
+                val attempted = op.copy(status = SyncOperationStatus.IN_PROGRESS, attempts = op.attempts + 1, errorMessage = null)
+                syncQueueDao.update(attempted)
 
                 val commitResult = if (op.entityType == "PLAIN_NOTE") {
                     commitQueuedNote(op)
@@ -225,7 +226,7 @@ class SyncQueueManager @Inject constructor(
                     is GatewayCommitResult.VersionConflict -> {
                         incomplete = "Some changes need conflict resolution"
                         // Optimistic concurrency failure: Stale update detected!
-                        syncQueueDao.update(op.copy(status = SyncOperationStatus.CONFLICT))
+                        syncQueueDao.update(attempted.copy(status = SyncOperationStatus.CONFLICT))
                         recordConflict(
                             entityType = op.entityType,
                             entityId = op.entityId,
@@ -237,17 +238,17 @@ class SyncQueueManager @Inject constructor(
                         )
                     }
                     is GatewayCommitResult.NetworkUnavailable -> {
-                        syncQueueDao.update(op.copy(status = SyncOperationStatus.PENDING))
+                        syncQueueDao.update(attempted.copy(status = SyncOperationStatus.PENDING))
                         incomplete = "Cloud sync is waiting for a connection"
                         break
                     }
                     is GatewayCommitResult.Unauthorized -> {
                         incomplete = "Sign in again to resume cloud sync"
-                        syncQueueDao.update(op.copy(status = SyncOperationStatus.FAILED, errorMessage = "Unauthorized"))
+                        syncQueueDao.update(attempted.copy(status = SyncOperationStatus.FAILED, errorMessage = "Unauthorized"))
                     }
                     is GatewayCommitResult.Failure -> {
                         incomplete = result.message
-                        syncQueueDao.update(op.copy(status = SyncOperationStatus.FAILED, errorMessage = result.message))
+                        syncQueueDao.update(attempted.copy(status = SyncOperationStatus.FAILED, errorMessage = result.message))
                     }
                 }
             }

@@ -52,6 +52,7 @@ class PortableFileKeyManager @Inject constructor(
 
     @Volatile
     private var cachedPfk: SecretBytes? = null
+    private var initializationFailure: Exception? = null
 
     private fun base64Decode(str: String): ByteArray {
         return try {
@@ -75,6 +76,7 @@ class PortableFileKeyManager @Inject constructor(
     @Synchronized
     fun getOrCreatePortableKey(): SecretBytes {
         cachedPfk?.let { return it }
+        initializationFailure?.let { throw IllegalStateException("File-key persistence needs a restart before retry", it) }
         val existing = tryUnwrapLocal()
         if (existing != null) {
             cachedPfk = existing
@@ -84,7 +86,7 @@ class PortableFileKeyManager @Inject constructor(
         val fresh = FileRecoveryCrypto.generatePortableKey()
         val secret = SecretBytes(fresh)
         java.util.Arrays.fill(fresh, 0)
-        try { wrapLocal(secret) } catch (error: Exception) { secret.close(); throw error }
+        try { wrapLocal(secret) } catch (error: Exception) { initializationFailure = error; secret.close(); throw error }
         cachedPfk = secret
         return secret
     }
@@ -103,6 +105,9 @@ class PortableFileKeyManager @Inject constructor(
     @Synchronized
     fun importRecoveredKey(portableKey: ByteArray, keyId: String? = null) {
         require(portableKey.size == 32) { "Portable key must be 32 bytes" }
+        if (cachedPfk == null) initializationFailure?.let {
+            throw IllegalStateException("File-key persistence needs a restart before retry", it)
+        }
         // Authentication of existing material must succeed before an import can replace it.
         // The old wrapped envelope is archived in the same preference commit as the new key.
         val previous = cachedPfk ?: tryUnwrapLocal()
@@ -110,13 +115,61 @@ class PortableFileKeyManager @Inject constructor(
         try {
             wrapLocal(secret, keyId, previous)
         } catch (failure: Exception) {
+            initializationFailure = failure
             secret.close()
-            if (previous !== cachedPfk) previous?.close()
+            if (cachedPfk == null) cachedPfk = previous
             throw failure
         }
         cachedPfk?.close()
         if (previous !== cachedPfk) previous?.close()
         cachedPfk = secret
+        initializationFailure = null
+    }
+
+    /** Retains an authenticated historical key without changing the active portable key. */
+    @Synchronized
+    fun retainHistoricalKey(key: ByteArray) {
+        require(key.size == 32) { "Historical portable key must be 32 bytes" }
+        if (cachedPfk == null) initializationFailure?.let {
+            throw IllegalStateException("File-key persistence needs a restart before retry", it)
+        }
+        val active = cachedPfk ?: tryUnwrapLocal()?.also { cachedPfk = it }
+        if (active != null && java.security.MessageDigest.isEqual(active.bytes, key)) return
+
+        val fingerprint = java.security.MessageDigest.getInstance("SHA-256").digest(key)
+            .joinToString("") { "%02x".format(it) }
+        val prefix = ARCHIVE_PREFIX + fingerprint
+        val existingIv = prefs.getString(prefix + "_iv", null)
+        val existingCipher = prefs.getString(prefix + "_cipher", null)
+        if (existingIv != null && existingCipher != null) {
+            try {
+                unwrap(existingIv, existingCipher).use { existing ->
+                    if (java.security.MessageDigest.isEqual(existing.bytes, key)) return
+                }
+            } catch (_: WrappedPortableKeyDecryptionException) {
+                // A verified copy of the same identified key repairs an unreadable archive.
+            }
+        }
+
+        SecretBytes(key).use { secret ->
+            keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_FILES).use { master ->
+                val envelope = cryptoEngine.encrypt(secret.bytes, master.bytes, AAD.toByteArray(Charsets.UTF_8))
+                val verified = cryptoEngine.decrypt(envelope, master.bytes, AAD.toByteArray(Charsets.UTF_8))
+                try { check(java.security.MessageDigest.isEqual(secret.bytes, verified)) { "Historical key read-back failed" } }
+                finally { verified.fill(0) }
+                val iv = base64Encode(envelope.iv)
+                val cipher = base64Encode(envelope.combinedCiphertextWithTag)
+                try {
+                    check(prefs.edit().putString(prefix + "_iv", iv).putString(prefix + "_cipher", cipher).commit() &&
+                        prefs.getString(prefix + "_iv", null) == iv && prefs.getString(prefix + "_cipher", null) == cipher) {
+                        "Historical key persistence failed"
+                    }
+                } catch (failure: Exception) {
+                    initializationFailure = failure
+                    throw failure
+                }
+            }
+        }
     }
 
     /** Historical keys remain device-wrapped and are returned only as owned, wipeable copies. */
@@ -144,6 +197,19 @@ class PortableFileKeyManager @Inject constructor(
         } catch (failure: Exception) { keys.forEach { it.fill(0) }; throw failure }
     }
 
+    /** Authenticates a portable-key envelope using current and retained historical keys. */
+    fun decryptWithReadKeys(payload: EncryptedPayload, associatedData: ByteArray? = null): ByteArray {
+        val candidates = copyReadKeyCandidates()
+        var failure: Exception? = null
+        try {
+            for (key in candidates) {
+                try { return cryptoEngine.decrypt(payload, key, associatedData) }
+                catch (error: java.security.GeneralSecurityException) { failure = error }
+            }
+            throw CryptoIntegrityException("No retained file key authenticated this payload", failure)
+        } finally { candidates.forEach { it.fill(0) } }
+    }
+
     /** Forgets the in-memory copy (lock). Local wrapped copy stays for next unlock. */
     @Synchronized
     fun lock() {
@@ -152,6 +218,7 @@ class PortableFileKeyManager @Inject constructor(
     }
 
     /** Raw bytes for one-shot B2 envelope ops. Caller must zeroize. */
+    @Synchronized
     fun copyKeyBytes(): ByteArray = getOrCreatePortableKey().copyBytes()
 
     /** Legacy device-bound key for reading pre-migration blobs. */
@@ -204,11 +271,14 @@ class PortableFileKeyManager @Inject constructor(
             if (previous != null && !java.security.MessageDigest.isEqual(previous.bytes, secret.bytes)) {
                 val fingerprint = java.security.MessageDigest.getInstance("SHA-256").digest(previous.bytes)
                     .joinToString("") { "%02x".format(it) }
-                val oldIv = prefs.getString(KEY_IV, null)
-                val oldCipher = prefs.getString(KEY_CIPHER, null)
-                check(oldIv != null && oldCipher != null) { "Previous key envelope is missing" }
-                editor.putString(ARCHIVE_PREFIX + fingerprint + "_iv", oldIv)
-                    .putString(ARCHIVE_PREFIX + fingerprint + "_cipher", oldCipher)
+                // Commit failures may already have changed SharedPreferences' memory view.
+                // Archive the known prior secret independently from that mutable active envelope.
+                val archived = cryptoEngine.encrypt(previous.bytes, master.bytes, AAD.toByteArray(Charsets.UTF_8))
+                val confirmed = cryptoEngine.decrypt(archived, master.bytes, AAD.toByteArray(Charsets.UTF_8))
+                try { check(java.security.MessageDigest.isEqual(previous.bytes, confirmed)) }
+                finally { confirmed.fill(0) }
+                editor.putString(ARCHIVE_PREFIX + fingerprint + "_iv", base64Encode(archived.iv))
+                    .putString(ARCHIVE_PREFIX + fingerprint + "_cipher", base64Encode(archived.combinedCiphertextWithTag))
             }
             if (keyId != null) editor.putString(KEY_ID, keyId)
             check(editor.commit() && prefs.getString(KEY_IV, null) == iv && prefs.getString(KEY_CIPHER, null) == cipher) {

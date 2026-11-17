@@ -9,6 +9,7 @@ import com.pims.vault.core.storage.VaultEvidenceStore
 import com.pims.vault.data.local.dao.VaultProofDao
 import com.pims.vault.data.local.entity.VaultProofEntity
 import com.pims.vault.data.local.storage.EncryptedFileStorageImpl
+import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -117,5 +118,87 @@ class VaultEvidenceStoreTest {
         } catch (_: Exception) { }
         assertArrayEquals(original, file.readBytes())
         assertFalse(File(file.parentFile, "v_2.penc").exists())
+    }
+
+    @Test fun lockedRepairCannotReplaceAnExistingValidProof(): Unit = runBlocking {
+        val store = store()
+        val proof = validProof(ByteArray(200) { 4 })
+        val file = File(temporary.root, proof.storagePath)
+        val original = file.readBytes()
+        `when`(session.isZone4Unlocked()).thenReturn(false)
+
+        runCatching { store.restoreCiphertext(proof, "owner", byteArrayOf(1, 2, 3), replaceDamagedFile = true) }
+
+        assertArrayEquals(original, file.readBytes())
+        verify(dao, never()).insertForOwnedItem(org.mockito.kotlin.any(), org.mockito.kotlin.any())
+        assertFalse(File(file.parentFile, "v_2.penc").exists())
+    }
+
+    @Test fun aValidLocalProofSurvivesDifferentAuthenticatedCloudCiphertext(): Unit = runBlocking {
+        val store = store()
+        val plain = ByteArray(200) { 5 }
+        val proof = validProof(plain)
+        val file = File(temporary.root, proof.storagePath)
+        val original = file.readBytes()
+        val remote = ciphertextFor(proof, plain)
+        assertFalse(original.contentEquals(remote))
+
+        store.restoreCiphertext(proof, "owner", remote, replaceDamagedFile = true)
+
+        assertArrayEquals(original, file.readBytes())
+        verify(dao, never()).insertForOwnedItem(org.mockito.kotlin.any(), org.mockito.kotlin.any())
+        assertFalse(File(file.parentFile, "v_2.penc").exists())
+    }
+
+    @Test fun elevatedRepairAuthenticatesTheReplacementBeforeReplacingCorruptProof(): Unit = runBlocking {
+        val store = store()
+        val plain = ByteArray(200) { 6 }
+        val proof = validProof(plain)
+        val file = File(temporary.root, proof.storagePath)
+        val remote = ciphertextFor(proof, plain)
+        file.writeBytes(file.readBytes().apply { this[lastIndex] = (last().toInt() xor 1).toByte() })
+
+        store.restoreCiphertext(proof, "owner", remote, replaceDamagedFile = true)
+
+        assertArrayEquals(remote, file.readBytes())
+        val reader = EncryptedFileStorageImpl(context, crypto, { key.copyOf() }, "vault_proofs")
+        assertTrue(reader.verifyIntegrity(proof.storagePath, "", proof.sha256Hash))
+        verify(dao).insertForOwnedItem(proof, "owner")
+        assertFalse(File(file.parentFile, "v_2.penc").exists())
+    }
+
+    @Test fun anInvalidCloudRepairRetainsTheCorruptSourceForLaterRecovery(): Unit = runBlocking {
+        val store = store()
+        val proof = validProof(ByteArray(200) { 7 })
+        val file = File(temporary.root, proof.storagePath)
+        val damaged = file.readBytes().apply { this[lastIndex] = (last().toInt() xor 1).toByte() }
+        file.writeBytes(damaged)
+
+        val failure = runCatching {
+            store.restoreCiphertext(proof, "owner", byteArrayOf(1, 2, 3), replaceDamagedFile = true)
+        }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertArrayEquals(damaged, file.readBytes())
+        verify(dao, never()).insertForOwnedItem(org.mockito.kotlin.any(), org.mockito.kotlin.any())
+        assertFalse(File(file.parentFile, "v_2.penc").exists())
+    }
+
+    private suspend fun validProof(plain: ByteArray): VaultProofEntity {
+        val id = VaultEvidenceStore.documentId("card", "proof")
+        val writer = EncryptedFileStorageImpl(context, crypto, { key.copyOf() }, "vault_proofs")
+        val metadata = writer.storeEncryptedFile(id, 1, "image/png", plain.inputStream())
+        return VaultProofEntity("proof", "card", metadata.relativePath, "image/png", metadata.sizeBytes,
+            metadata.sha256Hex, 1, 1).also { proof ->
+            `when`(dao.getById(proof.id)).thenReturn(proof)
+            `when`(dao.isOwnedItem(proof.itemId, "owner")).thenReturn(true)
+        }
+    }
+
+    private fun ciphertextFor(proof: VaultProofEntity, plain: ByteArray): ByteArray {
+        val output = ByteArrayOutputStream()
+        crypto.encryptChunkedStream(plain.inputStream(), output, key,
+            VaultEvidenceStore.documentId(proof.itemId, proof.id).toByteArray(Charsets.UTF_8))
+        return output.toByteArray()
     }
 }

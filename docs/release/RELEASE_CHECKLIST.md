@@ -100,3 +100,16 @@ The unified design source passed 369 JVM tests, both APK builds, lint (zero erro
 Firestore owner/anonymous/cross-account and deletion-marker emulator checks passed on 2026-11-16. The checked rules compiled on the service and were deployed to the app project.
 
 The user deferred device checks for this implementation pass on 2026-11-16. The 417 JVM tests, debug/instrumentation APK builds, lint and static security checks passed. Native instrumentation, installation of this APK on the phone, device calendar setup and cross-device restore acceptance remain unverified. The unchecked device items above retain that status.
+
+
+### Document and media durability acceptance (ADR-022)
+
+- [ ] On an isolated device, import an image/PDF, delete the source phone file, restart and verify the app-owned copy remains readable.
+- [ ] Upgrade a schema-17 fixture with multiple versions and historical absolute paths, then verify metadata, original bytes and relationships. Run DocumentUpgradeMigrationDeviceTest for native SQLCipher/Room validation.
+- [ ] Interrupt import, version addition, encrypted upload, download, key import and snapshot restore. Verify the prior readable copy and retained keys survive each interruption.
+- [ ] Recover an account on a second installation using the recovery phrase and confirm document metadata, all versions, photos and proof images. Check incomplete downloads remain retryable and never display confirmed backup success.
+- [ ] Confirm ordinary sync never replaces the local file key, a mismatching account requires recovery, new UID-derived envelopes are denied, and passphrase setup publishes a durable latest pointer before retiring the legacy weak envelope.
+- [ ] Verify current/historical vault reads remain unavailable after app re-authentication, recovery, lock and timeout until strong biometric elevation succeeds again.
+- [ ] Review document import, secure multi-page preview, version history, recovery feedback and shared status/icons in light/dark themes with large text.
+
+Device installation and native/cross-device acceptance remain deferred by the user's instruction. Automated build, JVM, migration-SQL, rules-emulator, lint and static-security results are recorded after this implementation pass.

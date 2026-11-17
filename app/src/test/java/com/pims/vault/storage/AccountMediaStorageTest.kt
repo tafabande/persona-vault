@@ -94,4 +94,24 @@ class AccountMediaStorageTest {
         catch (_: IllegalStateException) { }
         verifyNoInteractions(crypto, portable, legacy)
     }
+
+    @Test fun noteAttachmentRejectsAChangedAccountBeforeAccessingMediaKeys(): Unit = runBlocking {
+        val auth: FirebaseAuth = mock()
+        val user: FirebaseUser = mock()
+        whenever(auth.currentUser).thenReturn(user)
+        whenever(user.uid).thenReturn("account-B")
+        val crypto: CryptoEngine = mock()
+        val portable: PortableFileKeyManager = mock()
+        val legacy: B2StorageUploadService = mock()
+        val service = AccountMediaStorageUploadService(auth, crypto, portable, legacy)
+
+        try {
+            service.uploadNoteAttachment("account-A", "note-id", "image/png", byteArrayOf(1, 2, 3))
+            fail("An attachment from a different account must remain pending")
+        } catch (failure: IllegalStateException) {
+            assertTrue(failure.message.orEmpty().contains("account changed"))
+        }
+
+        verifyNoInteractions(crypto, portable, legacy)
+    }
 }

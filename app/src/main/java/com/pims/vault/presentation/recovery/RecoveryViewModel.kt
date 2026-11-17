@@ -26,7 +26,8 @@ import javax.inject.Inject
 class RecoveryViewModel @Inject constructor(
     private val firestoreSync: FirestoreSyncService,
     private val portableFileKeyManager: PortableFileKeyManager,
-    private val photoBackup: PhotoBackupCoordinator
+    private val photoBackup: PhotoBackupCoordinator,
+    private val session: com.pims.vault.core.crypto.BiometricSessionManager
 ) : ViewModel() {
 
     sealed interface Status {
@@ -66,7 +67,7 @@ class RecoveryViewModel @Inject constructor(
             _op.value = OpState.Working
             try {
                 FileRecoveryCrypto.validatePassphrase(passphrase)
-                val pfk = portableFileKeyManager.getOrCreatePortableKey().copyBytes()
+                val pfk = portableFileKeyManager.copyKeyBytes()
                 try {
                     val escrow = FileRecoveryCrypto.createEscrow(pfk, passphrase)
                     val ok = firestoreSync.publishRecoveryEscrow(null, escrow)
@@ -77,6 +78,7 @@ class RecoveryViewModel @Inject constructor(
                 } finally {
                     java.util.Arrays.fill(pfk, 0)
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
             } catch (e: Exception) {
                 val msg = if (e.message?.contains("at least", ignoreCase = true) == true) {
                     "Use at least 12 characters for your recovery phrase."
@@ -108,22 +110,21 @@ class RecoveryViewModel @Inject constructor(
                     throw SecurityException("Incorrect recovery phrase. Check and try again.")
                 }
                 try {
+                    session.lockZone4Vault()
                     portableFileKeyManager.importRecoveredKey(pfk, escrow.keyId)
                 } finally {
                     java.util.Arrays.fill(pfk, 0)
                 }
-                // Pull latest structured data first, then restore photo cache.
-                try {
-                    firestoreSync.pullRemoteChanges(null)
-                } catch (_: Exception) {}
-                val count = try {
-                    photoBackup.restoreAllPhotos()
-                } catch (_: Exception) {
-                    0
+                check(firestoreSync.confirmRecoveredAccountFileKey(escrow.keyId)) {
+                    "The recovery key is saved locally. Cloud key confirmation is pending. Retry recovery when online."
                 }
+                val pull = firestoreSync.pullRemoteChanges(null)
+                check(pull.success) { pull.message }
+                val count = photoBackup.restoreAllPhotos()
                 _status.value = Status.Ready(escrow.keyId)
-                _op.value = OpState.Success("Recovered. $count photo(s) restored.")
+                _op.value = OpState.Success("Recovery key saved. $count photo(s) restored. Open Documents to check file availability.")
                 onDone(true, "$count")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
             } catch (e: Exception) {
                 _op.value = OpState.Error(e.message ?: "Recovery failed")
                 onDone(false, e.message ?: "Recovery failed")

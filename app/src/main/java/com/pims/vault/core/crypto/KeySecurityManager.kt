@@ -329,10 +329,11 @@ class KeySecurityManager(
         }
     }
 
-    private companion object {
-        const val ZONE4_DOMAIN_IV_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_iv_v2"
-        const val ZONE4_DOMAIN_CIPHER_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_cipher_v2"
-        const val ZONE4_DOMAIN_ALIAS_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_alias_v2"
+    companion object {
+        internal const val VAULT_RECOVERY_PREFIX = "PIMS/vault/recovery-archive/"
+        private const val ZONE4_DOMAIN_IV_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_iv_v2"
+        private const val ZONE4_DOMAIN_CIPHER_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_cipher_v2"
+        private const val ZONE4_DOMAIN_ALIAS_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_alias_v2"
     }
 
     private fun base64Encode(bytes: ByteArray): String {
@@ -358,7 +359,7 @@ class KeySecurityManager(
      *    a replacement key and NEVER overwrites or clears existing preferences.
      */
     fun deriveDomainSubkey(domainContext: String, isZone4: Boolean = false): SecretBytes {
-        require(domainContext != HkdfKeyDerivation.CONTEXT_VAULT) {
+        require(domainContext != HkdfKeyDerivation.CONTEXT_VAULT && !domainContext.startsWith(VAULT_RECOVERY_PREFIX)) {
             "Zone 4 vault keys must be opened through the authenticated key envelope"
         }
         return deriveRootWrappedDomainSubkey(domainContext)
@@ -366,6 +367,21 @@ class KeySecurityManager(
 
     internal fun deriveLegacyVaultKeyForMigration(): SecretBytes =
         deriveRootWrappedDomainSubkey(HkdfKeyDerivation.CONTEXT_VAULT)
+
+    /** Called only by the hardware-authorized session for read-only recovery candidates. */
+    internal fun readRetainedVaultRecoveryKeys(): List<ByteArray> {
+        val preferences = sharedPreferences ?: context?.getSharedPreferences("pims_keystore_wrapped_subkeys", Context.MODE_PRIVATE)
+            ?: return emptyList()
+        val result = mutableListOf<ByteArray>()
+        try {
+            preferences.all.keys.filter { it.startsWith(VAULT_RECOVERY_PREFIX) && it.endsWith("_cipher") }.forEach { name ->
+                val domain = name.removeSuffix("_cipher")
+                require(domain.removePrefix(VAULT_RECOVERY_PREFIX).matches(Regex("[0-9a-f]{64}")))
+                deriveRootWrappedDomainSubkey(domain).use { result.add(it.copyBytes()) }
+            }
+            return result
+        } catch (failure: Exception) { result.forEach { it.fill(0) }; throw failure }
+    }
 
     /** Prepares imported recovery keys under this device's root; does not change live keys. */
     internal fun wrapRecoveryKeys(keys: Map<String, ByteArray>): Map<String, String> {
@@ -375,7 +391,9 @@ class KeySecurityManager(
         return buildMap {
             keys.forEach { (domain, raw) ->
                 require(domain in setOf(HkdfKeyDerivation.CONTEXT_DATABASE, HkdfKeyDerivation.CONTEXT_FILES,
-                    HkdfKeyDerivation.CONTEXT_AUDIT, HkdfKeyDerivation.CONTEXT_VAULT) && raw.size == 32)
+                    HkdfKeyDerivation.CONTEXT_AUDIT, HkdfKeyDerivation.CONTEXT_VAULT) ||
+                    (domain.startsWith(VAULT_RECOVERY_PREFIX) && domain.removePrefix(VAULT_RECOVERY_PREFIX).matches(Regex("[0-9a-f]{64}"))))
+                require(raw.size == 32)
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                 cipher.init(Cipher.ENCRYPT_MODE, master)
                 put("${domain}_iv", base64Encode(cipher.iv))
@@ -419,7 +437,7 @@ class KeySecurityManager(
                 val decryptCipher = Cipher.getInstance("AES/GCM/NoPadding")
                 decryptCipher.init(Cipher.DECRYPT_MODE, masterKey, javax.crypto.spec.GCMParameterSpec(128, iv))
                 val rawSubkey = decryptCipher.doFinal(cipherBytes)
-                return SecretBytes(rawSubkey)
+                return try { SecretBytes(rawSubkey) } finally { rawSubkey.fill(0) }
             } catch (e: Exception) {
                 // Key material exists but cannot be decrypted by the Keystore master key.
                 // CRITICAL SAFETY RULE: Never generate a replacement key, and never overwrite/delete existing preferences!
@@ -459,6 +477,6 @@ class KeySecurityManager(
             throw IllegalStateException("Unable to persist domain key '$domainContext'; refusing to use an ephemeral key", e)
         }
 
-        return SecretBytes(rawSubkey)
+        return try { SecretBytes(rawSubkey) } finally { rawSubkey.fill(0) }
     }
 }

@@ -35,7 +35,7 @@ class VaultEvidenceStore @Inject constructor(
     private val files = EncryptedFileStorageImpl(context, crypto, {
         check(session.isZone4Unlocked()) { "Unlock the Security Vault to access images" }
         session.getZone4VaultKey()
-    }, baseDirectoryName = "vault_proofs")
+    }, baseDirectoryName = "vault_proofs", historicalKeyProvider = { session.getHistoricalZone4Keys() })
 
     suspend fun add(itemId: String, personId: String, uri: Uri) = withContext(Dispatchers.IO) {
         mutex.withLock {
@@ -61,7 +61,7 @@ class VaultEvidenceStore @Inject constructor(
                     dao.insertForOwnedItem(VaultProofEntity(id, itemId, path, mime, metadata.sizeBytes,
                         metadata.sha256Hex, now, now), personId)
                 } catch (failure: Exception) {
-                    files.deleteFile(path)
+                    cleanupUnpublished(id, path)
                     throw failure
                 }
             } finally { bytes.fill(0) }
@@ -135,22 +135,30 @@ class VaultEvidenceStore @Inject constructor(
                 // Proofs are immutable. Local removals win over a delayed download.
                 if (existing?.isDeleted == true) return@withLock
                 if (existing != null) {
-                    require(existing.itemId == proof.itemId && existing.sha256Hash == proof.sha256Hash)
-                    if (hasCiphertext(existing) && !replaceDamagedFile) return@withLock
+                    require(existing.itemId == proof.itemId && existing.sha256Hash == proof.sha256Hash &&
+                        existing.mimeType == proof.mimeType && existing.sizeBytes == proof.sizeBytes)
+                    if (hasCiphertext(existing)) {
+                        if (!replaceDamagedFile || !session.isZone4Unlocked()) return@withLock
+                        checkAccess(existing.itemId, personId)
+                        // Different ciphertext can still be a valid historical key/format copy.
+                        if (files.verifyIntegrity(existing.storagePath, "", existing.sha256Hash)) return@withLock
+                    }
                 }
                 require(proof.storagePath == "vault_proofs/${documentId(proof.itemId, proof.id)}/v_1.penc")
                 val documentId = documentId(proof.itemId, proof.id)
                 val stagingPath = "vault_proofs/$documentId/v_2.penc"
                 try {
                     files.storePreEncryptedFile(documentId, 2, proof.mimeType, bytes.inputStream())
-                    if (session.isZone4Unlocked()) {
+                    if (existing != null && hasCiphertext(existing) || session.isZone4Unlocked()) {
+                        checkAccess(proof.itemId, personId)
                         check(files.verifyIntegrity(stagingPath, "", proof.sha256Hash)) { "Image authentication failed" }
+                        checkAccess(proof.itemId, personId)
                     }
                     Files.move(resolve(stagingPath).toPath(), resolve(proof.storagePath).toPath(),
                         StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
                     dao.insertForOwnedItem(proof, personId)
                 } catch (failure: Exception) {
-                    if (existing == null) files.deleteFile(proof.storagePath)
+                    if (existing == null) cleanupUnpublished(proof.id, proof.storagePath)
                     throw failure
                 } finally { files.deleteFile(stagingPath) }
             }
@@ -168,6 +176,12 @@ class VaultEvidenceStore @Inject constructor(
     suspend fun cleanupDeletedFiles() = withContext(Dispatchers.IO) {
         mutex.withLock { dao.getAll().filter { it.isDeleted }.forEach { files.deleteFile(it.storagePath) } }
     }
+
+    private suspend fun cleanupUnpublished(id: String, path: String) =
+        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+            try { if (dao.getById(id) == null) files.deleteFile(path) }
+            catch (_: Exception) { /* Retain a copy when publication cannot be confirmed. */ }
+        }
 
     private suspend fun checkAccess(itemId: String, personId: String) {
         check(session.isZone4Unlocked()) { "Unlock the Security Vault to access images" }

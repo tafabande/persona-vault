@@ -30,7 +30,8 @@ class EncryptedFileStorageImpl(
     private val cryptoEngine: CryptoEngine,
     private val keyProvider: () -> ByteArray,
     private val baseDirectoryName: String = "vault_documents",
-    private val legacyKeyProvider: (() -> ByteArray)? = null
+    private val legacyKeyProvider: (() -> ByteArray)? = null,
+    private val historicalKeyProvider: (suspend () -> List<ByteArray>)? = null
 ) : FileStorageService {
 
     private val baseDir: File
@@ -342,7 +343,7 @@ class EncryptedFileStorageImpl(
     private fun metadata(file: File, size: Long, mime: String, sha: String, iv: String) = StoredFileMetadata(
         file.relativeTo(context.filesDir.canonicalFile).invariantSeparatorsPath, size, mime, sha, iv, System.currentTimeMillis())
 
-    private fun keyCandidates(extra: (() -> ByteArray)? = null): MutableList<ByteArray> {
+    private suspend fun keyCandidates(extra: (() -> ByteArray)? = null): MutableList<ByteArray> {
         val keys = mutableListOf<ByteArray>()
         var failure: Exception? = null
         for (provider in listOfNotNull(keyProvider, legacyKeyProvider, extra)) {
@@ -350,6 +351,12 @@ class EncryptedFileStorageImpl(
             } catch (error: Exception) { failure = error; continue }
             if (keys.any { it.contentEquals(key) }) key.fill(0) else keys.add(key)
         }
+        try {
+            historicalKeyProvider?.invoke()?.forEach { key ->
+                if (keys.any { it.contentEquals(key) }) key.fill(0) else keys.add(key)
+            }
+        } catch (cancelled: CancellationException) { keys.forEach { it.fill(0) }; throw cancelled
+        } catch (error: Exception) { failure = error }
         if (keys.isEmpty()) throw CryptoIntegrityException("File keys are unavailable", failure)
         return keys
     }

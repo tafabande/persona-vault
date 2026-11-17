@@ -81,7 +81,8 @@ object SecurityModule {
             // protection. Falls back to the legacy device-bound key only when
             // no portable key exists yet (pre-migration installs).
             keyProvider = { portableFileKeyManager.copyKeyBytes() },
-            legacyKeyProvider = { portableFileKeyManager.legacyKeyBytes() }
+            legacyKeyProvider = { portableFileKeyManager.legacyKeyBytes() },
+            historicalKeyProvider = { portableFileKeyManager.historicalKeyBytes() }
         )
     }
 

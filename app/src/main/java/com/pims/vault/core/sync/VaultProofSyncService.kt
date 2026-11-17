@@ -21,7 +21,8 @@ import javax.inject.Singleton
 @Singleton
 class VaultProofSyncService @Inject constructor(
     private val store: VaultEvidenceStore,
-    private val vault: VaultDao
+    private val vault: VaultDao,
+    private val accountSync: javax.inject.Provider<FirestoreSyncService>
 ) {
     private val mutex = Mutex()
     private val firestore get() = FirebaseFirestore.getInstance()
@@ -29,6 +30,10 @@ class VaultProofSyncService @Inject constructor(
 
     suspend fun syncCurrentItem(itemId: String) {
         val uid = accountUid ?: return
+        check(accountSync.get().syncAccountFileKey(uid)) {
+            "Image backup is pending. Recover the account file key before synchronizing images."
+        }
+        check(accountUid == uid) { "The account changed during image synchronization" }
         syncItem(uid, itemId)
     }
 

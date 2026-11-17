@@ -63,7 +63,7 @@ internal suspend fun renderDocumentPage(
     var rendered: Bitmap? = null
     try {
         return withContext(Dispatchers.IO) {
-            check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { "Use another app to preview this file on this Android version" }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) error("Use another app to preview this file on this Android version")
             val descriptor = Os.memfd_create("persona-document-preview", 0)
             try {
                 var length = 0L

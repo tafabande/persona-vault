@@ -329,11 +329,9 @@ class VaultRepositoryImpl(
         val id = UUID.randomUUID().toString()
         val vaultKey = sessionManager.getVaultKey()
 
-        val encrypted = cryptoEngine.encrypt(
-            plainBytes = plaintextSecret,
-            keyBytes = vaultKey,
-            associatedData = id.toByteArray(Charsets.UTF_8)
-        )
+        val encrypted = try {
+            cryptoEngine.encrypt(plaintextSecret, vaultKey, id.toByteArray(Charsets.UTF_8))
+        } finally { vaultKey.fill(0) }
 
         val entity = VaultItemEntity(
             id = id,
@@ -343,6 +341,7 @@ class VaultRepositoryImpl(
             accountIdentifier = accountIdentifier,
             encryptedPayload = encrypted.combinedCiphertextWithTag,
             encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
+            encryptionKeyVersion = 2,
             notes = notes
         )
         vaultDao.insertOrUpdate(entity)
@@ -370,11 +369,9 @@ class VaultRepositoryImpl(
             iv = ivBytes
         )
 
-        val decrypted = cryptoEngine.decrypt(
-            payload = payload,
-            keyBytes = vaultKey,
-            associatedData = item.id.toByteArray(Charsets.UTF_8)
-        )
+        val decrypted = try {
+            cryptoEngine.decrypt(payload, vaultKey, item.id.toByteArray(Charsets.UTF_8))
+        } finally { vaultKey.fill(0) }
 
         auditLogger.recordEvent(
             eventType = AuditEventType.READ,

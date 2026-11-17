@@ -129,7 +129,7 @@ class FirestoreSyncService @Inject constructor(
                         createdAt = System.currentTimeMillis()
                     )
                 )
-                VaultLogger.w("FirestoreSync", "Conflict highlighted for $entityType $entityId ($fieldName): local='$localValue' vs remote='$remoteValue'")
+                VaultLogger.w("FirestoreSync", "A sync conflict was recorded for $entityType")
             }
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Failed to record conflict: ${e.message}")
@@ -137,17 +137,10 @@ class FirestoreSyncService @Inject constructor(
     }
 
     private fun getEffectiveUserId(userId: String?): String? {
-        val authUid = auth.currentUser?.uid?.takeIf { it.isNotBlank() }
-        if (authUid != null) {
-            return authUid
-        }
-        return userId?.takeIf {
-            it.isNotBlank() &&
-            it != "local_user" &&
-            it != "primary_owner" &&
-            it != "primary" &&
-            it != CANONICAL_PRIMARY_OWNER_ID
-        }
+        val requested = userId?.takeIf { it.isNotBlank() && it !in setOf("local_user", "primary_owner", "primary", CANONICAL_PRIMARY_OWNER_ID) }
+        val authenticated = auth.currentUser?.uid?.takeIf(String::isNotBlank)
+        if (authenticated != null) return authenticated.takeIf { requested == null || it == requested }
+        return requested
     }
 
     suspend fun syncAccount(userId: String?, email: String?, displayName: String?) = withContext(Dispatchers.IO) {
@@ -426,9 +419,10 @@ class FirestoreSyncService @Inject constructor(
 
     suspend fun syncAvatarConfig(
         configJson: String,
-        personId: String = CANONICAL_PRIMARY_OWNER_ID
+        personId: String = CANONICAL_PRIMARY_OWNER_ID,
+        expectedAccountUid: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(null) ?: return@withContext false
+        val uid = getEffectiveUserId(expectedAccountUid) ?: return@withContext false
         try {
             val documentId = if (personId == CANONICAL_PRIMARY_OWNER_ID) {
                 "avatar_config" // legacy-compatible primary owner location
@@ -447,6 +441,7 @@ class FirestoreSyncService @Inject constructor(
                 )
                 .await()
             true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Failed to sync avatar config: ${e.message}")
             false
@@ -488,6 +483,7 @@ class FirestoreSyncService @Inject constructor(
         meta: ProfilePhotoSyncService.PhotoMetadata
     ): Boolean = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (!syncAccountFileKey(uid)) return@withContext false
         return@withContext try {
             val data = hashMapOf(
                 "photoId" to meta.photoId,
@@ -501,7 +497,7 @@ class FirestoreSyncService @Inject constructor(
                 "fileSizeBytes" to meta.sizeBytes,
                 "updatedAt" to meta.updatedAt
             )
-            meta.photoCiphertextBase64?.let { data["photoCiphertextBase64"] = it }
+            data["photoCiphertextBase64"] = meta.photoCiphertextBase64 ?: ""
             firestore.collection("accounts").document(uid)
                 .collection("photos").document(meta.photoId)
                 .set(data, SetOptions.merge()).await()
@@ -511,14 +507,15 @@ class FirestoreSyncService @Inject constructor(
                     .delete().await()
             } catch (_: Exception) {}
             true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Photo metadata sync failed: ${e.message}")
             false
         }
     }
 
-    suspend fun deleteRemoteProfilePhoto(photoId: String) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(null) ?: return@withContext
+    suspend fun deleteRemoteProfilePhoto(photoId: String, expectedAccountUid: String? = null) = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(expectedAccountUid) ?: return@withContext
         try {
             val ref = firestore.collection("accounts").document(uid)
                 .collection("photos").document(photoId)
@@ -624,6 +621,7 @@ class FirestoreSyncService @Inject constructor(
         photo: ProfilePhotoSyncService.PhotoMetadata
     ): Boolean = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (!syncAccountFileKey(uid)) return@withContext false
         try {
             firestore.collection("accounts").document(uid).collection("wallpapers").document(wallpaperId)
                 .set(mapOf(
@@ -646,6 +644,7 @@ class FirestoreSyncService @Inject constructor(
                     "photoCiphertextBase64" to (photo.photoCiphertextBase64 ?: "")
                 ), SetOptions.merge()).await()
             true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Wallpaper metadata sync failed: ${e.message}")
             false
@@ -683,8 +682,8 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
-    suspend fun deleteRemoteWallpaper(wallpaperId: String) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(null) ?: return@withContext
+    suspend fun deleteRemoteWallpaper(wallpaperId: String, expectedAccountUid: String? = null) = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(expectedAccountUid) ?: return@withContext
         try {
             val ref = firestore.collection("accounts").document(uid).collection("wallpapers").document(wallpaperId)
             ref.get().await().getString("b2RemotePath")?.takeIf { it.isNotBlank() }?.let { storageUploadService.delete(it) }
@@ -776,19 +775,20 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
-    suspend fun syncRelationshipNote(userId: String?, note: RelationshipNoteEntity) = withContext(Dispatchers.IO) {
+    suspend fun syncRelationshipNote(userId: String?, note: RelationshipNoteEntity): Boolean = withContext(Dispatchers.IO) {
         if (!networkMonitor.isCurrentlyConnected()) {
             VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore sync for relationship note ${note.id}")
-            return@withContext
+            return@withContext false
         }
-        val uid = getEffectiveUserId(userId) ?: return@withContext
-        if (hasPendingDeletion(uid, note.id)) return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (!syncAccountFileKey(uid)) return@withContext false
+        if (hasPendingDeletion(uid, note.id)) return@withContext true
         // Enforce established device-local privacy policy:
         // Private relationship notes are encrypted locally with device master keys and are NEVER uploaded to cloud.
         if (note.isPrivate) {
             // Retry removal of historical public copies, including an interrupted privacy change.
             deleteRemoteRelationshipNote(note.id)
-            return@withContext
+            return@withContext true
         }
         try {
             val noteData = hashMapOf(
@@ -803,80 +803,121 @@ class FirestoreSyncService @Inject constructor(
                 "updatedAt" to note.updatedAt,
                 "version" to 1L
             )
-            withTimeoutOrNull(4000L) {
+            val committed = withTimeoutOrNull(4000L) {
                 firestore.collection("accounts").document(uid)
                     .collection("relationshipNotes").document(note.id)
                     .set(noteData, SetOptions.merge()).await()
-            }
-            VaultLogger.i("FirestoreSync", "Relationship note ${note.id} synced to Firestore")
-        } catch (e: Exception) {
-            VaultLogger.e("FirestoreSync", "Failed to sync relationship note: ${e.message}", e)
+                true
+            } ?: false
+            if (!committed) return@withContext false
+            VaultLogger.i("FirestoreSync", "Relationship note synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Relationship note backup remains pending")
+            false
         }
     }
 
     suspend fun syncRelationshipNoteAttachment(
         userId: String?, noteId: String, attachment: RelationshipNoteAttachmentEntity
-    ) = withContext(Dispatchers.IO) {
-        if (!networkMonitor.isCurrentlyConnected()) return@withContext
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+    ): Boolean = withContext(Dispatchers.IO) {
         var plain = ByteArray(0)
-        var pfk: ByteArray? = null
+        var key: ByteArray? = null
         try {
-            val parent = relationshipNoteDao.getNoteById(noteId) ?: return@withContext
-            if (parent.isPrivate || hasPendingDeletion(uid, noteId, attachment.id)) return@withContext
-            val out = ZeroizingByteArrayOutputStream(attachment.fileSizeBytes.toInt().coerceAtLeast(32))
+            val parent = relationshipNoteDao.getNoteById(noteId) ?: return@withContext false
+            if (parent.isPrivate) return@withContext true
+            if (!networkMonitor.isCurrentlyConnected()) return@withContext false
+            val uid = getEffectiveUserId(userId) ?: return@withContext false
+            if (!syncAccountFileKey(uid)) return@withContext false
+            if (hasPendingDeletion(uid, noteId, attachment.id)) return@withContext true
+            val activeKey = portableFileKeyManager.copyKeyBytes()
+            key = activeKey
+            requireCurrentAccountFileKey(uid, activeKey)
+            val attachmentRef = firestore.collection("accounts").document(uid)
+                .collection("relationshipNotes").document(noteId).collection("attachments").document(attachment.id)
+            val existing = attachmentRef.get(com.google.firebase.firestore.Source.SERVER).await()
+            requireCurrentAccountFileKey(uid, activeKey)
+            val previousRemotePath = existing.getString("b2RemotePath")?.takeIf { it.isNotBlank() }
+                ?: existing.getString("objectKey").orEmpty()
+            val hasRemoteCopy = previousRemotePath.isNotBlank() || !existing.getString("b2DownloadUrl").isNullOrBlank()
+            val out = ZeroizingByteArrayOutputStream(attachment.fileSizeBytes.coerceIn(32L, 64L * 1024).toInt())
             try {
                 fileStorage.readDecryptedFile(attachment.storagePath, "", attachment.sha256Hash, out)
                 plain = out.takeBytesAndWipe()
             } finally {
                 out.wipe()
             }
-            pfk = portableFileKeyManager.copyKeyBytes()
-            val payload = if (plain.size <= 800 * 1024) cryptoEngine.encrypt(plain, pfk!!) else null
-            var remotePath = ""
-            var downloadUrl = ""
-            var remoteIv = payload?.iv?.toHexString().orEmpty()
-            val inlineCipherHash = payload?.combinedCiphertextWithTag?.let { bytes ->
-                java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-            }.orEmpty()
-            var remoteHash = inlineCipherHash
-            var b2Iv = ""
-            var previousRemotePath = ""
-            val attachmentRef = firestore.collection("accounts").document(uid)
-                .collection("relationshipNotes").document(noteId).collection("attachments").document(attachment.id)
-            runCatching {
-                val existingSnapshot = attachmentRef.get().await()
-                previousRemotePath = existingSnapshot.getString("b2RemotePath")
-                    ?: existingSnapshot.getString("objectKey").orEmpty()
+            if (plain.isEmpty() || plain.size.toLong() != attachment.fileSizeBytes) return@withContext false
+            requireCurrentAccountFileKey(uid, activeKey)
+            val uploaded = if (storageUploadService.isConfigured()) {
+                try {
+                    storageUploadService.uploadNoteAttachment(uid, "relationship_$noteId", attachment.mimeType, plain)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+            } else null
+            requireCurrentAccountFileKey(uid, activeKey)
+            val remotePath = uploaded?.remotePath.orEmpty()
+            val downloadUrl = uploaded?.downloadUrl.orEmpty()
+            var remoteIv = uploaded?.ivHex.orEmpty()
+            var remoteHash = uploaded?.sha256Hex.orEmpty()
+            var ciphertextBase64 = ""
+            var inlineCipherHash = ""
+            if (uploaded == null) {
+                if (hasRemoteCopy || plain.size > 512 * 1024) return@withContext false
+                val payload = cryptoEngine.encrypt(plain, activeKey)
+                try {
+                    ciphertextBase64 = Base64.encodeToString(payload.combinedCiphertextWithTag, Base64.NO_WRAP)
+                    remoteIv = payload.iv.toHexString()
+                    inlineCipherHash = cryptoEngine.sha256(payload.combinedCiphertextWithTag)
+                    remoteHash = inlineCipherHash
+                } finally {
+                    payload.combinedCiphertextWithTag.fill(0)
+                }
+            } else if (remotePath.isBlank() || downloadUrl.isBlank()) {
+                return@withContext false
             }
-            if (storageUploadService.isConfigured()) {
-                val uploaded = storageUploadService.uploadNoteAttachment(uid, "relationship_$noteId", attachment.mimeType, plain)
-                remotePath = uploaded.remotePath
-                downloadUrl = uploaded.downloadUrl
-                b2Iv = uploaded.ivHex
-                if (uploaded.sha256Hex.isNotBlank()) remoteHash = uploaded.sha256Hex
+            if (!remoteIv.matches(Regex("[0-9a-fA-F]{24}")) || !remoteHash.matches(Regex("[0-9a-fA-F]{64}"))) {
+                return@withContext false
             }
-            if (plain.size > 800 * 1024 && remotePath.isBlank()) {
-                VaultLogger.w("FirestoreSync", "Large relationship note attachment needs configured cloud storage")
-                return@withContext
-            }
+            val latestParent = relationshipNoteDao.getNoteById(noteId) ?: return@withContext false
+            if (latestParent.isPrivate || hasPendingDeletion(uid, noteId, attachment.id)) return@withContext true
+            requireCurrentAccountFileKey(uid, activeKey)
             val data = hashMapOf(
                 "id" to attachment.id, "noteId" to noteId, "mimeType" to attachment.mimeType,
                 "fileSizeBytes" to attachment.fileSizeBytes, "sha256Hash" to remoteHash,
-                "ciphertextSha256" to inlineCipherHash,
-                "ciphertextBase64" to (payload?.let { Base64.encodeToString(it.combinedCiphertextWithTag, Base64.NO_WRAP) } ?: ""),
-                "encryptionIv" to remoteIv, "b2IvHex" to b2Iv, "b2RemotePath" to remotePath,
-                "b2DownloadUrl" to downloadUrl, "createdAt" to attachment.createdAt
+                "ciphertextSha256" to inlineCipherHash, "ciphertextBase64" to ciphertextBase64,
+                "encryptionIv" to if (uploaded == null) remoteIv else "",
+                "b2IvHex" to if (uploaded == null) "" else remoteIv,
+                "b2RemotePath" to remotePath, "b2DownloadUrl" to downloadUrl, "createdAt" to attachment.createdAt
             )
-            attachmentRef.set(data, SetOptions.merge()).await()
+            val committed = withTimeoutOrNull(6000L) {
+                attachmentRef.set(data, SetOptions.merge()).await()
+                true
+            } ?: false
+            if (!committed) return@withContext false
+            requireCurrentAccountFileKey(uid, activeKey)
             if (previousRemotePath.isNotBlank() && previousRemotePath != remotePath) {
-                runCatching { storageUploadService.delete(previousRemotePath) }
+                try {
+                    storageUploadService.delete(previousRemotePath)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    VaultLogger.w("FirestoreSync", "Previous attachment copy cleanup remains pending")
+                }
             }
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Failed to sync relationship note attachment: ${e.message}")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Relationship note attachment backup remains pending")
+            false
         } finally {
             plain.fill(0)
-            pfk?.fill(0)
+            key?.fill(0)
         }
     }
 
@@ -916,9 +957,8 @@ class FirestoreSyncService @Inject constructor(
                         .joinToString("") { "%02x".format(it) }
                     if (!actualHash.equals(expectedCipherHash, ignoreCase = true)) continue
                 }
-                pfk = portableFileKeyManager.copyKeyBytes()
                 val iv = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-                plainBytes = cryptoEngine.decrypt(EncryptedPayload(cipherBytes, iv), pfk!!)
+                plainBytes = portableFileKeyManager.decryptWithReadKeys(EncryptedPayload(cipherBytes, iv))
                 if (plainBytes.size.toLong() != size) continue
                 val metadata = fileStorage.storeEncryptedFile(
                     documentId = "rel_note_${noteId}_${doc.id}", versionNumber = 1,
@@ -947,6 +987,7 @@ class FirestoreSyncService @Inject constructor(
             return@withContext
         }
         val uid = getEffectiveUserId(userId) ?: return@withContext
+        if (!syncAccountFileKey(uid)) return@withContext
         try {
             if (vaultDeletions?.isDeleted(item.id) == true) {
                 syncVaultDeletions(uid)
@@ -1079,10 +1120,8 @@ class FirestoreSyncService @Inject constructor(
         var syncKey: ByteArray? = null
         var clearBytes: ByteArray? = null
         return try {
-            syncKey = portableFileKeyManager.copyKeyBytes()
-            clearBytes = cryptoEngine.decrypt(
+            clearBytes = portableFileKeyManager.decryptWithReadKeys(
                 EncryptedPayload(Base64.decode(payloadBase64, Base64.NO_WRAP), ivHex.hexBytes()),
-                syncKey,
                 noteSyncAad(uid, noteId, rawOwnerId)
             )
             org.json.JSONObject(String(clearBytes, Charsets.UTF_8))
@@ -1134,10 +1173,8 @@ class FirestoreSyncService @Inject constructor(
         var key: ByteArray? = null
         var clearBytes: ByteArray? = null
         return try {
-            key = portableFileKeyManager.copyKeyBytes()
-            clearBytes = cryptoEngine.decrypt(
+            clearBytes = portableFileKeyManager.decryptWithReadKeys(
                 EncryptedPayload(Base64.decode(encryptedCaption, Base64.NO_WRAP), captionIv.hexBytes()),
-                key,
                 "PIMS|plain-note-caption|v1\naccount=$uid\nnote=$noteId\nattachment=$attachmentId".toByteArray(Charsets.UTF_8)
             )
             String(clearBytes, Charsets.UTF_8)
@@ -1155,6 +1192,7 @@ class FirestoreSyncService @Inject constructor(
             return@withContext false
         }
         val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (!syncAccountFileKey(uid)) return@withContext false
         try {
             val noteData = hashMapOf<String, Any?>(
                 "id" to note.id,
@@ -1270,25 +1308,25 @@ class FirestoreSyncService @Inject constructor(
         userId: String?,
         noteId: String,
         attachment: PlainNoteAttachmentEntity
-    ) = withContext(Dispatchers.IO) {
-        if (!networkMonitor.isCurrentlyConnected()) {
-            VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore sync for note attachment ${attachment.id}")
-            return@withContext
-        }
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+    ): Boolean = withContext(Dispatchers.IO) {
         var bytes = ByteArray(0)
+        var key: ByteArray? = null
         try {
-            val parentNote = plainNoteDao.getById(noteId)
-            val encryptCaption = parentNote?.isLocked == true
-            var b2DownloadUrl = ""
-            var b2RemotePath = ""
-            var b2IvHex = ""
-            var binaryMissing = false
-            var ciphertextBase64 = ""
-            var encryptedCaptionBase64 = ""
-            var captionIvHex = ""
-
-            val attachmentOut = ZeroizingByteArrayOutputStream(attachment.fileSizeBytes.toInt().coerceAtLeast(32))
+            if (!networkMonitor.isCurrentlyConnected()) return@withContext false
+            val uid = getEffectiveUserId(userId) ?: return@withContext false
+            if (!syncAccountFileKey(uid)) return@withContext false
+            val parentNote = plainNoteDao.getById(noteId) ?: return@withContext false
+            val encryptCaption = parentNote.isLocked
+            val activeKey = portableFileKeyManager.copyKeyBytes()
+            key = activeKey
+            requireCurrentAccountFileKey(uid, activeKey)
+            val attachmentRef = firestore.collection("accounts").document(uid).collection("notes").document(noteId)
+                .collection("attachments").document(attachment.id)
+            val existing = attachmentRef.get(com.google.firebase.firestore.Source.SERVER).await()
+            requireCurrentAccountFileKey(uid, activeKey)
+            val hasRemoteCopy = listOf("b2RemotePath", "objectKey", "b2DownloadUrl")
+                .any { !existing.getString(it).isNullOrBlank() }
+            val attachmentOut = ZeroizingByteArrayOutputStream(attachment.fileSizeBytes.coerceIn(32L, 64L * 1024).toInt())
             try {
                 fileStorage.readDecryptedFile(
                     relativePath = attachment.storagePath,
@@ -1297,95 +1335,83 @@ class FirestoreSyncService @Inject constructor(
                     outputStream = attachmentOut
                 )
                 bytes = attachmentOut.takeBytesAndWipe()
-            } catch (e: Exception) {
-                VaultLogger.w("FirestoreSync", "Attachment binary read failed: ${e.message}")
             } finally {
                 attachmentOut.wipe()
             }
-
-            if (bytes.isNotEmpty()) {
-                // If small enough (< 800KB), generate inline encrypted base64 payload for zero-dependency sync
-                val pfk = try { portableFileKeyManager.copyKeyBytes() } catch (_: Exception) { null }
-                if (pfk != null) {
+            if (bytes.isEmpty() || bytes.size.toLong() != attachment.fileSizeBytes) return@withContext false
+            requireCurrentAccountFileKey(uid, activeKey)
+            val uploaded = if (storageUploadService.isConfigured()) {
+                try {
+                    storageUploadService.uploadNoteAttachment(uid, noteId, attachment.mimeType, bytes)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+            } else null
+            requireCurrentAccountFileKey(uid, activeKey)
+            val b2RemotePath = uploaded?.remotePath.orEmpty()
+            val b2DownloadUrl = uploaded?.downloadUrl.orEmpty()
+            var b2IvHex = uploaded?.ivHex.orEmpty()
+            var ciphertextBase64 = ""
+            if (uploaded == null) {
+                if (hasRemoteCopy || bytes.size > 512 * 1024) return@withContext false
+                val encrypted = cryptoEngine.encrypt(bytes, activeKey)
+                try {
+                    ciphertextBase64 = Base64.encodeToString(encrypted.combinedCiphertextWithTag, Base64.NO_WRAP)
+                    b2IvHex = encrypted.iv.toHexString()
+                } finally {
+                    encrypted.combinedCiphertextWithTag.fill(0)
+                }
+            } else if (b2RemotePath.isBlank() || b2DownloadUrl.isBlank()) {
+                return@withContext false
+            }
+            if (!b2IvHex.matches(Regex("[0-9a-fA-F]{24}"))) return@withContext false
+            var encryptedCaptionBase64 = ""
+            var captionIvHex = ""
+            if (encryptCaption && !attachment.caption.isNullOrBlank()) {
+                val captionBytes = attachment.caption.toByteArray(Charsets.UTF_8)
+                try {
+                    val captionEncrypted = cryptoEngine.encrypt(captionBytes, activeKey,
+                        "PIMS|plain-note-caption|v1\naccount=$uid\nnote=$noteId\nattachment=${attachment.id}".toByteArray(Charsets.UTF_8))
                     try {
-                        if (bytes.size <= 800 * 1024) {
-                            val enc = cryptoEngine.encrypt(bytes, pfk)
-                            ciphertextBase64 = Base64.encodeToString(enc.combinedCiphertextWithTag, Base64.NO_WRAP)
-                            b2IvHex = enc.iv.toHexString()
-                        }
-                        if (encryptCaption && !attachment.caption.isNullOrBlank()) {
-                            val captionBytes = attachment.caption.toByteArray(Charsets.UTF_8)
-                            try {
-                                val captionEncrypted = cryptoEngine.encrypt(
-                                    captionBytes,
-                                    pfk,
-                                    "PIMS|plain-note-caption|v1\naccount=$uid\nnote=$noteId\nattachment=${attachment.id}".toByteArray(Charsets.UTF_8)
-                                )
-                                encryptedCaptionBase64 = Base64.encodeToString(captionEncrypted.combinedCiphertextWithTag, Base64.NO_WRAP)
-                                captionIvHex = captionEncrypted.iv.toHexString()
-                            } finally {
-                                captionBytes.fill(0)
-                            }
-                        }
-                    } catch (_: Exception) {
+                        encryptedCaptionBase64 = Base64.encodeToString(captionEncrypted.combinedCiphertextWithTag, Base64.NO_WRAP)
+                        captionIvHex = captionEncrypted.iv.toHexString()
                     } finally {
-                        pfk.fill(0)
+                        captionEncrypted.combinedCiphertextWithTag.fill(0)
                     }
+                } finally {
+                    captionBytes.fill(0)
                 }
-
-                // If cloud storage service is available, also upload
-                if (storageUploadService.isConfigured()) {
-                    try {
-                        val uploadResult = storageUploadService.uploadNoteAttachment(
-                            ownerPersonId = uid,
-                            noteId = noteId,
-                            mimeType = attachment.mimeType,
-                            plaintextBytes = bytes
-                        )
-                        if (uploadResult.remotePath.isNotBlank() && uploadResult.downloadUrl.isNotBlank()) {
-                            b2DownloadUrl = uploadResult.downloadUrl
-                            b2RemotePath = uploadResult.remotePath
-                            b2IvHex = uploadResult.ivHex
-                        }
-                    } catch (e: Exception) {
-                        VaultLogger.w("FirestoreSync", "Cloud storage upload failed: ${e.message}")
-                    }
-                }
-            } else {
-                binaryMissing = true
             }
-
+            val latestParent = plainNoteDao.getById(noteId) ?: return@withContext false
+            if (latestParent.isLocked != encryptCaption) return@withContext false
+            requireCurrentAccountFileKey(uid, activeKey)
             val attachmentData = hashMapOf(
-                "id" to attachment.id,
-                "noteId" to noteId,
-                "storagePath" to attachment.storagePath,
-                "storageProvider" to if (b2RemotePath.isNotBlank()) "storage" else "firestore_inline",
-                "objectKey" to b2RemotePath,
-                "b2RemotePath" to b2RemotePath,
-                "b2DownloadUrl" to b2DownloadUrl,
-                "b2IvHex" to b2IvHex,
-                "ciphertextBase64" to ciphertextBase64,
-                "binaryMissing" to (binaryMissing && ciphertextBase64.isBlank() && b2DownloadUrl.isBlank()),
-                "mimeType" to attachment.mimeType,
-                "fileSizeBytes" to attachment.fileSizeBytes,
-                "sha256Hash" to attachment.sha256Hash,
-                "caption" to if (encryptCaption) "" else attachment.caption,
-                "encryptedCaption" to encryptedCaptionBase64,
-                "captionIv" to captionIvHex,
-                "captionKeyVersion" to 1L,
-                "createdAt" to attachment.createdAt
+                "id" to attachment.id, "noteId" to noteId, "storagePath" to attachment.storagePath,
+                "storageProvider" to if (uploaded == null) "firestore_inline" else "storage",
+                "objectKey" to b2RemotePath, "b2RemotePath" to b2RemotePath, "b2DownloadUrl" to b2DownloadUrl,
+                "b2IvHex" to b2IvHex, "ciphertextBase64" to ciphertextBase64, "binaryMissing" to false,
+                "mimeType" to attachment.mimeType, "fileSizeBytes" to attachment.fileSizeBytes,
+                "sha256Hash" to attachment.sha256Hash, "caption" to if (encryptCaption) "" else attachment.caption,
+                "encryptedCaption" to encryptedCaptionBase64, "captionIv" to captionIvHex,
+                "captionKeyVersion" to 1L, "createdAt" to attachment.createdAt
             )
-            withTimeoutOrNull(6000L) {
-                firestore.collection("accounts").document(uid)
-                    .collection("notes").document(noteId)
-                    .collection("attachments").document(attachment.id)
-                    .set(attachmentData, SetOptions.merge()).await()
-            }
-            VaultLogger.i("FirestoreSync", "Attachment ${attachment.id} for note $noteId synced to Firestore")
-        } catch (e: Exception) {
-            VaultLogger.e("FirestoreSync", "Failed to sync note attachment: ${e.message}", e)
+            val committed = withTimeoutOrNull(6000L) {
+                attachmentRef.set(attachmentData, SetOptions.merge()).await()
+                true
+            } ?: false
+            if (!committed) return@withContext false
+            requireCurrentAccountFileKey(uid, activeKey)
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Note attachment backup remains pending")
+            false
         } finally {
             bytes.fill(0)
+            key?.fill(0)
         }
     }
 
@@ -1397,8 +1423,22 @@ class FirestoreSyncService @Inject constructor(
                 if (name in setOf("createdAt", "updatedAt")) DocumentSyncPolicy.legacyTimeMillis(value) ?: value else value
             }
         }
+        val keys = portableFileKeyManager.copyReadKeyCandidates()
+        var failure: Exception? = null
+        try {
+            for (key in keys) {
+                try { return DocumentMetadataCodec(cryptoEngine).open(fields, key, uid, documentId, ownerId, versionId) }
+                catch (error: Exception) { failure = error }
+            }
+            throw com.pims.vault.core.crypto.CryptoIntegrityException("Document metadata requires a retained recovery key", failure)
+        } finally { keys.forEach { it.fill(0) } }
+    }
+
+    private fun documentMetadataUsesCurrentKey(uid: String, documentId: String, ownerId: String,
+        fields: Map<String, Any?>, versionId: String? = null): Boolean {
         val key = portableFileKeyManager.copyKeyBytes()
-        return try { DocumentMetadataCodec(cryptoEngine).open(fields, key, uid, documentId, ownerId, versionId) }
+        return try { DocumentMetadataCodec(cryptoEngine).open(fields, key, uid, documentId, ownerId, versionId); true }
+        catch (_: Exception) { false }
         finally { key.fill(0) }
     }
 
@@ -1419,7 +1459,8 @@ class FirestoreSyncService @Inject constructor(
             version.originalFilename?.let { put("originalFilename", it) }
         }
         if (DocumentMetadataCodec.hasEnvelope(fields) && body == previous && previousOwner == ownerId &&
-            DocumentMetadataCodec.VERSION_PRIVATE_FIELDS.none { fields.containsKey(it) }) return emptyMap()
+            DocumentMetadataCodec.VERSION_PRIVATE_FIELDS.none { fields.containsKey(it) } &&
+            documentMetadataUsesCurrentKey(uid, documentId, previousOwner, fields, version.id)) return emptyMap()
         val key = portableFileKeyManager.copyKeyBytes()
         return try {
             buildMap {
@@ -1432,6 +1473,7 @@ class FirestoreSyncService @Inject constructor(
 
     suspend fun syncDocument(userId: String?, document: DocumentEntity): Boolean = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (!syncAccountFileKey(uid)) return@withContext false
         try {
             check(auth.currentUser?.uid == uid) { "The account changed during document sync" }
             if (documentDeletions?.isDeleted(document.id) == true) {
@@ -1461,7 +1503,8 @@ class FirestoreSyncService @Inject constructor(
                         putAll(patch.filterKeys { it in DocumentMetadataCodec.HEADER_FIELDS || it == "updatedAt" })
                     }
                     if (!DocumentMetadataCodec.hasEnvelope(previousFields) || body != previousBody ||
-                        previousOwner != current.personId || DocumentMetadataCodec.HEADER_FIELDS.any { previousFields.containsKey(it) }) {
+                        previousOwner != current.personId || DocumentMetadataCodec.HEADER_FIELDS.any { previousFields.containsKey(it) } ||
+                        !documentMetadataUsesCurrentKey(uid, current.id, previousOwner, previousFields)) {
                         val key = portableFileKeyManager.copyKeyBytes()
                         val protected = try { DocumentMetadataCodec(cryptoEngine).seal(body, key, uid, current.id, current.personId) }
                         finally { key.fill(0) }
@@ -1493,6 +1536,7 @@ class FirestoreSyncService @Inject constructor(
 
     suspend fun syncDocumentVersion(userId: String?, documentId: String, version: DocumentVersionEntity): Boolean = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (!syncAccountFileKey(uid)) return@withContext false
         try {
             require(version.documentId == documentId && version.versionNumber > 0)
             require(version.fileSizeBytes in 1..com.pims.vault.domain.rules.DocumentRules.MAX_DOCUMENT_SIZE_BYTES)
@@ -1764,11 +1808,11 @@ class FirestoreSyncService @Inject constructor(
 
         retryRelationshipDeletions(uid)
 
-        // Ensure account file key is synchronized before uploading binaries
-        syncAccountFileKey(uid)
+        if (!syncAccountFileKey(uid)) return@withContext SyncResult(false, 0,
+            "Cloud file verification is pending. Retry sync, or recover this account in Backup & Recovery.")
 
         var count = 0
-        var documentFailures = 0
+        var backupFailures = 0
         try {
             // 1. Account Identity Document - local name is king, never send email as displayName
             val currentFbUser = auth.currentUser
@@ -1824,8 +1868,12 @@ class FirestoreSyncService @Inject constructor(
             }
             val relationshipNotes = relationshipNoteDao.getAllNotes()
             for (relNote in relationshipNotes) {
-                syncRelationshipNote(uid, relNote)
-                count++
+                if (syncRelationshipNote(uid, relNote)) count++ else backupFailures++
+                if (!relNote.isPrivate) {
+                    for (attachment in relationshipNoteDao.getAttachments(relNote.id)) {
+                        if (syncRelationshipNoteAttachment(uid, relNote.id, attachment)) count++ else backupFailures++
+                    }
+                }
             }
 
             // 7. Fortress Vault Items (Credentials, Logins, Passwords)
@@ -1841,20 +1889,18 @@ class FirestoreSyncService @Inject constructor(
             // 8. Plain Notes & Photo Attachments (Backed up to Backblaze B2 + Firebase Storage)
             val notes = plainNoteDao.getAllNotes()
             for (note in notes) {
-                syncNote(uid, note, isDeleted = false)
-                count++
+                if (syncNote(uid, note, isDeleted = false)) count++ else backupFailures++
                 val attachments = plainNoteDao.getAttachments(note.id)
                 for (att in attachments) {
-                    syncNoteAttachment(uid, note.id, att)
-                    count++
+                    if (syncNoteAttachment(uid, note.id, att)) count++ else backupFailures++
                 }
             }
 
             // 9. Documents & Document Versions (Backed up to Backblaze B2)
-            if (!syncDocumentDeletions(uid)) documentFailures++
+            if (!syncDocumentDeletions(uid)) backupFailures++
             val documents = documentDao.getAllDocuments()
             for (doc in documents) {
-                if (syncDocument(uid, doc)) count++ else documentFailures++
+                if (syncDocument(uid, doc)) count++ else backupFailures++
             }
 
             // 10. Education Records
@@ -1909,15 +1955,13 @@ class FirestoreSyncService @Inject constructor(
 
                 try {
                     com.pims.vault.presentation.wallpaper.LocalWallpaperManager.getInstance(context).backupAllCustomWallpapers()
-                } catch (e: Exception) {
-                    VaultLogger.w("FirestoreSync", "Error backing up custom wallpapers: ${e.message}")
-                }
-            } catch (e: Exception) {
-                VaultLogger.w("FirestoreSync", "Error backing up avatar & contact photos: ${e.message}")
-            }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (_: Exception) { backupFailures++ }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (_: Exception) { backupFailures++ }
 
-            VaultLogger.i("FirestoreSync", "Complete multi-tiered sync finished: $count items & files backed up to Firestore & Backblaze B2")
-            if (documentFailures > 0) SyncResult(false, count, "Some documents are saved locally and still need cloud backup. Retry sync.")
+            VaultLogger.i("FirestoreSync", "Account sync sweep finished with $count confirmed records")
+            if (backupFailures > 0) SyncResult(false, count, "Some files or notes are saved locally and still need cloud backup. Retry sync.")
             else SyncResult(true, count, "Synced $count records and media files")
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Sync error: ${e.message}", e)
@@ -2033,6 +2077,7 @@ class FirestoreSyncService @Inject constructor(
     ): Boolean = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext false
         return@withContext try {
+            check(syncAccountFileKey(uid)) { "Recover the existing account files before changing recovery setup" }
             val data = hashMapOf(
                 "keyId" to escrow.keyId,
                 "version" to escrow.version,
@@ -2044,15 +2089,17 @@ class FirestoreSyncService @Inject constructor(
                 "createdAt" to escrow.createdAt,
                 "isCiphertext" to true
             )
-            firestore.collection("accounts").document(uid)
-                .collection("vaultEscrow").document(escrow.keyId)
-                .set(data).await()
-            // Mark latest pointer (merge) so new devices find it in one read.
-            firestore.collection("accounts").document(uid)
-                .collection("vaultEscrow").document("latest")
-                .set(mapOf("keyId" to escrow.keyId, "updatedAt" to System.currentTimeMillis()), SetOptions.merge()).await()
-            VaultLogger.i("FirestoreSync", "Recovery escrow published (${escrow.keyId})")
+            val escrowCollection = firestore.collection("accounts").document(uid).collection("vaultEscrow")
+            firestore.batch().apply {
+                set(escrowCollection.document(escrow.keyId), data)
+                set(escrowCollection.document("latest"), mapOf("keyId" to escrow.keyId,
+                    "updatedAt" to System.currentTimeMillis(), "isCiphertext" to true), SetOptions.merge())
+            }.commit().await()
+            // Retire the former public-UID wrap only after a durable passphrase escrow exists.
+            escrowCollection.document("account_sync_pfk").delete().await()
+            VaultLogger.i("FirestoreSync", "Recovery escrow published")
             true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to publish recovery escrow", e)
             false
@@ -2063,114 +2110,170 @@ class FirestoreSyncService @Inject constructor(
     suspend fun fetchRecoveryEscrow(userId: String?): com.pims.vault.core.crypto.FileRecoveryCrypto.RecoveryEscrow? =
         withContext(Dispatchers.IO) {
             val uid = getEffectiveUserId(userId) ?: return@withContext null
-            try {
-                val escrowCol = firestore.collection("accounts").document(uid).collection("vaultEscrow")
-                val latest = try {
-                    escrowCol.document("latest").get().await()
-                } catch (_: Exception) {
-                    null
-                }
-                val keyId = latest?.getString("keyId")
-                val targetId = keyId ?: run {
-                    val all = escrowCol.get().await()
-                    all.documents.firstOrNull { it.id != "latest" }?.id
-                } ?: return@withContext null
-                val snap = escrowCol.document(targetId).get().await()
-                if (!snap.exists()) return@withContext null
-                com.pims.vault.core.crypto.FileRecoveryCrypto.RecoveryEscrow(
+            val escrowCol = firestore.collection("accounts").document(uid).collection("vaultEscrow")
+            fun parse(snap: com.google.firebase.firestore.DocumentSnapshot): com.pims.vault.core.crypto.FileRecoveryCrypto.RecoveryEscrow? {
+                if (!snap.exists() || snap.id in setOf("latest", "account_sync_pfk")) return null
+                val salt = snap.getString("saltBase64") ?: return null
+                val wrapped = snap.getString("wrappedKeyBase64") ?: return null
+                val iv = snap.getString("wrapIvBase64") ?: return null
+                return com.pims.vault.core.crypto.FileRecoveryCrypto.RecoveryEscrow(
                     keyId = snap.getString("keyId") ?: snap.id,
                     version = (snap.getLong("version") ?: 1L).toInt(),
                     kdfAlgorithm = snap.getString("kdfAlgorithm") ?: com.pims.vault.core.crypto.FileRecoveryCrypto.KDF_ALGORITHM,
-                    iterations = (snap.getLong("iterations") ?: com.pims.vault.core.crypto.FileRecoveryCrypto.KDF_ITERATIONS.toLong()).toInt(),
-                    saltBase64 = snap.getString("saltBase64") ?: return@withContext null,
-                    wrappedKeyBase64 = snap.getString("wrappedKeyBase64") ?: return@withContext null,
-                    wrapIvBase64 = snap.getString("wrapIvBase64") ?: return@withContext null,
+                    iterations = (snap.getLong("iterations") ?: 210_000L).toInt(),
+                    saltBase64 = salt, wrappedKeyBase64 = wrapped, wrapIvBase64 = iv,
                     createdAt = snap.getLong("createdAt") ?: 0L,
-                    isCiphertext = snap.getBoolean("isCiphertext") ?: true
-                )
-            } catch (e: Exception) {
-                VaultLogger.w("FirestoreSync", "No recovery escrow found: ${e.message}")
-                null
+                    isCiphertext = snap.getBoolean("isCiphertext") ?: true)
             }
+            val latest = escrowCol.document("latest").get(com.google.firebase.firestore.Source.SERVER).await()
+            latest.getString("keyId")?.let { keyId ->
+                parse(escrowCol.document(keyId).get(com.google.firebase.firestore.Source.SERVER).await())?.let { return@withContext it }
+            }
+            // Older clients could save a valid escrow while the latest-pointer write failed.
+            escrowCol.get(com.google.firebase.firestore.Source.SERVER).await().documents
+                .mapNotNull(::parse).maxByOrNull { it.createdAt }
+
         }
 
     suspend fun hasRecoveryEscrow(userId: String?): Boolean =
         fetchRecoveryEscrow(userId) != null
 
-    /**
-     * Ensures the Portable File Key (PFK) is shared securely across devices
-     * for the authenticated user without requiring manual passphrase entry.
-     * Derives an account-level sync wrapping key deterministically from the user's
-     * UID using HKDF-SHA256 with domain separation.
-     * - If remote escrow exists: downloads and unwraps the PFK, importing it locally.
-     * - If remote escrow does not exist: encrypts the local PFK and publishes it.
-     */
+    /** Confirms key agreement without importing or replacing any local key. */
     suspend fun syncAccountFileKey(userId: String?): Boolean = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (auth.currentUser?.uid != uid) return@withContext false
+        val local = portableFileKeyManager.copyKeyBytes()
         try {
-            val ikm = uid.toByteArray(Charsets.UTF_8)
-            val salt = "PIMS/account-sync-salt/v1".toByteArray(Charsets.UTF_8)
-            val info = "PIMS/account-sync-filekey/v1"
-            val accountKey = com.pims.vault.core.crypto.HkdfKeyDerivation.deriveKey(ikm, salt, info, 32)
+            val account = firestore.collection("accounts").document(uid)
+            val snapshot = account.get(com.google.firebase.firestore.Source.SERVER).await()
+            val fingerprint = accountFileKeyFingerprint(uid, local)
+            val known = snapshot.getString("fileKeyFingerprintV2")
+            if (known != null) return@withContext known == fingerprint &&
+                syncRetainedAccountFileKeys(uid, local, fingerprint)
 
-            val escrowDocRef = firestore.collection("accounts").document(uid)
-                .collection("vaultEscrow").document("account_sync_pfk")
-
-            val snap = try { escrowDocRef.get().await() } catch (_: Exception) { null }
-            if (snap != null && snap.exists()) {
-                val wrappedB64 = snap.getString("wrappedKeyBase64")
-                val ivB64 = snap.getString("wrapIvBase64")
-                if (!wrappedB64.isNullOrBlank() && !ivB64.isNullOrBlank()) {
-                    try {
-                        val cipherBytes = Base64.decode(wrappedB64, Base64.NO_WRAP)
-                        val ivBytes = Base64.decode(ivB64, Base64.NO_WRAP)
-                        val engine = com.pims.vault.core.crypto.HardenedCryptoEngine()
-                        val rawPfk = engine.decrypt(
-                            com.pims.vault.core.crypto.EncryptedPayload(cipherBytes, ivBytes),
-                            accountKey,
-                            associatedData = "PIMS/account-sync-pfk/v1".toByteArray(Charsets.UTF_8)
-                        )
-                        if (rawPfk.size == 32) {
-                            portableFileKeyManager.importRecoveredKey(rawPfk, "account_sync_pfk")
-                            VaultLogger.i("FirestoreSync", "Imported account file key from remote escrow")
-                            return@withContext true
-                        }
-                    } catch (e: Exception) {
-                        VaultLogger.w("FirestoreSync", "Failed to unwrap account sync key: ${e.message}")
-                    }
-                }
-            }
-
-            // Publish our local PFK if not present remotely
-            val pfkBytes = try { portableFileKeyManager.copyKeyBytes() } catch (_: Exception) { null }
-            if (pfkBytes != null && pfkBytes.size == 32) {
+            // The retired UID-derived envelope is read only to recognize an existing device.
+            // Its plaintext never becomes local key material and no new weak envelope is written.
+            val legacy = account.collection("vaultEscrow").document("account_sync_pfk")
+                .get(com.google.firebase.firestore.Source.SERVER).await()
+            if (legacy.exists()) {
+                val wrapping = com.pims.vault.core.crypto.HkdfKeyDerivation.deriveKey(
+                    uid.toByteArray(Charsets.UTF_8), "PIMS/account-sync-salt/v1".toByteArray(Charsets.UTF_8),
+                    "PIMS/account-sync-filekey/v1", 32)
+                val previous = try {
+                    cryptoEngine.decrypt(EncryptedPayload(
+                        Base64.decode(legacy.getString("wrappedKeyBase64") ?: return@withContext false, Base64.NO_WRAP),
+                        Base64.decode(legacy.getString("wrapIvBase64") ?: return@withContext false, Base64.NO_WRAP)),
+                        wrapping, "PIMS/account-sync-pfk/v1".toByteArray(Charsets.UTF_8))
+                } finally { wrapping.fill(0) }
                 try {
-                    val engine = com.pims.vault.core.crypto.HardenedCryptoEngine()
-                    val enc = engine.encrypt(
-                        pfkBytes,
-                        accountKey,
-                        associatedData = "PIMS/account-sync-pfk/v1".toByteArray(Charsets.UTF_8)
-                    )
-                    val data = hashMapOf(
-                        "keyId" to "account_sync_pfk",
-                        "version" to 1,
-                        "wrappedKeyBase64" to Base64.encodeToString(enc.combinedCiphertextWithTag, Base64.NO_WRAP),
-                        "wrapIvBase64" to Base64.encodeToString(enc.iv, Base64.NO_WRAP),
-                        "isCiphertext" to true,
-                        "createdAt" to System.currentTimeMillis()
-                    )
-                    escrowDocRef.set(data).await()
-                    VaultLogger.i("FirestoreSync", "Published account sync file key to remote escrow")
-                    return@withContext true
-                } finally {
-                    java.util.Arrays.fill(pfkBytes, 0)
+                    if (!java.security.MessageDigest.isEqual(previous, local)) return@withContext false
+                } finally { previous.fill(0) }
+            } else {
+                // An existing protected account requires explicit recovery before this device can publish.
+                for (name in listOf("vaultEscrow", "media", "documents", "photos", "wallpapers", "vault", "relationshipNotes")) {
+                    if (!account.collection(name).limit(1).get(com.google.firebase.firestore.Source.SERVER).await().isEmpty)
+                        return@withContext false
+                }
+                val legacyNotes = account.collection("notes").get(com.google.firebase.firestore.Source.SERVER).await()
+                for (note in legacyNotes.documents) {
+                    if (note.getBoolean("isLocked") == true || !note.getString("encryptionPayload").isNullOrBlank() ||
+                        !note.reference.collection("attachments").limit(1)
+                            .get(com.google.firebase.firestore.Source.SERVER).await().isEmpty) return@withContext false
                 }
             }
+            requireCurrentAccountFileKey(uid, local)
+            registerAccountFileKey(uid, fingerprint) && syncRetainedAccountFileKeys(uid, local, fingerprint)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "File-key agreement is pending. Recovery may be required")
             false
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Error syncing account file key: ${e.message}")
-            false
+        } finally { local.fill(0) }
+    }
+
+    private fun requireCurrentAccountFileKey(uid: String, expected: ByteArray) {
+        check(auth.currentUser?.uid == uid) { "The signed-in account changed" }
+        val active = portableFileKeyManager.copyKeyBytes()
+        try { check(java.security.MessageDigest.isEqual(active, expected)) { "The active file key changed during synchronization" } }
+        finally { active.fill(0) }
+    }
+
+    /** Historical ciphertext remains recoverable with the account's passphrase-protected root. */
+    private suspend fun syncRetainedAccountFileKeys(uid: String, active: ByteArray, fingerprint: String): Boolean {
+        requireCurrentAccountFileKey(uid, active)
+        val account = firestore.collection("accounts").document(uid)
+        val collection = account.collection("vaultEscrow")
+        val codec = AccountFileKeyHistoryCodec(cryptoEngine)
+        val remote = collection.whereEqualTo("kind", "portable_file_key_history")
+            .get(com.google.firebase.firestore.Source.SERVER).await()
+        requireCurrentAccountFileKey(uid, active)
+        val known = remote.documents.associateBy { it.id }
+        for (record in remote.documents) {
+            val previous = codec.open(record.data.orEmpty(), active, uid, record.id)
+            try {
+                requireCurrentAccountFileKey(uid, active)
+                portableFileKeyManager.retainHistoricalKey(previous)
+            } finally { previous.fill(0) }
         }
+        val historical = portableFileKeyManager.historicalKeyBytes()
+        try {
+            for (key in historical) {
+                if (java.security.MessageDigest.isEqual(key, active)) continue
+                requireCurrentAccountFileKey(uid, active)
+                val id = codec.recordId(key)
+                if (id in known) continue
+                // Prepare and authenticate ciphertext before an asynchronous transaction owns it.
+                val sealed = codec.seal(key, active, uid) + mapOf("kind" to "portable_file_key_history")
+                val reference = collection.document(id)
+                val published = firestore.runTransaction { transaction ->
+                    check(auth.currentUser?.uid == uid) { "The signed-in account changed" }
+                    check(transaction.get(account).getString("fileKeyFingerprintV2") == fingerprint) { "Account key agreement changed" }
+                    val existing = transaction.get(reference)
+                    if (existing.exists()) existing.data.orEmpty() else {
+                        transaction.set(reference, sealed)
+                        sealed
+                    }
+                }.await()
+                requireCurrentAccountFileKey(uid, active)
+                val verified = codec.open(published, active, uid, id)
+                try { check(java.security.MessageDigest.isEqual(key, verified)) { "Retained file-key backup was not confirmed" } }
+                finally { verified.fill(0) }
+            }
+        } finally { historical.forEach { it.fill(0) } }
+        requireCurrentAccountFileKey(uid, active)
+        return true
+    }
+
+    private fun accountFileKeyFingerprint(uid: String, key: ByteArray): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        digest.update("PIMS/account-file-key/fingerprint/v2\n$uid\n".toByteArray(Charsets.UTF_8))
+        return digest.digest(key).toHexString()
+    }
+
+    private suspend fun registerAccountFileKey(uid: String, fingerprint: String): Boolean {
+        val ref = firestore.collection("accounts").document(uid)
+        return firestore.runTransaction { transaction ->
+            check(auth.currentUser?.uid == uid) { "The signed-in account changed" }
+            val remote = transaction.get(ref)
+            val known = remote.getString("fileKeyFingerprintV2")
+            if (known != null) known == fingerprint else {
+                val fields = mutableMapOf<String, Any>("fileKeyFingerprintV2" to fingerprint)
+                if (!remote.exists()) fields.putAll(mapOf("accountUid" to uid, "createdAt" to System.currentTimeMillis()))
+                transaction.set(ref, fields, SetOptions.merge())
+                true
+            }
+        }.await()
+    }
+
+    /** Called after the recovery phrase authenticated the current escrow and local import succeeded. */
+    suspend fun confirmRecoveredAccountFileKey(keyId: String): Boolean = withContext(Dispatchers.IO) {
+        val uid = auth.currentUser?.uid ?: return@withContext false
+        val escrow = fetchRecoveryEscrow(uid) ?: return@withContext false
+        if (escrow.keyId != keyId) return@withContext false
+        val key = portableFileKeyManager.copyKeyBytes()
+        try {
+            val fingerprint = accountFileKeyFingerprint(uid, key)
+            registerAccountFileKey(uid, fingerprint) && syncRetainedAccountFileKeys(uid, key, fingerprint)
+        } finally { key.fill(0) }
     }
 
     /**
@@ -2190,8 +2293,8 @@ class FirestoreSyncService @Inject constructor(
 
         retryRelationshipDeletions(uid)
 
-        // Synchronize portable file key first so all media, attachments, documents and avatars decrypt cleanly
-        syncAccountFileKey(uid)
+        if (!syncAccountFileKey(uid)) return@withContext SyncResult(false, 0,
+            "Cloud file verification is pending. Retry sync, or recover this account in Backup & Recovery.")
 
         var count = 0
         var documentRecoveryPending = false

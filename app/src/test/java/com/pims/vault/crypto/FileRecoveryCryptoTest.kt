@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -101,5 +102,118 @@ class FileRecoveryCryptoTest {
         } catch (e: CryptoIntegrityException) {
             // expected
         }
+    }
+
+    @Test(timeout = 1_000)
+    fun unsupportedEscrowVersionAlgorithmAndPlaintextMarkerAreRejectedBeforeDerivation() {
+        val escrow = escrowFixture()
+        val invalid = listOf(
+            escrow.copy(version = 2),
+            escrow.copy(kdfAlgorithm = "PBKDF2WithHmacSHA1"),
+            escrow.copy(kdfAlgorithm = ""),
+            escrow.copy(isCiphertext = false)
+        )
+        invalid.forEach { candidate ->
+            assertThrows(IllegalArgumentException::class.java) {
+                FileRecoveryCrypto.recoverFromEscrow(candidate, "recovery phrase".toCharArray())
+            }
+        }
+    }
+
+    @Test(timeout = 1_000)
+    fun unsafeEscrowKeyIdentifiersAreRejectedBeforeDerivation() {
+        val escrow = escrowFixture()
+        listOf("", "../key", "folder/key", "space key", "x".repeat(129)).forEach { keyId ->
+            assertThrows(IllegalArgumentException::class.java) {
+                FileRecoveryCrypto.recoverFromEscrow(escrow.copy(keyId = keyId), "recovery phrase".toCharArray())
+            }
+        }
+    }
+
+    @Test(timeout = 1_000)
+    fun hostileAndUnsupportedEscrowIterationCountsAreRejectedBeforeDerivation() {
+        val escrow = escrowFixture()
+        listOf(-1, 0, 99_999, 2_000_001, Int.MAX_VALUE).forEach { iterations ->
+            assertThrows(IllegalArgumentException::class.java) {
+                FileRecoveryCrypto.recoverFromEscrow(escrow.copy(iterations = iterations), "recovery phrase".toCharArray())
+            }
+        }
+    }
+
+    @Test(timeout = 1_000)
+    fun directDerivationAlsoEnforcesSaltAndIterationUpperBounds() {
+        val passphrase = "recovery phrase".toCharArray()
+        listOf(99_999, 2_000_001, Int.MAX_VALUE).forEach { iterations ->
+            assertThrows(IllegalArgumentException::class.java) {
+                FileRecoveryCrypto.deriveRecoveryKey(passphrase, ByteArray(32), iterations)
+            }
+        }
+        listOf(15, 65).forEach { saltSize ->
+            assertThrows(IllegalArgumentException::class.java) {
+                FileRecoveryCrypto.deriveRecoveryKey(passphrase, ByteArray(saltSize))
+            }
+        }
+    }
+
+    @Test(timeout = 1_000)
+    fun malformedEncodedEscrowLengthsAndBase64AreRejectedBeforeDerivation() {
+        val escrow = escrowFixture()
+        val encoder = java.util.Base64.getEncoder()
+        val invalid = listOf(
+            escrow.copy(saltBase64 = encoder.encodeToString(ByteArray(15))),
+            escrow.copy(saltBase64 = encoder.encodeToString(ByteArray(65))),
+            escrow.copy(saltBase64 = "A".repeat(100_000)),
+            escrow.copy(saltBase64 = "%%%"),
+            escrow.copy(wrapIvBase64 = encoder.encodeToString(ByteArray(11))),
+            escrow.copy(wrapIvBase64 = encoder.encodeToString(ByteArray(13))),
+            escrow.copy(wrappedKeyBase64 = encoder.encodeToString(ByteArray(47))),
+            escrow.copy(wrappedKeyBase64 = encoder.encodeToString(ByteArray(49)))
+        )
+        invalid.forEach { candidate ->
+            assertThrows(IllegalArgumentException::class.java) {
+                FileRecoveryCrypto.recoverFromEscrow(candidate, "recovery phrase".toCharArray())
+            }
+        }
+    }
+
+    @Test
+    fun supportedSaltBoundaryLengthsAndMinimumIterationsRemainRecoverable() {
+        val passphrase = "correct recovery phrase".toCharArray()
+        val portable = ByteArray(32) { (it + 1).toByte() }
+        try {
+            listOf(16, 64).forEach { saltSize ->
+                val salt = ByteArray(saltSize) { 7 }
+                val recoveryKey = FileRecoveryCrypto.deriveRecoveryKey(passphrase, salt, 100_000)
+                try {
+                    val (wrapped, iv) = FileRecoveryCrypto.wrapPortableKey(portable, recoveryKey)
+                    val encoder = java.util.Base64.getEncoder()
+                    val escrow = FileRecoveryCrypto.RecoveryEscrow(
+                        keyId = "k".repeat(128),
+                        iterations = 100_000,
+                        saltBase64 = encoder.encodeToString(salt),
+                        wrappedKeyBase64 = encoder.encodeToString(wrapped),
+                        wrapIvBase64 = encoder.encodeToString(iv)
+                    )
+                    val recovered = FileRecoveryCrypto.recoverFromEscrow(escrow, passphrase)
+                    try { assertArrayEquals(portable, recovered) } finally { recovered.fill(0) }
+                } finally {
+                    recoveryKey.fill(0)
+                    salt.fill(0)
+                }
+            }
+        } finally {
+            passphrase.fill('0')
+            portable.fill(0)
+        }
+    }
+
+    private fun escrowFixture(): FileRecoveryCrypto.RecoveryEscrow {
+        val encoder = java.util.Base64.getEncoder()
+        return FileRecoveryCrypto.RecoveryEscrow(
+            keyId = "pfk_safe-test-key",
+            saltBase64 = encoder.encodeToString(ByteArray(32)),
+            wrappedKeyBase64 = encoder.encodeToString(ByteArray(48)),
+            wrapIvBase64 = encoder.encodeToString(ByteArray(12))
+        )
     }
 }

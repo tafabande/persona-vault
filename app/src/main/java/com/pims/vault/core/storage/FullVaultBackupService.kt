@@ -44,6 +44,8 @@ class FullVaultBackupService @Inject constructor(
                 secret.use { blobs["key:$domain"] = it.copyBytes() }
             }
             blobs["key:portable"] = portable.copyKeyBytes()
+            portable.historicalKeyBytes().forEachIndexed { index, key -> blobs["key:portable-history:$index"] = key }
+            session.getHistoricalZone4Keys().forEachIndexed { index, key -> blobs["key:vault-history:$index"] = key }
             val db = database.openHelper.writableDatabase
             db.execSQL("ATTACH DATABASE ? AS recovery_snapshot KEY ?", arrayOf(snapshot.absolutePath, checkNotNull(blobs["key:${HkdfKeyDerivation.CONTEXT_DATABASE}"])))
             try {
@@ -204,13 +206,28 @@ class FullVaultBackupService @Inject constructor(
                 val payloads = linkedMapOf<String, ByteArray>()
                 payloads["databases/${PimsDatabase.DATABASE_NAME}"] = preparedDatabase
                 try {
-                    val wrapped = keys.wrapRecoveryKeys(RECOVERY_DOMAINS.associateWith { checkNotNull(blobs["key:$it"]) })
+                    val recoveryKeys = RECOVERY_DOMAINS.associateWith { checkNotNull(blobs["key:$it"]) }.toMutableMap()
+                    blobs.filterKeys { it.startsWith("key:vault-history:") }.forEach { (id, key) ->
+                        require(id.removePrefix("key:vault-history:").toIntOrNull() != null && key.size == 32) { "Invalid retained vault key" }
+                        val fingerprint = java.security.MessageDigest.getInstance("SHA-256").digest(key).joinToString("") { "%02x".format(it) }
+                        recoveryKeys[KeySecurityManager.VAULT_RECOVERY_PREFIX + fingerprint] = key
+                    }
+                    val wrapped = keys.wrapRecoveryKeys(recoveryKeys)
                     payloads["shared_prefs/pims_keystore_wrapped_subkeys.xml"] = preferencesXml(wrapped)
                     val pfkEnvelope = crypto.encrypt(checkNotNull(blobs["key:portable"]),
                         checkNotNull(blobs["key:${HkdfKeyDerivation.CONTEXT_FILES}"]), "PIMS/portable-filekey/v1".toByteArray())
-                    payloads["shared_prefs/pims_portable_filekey_prefs.xml"] = preferencesXml(mapOf(
+                    val portablePrefs = mutableMapOf<String, Any>(
                         "pfk_wrap_iv" to java.util.Base64.getEncoder().encodeToString(pfkEnvelope.iv),
-                        "pfk_wrap_cipher" to java.util.Base64.getEncoder().encodeToString(pfkEnvelope.combinedCiphertextWithTag)))
+                        "pfk_wrap_cipher" to java.util.Base64.getEncoder().encodeToString(pfkEnvelope.combinedCiphertextWithTag))
+                    blobs.filterKeys { it.startsWith("key:portable-history:") }.forEach { (id, key) ->
+                        require(id.removePrefix("key:portable-history:").toIntOrNull() != null && key.size == 32) { "Invalid retained file key" }
+                        val fingerprint = java.security.MessageDigest.getInstance("SHA-256").digest(key).joinToString("") { "%02x".format(it) }
+                        val envelope = crypto.encrypt(key, checkNotNull(blobs["key:${HkdfKeyDerivation.CONTEXT_FILES}"]),
+                            "PIMS/portable-filekey/v1".toByteArray())
+                        portablePrefs["pfk_archive_${fingerprint}_iv"] = java.util.Base64.getEncoder().encodeToString(envelope.iv)
+                        portablePrefs["pfk_archive_${fingerprint}_cipher"] = java.util.Base64.getEncoder().encodeToString(envelope.combinedCiphertextWithTag)
+                    }
+                    payloads["shared_prefs/pims_portable_filekey_prefs.xml"] = preferencesXml(portablePrefs)
                     blobs.forEach { (id, bytes) ->
                         when {
                             id.startsWith("file:") -> {
@@ -237,7 +254,7 @@ class FullVaultBackupService @Inject constructor(
                                 payloads["shared_prefs/$name.xml"] = String(bytes, Charsets.UTF_8)
                                     .replace(oldRoot, context.filesDir.absolutePath).toByteArray()
                             }
-                            id != "metadata" && id !in required -> error("Unknown full-vault backup entry")
+                            id != "metadata" && id !in required && !id.startsWith("key:portable-history:") && !id.startsWith("key:vault-history:") -> error("Unknown full-vault backup entry")
                         }
                     }
                     // Cloud identity/session credentials are never imported from a backup.
@@ -289,7 +306,7 @@ class FullVaultBackupService @Inject constructor(
                 15 -> "ecbd2debb8974ce0e1edb23e956c623d"
                 16 -> "563033c0e51583b9678f6a9f13713a3b"
                 17 -> "344ab84df9133e409f6961d45814476f"
-                18 -> "PENDING_DOCUMENT_SCHEMA_HASH"
+                18 -> "30768ec382c75fca4a90800a6f3dd628"
                 else -> error("Unsupported vault database version")
             }
             db.rawQuery("SELECT identity_hash FROM room_master_table WHERE id = 42", emptyArray<String>()).use {

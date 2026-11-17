@@ -2,11 +2,13 @@ package com.pims.vault.core.sync
 
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
+import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.crypto.HardenedCryptoEngine
 import com.pims.vault.core.crypto.PortableFileKeyManager
 import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.presentation.wallpaper.WallpaperItem
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,36 +24,36 @@ class WallpaperBackupCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val photoSync: ProfilePhotoSyncService,
     private val firestoreSync: FirestoreSyncService,
-    private val portableFileKeyManager: PortableFileKeyManager
+    private val portableFileKeyManager: PortableFileKeyManager,
+    private val cryptoEngine: CryptoEngine = HardenedCryptoEngine()
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun backupAsync(item: WallpaperItem, sortOrder: Int, isActive: Boolean) {
         if (item.isBuiltIn || item.localFilePath.isNullOrBlank()) return
         scope.launchSafely {
-            val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@launchSafely
+            val uid = agreedUserId() ?: return@launchSafely
             val bytes = photoSync.readLocalJpegBytes(item.localFilePath) ?: return@launchSafely
             try {
-                try {
-                    portableFileKeyManager.getOrCreatePortableKey()
-                } catch (_: Exception) {}
-
                 val upload = photoSync.uploadPhoto(uid, "wallpaper", "wallpaper_${item.id}", bytes)
+                if (!isCurrentUser(uid)) return@launchSafely
                 val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
                 var photoCiphertextBase64: String? = null
                 var ivHex = upload?.ivHex ?: ""
-                val pfk = try { portableFileKeyManager.copyKeyBytes() } catch (_: Exception) { null }
-                if (pfk != null && bytes.size < 900 * 1024) {
+                if (upload == null && bytes.size <= 512 * 1024) {
+                    val key = portableFileKeyManager.copyKeyBytes()
                     try {
-                        val enc = HardenedCryptoEngine().encrypt(bytes, pfk)
-                        photoCiphertextBase64 = android.util.Base64.encodeToString(enc.combinedCiphertextWithTag, android.util.Base64.NO_WRAP)
-                        if (ivHex.isBlank()) {
-                            ivHex = enc.iv.joinToString("") { "%02x".format(it) }
+                        val encrypted = cryptoEngine.encrypt(bytes, key)
+                        try {
+                            photoCiphertextBase64 = android.util.Base64.encodeToString(
+                                encrypted.combinedCiphertextWithTag, android.util.Base64.NO_WRAP)
+                            ivHex = encrypted.iv.joinToString("") { "%02x".format(it) }
+                        } finally {
+                            encrypted.combinedCiphertextWithTag.fill(0)
                         }
-                    } catch (_: Exception) {
                     } finally {
-                        java.util.Arrays.fill(pfk, 0)
+                        key.fill(0)
                     }
                 }
 
@@ -60,8 +62,9 @@ class WallpaperBackupCoordinator @Inject constructor(
                     return@launchSafely
                 }
 
+                if (!isCurrentUser(uid)) return@launchSafely
                 firestoreSync.syncWallpaper(
-                    userId = null,
+                    userId = uid,
                     wallpaperId = item.id,
                     title = item.title,
                     subtitle = item.subtitle,
@@ -90,8 +93,14 @@ class WallpaperBackupCoordinator @Inject constructor(
     }
 
     suspend fun restore(): List<Pair<FirestoreSyncService.RemoteWallpaper, File>> = withContext(Dispatchers.IO) {
-        firestoreSync.listRemoteWallpapers(null).mapNotNull { remote ->
-            val target = File(File(context.filesDir, "wallpapers").apply { mkdirs() }, "restored_${remote.id}.jpg")
+        val uid = agreedUserId() ?: return@withContext emptyList()
+        val wallpapers = firestoreSync.listRemoteWallpapers(uid)
+        if (!isCurrentUser(uid)) return@withContext emptyList()
+        val directory = File(context.filesDir, "wallpapers").canonicalFile
+        wallpapers.mapNotNull { remote ->
+            if (!isCurrentUser(uid)) return@withContext emptyList()
+            val target = File(directory, "restored_${remote.id}.jpg").canonicalFile
+            if (!target.toPath().startsWith(directory.toPath())) return@mapNotNull null
             val ok = (target.exists() && target.length() > 0) || photoSync.downloadPhotoToFile(
                 downloadUrl = remote.photo.b2DownloadUrl,
                 ivHex = remote.photo.b2IvHex,
@@ -102,17 +111,42 @@ class WallpaperBackupCoordinator @Inject constructor(
                     portableFileKeyManager.legacyKeyBytes()
                 }
             )
-            if (ok) remote to target else null
+            if (ok && isCurrentUser(uid)) remote to target else null
         }
     }
 
     fun syncStateAsync(item: WallpaperItem, sortOrder: Int, isActive: Boolean) {
-        if (!item.isBuiltIn) scope.launchSafely { firestoreSync.syncWallpaperState(null, item.id, item.alignmentY, sortOrder, isActive) }
+        if (item.isBuiltIn) return
+        scope.launchSafely {
+            val uid = agreedUserId() ?: return@launchSafely
+            if (isCurrentUser(uid)) {
+                firestoreSync.syncWallpaperState(uid, item.id, item.alignmentY, sortOrder, isActive)
+            }
+        }
     }
 
-    fun deleteAsync(id: String) { scope.launchSafely { firestoreSync.deleteRemoteWallpaper(id) } }
+    fun deleteAsync(id: String) {
+        scope.launchSafely {
+            val uid = agreedUserId() ?: return@launchSafely
+            if (isCurrentUser(uid)) firestoreSync.deleteRemoteWallpaper(id, expectedAccountUid = uid)
+        }
+    }
+
+    private fun isCurrentUser(uid: String): Boolean = FirebaseAuth.getInstance().currentUser?.uid == uid
+
+    private suspend fun agreedUserId(): String? {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return null
+        if (!firestoreSync.syncAccountFileKey(uid) || !isCurrentUser(uid)) return null
+        return uid
+    }
 
     private fun CoroutineScope.launchSafely(block: suspend () -> Unit) = launch {
-        try { block() } catch (e: Exception) { VaultLogger.w("WallpaperBackup", e.message ?: "Wallpaper backup failed") }
+        try {
+            block()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("WallpaperBackup", "Wallpaper backup remains pending")
+        }
     }
 }

@@ -3,6 +3,9 @@ package com.pims.vault.storage
 import android.content.Context
 import com.pims.vault.core.crypto.HardenedCryptoEngine
 import com.pims.vault.core.crypto.CryptoIntegrityException
+import com.pims.vault.core.crypto.KeySecurityManager
+import com.pims.vault.core.crypto.PortableFileKeyManager
+import com.pims.vault.crypto.KeySecurityManagerSafetyRegressionTest
 import com.pims.vault.data.local.storage.EncryptedFileStorageImpl
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineDispatcher
@@ -19,8 +22,11 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
+import java.security.KeyStore
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import javax.crypto.KeyGenerator
 import kotlin.coroutines.CoroutineContext
 
 class AtomicMediaStorageTest {
@@ -183,6 +189,61 @@ class AtomicMediaStorageTest {
             assertArrayEquals(content, output.toByteArray())
         }
         assertArrayEquals(historical, original.readBytes())
+    }
+
+    @Test fun explicitKeyRecoveryKeepsOwnedMediaReadableAndExportsWithTheRecoveredKey(): Unit = runBlocking {
+        val context: Context = mock()
+        whenever(context.filesDir).thenReturn(temporary.root)
+        whenever(context.cacheDir).thenReturn(temporary.newFolder())
+        val masterKey = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val keyStore: KeyStore = mock()
+        whenever(keyStore.containsAlias(anyOrNull())).thenReturn(true)
+        whenever(keyStore.getKey(anyOrNull(), anyOrNull())).thenReturn(masterKey)
+        val keySecurityManager = KeySecurityManager(
+            keyStoreInstance = keyStore,
+            sharedPreferences = KeySecurityManagerSafetyRegressionTest.FakeSharedPreferences()
+        )
+        val keyManager = PortableFileKeyManager(context, keySecurityManager, crypto,
+            KeySecurityManagerSafetyRegressionTest.FakeSharedPreferences())
+        val providedCopies = CopyOnWriteArrayList<ByteArray>()
+        val files = EncryptedFileStorageImpl(
+            context, crypto,
+            keyProvider = { keyManager.copyKeyBytes().also { providedCopies.add(it) } },
+            historicalKeyProvider = {
+                keyManager.historicalKeyBytes().onEach { providedCopies.add(it) }
+            }
+        )
+        val content = ByteArray(90_000) { (it % 247).toByte() }
+        val stored = files.storeEncryptedFile("before-recovery", 1, "application/pdf", content.inputStream())
+        val originalCiphertext = File(temporary.root, stored.relativePath).readBytes()
+        val recoveredKey = ByteArray(32) { (it + 17).toByte() }
+        try {
+            keyManager.importRecoveredKey(recoveredKey, "recovery-test-key")
+            keyManager.lock()
+
+            val local = ByteArrayOutputStream()
+            files.readDecryptedFile(stored.relativePath, stored.encryptionIvHex, stored.sha256Hex, local)
+            assertArrayEquals(content, local.toByteArray())
+
+            // The online copy must be readable using only the recovered key on another device.
+            val recoveredReader = EncryptedFileStorageImpl(context, crypto, { recoveredKey.copyOf() })
+            files.prepareEncryptedExport(stored.relativePath, stored.encryptionIvHex, stored.sha256Hex).use { export ->
+                val restored = recoveredReader.storeRestoredChunkedCiphertext(export.storageId, 2, "application/pdf",
+                    export.openStream(), stored.sha256Hex, content.size.toLong())
+                val remote = ByteArrayOutputStream()
+                recoveredReader.readDecryptedFile(restored.relativePath, restored.encryptionIvHex, restored.sha256Hex, remote)
+                assertArrayEquals(content, remote.toByteArray())
+            }
+
+            assertArrayEquals(originalCiphertext, File(temporary.root, stored.relativePath).readBytes())
+            assertTrue(providedCopies.isNotEmpty())
+            assertTrue("Current and historical key copies must be wiped", providedCopies.all { copy ->
+                copy.all { it == 0.toByte() }
+            })
+        } finally {
+            recoveredKey.fill(0)
+            keyManager.lock()
+        }
     }
 
     private class QueuedDispatcher : CoroutineDispatcher() {

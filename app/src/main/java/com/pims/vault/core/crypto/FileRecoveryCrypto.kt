@@ -45,6 +45,11 @@ object FileRecoveryCrypto {
     const val GCM_TAG_BITS = 128
     const val MIN_PASSPHRASE_CHARS = 12
     const val ESCROW_VERSION = 1
+    private const val MIN_KDF_ITERATIONS = 100_000
+    private const val MAX_KDF_ITERATIONS = 2_000_000
+    private const val MIN_SALT_LENGTH_BYTES = 16
+    private const val MAX_SALT_LENGTH_BYTES = 64
+    private val safeKeyId = Regex("[A-Za-z0-9_-]{1,128}")
 
     data class RecoveryEscrow(
         val keyId: String,
@@ -84,12 +89,18 @@ object FileRecoveryCrypto {
      * native deps; Argon2id would need a bundled JNI lib — see ADR note).
      */
     fun deriveRecoveryKey(passphrase: CharArray, salt: ByteArray, iterations: Int = KDF_ITERATIONS): ByteArray {
-        require(salt.size >= 16) { "Salt too short" }
-        require(iterations >= 100_000) { "Iterations too low" }
+        require(salt.size in MIN_SALT_LENGTH_BYTES..MAX_SALT_LENGTH_BYTES) { "Unsupported recovery salt length" }
+        require(iterations in MIN_KDF_ITERATIONS..MAX_KDF_ITERATIONS) { "Unsupported recovery iteration count" }
         val spec = PBEKeySpec(passphrase, salt, iterations, KEY_LENGTH_BYTES * 8)
         return try {
             val factory = SecretKeyFactory.getInstance(KDF_ALGORITHM)
-            factory.generateSecret(spec).encoded
+            val derived = factory.generateSecret(spec).encoded
+                ?: throw IllegalStateException("Recovery key derivation returned no key")
+            if (derived.size != KEY_LENGTH_BYTES) {
+                derived.fill(0)
+                throw IllegalStateException("Recovery key derivation returned an unsupported key length")
+            }
+            derived
         } finally {
             spec.clearPassword()
         }
@@ -110,11 +121,18 @@ object FileRecoveryCrypto {
     /** Unwraps; throws on wrong passphrase (AEAD auth failure). */
     fun unwrapPortableKey(wrappedKey: ByteArray, iv: ByteArray, recoveryKey: ByteArray): ByteArray {
         require(recoveryKey.size == KEY_LENGTH_BYTES) { "Recovery key must be 32 bytes" }
+        require(iv.size == GCM_IV_LENGTH_BYTES) { "Recovery IV must be 12 bytes" }
+        require(wrappedKey.size == KEY_LENGTH_BYTES + GCM_TAG_BITS / 8) { "Unsupported wrapped recovery key length" }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(recoveryKey, "AES"), GCMParameterSpec(GCM_TAG_BITS, iv))
         cipher.updateAAD(RECOVERY_AAD.toByteArray(Charsets.UTF_8))
         return try {
-            cipher.doFinal(wrappedKey)
+            val recovered = cipher.doFinal(wrappedKey)
+            if (recovered.size != KEY_LENGTH_BYTES) {
+                recovered.fill(0)
+                throw CryptoIntegrityException("Unsupported recovered key length")
+            }
+            recovered
         } catch (e: Exception) {
             throw CryptoIntegrityException("Recovery unwrap failed: wrong passphrase or tampered escrow", e)
         }
@@ -122,34 +140,62 @@ object FileRecoveryCrypto {
 
     /** Creates a fresh escrow record for [portableKey] under [passphrase]. */
     fun createEscrow(portableKey: ByteArray, passphrase: CharArray): RecoveryEscrow {
+        require(portableKey.size == KEY_LENGTH_BYTES) { "Portable key must be 32 bytes" }
         validatePassphrase(passphrase)
         val salt = generateSalt()
-        val recoveryKey = deriveRecoveryKey(passphrase, salt)
         return try {
-            val (wrapped, iv) = wrapPortableKey(portableKey, recoveryKey)
-            RecoveryEscrow(
-                keyId = "pfk_${java.util.UUID.randomUUID().toString().take(12)}",
-                saltBase64 = java.util.Base64.getEncoder().encodeToString(salt),
-                wrappedKeyBase64 = java.util.Base64.getEncoder().encodeToString(wrapped),
-                wrapIvBase64 = java.util.Base64.getEncoder().encodeToString(iv)
-            )
+            val recoveryKey = deriveRecoveryKey(passphrase, salt)
+            try {
+                val (wrapped, iv) = wrapPortableKey(portableKey, recoveryKey)
+                RecoveryEscrow(
+                    keyId = "pfk_${java.util.UUID.randomUUID().toString().take(12)}",
+                    saltBase64 = java.util.Base64.getEncoder().encodeToString(salt),
+                    wrappedKeyBase64 = java.util.Base64.getEncoder().encodeToString(wrapped),
+                    wrapIvBase64 = java.util.Base64.getEncoder().encodeToString(iv)
+                )
+            } finally {
+                recoveryKey.fill(0)
+            }
         } finally {
-            java.util.Arrays.fill(recoveryKey, 0)
+            salt.fill(0)
         }
     }
 
     /** Recovers the portable key from an escrow record + passphrase. */
     fun recoverFromEscrow(escrow: RecoveryEscrow, passphrase: CharArray): ByteArray {
         require(escrow.version == ESCROW_VERSION) { "Unsupported escrow version ${escrow.version}" }
-        val salt = java.util.Base64.getDecoder().decode(escrow.saltBase64)
-        val wrapped = java.util.Base64.getDecoder().decode(escrow.wrappedKeyBase64)
-        val iv = java.util.Base64.getDecoder().decode(escrow.wrapIvBase64)
-        val recoveryKey = deriveRecoveryKey(passphrase, salt, escrow.iterations)
+        require(escrow.kdfAlgorithm == KDF_ALGORITHM) { "Unsupported recovery key algorithm" }
+        require(escrow.isCiphertext) { "Recovery escrow must contain ciphertext" }
+        require(safeKeyId.matches(escrow.keyId)) { "Invalid recovery key identifier" }
+        require(escrow.iterations in MIN_KDF_ITERATIONS..MAX_KDF_ITERATIONS) { "Unsupported recovery iteration count" }
+        var salt: ByteArray? = null
+        var wrapped: ByteArray? = null
+        var iv: ByteArray? = null
+        var recoveryKey: ByteArray? = null
         return try {
+            salt = decodeEscrowBytes(escrow.saltBase64, MIN_SALT_LENGTH_BYTES, MAX_SALT_LENGTH_BYTES)
+            wrapped = decodeEscrowBytes(escrow.wrappedKeyBase64, KEY_LENGTH_BYTES + GCM_TAG_BITS / 8,
+                KEY_LENGTH_BYTES + GCM_TAG_BITS / 8)
+            iv = decodeEscrowBytes(escrow.wrapIvBase64, GCM_IV_LENGTH_BYTES, GCM_IV_LENGTH_BYTES)
+            recoveryKey = deriveRecoveryKey(passphrase, salt, escrow.iterations)
             unwrapPortableKey(wrapped, iv, recoveryKey)
         } finally {
-            java.util.Arrays.fill(recoveryKey, 0)
+            recoveryKey?.fill(0)
+            salt?.fill(0)
+            wrapped?.fill(0)
+            iv?.fill(0)
         }
+    }
+
+    private fun decodeEscrowBytes(value: String, minimumSize: Int, maximumSize: Int): ByteArray {
+        val maximumEncodedLength = (maximumSize + 2) / 3 * 4
+        require(value.isNotEmpty() && value.length <= maximumEncodedLength) { "Unsupported recovery field length" }
+        val decoded = java.util.Base64.getDecoder().decode(value)
+        if (decoded.size !in minimumSize..maximumSize) {
+            decoded.fill(0)
+            throw IllegalArgumentException("Unsupported recovery field length")
+        }
+        return decoded
     }
 
     /** Re-wraps the SAME portable key under a new passphrase (no B2 re-encrypt). */
