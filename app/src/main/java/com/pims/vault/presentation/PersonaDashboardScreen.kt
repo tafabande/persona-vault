@@ -258,6 +258,131 @@ import kotlinx.coroutines.launch
 import java.util.Calendar
 
 
+// Keep remembered workflow state grouped so this dashboard's generated DEX frame stays bounded.
+private class DashboardNavigationState(initialOpenNoteId: String?) {
+    var selectedTab by mutableIntStateOf(0)
+    var fullScreenOverlay by mutableStateOf<String?>(null)
+    var activeNoteId by mutableStateOf<String?>(initialOpenNoteId)
+    var selectedPersonForDetail by mutableStateOf<KinRelationshipItem?>(null)
+    var personToEditForDialog by mutableStateOf<KinRelationshipItem?>(null)
+    var showPublicResumeModal by mutableStateOf(false)
+    var relationshipToDelete by mutableStateOf<KinRelationshipItem?>(null)
+}
+
+private class DashboardDocumentState {
+    var pendingUploadUri by mutableStateOf<Uri?>(null)
+    var uploadDocTitle by mutableStateOf("")
+    var uploadDocType by mutableStateOf(DocumentType.NATIONAL_ID)
+    var uploadDocNumber by mutableStateOf("")
+    var uploadDocAuthority by mutableStateOf("")
+    var uploadDocExpiryDate by mutableStateOf("")
+    var uploadDocClassification by mutableStateOf(SecurityClassification.ZONE_2_PRIVATE)
+    var uploadDocFileName by mutableStateOf("")
+    var uploadDocSizeBytes by androidx.compose.runtime.mutableLongStateOf(0L)
+    var uploadDocMimeType by mutableStateOf("application/pdf")
+    var isEncryptingAndSavingDoc by mutableStateOf(false)
+    var uploadDocImportId by mutableStateOf(java.util.UUID.randomUUID().toString())
+    var uploadDocError by mutableStateOf<String?>(null)
+    var versionUploadTarget by mutableStateOf<DocumentWithHistory?>(null)
+    var documentToDelete by mutableStateOf<DocumentWithHistory?>(null)
+    var pendingExportDoc by mutableStateOf<DocumentWithHistory?>(null)
+}
+
+private class DashboardAccessState {
+    var pendingSensitiveAction by mutableStateOf<(() -> Unit)?>(null)
+    var pendingSecurityTier by mutableStateOf<SecurityTier?>(null)
+    var isBiometricPromptVisible by mutableStateOf(false)
+    var isPinChallengeVisible by mutableStateOf(false)
+    var biometricFailedAttempts by mutableIntStateOf(0)
+    var isLevel2Unlocked by mutableStateOf(false)
+    var zone4CryptoObject by mutableStateOf<androidx.biometric.BiometricPrompt.CryptoObject?>(null)
+}
+
+private class DashboardCustomFieldState {
+    var customFieldInitialLabel by mutableStateOf("")
+    var customFieldEditingId by mutableStateOf<String?>(null)
+    var customFieldInitialValue by mutableStateOf("")
+    var customFieldCategory by mutableStateOf("Custom Information")
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+private class DashboardModalSheets(
+    val addActionSheetState: androidx.compose.material3.SheetState,
+    val shareModalState: androidx.compose.material3.SheetState,
+    val eduSheetState: androidx.compose.material3.SheetState,
+    val healthSheetState: androidx.compose.material3.SheetState,
+    val docsSheetState: androidx.compose.material3.SheetState,
+    val uploadDocSheetState: androidx.compose.material3.SheetState,
+    val vaultSheetState: androidx.compose.material3.SheetState,
+    val conflictSheetState: androidx.compose.material3.SheetState,
+    val sessionsSheetState: androidx.compose.material3.SheetState,
+    val notificationSheetState: androidx.compose.material3.SheetState,
+    val searchSheetState: androidx.compose.material3.SheetState,
+    val storageSheetState: androidx.compose.material3.SheetState,
+    val dataBackupSheetState: androidx.compose.material3.SheetState,
+    val wallpaperOptionsSheetState: androidx.compose.material3.SheetState,
+    val centralizedEditorSheetState: androidx.compose.material3.SheetState,
+    val avatarEditorSheetState: androidx.compose.material3.SheetState
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun rememberDashboardModalSheets(): DashboardModalSheets {
+    val addActionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val shareModalState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val eduSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val healthSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val docsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val uploadDocSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val vaultSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val conflictSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sessionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val notificationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val searchSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val storageSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val dataBackupSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val wallpaperOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val centralizedEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val avatarEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    return remember(
+        addActionSheetState,
+        shareModalState,
+        eduSheetState,
+        healthSheetState,
+        docsSheetState,
+        uploadDocSheetState,
+        vaultSheetState,
+        conflictSheetState,
+        sessionsSheetState,
+        notificationSheetState,
+        searchSheetState,
+        storageSheetState,
+        dataBackupSheetState,
+        wallpaperOptionsSheetState,
+        centralizedEditorSheetState,
+        avatarEditorSheetState
+    ) {
+        DashboardModalSheets(
+            addActionSheetState,
+            shareModalState,
+            eduSheetState,
+            healthSheetState,
+            docsSheetState,
+            uploadDocSheetState,
+            vaultSheetState,
+            conflictSheetState,
+            sessionsSheetState,
+            notificationSheetState,
+            searchSheetState,
+            storageSheetState,
+            dataBackupSheetState,
+            wallpaperOptionsSheetState,
+            centralizedEditorSheetState,
+            avatarEditorSheetState
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PersonaDashboardScreen(
@@ -399,17 +524,15 @@ fun PersonaDashboardScreen(
     }
 
     // 5 Bottom Navigation Tabs: 0: Home, 1: Notes, 2: Me, 3: People, 4: Settings
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val navigationUi = remember { DashboardNavigationState(initialOpenNoteId) }
 
     // Full screen overlays (e.g. Full Vault, Backup, Notes Editor, Connect Person)
-    var fullScreenOverlay by remember { mutableStateOf<String?>(null) }
-    var activeNoteId by remember { mutableStateOf<String?>(initialOpenNoteId) }
 
     LaunchedEffect(initialOpenNoteId) {
         if (!initialOpenNoteId.isNullOrBlank()) {
-            activeNoteId = initialOpenNoteId
-            fullScreenOverlay = "NOTE_EDITOR"
-            selectedTab = 1
+            navigationUi.activeNoteId = initialOpenNoteId
+            navigationUi.fullScreenOverlay = "NOTE_EDITOR"
+            navigationUi.selectedTab = 1
         }
     }
 
@@ -502,9 +625,9 @@ fun PersonaDashboardScreen(
     LaunchedEffect(initialQuickAction) {
         when (initialQuickAction) {
             MainActivity.ACTION_DOCUMENTS -> showSheet("documents")
-            MainActivity.ACTION_PEOPLE -> selectedTab = 3
-            MainActivity.ACTION_VAULT -> fullScreenOverlay = "VAULT"
-            MainActivity.ACTION_NOTES -> selectedTab = 1
+            MainActivity.ACTION_PEOPLE -> navigationUi.selectedTab = 3
+            MainActivity.ACTION_VAULT -> navigationUi.fullScreenOverlay = "VAULT"
+            MainActivity.ACTION_NOTES -> navigationUi.selectedTab = 1
         }
         if (initialQuickAction != null) {
             onQuickActionHandled?.invoke()
@@ -597,35 +720,11 @@ fun PersonaDashboardScreen(
         }
     }
 
-    val addActionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val shareModalState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val eduSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val healthSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val docsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val uploadDocSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val vaultSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val conflictSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val sessionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val notificationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val searchSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val storageSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val dataBackupSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val wallpaperOptionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val centralizedEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val avatarEditorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val modalSheets = rememberDashboardModalSheets()
     
-    var selectedPersonForDetail by remember { mutableStateOf<KinRelationshipItem?>(null) }
-    var personToEditForDialog by remember { mutableStateOf<KinRelationshipItem?>(null) }
-    var showPublicResumeModal by remember { mutableStateOf(false) }
 
     // Tiered Biometric Verification state for sensitive records (Level 2) and Vault (Level 3)
-    var pendingSensitiveAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var pendingSecurityTier by remember { mutableStateOf<SecurityTier?>(null) }
-    var isBiometricPromptVisible by remember { mutableStateOf(false) }
-    var isPinChallengeVisible by remember { mutableStateOf(false) }
-    var biometricFailedAttempts by remember { mutableIntStateOf(0) }
-    var isLevel2Unlocked by remember { mutableStateOf(false) }
-    var zone4CryptoObject by remember { mutableStateOf<androidx.biometric.BiometricPrompt.CryptoObject?>(null) }
+    val accessUi = remember { DashboardAccessState() }
 
     fun requestGatedAccess(
         tier: SecurityTier,
@@ -633,18 +732,18 @@ fun PersonaDashboardScreen(
         subtitle: String,
         onSuccess: () -> Unit
     ) {
-        if (tier == SecurityTier.LEVEL_2_SENSITIVE && isLevel2Unlocked) {
+        if (tier == SecurityTier.LEVEL_2_SENSITIVE && accessUi.isLevel2Unlocked) {
             onSuccess()
             return
         }
-        pendingSecurityTier = tier
-        pendingSensitiveAction = onSuccess
+        accessUi.pendingSecurityTier = tier
+        accessUi.pendingSensitiveAction = onSuccess
 
         if (tier == SecurityTier.LEVEL_3_VAULT) {
             val requestVaultAuth = onRequestVaultBiometricAuth
             if (requestVaultAuth == null) {
-                pendingSensitiveAction = null
-                pendingSecurityTier = null
+                accessUi.pendingSensitiveAction = null
+                accessUi.pendingSecurityTier = null
                 scope.launch { snackbarHostState.showSnackbar("Vault hardware authentication is unavailable") }
                 return
             }
@@ -652,16 +751,16 @@ fun PersonaDashboardScreen(
                 title,
                 subtitle,
                 { cryptoObject ->
-                    zone4CryptoObject = cryptoObject
-                    val action = pendingSensitiveAction
-                    pendingSensitiveAction = null
-                    pendingSecurityTier = null
+                    accessUi.zone4CryptoObject = cryptoObject
+                    val action = accessUi.pendingSensitiveAction
+                    accessUi.pendingSensitiveAction = null
+                    accessUi.pendingSecurityTier = null
                     action?.invoke()
                 },
                 { error ->
-                    zone4CryptoObject = null
-                    pendingSensitiveAction = null
-                    pendingSecurityTier = null
+                    accessUi.zone4CryptoObject = null
+                    accessUi.pendingSensitiveAction = null
+                    accessUi.pendingSecurityTier = null
                     scope.launch { snackbarHostState.showSnackbar("Vault authentication cancelled: $error") }
                 }
             )
@@ -675,31 +774,31 @@ fun PersonaDashboardScreen(
                 subtitle,
                 {
                     if (tier == SecurityTier.LEVEL_2_SENSITIVE) {
-                        isLevel2Unlocked = true
+                        accessUi.isLevel2Unlocked = true
                     }
-                    val action = pendingSensitiveAction
-                    pendingSensitiveAction = null
-                    pendingSecurityTier = null
+                    val action = accessUi.pendingSensitiveAction
+                    accessUi.pendingSensitiveAction = null
+                    accessUi.pendingSecurityTier = null
                     action?.invoke()
                 },
                 { error ->
                     // Biometric cancelled or failed -> fallback to PIN challenge if configured
                     if (pinSecurityManager.hasPin()) {
-                        isPinChallengeVisible = true
+                        accessUi.isPinChallengeVisible = true
                     } else if (error.contains("BIOMETRICS_UNAVAILABLE", ignoreCase = true) ||
                         error.contains("No fingerprints", ignoreCase = true) ||
                         error.contains("No biometric", ignoreCase = true)) {
                         // Hardware credential unavailable and no app PIN configured: allow graceful access
                         if (tier == SecurityTier.LEVEL_2_SENSITIVE) {
-                            isLevel2Unlocked = true
+                            accessUi.isLevel2Unlocked = true
                         }
-                        val action = pendingSensitiveAction
-                        pendingSensitiveAction = null
-                        pendingSecurityTier = null
+                        val action = accessUi.pendingSensitiveAction
+                        accessUi.pendingSensitiveAction = null
+                        accessUi.pendingSecurityTier = null
                         action?.invoke()
                     } else {
-                        pendingSensitiveAction = null
-                        pendingSecurityTier = null
+                        accessUi.pendingSensitiveAction = null
+                        accessUi.pendingSecurityTier = null
                         scope.launch {
                             snackbarHostState.showSnackbar("Authentication cancelled: Access locked")
                         }
@@ -707,14 +806,14 @@ fun PersonaDashboardScreen(
                 }
             )
         } else if (pinSecurityManager.hasPin()) {
-            isPinChallengeVisible = true
+            accessUi.isPinChallengeVisible = true
         } else {
             // Initial setup or unconfigured security
             if (tier == SecurityTier.LEVEL_2_SENSITIVE) {
-                isLevel2Unlocked = true
+                accessUi.isLevel2Unlocked = true
             }
-            pendingSensitiveAction = null
-            pendingSecurityTier = null
+            accessUi.pendingSensitiveAction = null
+            accessUi.pendingSecurityTier = null
             onSuccess()
         }
     }
@@ -726,7 +825,7 @@ fun PersonaDashboardScreen(
         }
         requestGatedAccess(SecurityTier.LEVEL_3_VAULT, "Unlock security vault", "Confirm with a strong biometric") {
             vaultViewModel.elevateAndUnlockVault(
-                cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
+                cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
                 onSuccess = action,
                 onError = { error -> scope.launch { snackbarHostState.showSnackbar(error) } }
             )
@@ -735,7 +834,7 @@ fun PersonaDashboardScreen(
 
     val openVaultFortress: () -> Unit = {
         if (vaultState.isVaultUnlocked) {
-            fullScreenOverlay = "VAULT"
+            navigationUi.fullScreenOverlay = "VAULT"
         } else {
             requestGatedAccess(
                 SecurityTier.LEVEL_3_VAULT,
@@ -743,9 +842,9 @@ fun PersonaDashboardScreen(
                 "Confirm with a strong biometric to unlock this hardware-protected vault"
             ) {
                 vaultViewModel.elevateAndUnlockVault(
-                    cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
+                    cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
                     onSuccess = {
-                        fullScreenOverlay = "VAULT"
+                        navigationUi.fullScreenOverlay = "VAULT"
                         recentActivityManager.recordActivity("Unlocked Security Vault", "Zone 4 hardware encryption accessed")
                     },
                     onError = { err ->
@@ -757,21 +856,7 @@ fun PersonaDashboardScreen(
     }
 
     // Document Upload & Delete States
-    var pendingUploadUri by remember { mutableStateOf<Uri?>(null) }
-    var uploadDocTitle by remember { mutableStateOf("") }
-    var uploadDocType by remember { mutableStateOf(DocumentType.NATIONAL_ID) }
-    var uploadDocNumber by remember { mutableStateOf("") }
-    var uploadDocAuthority by remember { mutableStateOf("") }
-    var uploadDocExpiryDate by remember { mutableStateOf("") }
-    var uploadDocClassification by remember { mutableStateOf(SecurityClassification.ZONE_2_PRIVATE) }
-    var uploadDocFileName by remember { mutableStateOf("") }
-    var uploadDocSizeBytes by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    var uploadDocMimeType by remember { mutableStateOf("application/pdf") }
-    var isEncryptingAndSavingDoc by remember { mutableStateOf(false) }
-    var uploadDocImportId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
-    var uploadDocError by remember { mutableStateOf<String?>(null) }
-    var versionUploadTarget by remember { mutableStateOf<DocumentWithHistory?>(null) }
-    var documentToDelete by remember { mutableStateOf<DocumentWithHistory?>(null) }
+    val documentUi = remember { DashboardDocumentState() }
 
     fun queryUploadMetadata(ctx: android.content.Context, uri: Uri): Pair<String, Long> {
         var name = uri.lastPathSegment?.substringAfterLast("/") ?: "Document"
@@ -880,10 +965,7 @@ fun PersonaDashboardScreen(
         )
     }
 
-    var customFieldInitialLabel by remember { mutableStateOf("") }
-    var customFieldEditingId by remember { mutableStateOf<String?>(null) }
-    var customFieldInitialValue by remember { mutableStateOf("") }
-    var customFieldCategory by remember { mutableStateOf("Custom Information") }
+    val customFieldUi = remember { DashboardCustomFieldState() }
     
     fun showDialog(dialogName: String) {
         dialogStates.value = dialogStates.value.toMutableMap().apply { this[dialogName] = true }
@@ -894,12 +976,12 @@ fun PersonaDashboardScreen(
     }
 
     fun clearDocumentDraft() {
-        pendingUploadUri?.let { uri ->
+        documentUi.pendingUploadUri?.let { uri ->
             runCatching { context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         }
-        pendingUploadUri = null
-        versionUploadTarget = null
-        uploadDocError = null
+        documentUi.pendingUploadUri = null
+        documentUi.versionUploadTarget = null
+        documentUi.uploadDocError = null
     }
 
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -912,39 +994,38 @@ fun PersonaDashboardScreen(
                         runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                         Triple(value.first, value.second, resolveUploadMimeType(context, uri, value.first))
                     }
-                    val replacing = pendingUploadUri != null
-                    val previous = pendingUploadUri
-                    pendingUploadUri = uri
+                    val replacing = documentUi.pendingUploadUri != null
+                    val previous = documentUi.pendingUploadUri
+                    documentUi.pendingUploadUri = uri
                     if (previous != null && previous != uri) runCatching {
                         context.contentResolver.releasePersistableUriPermission(previous, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-                    uploadDocImportId = java.util.UUID.randomUUID().toString()
-                    uploadDocFileName = metadata.first
-                    uploadDocSizeBytes = metadata.second
-                    uploadDocMimeType = metadata.third
-                    uploadDocError = null
+                    documentUi.uploadDocImportId = java.util.UUID.randomUUID().toString()
+                    documentUi.uploadDocFileName = metadata.first
+                    documentUi.uploadDocSizeBytes = metadata.second
+                    documentUi.uploadDocMimeType = metadata.third
+                    documentUi.uploadDocError = null
                     if (!replacing) {
-                        val target = versionUploadTarget
+                        val target = documentUi.versionUploadTarget
                         val guessed = guessUploadDocumentTypeAndTitle(metadata.first)
-                        uploadDocType = target?.document?.documentType ?: guessed.first
-                        uploadDocTitle = target?.document?.title ?: guessed.second
-                        uploadDocNumber = target?.document?.documentNumber.orEmpty()
-                        uploadDocAuthority = target?.document?.issuingAuthority.orEmpty()
-                        uploadDocExpiryDate = target?.document?.expirationDate.orEmpty()
-                        uploadDocClassification = target?.document?.securityClassification ?: DocumentRules.resolveDefaultClassification(guessed.first)
+                        documentUi.uploadDocType = target?.document?.documentType ?: guessed.first
+                        documentUi.uploadDocTitle = target?.document?.title ?: guessed.second
+                        documentUi.uploadDocNumber = target?.document?.documentNumber.orEmpty()
+                        documentUi.uploadDocAuthority = target?.document?.issuingAuthority.orEmpty()
+                        documentUi.uploadDocExpiryDate = target?.document?.expirationDate.orEmpty()
+                        documentUi.uploadDocClassification = target?.document?.securityClassification ?: DocumentRules.resolveDefaultClassification(guessed.first)
                     }
                     showSheet("uploadDoc")
                 } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
                 } catch (_: Exception) { snackbarHostState.showSnackbar("Could not select this file. Choose an accessible file up to 50 MB.") }
             }
-        } else if (pendingUploadUri == null) versionUploadTarget = null
+        } else if (documentUi.pendingUploadUri == null) documentUi.versionUploadTarget = null
     }
 
-    var pendingExportDoc by remember { mutableStateOf<com.pims.vault.domain.model.DocumentWithHistory?>(null) }
     val exportDocLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { destinationUri: Uri? ->
-        val doc = pendingExportDoc
+        val doc = documentUi.pendingExportDoc
         val version = doc?.currentVersion
         if (destinationUri != null && version != null) {
             documentViewModel.exportDocument(
@@ -964,14 +1045,14 @@ fun PersonaDashboardScreen(
                 }
             )
         }
-        pendingExportDoc = null
+        documentUi.pendingExportDoc = null
     }
 
     fun authorizeDocumentAction(doc: DocumentWithHistory, action: () -> Unit) {
         when {
             doc.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL -> withPrivateNotesUnlocked(action)
             (doc.document.isLocked || (doc.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE &&
-                pinSecurityManager.requireAuthForSensitive.value)) && !isLevel2Unlocked ->
+                pinSecurityManager.requireAuthForSensitive.value)) && !accessUi.isLevel2Unlocked ->
                 requestGatedAccess(SecurityTier.LEVEL_2_SENSITIVE, "Unlock document", "Confirm your identity", action)
             else -> action()
         }
@@ -1005,7 +1086,7 @@ fun PersonaDashboardScreen(
 
     val onInitiateDocumentExport: (DocumentWithHistory) -> Unit = { doc ->
         authorizeDocumentAction(doc) {
-            pendingExportDoc = doc
+            documentUi.pendingExportDoc = doc
             val original = doc.currentVersion?.originalFilename
             val suffix = when (doc.currentVersion?.mimeType) {
                 "application/pdf", "application/x-pdf" -> ".pdf"
@@ -1020,7 +1101,6 @@ fun PersonaDashboardScreen(
     }
 
     
-    var relationshipToDelete by remember { mutableStateOf<KinRelationshipItem?>(null) }
 
     // Primary contact getters
     val primaryPhone = profileState.contacts.firstOrNull { it.contactType == ContactType.PHONE }?.value
@@ -1170,14 +1250,14 @@ fun PersonaDashboardScreen(
     }
 
     // If a full-screen overlay is requested (e.g. Full Vault or Backup), render it
-    if (fullScreenOverlay != null) {
-        when (fullScreenOverlay) {
+    if (navigationUi.fullScreenOverlay != null) {
+        when (navigationUi.fullScreenOverlay) {
             "NOTE_EDITOR" -> {
                 PlainNoteEditorScreen(
-                    noteId = activeNoteId,
+                    noteId = navigationUi.activeNoteId,
                     onBack = {
-                        activeNoteId = null
-                        fullScreenOverlay = null
+                        navigationUi.activeNoteId = null
+                        navigationUi.fullScreenOverlay = null
                     },
                     onRequestAuth = { title, subtitle, onSuccess ->
                         requestGatedAccess(
@@ -1192,7 +1272,7 @@ fun PersonaDashboardScreen(
             }
             "CONNECT_PERSON" -> {
                 ConnectPersonScreen(
-                    onBack = { fullScreenOverlay = null },
+                    onBack = { navigationUi.fullScreenOverlay = null },
                     onSavePerson = { role, relName, gender, phone, email, address, dob, anniversary, notes, photoPath, isNextOfKin, contacts ->
                         val targetId = java.util.UUID.randomUUID().toString()
                         if (!photoPath.isNullOrBlank()) {
@@ -1227,20 +1307,20 @@ fun PersonaDashboardScreen(
                         recentActivityManager.recordActivity("Added $relName", "Relationship: $role")
                         toastController.showSuccess("Added $relName to People")
                         soundManager.success()
-                        fullScreenOverlay = null
+                        navigationUi.fullScreenOverlay = null
                     }
                 )
                 return
             }
             "PERSON_DETAIL" -> {
-                val currentPerson = profileState.relationships.find { it.id == selectedPersonForDetail?.id } ?: selectedPersonForDetail
+                val currentPerson = profileState.relationships.find { it.id == navigationUi.selectedPersonForDetail?.id } ?: navigationUi.selectedPersonForDetail
                 if (currentPerson != null) {
                     BackHandler(enabled = true) {
-                        if (personToEditForDialog != null) {
-                            personToEditForDialog = null
+                        if (navigationUi.personToEditForDialog != null) {
+                            navigationUi.personToEditForDialog = null
                         } else {
-                            fullScreenOverlay = null
-                            selectedPersonForDetail = null
+                            navigationUi.fullScreenOverlay = null
+                            navigationUi.selectedPersonForDetail = null
                         }
                     }
                     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -1250,17 +1330,17 @@ fun PersonaDashboardScreen(
                             isVaultUnlocked = relationshipState.isVaultUnlocked,
                             onUnlockVault = { withPrivateNotesUnlocked {} },
                             onBack = {
-                                fullScreenOverlay = null
-                                selectedPersonForDetail = null
+                                navigationUi.fullScreenOverlay = null
+                                navigationUi.selectedPersonForDetail = null
                             },
                             onEditPerson = { p ->
-                                personToEditForDialog = p
+                                navigationUi.personToEditForDialog = p
                             },
                             onDeletePerson = { p ->
                                 profileViewModel.onEvent(ProfileEvent.DeleteRelationship(p.id, p.targetPersonId))
                                 recentActivityManager.recordActivity("Removed person from People", "Disconnected ${p.fullName}")
-                                fullScreenOverlay = null
-                                selectedPersonForDetail = null
+                                navigationUi.fullScreenOverlay = null
+                                navigationUi.selectedPersonForDetail = null
                             },
                             onOpenAttachment = { noteId, attachmentId ->
                                 scope.launch {
@@ -1322,22 +1402,22 @@ fun PersonaDashboardScreen(
                             }
                         )
 
-                        if (personToEditForDialog != null) {
+                        if (navigationUi.personToEditForDialog != null) {
                             EditManagedPersonSheet(
-                                person = personToEditForDialog,
+                                person = navigationUi.personToEditForDialog,
                                 relationshipState = relationshipState,
                                 profileViewModel = profileViewModel,
                                 recentActivityManager = recentActivityManager,
                                 soundManager = soundManager,
                                 haptics = haptics,
                                 toastController = toastController,
-                                onDismissRequest = { personToEditForDialog = null }
+                                onDismissRequest = { navigationUi.personToEditForDialog = null }
                             )
                         }
                     }
                     return
                 } else {
-                    fullScreenOverlay = null
+                    navigationUi.fullScreenOverlay = null
                 }
             }
             "VAULT" -> {
@@ -1351,14 +1431,14 @@ fun PersonaDashboardScreen(
                                 "Authentication required for vault access"
                             ) {
                                 vaultViewModel.elevateAndUnlockVault(
-                                    cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
+                                    cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
                                     onError = { err ->
                                         scope.launch { snackbarHostState.showSnackbar("Vault re-authentication failed: $err") }
                                     }
                                 )
                             }
                         },
-                        onBack = { fullScreenOverlay = null },
+                        onBack = { navigationUi.fullScreenOverlay = null },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -1366,7 +1446,7 @@ fun PersonaDashboardScreen(
             }
             "BACKUP" -> {
                 BackHandler(enabled = true) {
-                    fullScreenOverlay = null
+                    navigationUi.fullScreenOverlay = null
                 }
                 Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().screenEnterRise()) {
                     Row(
@@ -1375,7 +1455,7 @@ fun PersonaDashboardScreen(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = { fullScreenOverlay = null }) {
+                        IconButton(onClick = { navigationUi.fullScreenOverlay = null }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "Back to Persona")
                         }
                         Text("Backup", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
@@ -1393,7 +1473,7 @@ fun PersonaDashboardScreen(
                 Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
                     SecuritySettingsScreen(
                         pinSecurityManager = pinSecurityManager,
-                        onBack = { fullScreenOverlay = null },
+                        onBack = { navigationUi.fullScreenOverlay = null },
                         onRequestBiometricAuth = onRequestBiometricAuth
                     )
                 }
@@ -1404,7 +1484,7 @@ fun PersonaDashboardScreen(
                     MedicalDossierView(
                         uiState = medicalState,
                         onEvent = medicalViewModel::onEvent,
-                        onDismiss = { fullScreenOverlay = null },
+                        onDismiss = { navigationUi.fullScreenOverlay = null },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -1423,7 +1503,7 @@ fun PersonaDashboardScreen(
                 Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
                     InformationLibraryScreen(
                         items = libraryItems,
-                        onBack = { fullScreenOverlay = null },
+                        onBack = { navigationUi.fullScreenOverlay = null },
                         onRequestAuthToReveal = { onSuccess ->
                             requestGatedAccess(
                                 SecurityTier.LEVEL_2_SENSITIVE,
@@ -1443,28 +1523,28 @@ fun PersonaDashboardScreen(
     val hasOpenSheet = remember(sheetStates.value) { sheetStates.value.any { it.value } }
 
     BackHandler(
-        enabled = isPinChallengeVisible ||
-                personToEditForDialog != null ||
-                showPublicResumeModal ||
-                selectedPersonForDetail != null ||
+        enabled = accessUi.isPinChallengeVisible ||
+                navigationUi.personToEditForDialog != null ||
+                navigationUi.showPublicResumeModal ||
+                navigationUi.selectedPersonForDetail != null ||
                 hasOpenDialog ||
                 hasOpenSheet ||
-                selectedTab != 0
+                navigationUi.selectedTab != 0
     ) {
         when {
-            isPinChallengeVisible -> {
-                isPinChallengeVisible = false
-                pendingSensitiveAction = null
-                pendingSecurityTier = null
+            accessUi.isPinChallengeVisible -> {
+                accessUi.isPinChallengeVisible = false
+                accessUi.pendingSensitiveAction = null
+                accessUi.pendingSecurityTier = null
             }
-            personToEditForDialog != null -> {
-                personToEditForDialog = null
+            navigationUi.personToEditForDialog != null -> {
+                navigationUi.personToEditForDialog = null
             }
-            showPublicResumeModal -> {
-                showPublicResumeModal = false
+            navigationUi.showPublicResumeModal -> {
+                navigationUi.showPublicResumeModal = false
             }
-            selectedPersonForDetail != null -> {
-                selectedPersonForDetail = null
+            navigationUi.selectedPersonForDetail != null -> {
+                navigationUi.selectedPersonForDetail = null
             }
             hasOpenDialog -> {
                 dialogStates.value = dialogStates.value.mapValues { false }
@@ -1472,8 +1552,8 @@ fun PersonaDashboardScreen(
             hasOpenSheet -> {
                 sheetStates.value = sheetStates.value.mapValues { false }
             }
-            selectedTab != 0 -> {
-                selectedTab = 0
+            navigationUi.selectedTab != 0 -> {
+                navigationUi.selectedTab = 0
             }
         }
     }
@@ -1485,13 +1565,13 @@ fun PersonaDashboardScreen(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { PersonaToastHost(toastController) },
         floatingActionButton = {
-            when (selectedTab) {
+            when (navigationUi.selectedTab) {
                 3 -> {
                     FloatingActionButton(
                         onClick = {
                             haptics.medium()
                             soundManager.navigation()
-                            fullScreenOverlay = "CONNECT_PERSON"
+                            navigationUi.fullScreenOverlay = "CONNECT_PERSON"
                         },
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -1508,8 +1588,8 @@ fun PersonaDashboardScreen(
         bottomBar = {
             if (!useNavigationRail) {
                 PersonaDashboardBottomBar(
-                    selectedTab = selectedTab,
-                    onTabSelected = { selectedTab = it }
+                    selectedTab = navigationUi.selectedTab,
+                    onTabSelected = { navigationUi.selectedTab = it }
                 )
             }
         }
@@ -1517,8 +1597,8 @@ fun PersonaDashboardScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             if (useNavigationRail) {
                 PersonaDashboardNavigationRail(
-                    selectedTab = selectedTab,
-                    onTabSelected = { selectedTab = it },
+                    selectedTab = navigationUi.selectedTab,
+                    onTabSelected = { navigationUi.selectedTab = it },
                     modifier = Modifier.align(Alignment.CenterStart)
                 )
             }
@@ -1533,7 +1613,7 @@ fun PersonaDashboardScreen(
             ) {
             val reducedMotion = LocalReducedMotion.current
             AnimatedContent(
-                targetState = selectedTab,
+                targetState = navigationUi.selectedTab,
                 transitionSpec = {
                     if (reducedMotion) {
                         fadeIn(tween(durationMillis = 0)) togetherWith fadeOut(tween(durationMillis = 0))
@@ -1596,11 +1676,11 @@ fun PersonaDashboardScreen(
                         },
                         onOpenProfile = {
                             soundManager.navigation()
-                            selectedTab = 2
+                            navigationUi.selectedTab = 2
                         },
                         onOpenPeople = {
                             soundManager.navigation()
-                            selectedTab = 3
+                            navigationUi.selectedTab = 3
                         },
                         avatarConfig = avatarConfig,
                         onOpenAvatarEditor = { showSheet("avatarEditor") },
@@ -1619,7 +1699,7 @@ fun PersonaDashboardScreen(
                                 "Emergency Medical",
                                 "Confirm identity to access health information"
                             ) {
-                                fullScreenOverlay = "HEALTH"
+                                navigationUi.fullScreenOverlay = "HEALTH"
                             }
                         },
                         onOpenCredentials = {
@@ -1635,8 +1715,8 @@ fun PersonaDashboardScreen(
                     // TAB 1: NOTES HUB
                     1 -> PlainNotesScreen(
                         onOpenEditor = { noteId ->
-                            activeNoteId = noteId
-                            fullScreenOverlay = "NOTE_EDITOR"
+                            navigationUi.activeNoteId = noteId
+                            navigationUi.fullScreenOverlay = "NOTE_EDITOR"
                         },
                         onRequestAuth = { title, subtitle, onSuccess ->
                             requestGatedAccess(
@@ -1698,21 +1778,21 @@ fun PersonaDashboardScreen(
                         },
                         onEditProfileClick = { showDialog("editProfile") },
                         onOpenAvatarEditor = { showSheet("avatarEditor") },
-                        onViewPublicDossier = { showPublicResumeModal = true },
+                        onViewPublicDossier = { navigationUi.showPublicResumeModal = true },
                         onExportPdf = { handleExportPdf() },
                         onDeleteCustomField = { id -> profileViewModel.onEvent(ProfileEvent.DeleteCustomField(id)) },
                         onAddCustomField = {
-                            customFieldEditingId = null
-                            customFieldInitialLabel = ""
-                            customFieldInitialValue = ""
-                            customFieldCategory = "PERSONAL"
+                            customFieldUi.customFieldEditingId = null
+                            customFieldUi.customFieldInitialLabel = ""
+                            customFieldUi.customFieldInitialValue = ""
+                            customFieldUi.customFieldCategory = "PERSONAL"
                             showDialog("addCustomField")
                         },
                         onEditCustomField = { field ->
-                            customFieldEditingId = field.id
-                            customFieldInitialLabel = field.label
-                            customFieldInitialValue = field.value
-                            customFieldCategory = field.category.name
+                            customFieldUi.customFieldEditingId = field.id
+                            customFieldUi.customFieldInitialLabel = field.label
+                            customFieldUi.customFieldInitialValue = field.value
+                            customFieldUi.customFieldCategory = field.category.name
                             showDialog("addCustomField")
                         },
                         onEducationClick = { showSheet("education") },
@@ -1722,7 +1802,7 @@ fun PersonaDashboardScreen(
                                 "Health & Medical",
                                 "Confirm identity to access medical records"
                             ) {
-                                fullScreenOverlay = "HEALTH"
+                                navigationUi.fullScreenOverlay = "HEALTH"
                             }
                         },
                         onVaultClick = {
@@ -1733,7 +1813,7 @@ fun PersonaDashboardScreen(
                             soundManager.navigation()
                             showSheet("documents")
                         },
-                        onPeopleClick = { selectedTab = 3 },
+                        onPeopleClick = { navigationUi.selectedTab = 3 },
                         onPhoneClick = { showDialog("addPhone") },
                         onEmailClick = { showDialog("addEmail") },
                         onAddressClick = { showDialog("addAddress") },
@@ -1787,11 +1867,11 @@ fun PersonaDashboardScreen(
                     // TAB 3: PEOPLE & CONNECTIONS
                     3 -> PeopleView(
                         relationships = profileState.relationships,
-                        onAddPersonClick = { fullScreenOverlay = "CONNECT_PERSON" },
+                        onAddPersonClick = { navigationUi.fullScreenOverlay = "CONNECT_PERSON" },
                         onSelectPerson = { person ->
                             relationshipViewModel.onEvent(RelationshipEvent.LoadNotes(person.id))
-                            selectedPersonForDetail = person
-                            fullScreenOverlay = "PERSON_DETAIL"
+                            navigationUi.selectedPersonForDetail = person
+                            navigationUi.fullScreenOverlay = "PERSON_DETAIL"
                         }
                     )
 
@@ -1831,9 +1911,9 @@ fun PersonaDashboardScreen(
                         onChangePasswordClicked = { showDialog("changePassword") },
                         onSignOutClicked = onSignOutClicked,
                         onSignInClicked = onSignInClicked,
-                        onSecurityClicked = { fullScreenOverlay = "SECURITY_SETTINGS" },
-                        onAppPinSecurityClicked = { fullScreenOverlay = "SECURITY_SETTINGS" },
-                        onOpenInformationLibrary = { fullScreenOverlay = "INFORMATION_LIBRARY" },
+                        onSecurityClicked = { navigationUi.fullScreenOverlay = "SECURITY_SETTINGS" },
+                        onAppPinSecurityClicked = { navigationUi.fullScreenOverlay = "SECURITY_SETTINGS" },
+                        onOpenInformationLibrary = { navigationUi.fullScreenOverlay = "INFORMATION_LIBRARY" },
                         onDevicesClicked = { showSheet("sessions") },
                         onStorageClicked = { showSheet("storage") },
                         onDataBackupClicked = { showSheet("dataBackup") },
@@ -1843,7 +1923,7 @@ fun PersonaDashboardScreen(
                                 "Emergency Medical",
                                 "Confirm identity to access emergency card"
                             ) {
-                                fullScreenOverlay = "HEALTH"
+                                navigationUi.fullScreenOverlay = "HEALTH"
                             }
                         },
                         onDeleteAccountClicked = { showDialog("deleteAccount") },
@@ -1870,7 +1950,7 @@ fun PersonaDashboardScreen(
     // 1. ADD SOMETHING BOTTOM SHEET
     if (sheetStates.value["addAction"] == true) {
         AddActionBottomSheet(
-            sheetState = addActionSheetState,
+            sheetState = modalSheets.addActionSheetState,
             onDismissRequest = { hideSheet("addAction") },
             onSelectAction = { actionType ->
                 hideSheet("addAction")
@@ -1879,13 +1959,13 @@ fun PersonaDashboardScreen(
                     AddActionType.PERSONAL_DETAILS -> showDialog("editProfile")
                     AddActionType.IDENTIFICATION_DOC -> filePickerLauncher.launch(arrayOf("*/*"))
                     AddActionType.NAMES_HISTORY -> {
-                        customFieldInitialLabel = "Previous Name / Alias"
-                        customFieldCategory = "Names & History"
+                        customFieldUi.customFieldInitialLabel = "Previous Name / Alias"
+                        customFieldUi.customFieldCategory = "Names & History"
                         showDialog("addCustomField")
                     }
                     AddActionType.EMERGENCY_IDENTITY -> {
-                        customFieldInitialLabel = "Blood Type / Emergency Note"
-                        customFieldCategory = "Emergency Identity"
+                        customFieldUi.customFieldInitialLabel = "Blood Type / Emergency Note"
+                        customFieldUi.customFieldCategory = "Emergency Identity"
                         showDialog("addCustomField")
                     }
 
@@ -1894,13 +1974,13 @@ fun PersonaDashboardScreen(
                     AddActionType.EMAIL -> showDialog("addEmail")
                     AddActionType.ADDRESS -> showDialog("addAddress")
                     AddActionType.ONLINE_PRESENCE -> {
-                        customFieldInitialLabel = "Website / Social Profile"
-                        customFieldCategory = "Online Presence"
+                        customFieldUi.customFieldInitialLabel = "Website / Social Profile"
+                        customFieldUi.customFieldCategory = "Online Presence"
                         showDialog("addCustomField")
                     }
                     AddActionType.COMMUNICATION_PREFS -> {
-                        customFieldInitialLabel = "Preferred Contact Method"
-                        customFieldCategory = "Communication"
+                        customFieldUi.customFieldInitialLabel = "Preferred Contact Method"
+                        customFieldUi.customFieldCategory = "Communication"
                         showDialog("addCustomField")
                     }
 
@@ -1911,8 +1991,8 @@ fun PersonaDashboardScreen(
                     AddActionType.ACADEMIC_ACHIEVEMENT,
                     AddActionType.COURSES_TRAINING -> showDialog("addCert")
                     AddActionType.SKILLS_LANGUAGES -> {
-                        customFieldInitialLabel = "Skill / Spoken Language"
-                        customFieldCategory = "Skills & Languages"
+                        customFieldUi.customFieldInitialLabel = "Skill / Spoken Language"
+                        customFieldUi.customFieldCategory = "Skills & Languages"
                         showDialog("addCustomField")
                     }
 
@@ -1921,8 +2001,8 @@ fun PersonaDashboardScreen(
                     AddActionType.PROJECTS,
                     AddActionType.VOLUNTEERING -> showDialog("addWork")
                     AddActionType.PORTFOLIO -> {
-                        customFieldInitialLabel = "Portfolio / Project Link"
-                        customFieldCategory = "Portfolio"
+                        customFieldUi.customFieldInitialLabel = "Portfolio / Project Link"
+                        customFieldUi.customFieldCategory = "Portfolio"
                         showDialog("addCustomField")
                     }
                     AddActionType.AWARDS,
@@ -1939,49 +2019,49 @@ fun PersonaDashboardScreen(
 
                     // Personal
                     AddActionType.INTERESTS_HOBBIES -> {
-                        customFieldInitialLabel = "Hobby / Interest"
-                        customFieldCategory = "Interests & Hobbies"
+                        customFieldUi.customFieldInitialLabel = "Hobby / Interest"
+                        customFieldUi.customFieldCategory = "Interests & Hobbies"
                         showDialog("addCustomField")
                     }
                     AddActionType.PREFERENCES -> {
-                        customFieldInitialLabel = "Personal Preference"
-                        customFieldCategory = "Preferences"
+                        customFieldUi.customFieldInitialLabel = "Personal Preference"
+                        customFieldUi.customFieldCategory = "Preferences"
                         showDialog("addCustomField")
                     }
                     AddActionType.PERSONAL_NOTES -> {
-                        activeNoteId = null
-                        fullScreenOverlay = "NOTE_EDITOR"
+                        navigationUi.activeNoteId = null
+                        navigationUi.fullScreenOverlay = "NOTE_EDITOR"
                     }
                     AddActionType.GOALS -> {
-                        customFieldInitialLabel = "Personal Goal"
-                        customFieldCategory = "Goals"
+                        customFieldUi.customFieldInitialLabel = "Personal Goal"
+                        customFieldUi.customFieldCategory = "Goals"
                         showDialog("addCustomField")
                     }
                     AddActionType.IMPORTANT_DATES -> {
-                        customFieldInitialLabel = "Important Date"
-                        customFieldCategory = "Important Dates"
+                        customFieldUi.customFieldInitialLabel = "Important Date"
+                        customFieldUi.customFieldCategory = "Important Dates"
                         showDialog("addCustomField")
                     }
                     AddActionType.FAVOURITE_THINGS -> {
-                        customFieldInitialLabel = "Favourite Thing"
-                        customFieldCategory = "Favourite Things"
+                        customFieldUi.customFieldInitialLabel = "Favourite Thing"
+                        customFieldUi.customFieldCategory = "Favourite Things"
                         showDialog("addCustomField")
                     }
                     AddActionType.MEMBERSHIPS_AFFILIATIONS -> {
-                        customFieldInitialLabel = "Membership / Club"
-                        customFieldCategory = "Memberships & Affiliations"
+                        customFieldUi.customFieldInitialLabel = "Membership / Club"
+                        customFieldUi.customFieldCategory = "Memberships & Affiliations"
                         showDialog("addCustomField")
                     }
 
                     // Top-Level / Direct
                     AddActionType.DOCUMENT -> filePickerLauncher.launch(arrayOf("*/*"))
                     AddActionType.CUSTOM_FIELD -> {
-                        customFieldInitialLabel = ""
-                        customFieldCategory = "Custom Information"
+                        customFieldUi.customFieldInitialLabel = ""
+                        customFieldUi.customFieldCategory = "Custom Information"
                         showDialog("addCustomField")
                     }
                     AddActionType.PERSON -> {
-                        fullScreenOverlay = "CONNECT_PERSON"
+                        navigationUi.fullScreenOverlay = "CONNECT_PERSON"
                     }
                     AddActionType.PASSWORD -> {
                         soundManager.navigation()
@@ -1991,10 +2071,10 @@ fun PersonaDashboardScreen(
                             "Authenticate to create password"
                         ) {
                             vaultViewModel.elevateAndUnlockVault(
-                                cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
+                                cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
                                 onSuccess = {
                                     vaultViewModel.openEditor(com.pims.vault.core.model.VaultCategory.PASSWORD)
-                                    fullScreenOverlay = "VAULT"
+                                    navigationUi.fullScreenOverlay = "VAULT"
                                 },
                                 onError = { err ->
                                     scope.launch { snackbarHostState.showSnackbar("Vault unlock failed: $err") }
@@ -2010,10 +2090,10 @@ fun PersonaDashboardScreen(
                             "Authenticate to add payment card"
                         ) {
                             vaultViewModel.elevateAndUnlockVault(
-                                cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
+                                cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
                                 onSuccess = {
                                     vaultViewModel.openEditor(com.pims.vault.core.model.VaultCategory.PAYMENT_REFERENCE)
-                                    fullScreenOverlay = "VAULT"
+                                    navigationUi.fullScreenOverlay = "VAULT"
                                 },
                                 onError = { err ->
                                     scope.launch { snackbarHostState.showSnackbar("Vault unlock failed: $err") }
@@ -2029,10 +2109,10 @@ fun PersonaDashboardScreen(
                             "Authenticate to add bank account"
                         ) {
                             vaultViewModel.elevateAndUnlockVault(
-                                cryptoObject = requireNotNull(zone4CryptoObject).also { zone4CryptoObject = null },
+                                cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
                                 onSuccess = {
                                     vaultViewModel.openEditor(com.pims.vault.core.model.VaultCategory.BANK_ACCOUNT)
-                                    fullScreenOverlay = "VAULT"
+                                    navigationUi.fullScreenOverlay = "VAULT"
                                 },
                                 onError = { err ->
                                     scope.launch { snackbarHostState.showSnackbar("Vault unlock failed: $err") }
@@ -2041,8 +2121,8 @@ fun PersonaDashboardScreen(
                         }
                     }
                     AddActionType.SOCIAL_PROFILE -> {
-                        customFieldInitialLabel = ""
-                        customFieldCategory = "Social Profiles"
+                        customFieldUi.customFieldInitialLabel = ""
+                        customFieldUi.customFieldCategory = "Social Profiles"
                         showDialog("addCustomField")
                     }
                 }
@@ -2056,7 +2136,7 @@ fun PersonaDashboardScreen(
             personName = fullName,
             occupation = occupation,
             country = country,
-            sheetState = shareModalState,
+            sheetState = modalSheets.shareModalState,
             phone = primaryPhone ?: "",
             email = primaryEmail ?: "",
             bloodGroup = bloodGroup,
@@ -2077,7 +2157,7 @@ fun PersonaDashboardScreen(
             educationList = profileState.educationRecords,
             certificatesList = profileState.certificates,
             employmentList = profileState.employmentRecords,
-            sheetState = eduSheetState,
+            sheetState = modalSheets.eduSheetState,
             onDismissRequest = { hideSheet("education") },
             onAddEducation = { showDialog("addEdu") },
             onAddCert = { showDialog("addCert") },
@@ -2088,22 +2168,22 @@ fun PersonaDashboardScreen(
     // 4. HEALTH FULL SCREEN (Full Medical Dossier)
     if (sheetStates.value["health"] == true) {
         hideSheet("health")
-        fullScreenOverlay = "HEALTH"
+        navigationUi.fullScreenOverlay = "HEALTH"
     }
 
     // 5. DOCUMENTS WALLET SHEET
     if (sheetStates.value["documents"] == true) {
         DocumentsWalletSheet(
             documents = documentState.documents,
-            sheetState = docsSheetState,
+            sheetState = modalSheets.docsSheetState,
             onDismissRequest = { hideSheet("documents") },
             onUploadClick = { filePickerLauncher.launch(arrayOf("*/*")) },
-            onDeleteClick = { doc -> documentToDelete = doc },
+            onDeleteClick = { doc -> documentUi.documentToDelete = doc },
             onViewClick = onOpenDocumentForViewing,
             onExportClick = onInitiateDocumentExport,
             onOpenExternal = openDocumentExternally,
             onAddVersion = { doc -> authorizeDocumentAction(doc) {
-                versionUploadTarget = doc
+                documentUi.versionUploadTarget = doc
                 filePickerLauncher.launch(arrayOf("*/*"))
             } },
             onRestoreVersion = { id, version ->
@@ -2130,9 +2210,9 @@ fun PersonaDashboardScreen(
     // 6. VAULT FORTRESS PREVIEW SHEET
     if (sheetStates.value["vault"] == true) {
         VaultSheet(
-            sheetState = vaultSheetState,
+            sheetState = modalSheets.vaultSheetState,
             onDismissRequest = { hideSheet("vault") },
-            onOpenFullVault = { fullScreenOverlay = "VAULT" }
+            onOpenFullVault = { navigationUi.fullScreenOverlay = "VAULT" }
         )
     }
 
@@ -2140,7 +2220,7 @@ fun PersonaDashboardScreen(
     if (sheetStates.value["conflict"] == true) {
         SyncConflictSheet(
             conflicts = conflicts,
-            sheetState = conflictSheetState,
+            sheetState = modalSheets.conflictSheetState,
             onDismissRequest = { hideSheet("conflict") },
             onResolveConflict = { id, choice, resVal ->
                 syncViewModel.resolveConflict(id, choice, resVal)
@@ -2152,7 +2232,7 @@ fun PersonaDashboardScreen(
     if (sheetStates.value["sessions"] == true) {
         SessionManagementSheet(
             sessions = activeSessions,
-            sheetState = sessionsSheetState,
+            sheetState = modalSheets.sessionsSheetState,
             onDismissRequest = { hideSheet("sessions") },
             onRevokeSession = { sessionId ->
                 syncViewModel.revokeSession(sessionId)
@@ -2187,14 +2267,14 @@ fun PersonaDashboardScreen(
     if (sheetStates.value["notification"] == true) {
         NotificationCenterSheet(
             notifications = notifications,
-            sheetState = notificationSheetState,
+            sheetState = modalSheets.notificationSheetState,
             onDismissRequest = { hideSheet("notification") },
             onNotificationClick = { item ->
                 hideSheet("notification")
                 soundManager.navigation()
                 when {
                     item.id.startsWith("rel") -> {
-                        selectedTab = 3 // People tab
+                        navigationUi.selectedTab = 3 // People tab
                     }
                     item.id.startsWith("conflict") -> showSheet("conflict")
                     item.id.startsWith("doc_exp") -> showSheet("documents")
@@ -2240,7 +2320,7 @@ fun PersonaDashboardScreen(
             PersonaMediaReferenceResolver(context) { wallpaperManager }
         }
         WallpaperOptionsSheet(
-            sheetState = wallpaperOptionsSheetState,
+            sheetState = modalSheets.wallpaperOptionsSheetState,
             wallpapers = wallpapers,
             availablePresets = wallpaperManager.defaultPresets,
             currentIndex = activeWallpaperIndex,
@@ -2408,7 +2488,7 @@ fun PersonaDashboardScreen(
         }
 
         com.pims.vault.presentation.hub.CentralizedInformationEditorSheet(
-            sheetState = centralizedEditorSheetState,
+            sheetState = modalSheets.centralizedEditorSheetState,
             initialFullName = fullName.takeIf { it != "My Profile" } ?: "",
             initialOccupation = occupation,
             initialCountry = country,
@@ -2467,7 +2547,7 @@ fun PersonaDashboardScreen(
     if (sheetStates.value["avatarEditor"] == true) {
         com.pims.vault.presentation.avatar.AvatarEditorSheet(
             initialConfig = avatarConfig ?: com.pims.vault.presentation.avatar.PersonaAvatarConfig.default(),
-            sheetState = avatarEditorSheetState,
+            sheetState = modalSheets.avatarEditorSheetState,
             avatarManager = avatarManager,
             onDismissRequest = { hideSheet("avatarEditor") },
             onSaveAvatar = { newCfg: com.pims.vault.presentation.avatar.PersonaAvatarConfig ->
@@ -2490,29 +2570,29 @@ fun PersonaDashboardScreen(
     )
 
     // 12. SECURE PIN CHALLENGE DIALOG
-    if (isPinChallengeVisible && pendingSecurityTier != null) {
+    if (accessUi.isPinChallengeVisible && accessUi.pendingSecurityTier != null) {
         PinChallengeDialog(
             pinSecurityManager = pinSecurityManager,
-            title = when (pendingSecurityTier) {
+            title = when (accessUi.pendingSecurityTier) {
                 SecurityTier.LEVEL_3_VAULT -> "Unlock Vault"
                 SecurityTier.LEVEL_2_SENSITIVE -> "Verify Identity"
                 else -> "Enter Security PIN"
             },
             subtitle = "Confirm your PIN to access protected records",
             onSuccess = {
-                isPinChallengeVisible = false
-                if (pendingSecurityTier == SecurityTier.LEVEL_2_SENSITIVE) {
-                    isLevel2Unlocked = true
+                accessUi.isPinChallengeVisible = false
+                if (accessUi.pendingSecurityTier == SecurityTier.LEVEL_2_SENSITIVE) {
+                    accessUi.isLevel2Unlocked = true
                 }
-                val action = pendingSensitiveAction
-                pendingSensitiveAction = null
-                pendingSecurityTier = null
+                val action = accessUi.pendingSensitiveAction
+                accessUi.pendingSensitiveAction = null
+                accessUi.pendingSecurityTier = null
                 action?.invoke()
             },
             onDismiss = {
-                isPinChallengeVisible = false
-                pendingSensitiveAction = null
-                pendingSecurityTier = null
+                accessUi.isPinChallengeVisible = false
+                accessUi.pendingSensitiveAction = null
+                accessUi.pendingSecurityTier = null
                 scope.launch {
                     snackbarHostState.showSnackbar("Authentication cancelled: Access locked")
                 }
@@ -2520,32 +2600,32 @@ fun PersonaDashboardScreen(
         )
     }
 
-    if (isBiometricPromptVisible && pendingSecurityTier != null) {
+    if (accessUi.isBiometricPromptVisible && accessUi.pendingSecurityTier != null) {
         BiometricReauthPrompt(
-            tier = pendingSecurityTier!!,
-            failedAttempts = biometricFailedAttempts,
+            tier = accessUi.pendingSecurityTier!!,
+            failedAttempts = accessUi.biometricFailedAttempts,
             onAuthenticateBiometric = {
-                isBiometricPromptVisible = false
-                val tier = pendingSecurityTier ?: SecurityTier.LEVEL_2_SENSITIVE
-                val action = pendingSensitiveAction ?: {}
+                accessUi.isBiometricPromptVisible = false
+                val tier = accessUi.pendingSecurityTier ?: SecurityTier.LEVEL_2_SENSITIVE
+                val action = accessUi.pendingSensitiveAction ?: {}
                 requestGatedAccess(tier, "Verify Identity", "Authentication required", action)
             },
             onUseDevicePin = {
-                isBiometricPromptVisible = false
+                accessUi.isBiometricPromptVisible = false
                 if (pinSecurityManager.hasPin()) {
-                    isPinChallengeVisible = true
+                    accessUi.isPinChallengeVisible = true
                 } else {
-                    pendingSensitiveAction = null
-                    pendingSecurityTier = null
+                    accessUi.pendingSensitiveAction = null
+                    accessUi.pendingSecurityTier = null
                     scope.launch {
                         snackbarHostState.showSnackbar("No PIN configured. Setup PIN in Security Settings.")
                     }
                 }
             },
             onDismissRequest = {
-                isBiometricPromptVisible = false
-                pendingSensitiveAction = null
-                pendingSecurityTier = null
+                accessUi.isBiometricPromptVisible = false
+                accessUi.pendingSensitiveAction = null
+                accessUi.pendingSecurityTier = null
                 scope.launch {
                     snackbarHostState.showSnackbar("Authentication cancelled: Access locked")
                 }
@@ -2556,7 +2636,7 @@ fun PersonaDashboardScreen(
     // 13. UNIVERSAL OMNIBAR SEARCH SHEET
     if (sheetStates.value["search"] == true) {
         UniversalSearchSheet(
-            sheetState = searchSheetState,
+            sheetState = modalSheets.searchSheetState,
             profileState = profileState,
             documents = documentState.documents,
             medicalState = medicalState,
@@ -2564,8 +2644,8 @@ fun PersonaDashboardScreen(
             onSelectPerson = { person ->
                 hideSheet("search")
                 relationshipViewModel.onEvent(RelationshipEvent.LoadNotes(person.id))
-                selectedPersonForDetail = person
-                fullScreenOverlay = "PERSON_DETAIL"
+                navigationUi.selectedPersonForDetail = person
+                navigationUi.fullScreenOverlay = "PERSON_DETAIL"
             },
             onSelectDocument = { doc ->
                 hideSheet("search")
@@ -2578,7 +2658,7 @@ fun PersonaDashboardScreen(
                     "Health & Medical",
                     "Confirm identity to access health details"
                 ) {
-                    fullScreenOverlay = "HEALTH"
+                    navigationUi.fullScreenOverlay = "HEALTH"
                 }
             },
             onOpenVault = {
@@ -2592,7 +2672,7 @@ fun PersonaDashboardScreen(
     // 14. STORAGE MANAGEMENT SHEET (3-Layer Progressive Disclosure)
     if (sheetStates.value["storage"] == true) {
         StorageManagementSheet(
-            sheetState = storageSheetState,
+            sheetState = modalSheets.storageSheetState,
             totalDocumentsCount = documentState.documents.size,
             onDismissRequest = { hideSheet("storage") }
         )
@@ -2601,16 +2681,16 @@ fun PersonaDashboardScreen(
     // 15. DATA & BACKUP HUB SHEET
     if (sheetStates.value["dataBackup"] == true) {
         DataBackupHubSheet(
-            sheetState = dataBackupSheetState,
+            sheetState = modalSheets.dataBackupSheetState,
             syncIsGood = syncIsGood,
             syncStatusText = syncStatusText,
             onExportBackup = {
                 hideSheet("dataBackup")
-                fullScreenOverlay = "BACKUP"
+                navigationUi.fullScreenOverlay = "BACKUP"
             },
             onRestoreBackup = {
                 hideSheet("dataBackup")
-                fullScreenOverlay = "BACKUP"
+                navigationUi.fullScreenOverlay = "BACKUP"
             },
             onOpenSyncConflicts = {
                 hideSheet("dataBackup")
@@ -2656,14 +2736,14 @@ fun PersonaDashboardScreen(
 
     // Edit Managed Person Dialog (extracted to EditManagedPersonSheet)
     EditManagedPersonSheet(
-        person = personToEditForDialog,
+        person = navigationUi.personToEditForDialog,
         relationshipState = relationshipState,
         profileViewModel = profileViewModel,
         recentActivityManager = recentActivityManager,
         soundManager = soundManager,
         haptics = haptics,
         toastController = toastController,
-        onDismissRequest = { personToEditForDialog = null }
+        onDismissRequest = { navigationUi.personToEditForDialog = null }
     )
 
     // =========================================================================
@@ -2673,25 +2753,25 @@ fun PersonaDashboardScreen(
         dialogStates = dialogStates.value,
         onHideDialog = { hideDialog(it) },
         country = country,
-        customFieldInitialLabel = customFieldInitialLabel,
-        customFieldCategory = customFieldCategory,
+        customFieldInitialLabel = customFieldUi.customFieldInitialLabel,
+        customFieldCategory = customFieldUi.customFieldCategory,
         profileState = profileState,
         profileViewModel = profileViewModel,
         documentViewModel = documentViewModel,
-        relationshipToDelete = relationshipToDelete,
-        onDismissRelationshipToDelete = { relationshipToDelete = null },
+        relationshipToDelete = navigationUi.relationshipToDelete,
+        onDismissRelationshipToDelete = { navigationUi.relationshipToDelete = null },
         onConfirmDeleteRelationship = { rel ->
             profileViewModel.onEvent(ProfileEvent.DeleteRelationship(rel.id, rel.targetPersonId))
             recentActivityManager.recordActivity("Removed person from People", "Disconnected ${rel.fullName}")
-            relationshipToDelete = null
-            selectedPersonForDetail = null
+            navigationUi.relationshipToDelete = null
+            navigationUi.selectedPersonForDetail = null
         },
-        documentToDelete = documentToDelete,
-        onDismissDocumentToDelete = { documentToDelete = null },
+        documentToDelete = documentUi.documentToDelete,
+        onDismissDocumentToDelete = { documentUi.documentToDelete = null },
         onConfirmDeleteDocument = { doc -> authorizeDocumentAction(doc) {
             documentViewModel.onEvent(DocumentEvent.DeleteDocument(doc.document.id, onSuccess = {
                 recentActivityManager.recordActivity("Removed document from wallet", "Document removed")
-                documentToDelete = null
+                documentUi.documentToDelete = null
             }))
         } },
         recentActivityManager = recentActivityManager,
@@ -2701,47 +2781,47 @@ fun PersonaDashboardScreen(
 
 
     // Document import retains the selected source and details until local publication succeeds.
-    if (sheetStates.value["uploadDoc"] == true && pendingUploadUri != null) {
-        DocumentUploadSheet(sheetState = uploadDocSheetState, fileName = uploadDocFileName,
-            fileSizeBytes = uploadDocSizeBytes, mimeType = uploadDocMimeType, title = uploadDocTitle,
-            onTitleChange = { uploadDocTitle = it; uploadDocError = null }, documentType = uploadDocType,
-            onDocumentTypeChange = { uploadDocType = it }, docNumber = uploadDocNumber,
-            onDocNumberChange = { uploadDocNumber = it }, authority = uploadDocAuthority,
-            onAuthorityChange = { uploadDocAuthority = it }, expiryDate = uploadDocExpiryDate,
-            onExpiryDateChange = { uploadDocExpiryDate = it }, classification = uploadDocClassification,
-            onClassificationChange = { uploadDocClassification = it }, isProcessing = isEncryptingAndSavingDoc,
-            isAddingVersion = versionUploadTarget != null, errorMessage = uploadDocError,
+    if (sheetStates.value["uploadDoc"] == true && documentUi.pendingUploadUri != null) {
+        DocumentUploadSheet(sheetState = modalSheets.uploadDocSheetState, fileName = documentUi.uploadDocFileName,
+            fileSizeBytes = documentUi.uploadDocSizeBytes, mimeType = documentUi.uploadDocMimeType, title = documentUi.uploadDocTitle,
+            onTitleChange = { documentUi.uploadDocTitle = it; documentUi.uploadDocError = null }, documentType = documentUi.uploadDocType,
+            onDocumentTypeChange = { documentUi.uploadDocType = it }, docNumber = documentUi.uploadDocNumber,
+            onDocNumberChange = { documentUi.uploadDocNumber = it }, authority = documentUi.uploadDocAuthority,
+            onAuthorityChange = { documentUi.uploadDocAuthority = it }, expiryDate = documentUi.uploadDocExpiryDate,
+            onExpiryDateChange = { documentUi.uploadDocExpiryDate = it }, classification = documentUi.uploadDocClassification,
+            onClassificationChange = { documentUi.uploadDocClassification = it }, isProcessing = documentUi.isEncryptingAndSavingDoc,
+            isAddingVersion = documentUi.versionUploadTarget != null, errorMessage = documentUi.uploadDocError,
             onChangeFileClick = { filePickerLauncher.launch(arrayOf("*/*")) },
-            onDismissRequest = { if (!isEncryptingAndSavingDoc) { hideSheet("uploadDoc"); clearDocumentDraft() } },
+            onDismissRequest = { if (!documentUi.isEncryptingAndSavingDoc) { hideSheet("uploadDoc"); clearDocumentDraft() } },
             onConfirmSave = {
-                val uri = pendingUploadUri
-                if (uri != null && uploadDocTitle.isNotBlank() && !isEncryptingAndSavingDoc) {
-                    isEncryptingAndSavingDoc = true
-                    uploadDocError = null
+                val uri = documentUi.pendingUploadUri
+                if (uri != null && documentUi.uploadDocTitle.isNotBlank() && !documentUi.isEncryptingAndSavingDoc) {
+                    documentUi.isEncryptingAndSavingDoc = true
+                    documentUi.uploadDocError = null
                     val openSource = { context.contentResolver.openInputStream(uri) ?: throw java.io.FileNotFoundException() }
                     val success = {
                         recentActivityManager.recordActivity("Saved document", "Document saved to this device")
-                        isEncryptingAndSavingDoc = false
+                        documentUi.isEncryptingAndSavingDoc = false
                         clearDocumentDraft()
                         hideSheet("uploadDoc")
                     }
-                    val failed: (String) -> Unit = { message -> isEncryptingAndSavingDoc = false; uploadDocError = message }
-                    val target = versionUploadTarget
+                    val failed: (String) -> Unit = { message -> documentUi.isEncryptingAndSavingDoc = false; documentUi.uploadDocError = message }
+                    val target = documentUi.versionUploadTarget
                     val save = {
                     if (target != null) documentViewModel.onEvent(DocumentEvent.AddVersion(
-                        target.document.id, mimeType = uploadDocMimeType, notes = null,
-                        originalFilename = uploadDocFileName, openStream = openSource, onSuccess = success, onError = failed, versionId = uploadDocImportId))
-                    else documentViewModel.onEvent(DocumentEvent.IngestDocument(type = uploadDocType,
-                        title = uploadDocTitle.trim(), docNumber = uploadDocNumber.trim().takeIf(String::isNotBlank),
-                        authority = uploadDocAuthority.trim().takeIf(String::isNotBlank), country = country.ifBlank { "ZW" },
-                        expiryDate = uploadDocExpiryDate.trim().takeIf(String::isNotBlank), classification = uploadDocClassification,
-                        mimeType = uploadDocMimeType, filename = uploadDocFileName, openStream = openSource,
-                        importId = uploadDocImportId, onSuccess = success, onError = failed))
+                        target.document.id, mimeType = documentUi.uploadDocMimeType, notes = null,
+                        originalFilename = documentUi.uploadDocFileName, openStream = openSource, onSuccess = success, onError = failed, versionId = documentUi.uploadDocImportId))
+                    else documentViewModel.onEvent(DocumentEvent.IngestDocument(type = documentUi.uploadDocType,
+                        title = documentUi.uploadDocTitle.trim(), docNumber = documentUi.uploadDocNumber.trim().takeIf(String::isNotBlank),
+                        authority = documentUi.uploadDocAuthority.trim().takeIf(String::isNotBlank), country = country.ifBlank { "ZW" },
+                        expiryDate = documentUi.uploadDocExpiryDate.trim().takeIf(String::isNotBlank), classification = documentUi.uploadDocClassification,
+                        mimeType = documentUi.uploadDocMimeType, filename = documentUi.uploadDocFileName, openStream = openSource,
+                        importId = documentUi.uploadDocImportId, onSuccess = success, onError = failed))
                     }
-                    if (uploadDocClassification == SecurityClassification.ZONE_4_CRITICAL) {
+                    if (documentUi.uploadDocClassification == SecurityClassification.ZONE_4_CRITICAL) {
                         // The system picker can outlive a Zone 4 authorization window.
-                        isEncryptingAndSavingDoc = false
-                        withPrivateNotesUnlocked { isEncryptingAndSavingDoc = true; save() }
+                        documentUi.isEncryptingAndSavingDoc = false
+                        withPrivateNotesUnlocked { documentUi.isEncryptingAndSavingDoc = true; save() }
                     } else save()
                 }
             })
@@ -2761,206 +2841,43 @@ fun PersonaDashboardScreen(
 
     // 12. Add Custom Information Dialog
     if (dialogStates.value["addCustomField"] == true) {
-        var customLabel by remember(customFieldInitialLabel) { mutableStateOf(customFieldInitialLabel) }
-        var customVal by remember { mutableStateOf(customFieldInitialValue) }
-        val customFieldSaveId = remember { customFieldEditingId ?: java.util.UUID.randomUUID().toString() }
-        var customSaving by remember { mutableStateOf(false) }
-        var customSaveError by remember { mutableStateOf<String?>(null) }
-        var selectedCategory by remember {
-            mutableStateOf(InformationCategory.fromName(customFieldCategory))
-        }
-        val recognizedField = remember(customLabel) {
-            com.pims.vault.core.domain.SemanticFieldRecognizer.resolve(customLabel)
-        }
-        LaunchedEffect(recognizedField) {
-            if (recognizedField != null && (customFieldEditingId == null || customLabel != customFieldInitialLabel)) {
-                selectedCategory = recognizedField.category
+        DashboardCustomFieldDialog(
+            customFieldUi = customFieldUi,
+            profileViewModel = profileViewModel,
+            onDismiss = { hideDialog("addCustomField") },
+            onSaved = {
+                recentActivityManager.recordActivity("Saved personal information", "Personal profile")
+                haptics.success()
             }
-        }
-
-        PersonaDialog(
-            onDismissRequest = { if (!customSaving) { hideDialog("addCustomField"); customFieldEditingId = null; customFieldInitialValue = "" } },
-            title = if (customFieldEditingId == null) "Add information" else "Edit information",
-            confirmText = if (customSaving) "Saving…" else "Save",
-            confirmEnabled = !customSaving && customLabel.isNotBlank() && customVal.isNotBlank(),
-            onConfirm = {
-                if (!customSaving && customLabel.isNotBlank() && customVal.isNotBlank()) {
-                    customSaving = true
-                    customSaveError = null
-                    profileViewModel.onEvent(
-                        ProfileEvent.AddCustomField(
-                            label = customLabel.trim(), value = customVal.trim(), category = selectedCategory,
-                            id = customFieldSaveId,
-                            onComplete = { success ->
-                                customSaving = false
-                                if (success) {
-                                    hideDialog("addCustomField")
-                                    customFieldEditingId = null
-                                    customFieldInitialValue = ""
-                                    recentActivityManager.recordActivity("Saved personal information", "Personal profile")
-                                    haptics.success()
-                                } else customSaveError = "Could not save this field. Please retry."
-                            }
-                        )
-                    )
-                }
-            }
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                customSaveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                PersonaTextInput(
-                    value = customLabel,
-                    onValueChange = { customLabel = it },
-                    label = "Field name",
-                    placeholder = "e.g. Student ID",
-                    enabled = !customSaving
-                )
-                PersonaTextInput(
-                    value = customVal,
-                    onValueChange = { customVal = it },
-                    label = "Value",
-                    enabled = !customSaving
-                )
-                PersonaDropdownSelector(
-                    selectedOption = selectedCategory.displayName,
-                    options = InformationCategory.entries.map { it.displayName },
-                    onOptionSelected = { label ->
-                        if (!customSaving) selectedCategory = InformationCategory.entries.first { it.displayName == label }
-                    },
-                    label = "Category",
-                    enabled = !customSaving
-                )
-            }
-        }
+        )
     }
 
     // 13. Add Medical Condition Dialog
     if (dialogStates.value["addCondition"] == true) {
-        var conditionName by remember { mutableStateOf("") }
-        var conditionNotes by remember { mutableStateOf("") }
-        var conditionStatus by remember { mutableStateOf(ConditionStatus.ACTIVE) }
-
-        val statusOptions = listOf("Active", "Managed", "Resolved")
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addCondition") },
-            title = "Add Medical Condition",
-            confirmText = "Save Condition",
-            confirmEnabled = conditionName.isNotBlank(),
-            onConfirm = {
-                if (conditionName.isNotBlank()) {
-                    profileViewModel.onEvent(
-                        ProfileEvent.AddMedicalCondition(
-                            condition = conditionName.trim(),
-                            status = conditionStatus,
-                            notes = conditionNotes.trim().ifBlank { null }
-                        )
-                    )
-                    soundManager.success()
-                    haptics.success()
-                }
-                hideDialog("addCondition")
+        DashboardConditionDialog(
+            profileViewModel = profileViewModel,
+            onDismiss = { hideDialog("addCondition") },
+            onSaved = {
+                soundManager.success()
+                haptics.success()
             }
-        ) {
-            PersonaTextInput(
-                value = conditionName,
-                onValueChange = { conditionName = it },
-                label = "Condition / diagnosis",
-                placeholder = "e.g. Asthma, Hypertension"
-            )
-
-            PersonaDropdownSelector(
-                selectedOption = when (conditionStatus) {
-                    ConditionStatus.ACTIVE -> "Active"
-                    ConditionStatus.CHRONIC -> "Managed"
-                    ConditionStatus.RESOLVED -> "Resolved"
-                    else -> "Active"
-                },
-                options = statusOptions,
-                onOptionSelected = { selected ->
-                    conditionStatus = when (selected) {
-                        "Managed" -> ConditionStatus.CHRONIC
-                        "Resolved" -> ConditionStatus.RESOLVED
-                        else -> ConditionStatus.ACTIVE
-                    }
-                },
-                label = "Status"
-            )
-
-            PersonaTextInput(
-                value = conditionNotes,
-                onValueChange = { conditionNotes = it },
-                label = "Notes / treatment (Optional)",
-                placeholder = "Diagnosed year, specialist, care plan",
-                singleLine = false
-            )
-        }
+        )
     }
 
     // 14. Add Medication Dialog
     if (dialogStates.value["addMedication"] == true) {
-        var medName by remember { mutableStateOf("") }
-        var dosage by remember { mutableStateOf("") }
-        var frequency by remember { mutableStateOf("") }
-        var notes by remember { mutableStateOf("") }
-
-        PersonaDialog(
-            onDismissRequest = { hideDialog("addMedication") },
-            title = "Add Medication",
-            confirmText = "Save Medication",
-            confirmEnabled = medName.isNotBlank(),
-            onConfirm = {
-                if (medName.isNotBlank()) {
-                    profileViewModel.onEvent(
-                        ProfileEvent.AddMedication(
-                            name = medName.trim(),
-                            dosage = dosage.trim(),
-                            frequency = frequency.trim(),
-                            notes = notes.trim().ifBlank { null }
-                        )
-                    )
-                    soundManager.success()
-                    haptics.success()
-                }
-                hideDialog("addMedication")
+        DashboardMedicationDialog(
+            profileViewModel = profileViewModel,
+            onDismiss = { hideDialog("addMedication") },
+            onSaved = {
+                soundManager.success()
+                haptics.success()
             }
-        ) {
-            PersonaTextInput(
-                value = medName,
-                onValueChange = { medName = it },
-                label = "Medication name",
-                placeholder = "e.g. Ventolin, Metformin"
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PersonaTextInput(
-                    value = dosage,
-                    onValueChange = { dosage = it },
-                    label = "Dosage",
-                    placeholder = "e.g. 100mcg",
-                    modifier = Modifier.weight(1f)
-                )
-                PersonaTextInput(
-                    value = frequency,
-                    onValueChange = { frequency = it },
-                    label = "Frequency",
-                    placeholder = "e.g. Twice daily",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            PersonaTextInput(
-                value = notes,
-                onValueChange = { notes = it },
-                label = "Prescription details / Notes (Optional)",
-                placeholder = "Doctor, refill date, special instructions",
-                singleLine = false
-            )
-        }
+        )
     }
 
     // 14. Unified Public Dossier & Executive Resume Modal
-    if (showPublicResumeModal) {
+    if (navigationUi.showPublicResumeModal) {
         val resumeData = remember(profileState, primaryPhone, primaryEmail, primaryAddress) {
             PublicResumeData.fromProfile(
                 person = profileState.person,
@@ -2983,7 +2900,7 @@ fun PersonaDashboardScreen(
         }
         PublicResumeModal(
             data = resumeData,
-            onDismissRequest = { showPublicResumeModal = false },
+            onDismissRequest = { navigationUi.showPublicResumeModal = false },
             onExportPdf = { handleExportPdf() },
             onEditProfile = {
                 showSheet("centralizedEditor")
@@ -3009,6 +2926,216 @@ fun PersonaDashboardScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { attachmentToPreview = null }) { Text("Close") } }
+        )
+    }
+}
+
+@Composable
+private fun DashboardCustomFieldDialog(
+    customFieldUi: DashboardCustomFieldState,
+    profileViewModel: ProfileViewModel,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit
+) {
+    var customLabel by remember(customFieldUi.customFieldInitialLabel) { mutableStateOf(customFieldUi.customFieldInitialLabel) }
+    var customVal by remember { mutableStateOf(customFieldUi.customFieldInitialValue) }
+    val customFieldSaveId = remember { customFieldUi.customFieldEditingId ?: java.util.UUID.randomUUID().toString() }
+    var customSaving by remember { mutableStateOf(false) }
+    var customSaveError by remember { mutableStateOf<String?>(null) }
+    var selectedCategory by remember {
+        mutableStateOf(InformationCategory.fromName(customFieldUi.customFieldCategory))
+    }
+    val recognizedField = remember(customLabel) {
+        com.pims.vault.core.domain.SemanticFieldRecognizer.resolve(customLabel)
+    }
+    LaunchedEffect(recognizedField) {
+        if (recognizedField != null && (customFieldUi.customFieldEditingId == null || customLabel != customFieldUi.customFieldInitialLabel)) {
+            selectedCategory = recognizedField.category
+        }
+    }
+
+    PersonaDialog(
+        onDismissRequest = { if (!customSaving) { onDismiss(); customFieldUi.customFieldEditingId = null; customFieldUi.customFieldInitialValue = "" } },
+        title = if (customFieldUi.customFieldEditingId == null) "Add information" else "Edit information",
+        confirmText = if (customSaving) "Saving…" else "Save",
+        confirmEnabled = !customSaving && customLabel.isNotBlank() && customVal.isNotBlank(),
+        onConfirm = {
+            if (!customSaving && customLabel.isNotBlank() && customVal.isNotBlank()) {
+                customSaving = true
+                customSaveError = null
+                profileViewModel.onEvent(
+                    ProfileEvent.AddCustomField(
+                        label = customLabel.trim(), value = customVal.trim(), category = selectedCategory,
+                        id = customFieldSaveId,
+                        onComplete = { success ->
+                            customSaving = false
+                            if (success) {
+                                onDismiss()
+                                customFieldUi.customFieldEditingId = null
+                                customFieldUi.customFieldInitialValue = ""
+                                onSaved()
+                            } else customSaveError = "Could not save this field. Please retry."
+                        }
+                    )
+                )
+            }
+        }
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            customSaveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            PersonaTextInput(
+                value = customLabel,
+                onValueChange = { customLabel = it },
+                label = "Field name",
+                placeholder = "e.g. Student ID",
+                enabled = !customSaving
+            )
+            PersonaTextInput(
+                value = customVal,
+                onValueChange = { customVal = it },
+                label = "Value",
+                enabled = !customSaving
+            )
+            PersonaDropdownSelector(
+                selectedOption = selectedCategory.displayName,
+                options = InformationCategory.entries.map { it.displayName },
+                onOptionSelected = { label ->
+                    if (!customSaving) selectedCategory = InformationCategory.entries.first { it.displayName == label }
+                },
+                label = "Category",
+                enabled = !customSaving
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardConditionDialog(
+    profileViewModel: ProfileViewModel,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit
+) {
+    var conditionName by remember { mutableStateOf("") }
+    var conditionNotes by remember { mutableStateOf("") }
+    var conditionStatus by remember { mutableStateOf(ConditionStatus.ACTIVE) }
+
+    val statusOptions = listOf("Active", "Managed", "Resolved")
+
+    PersonaDialog(
+        onDismissRequest = { onDismiss() },
+        title = "Add Medical Condition",
+        confirmText = "Save Condition",
+        confirmEnabled = conditionName.isNotBlank(),
+        onConfirm = {
+            if (conditionName.isNotBlank()) {
+                profileViewModel.onEvent(
+                    ProfileEvent.AddMedicalCondition(
+                        condition = conditionName.trim(),
+                        status = conditionStatus,
+                        notes = conditionNotes.trim().ifBlank { null }
+                    )
+                )
+                onSaved()
+            }
+            onDismiss()
+        }
+    ) {
+        PersonaTextInput(
+            value = conditionName,
+            onValueChange = { conditionName = it },
+            label = "Condition / diagnosis",
+            placeholder = "e.g. Asthma, Hypertension"
+        )
+
+        PersonaDropdownSelector(
+            selectedOption = when (conditionStatus) {
+                ConditionStatus.ACTIVE -> "Active"
+                ConditionStatus.CHRONIC -> "Managed"
+                ConditionStatus.RESOLVED -> "Resolved"
+                else -> "Active"
+            },
+            options = statusOptions,
+            onOptionSelected = { selected ->
+                conditionStatus = when (selected) {
+                    "Managed" -> ConditionStatus.CHRONIC
+                    "Resolved" -> ConditionStatus.RESOLVED
+                    else -> ConditionStatus.ACTIVE
+                }
+            },
+            label = "Status"
+        )
+
+        PersonaTextInput(
+            value = conditionNotes,
+            onValueChange = { conditionNotes = it },
+            label = "Notes / treatment (Optional)",
+            placeholder = "Diagnosed year, specialist, care plan",
+            singleLine = false
+        )
+    }
+}
+
+@Composable
+private fun DashboardMedicationDialog(
+    profileViewModel: ProfileViewModel,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit
+) {
+    var medName by remember { mutableStateOf("") }
+    var dosage by remember { mutableStateOf("") }
+    var frequency by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+
+    PersonaDialog(
+        onDismissRequest = { onDismiss() },
+        title = "Add Medication",
+        confirmText = "Save Medication",
+        confirmEnabled = medName.isNotBlank(),
+        onConfirm = {
+            if (medName.isNotBlank()) {
+                profileViewModel.onEvent(
+                    ProfileEvent.AddMedication(
+                        name = medName.trim(),
+                        dosage = dosage.trim(),
+                        frequency = frequency.trim(),
+                        notes = notes.trim().ifBlank { null }
+                    )
+                )
+                onSaved()
+            }
+            onDismiss()
+        }
+    ) {
+        PersonaTextInput(
+            value = medName,
+            onValueChange = { medName = it },
+            label = "Medication name",
+            placeholder = "e.g. Ventolin, Metformin"
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PersonaTextInput(
+                value = dosage,
+                onValueChange = { dosage = it },
+                label = "Dosage",
+                placeholder = "e.g. 100mcg",
+                modifier = Modifier.weight(1f)
+            )
+            PersonaTextInput(
+                value = frequency,
+                onValueChange = { frequency = it },
+                label = "Frequency",
+                placeholder = "e.g. Twice daily",
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        PersonaTextInput(
+            value = notes,
+            onValueChange = { notes = it },
+            label = "Prescription details / Notes (Optional)",
+            placeholder = "Doctor, refill date, special instructions",
+            singleLine = false
         )
     }
 }

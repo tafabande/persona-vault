@@ -56,10 +56,10 @@ class SharedControlsDeviceTest {
     @Test fun darkSwitchTogglesOnceAndDisabledStateIsDistinct() {
         var checked by mutableStateOf(false)
         var changes = 0
-        renderFixture(ThemeMode.DARK, 1f, { checked }) {
+        renderFixture(ThemeMode.DARK, 1f, { checked }, {
             changes++
             checked = it
-        }
+        })
         compose.onNodeWithTag("sound_toggle").performClick().assertIsOn()
         compose.runOnIdle { assertEquals(1, changes) }
         compose.onNodeWithTag("disabled_switch").assertIsNotEnabled()
@@ -72,6 +72,36 @@ class SharedControlsDeviceTest {
         compose.onNodeWithTag("sound_toggle").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("disabled_switch").performScrollTo().assertIsNotEnabled()
         saveSyntheticPreview("shared-controls-light-large.png")
+    }
+
+    @Test fun gojoDarkThemeUsesSharedReadableControls() {
+        renderFixture(ThemeMode.DARK, 1f, { true }, {}, PersonaMood.JUJUTSU_KAISEN)
+        compose.onNodeWithTag("sound_toggle").assertIsOn()
+        saveSyntheticPreview("gojo-controls-dark.png")
+    }
+
+    @Test fun gojoLightThemeSupportsLargeText() {
+        renderFixture(ThemeMode.LIGHT, 1.6f, { false }, {}, PersonaMood.JUJUTSU_KAISEN)
+        compose.onNodeWithTag("sound_toggle").performScrollTo().assertIsDisplayed()
+        saveSyntheticPreview("gojo-controls-light-large.png")
+    }
+
+    @Test fun gojoMotionKeepsControlsInteractive() {
+        compose.mainClock.autoAdvance = false
+        var enabled by mutableStateOf(false)
+        compose.setContent {
+            PimsVaultTheme(themeMode = ThemeMode.DARK, mood = PersonaMood.JUJUTSU_KAISEN, isReducedMotion = false) {
+                Surface(Modifier.fillMaxSize().testTag("fixture"), color = MaterialTheme.colorScheme.background) {
+                    Column(Modifier.padding(24.dp)) {
+                        Text("Persona", style = MaterialTheme.typography.headlineLarge)
+                        PersonaToggleRow("In-app sounds", enabled, { enabled = it }, Modifier.testTag("motion_toggle"))
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithTag("motion_toggle").performClick().assertIsOn()
+        saveSyntheticPreview("gojo-motion.png")
     }
 
     @Test fun protectedNotesSuppressTheirPreviewAndPrivateMetadata() {
@@ -106,12 +136,13 @@ class SharedControlsDeviceTest {
         mode: ThemeMode,
         fontScale: Float,
         checked: () -> Boolean,
-        onCheckedChange: (Boolean) -> Unit
+        onCheckedChange: (Boolean) -> Unit,
+        mood: PersonaMood = PersonaMood.WARM
     ) {
         compose.setContent {
             val density = LocalDensity.current.density
             CompositionLocalProvider(LocalDensity provides Density(density, fontScale)) {
-                PimsVaultTheme(themeMode = mode, mood = PersonaMood.WARM, isReducedMotion = true) {
+                PimsVaultTheme(themeMode = mode, mood = mood, isReducedMotion = true) {
                     Surface(Modifier.fillMaxSize().testTag("fixture"), color = MaterialTheme.colorScheme.background) {
                         Column(
                             Modifier.verticalScroll(rememberScrollState()).padding(24.dp),

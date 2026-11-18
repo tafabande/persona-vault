@@ -66,6 +66,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.components.ContextualExplanation
 import com.pims.vault.presentation.ui.theme.ThemeMode
+import com.pims.vault.presentation.ui.theme.ThemeManager
+import com.pims.vault.presentation.ui.theme.PersonaMood
+import com.pims.vault.presentation.ui.theme.JujutsuKaisenThemePreview
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
@@ -113,9 +116,12 @@ fun MoreView(
     val context = LocalContext.current
     val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context) }
     val avatarConfig by avatarManager.avatarConfig.collectAsState()
+    val themeManager = remember(context.applicationContext) { ThemeManager(context.applicationContext) }
+    val sakuraEffectsEnabled by themeManager.sakuraEffectsEnabled.collectAsState()
 
     var showThemePicker by remember { mutableStateOf(false) }
     var showMoodPicker by remember { mutableStateOf(false) }
+    var showThemeCredits by remember { mutableStateOf(false) }
 
     // Account Upgrade Dialog State
     var showUpgradeDialog by remember { mutableStateOf(false) }
@@ -200,9 +206,14 @@ fun MoreView(
             SettingsSection("Appearance") {
                 SettingsRow("Theme", value = themeLabel, onClick = { onSelect { showThemePicker = true } })
                 SettingsRow(
-                    "Colour palette", value = currentMood.title,
+                    "Appearance", value = currentMood.title,
                     onClick = { onSelect { showMoodPicker = true } }
                 )
+                if (currentMood == PersonaMood.JUJUTSU_KAISEN) {
+                    SettingsSwitchRow("Sakura effects", sakuraEffectsEnabled) { enabled ->
+                        onSelect { themeManager.setSakuraEffectsEnabled(enabled) }
+                    }
+                }
                 SettingsRow("Home wallpaper", onClick = { onSelect(onOpenWallpaperOptions) })
                 SettingsRow("Profile photo", onClick = { onSelect(onOpenAvatarEditor) })
             }
@@ -281,10 +292,14 @@ fun MoreView(
     if (showMoodPicker) {
         AlertDialog(
             onDismissRequest = { showMoodPicker = false },
-            title = { Text("Colour palette") },
+            title = { Text("Appearance") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()).selectableGroup()) {
-                    com.pims.vault.presentation.ui.theme.PersonaMood.values().forEach { mood ->
+                    JujutsuKaisenThemePreview(selected = currentMood == PersonaMood.JUJUTSU_KAISEN) {
+                        onSelect { onMoodSelected(PersonaMood.JUJUTSU_KAISEN) }
+                        showMoodPicker = false
+                    }
+                    PersonaMood.entries.filter { it != PersonaMood.JUJUTSU_KAISEN }.forEach { mood ->
                         SettingsChoiceRow(mood.title, currentMood == mood, mood.accentColor) {
                             onSelect { onMoodSelected(mood) }
                             showMoodPicker = false
@@ -292,7 +307,26 @@ fun MoreView(
                     }
                 }
             },
+            dismissButton = {
+                TextButton(onClick = {
+                    showMoodPicker = false
+                    showThemeCredits = true
+                }) { Text("Credits") }
+            },
             confirmButton = { TextButton(onClick = { showMoodPicker = false }) { Text("Close") } }
+        )
+    }
+    if (showThemeCredits) {
+        val credits = remember(context) {
+            context.assets.open("licenses/appearance_sources.txt").bufferedReader().use { it.readText() }
+        }
+        AlertDialog(
+            onDismissRequest = { showThemeCredits = false },
+            title = { Text("Theme credits") },
+            text = {
+                Text(credits, Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall)
+            },
+            confirmButton = { TextButton(onClick = { showThemeCredits = false }) { Text("Close") } }
         )
     }
 

@@ -53,20 +53,25 @@ class ProfilePhotoSyncService @Inject constructor(
     /** Reads a local image file, downscales to a sane bound, returns JPEG bytes. */
     fun readLocalJpegBytes(absolutePath: String, maxDim: Int = 1024): ByteArray? {
         return try {
-            val file = File(absolutePath)
+            val root = context.filesDir.canonicalFile
+            val file = File(absolutePath).canonicalFile
+            if (file == root || !file.toPath().startsWith(root.toPath())) return null
             if (maxDim <= 0 || !file.exists() || file.length() <= 0 || file.length() > MAX_PHOTO_BYTES * 2) return null
             val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(absolutePath, opts)
             if (opts.outWidth <= 0 || opts.outHeight <= 0 || opts.outWidth.toLong() * opts.outHeight > 100_000_000L) return null
+            if (opts.outMimeType == "image/jpeg" && maxOf(opts.outWidth, opts.outHeight) <= maxDim) return file.readBytes()
             var sample = 1
             val longest = maxOf(opts.outWidth, opts.outHeight)
             while (longest / sample > maxDim) sample *= 2
             val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample }
             val bmp = BitmapFactory.decodeFile(absolutePath, decodeOpts) ?: return null
-            val out = ByteArrayOutputStream()
-            bmp.compress(Bitmap.CompressFormat.JPEG, 88, out)
-            if (bmp.isRecycled.not()) try { bmp.recycle() } catch (_: Exception) {}
-            out.toByteArray().takeIf { it.isNotEmpty() }
+            try {
+                ByteArrayOutputStream().use { out ->
+                    if (!bmp.compress(Bitmap.CompressFormat.JPEG, 88, out)) return null
+                    out.toByteArray().takeIf { it.isNotEmpty() && it.size <= MAX_PHOTO_BYTES }
+                }
+            } finally { if (!bmp.isRecycled) bmp.recycle() }
         } catch (_: Exception) {
             null
         }

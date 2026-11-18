@@ -10,9 +10,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Persona Mood: Curated, calm aesthetic moods.
- * Muted, sophisticated tones — never neon, never generic blue/purple SaaS gradients.
- * Influences: accent color, avatar background, selected wallpaper, small illustration accents, and interaction details.
+ * Stable appearance presets. Persist enum names so additions preserve existing choices.
  */
 enum class PersonaMood(
     val title: String,
@@ -211,6 +209,24 @@ enum class PersonaMood(
         darkSurfaceVariantColor = Color(0xFF334155),
         darkAvatarBackdropColor = Color(0xFF1E293B),
         darkDividerColor = Color(0xFF334155)
+    ),
+    JUJUTSU_KAISEN(
+        title = "Jujutsu Kaisen",
+        subtitle = "Gojo · Six Eyes + Hollow Purple",
+        accentColor = Color(0xFF425C99),
+        softAccentColor = Color(0xFFDDE8FF),
+        backgroundColor = Color(0xFFF2F6FD),
+        surfaceColor = Color(0xFFFAFBFF),
+        surfaceVariantColor = Color(0xFFE9E8F5),
+        avatarBackdropColor = Color(0xFFDAD8F7),
+        dividerColor = Color(0xFFD1D8E8),
+        darkAccentColor = Color(0xFF8EDDFF),
+        darkSoftAccentColor = Color(0xFF192539),
+        darkBackgroundColor = Color(0xFF080A10),
+        darkSurfaceColor = Color(0xFF111521),
+        darkSurfaceVariantColor = Color(0xFF1C2132),
+        darkAvatarBackdropColor = Color(0xFF29233D),
+        darkDividerColor = Color(0xFF34364D)
     )
 }
 

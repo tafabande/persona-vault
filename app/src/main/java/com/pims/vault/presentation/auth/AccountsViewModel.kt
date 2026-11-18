@@ -327,23 +327,6 @@ class AccountsViewModel @Inject constructor(
                                 }
                             }
 
-                            // Avatar PFP: If user has no photo and photoUrl is available, fetch and store
-                            val avatarManager = com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context)
-                            val currentPhoto = avatarManager.customAvatarPath.value
-                            val needsPfp = currentPhoto.isNullOrBlank() || !java.io.File(currentPhoto).exists()
-                            if (needsPfp && !user.photoUrl.isNullOrBlank()) {
-                                try {
-                                    val conn = java.net.URL(user.photoUrl).openConnection()
-                                    conn.connectTimeout = 6000
-                                    conn.readTimeout = 6000
-                                    val stream = conn.getInputStream()
-                                    val bmp = android.graphics.BitmapFactory.decodeStream(stream)
-                                    stream.close()
-                                    if (bmp != null) {
-                                        avatarManager.saveCustomPhoto(bmp)
-                                    }
-                                } catch (_: Exception) {}
-                            }
                         } catch (_: Exception) {}
 
                         // Bidirectional synchronization: Pull remote records first, then push local.

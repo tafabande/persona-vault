@@ -154,6 +154,14 @@ service cloud.firestore {
         allow read, write: if isAccountOwner(accountId);
       }
 
+      // Encrypted wallpaper metadata and deletion markers follow photo ownership.
+      match /wallpapers/{wallpaperId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+      match /wallpaper_tombstones/{tombstoneId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
       // App-owned encrypted originals. Chunks are immutable after publication.
       match /media/{blobId} {
         allow read: if isAccountOwner(accountId);

@@ -20,7 +20,7 @@ Every release must satisfy 100% of the checklist items below before progressing 
 - [ ] **Relationship note attachments**: Verify owner-only subcollection rules, ciphertext-only public attachment payloads, private-note non-upload, object-storage cleanup, in-memory secure preview, downsync, and encrypted blob backup/restore on a second install.
 - [ ] **Integrated editor and session checks**: Edit a note without losing its attachments; inject an attachment write failure and retry; switch between people without stale note content; elevate/expire Zone 4 while viewing private notes; verify secure windows, keyboard scrolling, large text, and drag/discard behavior for both profile editors.
 - [ ] **Migration concurrency and recovery**: Preserve metadata edits during re-encryption, reject changed source ciphertext and changed archives, and refuse automatic rollback after a later user edit. Older archives without target-IV binding remain retained but require explicit recovery tooling.
-- [ ] **Wallpaper recovery verification**: Import a custom carousel wallpaper, verify its encrypted object and metadata, then restore it on a clean signed-in device. Confirm its alignment, ordering, and active selection are restored and built-in presets were not uploaded.
+- [ ] **Wallpaper recovery verification**: Import a custom carousel wallpaper, verify its encrypted object and metadata, then restore it on a clean signed-in device. Confirm its alignment, ordering, and active selection are restored and built-in presets were not uploaded. Verify deployed owner-only read/write/list rules for wallpaper metadata and deletion markers, including other-account and anonymous denial.
 - [ ] **Financial record verification**: Decrypt a staged bank record through the authorized path and confirm its display mask is derived from that record’s verified account number; do not infer or bulk-correct disputed historical suffixes.
 
 ---
@@ -113,3 +113,22 @@ The user deferred device checks for this implementation pass on 2026-11-16. The 
 - [ ] Review document import, secure multi-page preview, version history, recovery feedback and shared status/icons in light/dark themes with large text.
 
 Device installation and native/cross-device acceptance remain deferred by the user's instruction. Automated build, JVM, migration-SQL, rules-emulator, lint and static-security results are recorded after this implementation pass.
+
+
+Automated verification on 2026-11-17 passed 511 JVM tests across 73 classes, debug/instrumentation packaging, all static security gates and all 14 archived schema-upgrade fixtures. Lint passed with zero errors, 196 warnings and one informational finding. The Firebase emulator suite passed proof/media/document ownership, publication/deletion, escrow and key-fingerprint checks, and the tested rules were deployed to person-cab82. Native and cross-device checks above remain deferred by the user.
+
+The debug APK SHA-256 is `56931AFEE6FECB5A07F500BD4B351CBE597586DCFFBB1A6E00325EC0B8FE0003`. Cloud restore requires the account recovery phrase. New document privacy choices expose Personal, Private and Sensitive levels. Existing Critical documents require strong-biometric access in the interface. Legacy provider-side deletion may remain queued if the former credentials are unavailable, and already-lost encryption keys require an earlier working backup or recovery source.
+
+
+Wireless installation on 2026-11-17 was explicitly requested by the user. The verified debug APK installed successfully with ADB `install -r` on the Infinix X6855 running API 36. Package Manager retained the original first-install timestamp and recorded the update. MainActivity launch returned success and the app was the resumed foreground activity. Native instrumentation, biometric acceptance and cross-device restoration remain deferred.
+
+
+### Dashboard crash and appearance/media recovery acceptance (ADR-023)
+
+On 2026-11-18 the dashboard crash-fix APK installed in place on the Infinix X6855 running API 36. The standalone ART probe verified the dashboard class and the native dashboard regression passed. The user unlocked the app and confirmed that the dashboard stays open. The earlier activity-only launch check had missed the dashboard failure.
+
+- [x] The new wallpaper metadata/deletion rules passed owner CRUD/list, other-account and anonymous denial, plus unmatched-child denial in the Firebase emulator. Existing proof/media/document/key-recovery rule cases passed. The tested rules compiled and deployed to person-cab82 on 2026-11-18.
+- [ ] Run the updated full JVM suite, debug/instrumentation packaging, lint, security script and historical document migration checks for this appearance/media build.
+- [ ] Install the updated appearance/media APK in place and rerun dashboard linkage, isolated photo import and shared light/dark controls on the phone.
+- [ ] On a separate signed-in recovery installation, verify primary/person-photo revisions, wallpaper crop/zoom/order, offline deletion and delayed-upload ordering after explicit recovery. Confirm that a source phone image can be removed while the app-owned copy remains readable.
+- [ ] Confirm Jujutsu Kaisen selection, sakura enable/disable, reduced motion, foreground/background lifecycle, and large-text readability. Verify that theme changes retain account bindings and existing vault/documents after restart.

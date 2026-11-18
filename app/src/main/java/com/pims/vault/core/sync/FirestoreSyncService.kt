@@ -97,7 +97,9 @@ class FirestoreSyncService @Inject constructor(
         val alignmentY: Float,
         val sortOrder: Long,
         val isActive: Boolean,
-        val photo: ProfilePhotoSyncService.PhotoMetadata
+        val photo: ProfilePhotoSyncService.PhotoMetadata,
+        val alignmentX: Float? = null,
+        val zoomScale: Float? = null
     )
     private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
@@ -498,15 +500,25 @@ class FirestoreSyncService @Inject constructor(
                 "updatedAt" to meta.updatedAt
             )
             data["photoCiphertextBase64"] = meta.photoCiphertextBase64 ?: ""
-            firestore.collection("accounts").document(uid)
-                .collection("photos").document(meta.photoId)
-                .set(data, SetOptions.merge()).await()
-            try {
-                firestore.collection("accounts").document(uid)
-                    .collection("photo_tombstones").document(meta.photoId)
-                    .delete().await()
-            } catch (_: Exception) {}
-            true
+            val account = firestore.collection("accounts").document(uid)
+            val reference = account.collection("photos").document(meta.photoId)
+            val tombstone = account.collection("photo_tombstones").document(meta.photoId)
+            val primaryAliases = personDao.getAllPersons().filter { it.isPrimaryOwner }.map { it.id }.toSet() +
+                setOf(uid, CANONICAL_PRIMARY_OWNER_ID, "primary", "primary_owner")
+            firestore.runTransaction { transaction ->
+                check(auth.currentUser?.uid == uid) { "The account changed during photo publication" }
+                val existing = transaction.get(reference)
+                val deletion = transaction.get(tombstone)
+                when (photoPublicationDecision(meta, existing.data.orEmpty(), deletion.getLong("deletedAt") ?: 0L, primaryAliases)) {
+                    PhotoPublicationDecision.REJECT -> false
+                    PhotoPublicationDecision.KEEP_CURRENT -> true
+                    PhotoPublicationDecision.APPLY -> {
+                        transaction.set(reference, data, SetOptions.merge())
+                        if (deletion.exists()) transaction.delete(tombstone)
+                        true
+                    }
+                }
+            }.await()
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Photo metadata sync failed: ${e.message}")
@@ -514,43 +526,74 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
-    suspend fun deleteRemoteProfilePhoto(photoId: String, expectedAccountUid: String? = null) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(expectedAccountUid) ?: return@withContext
+    suspend fun deleteRemoteProfilePhoto(
+        photoId: String,
+        expectedAccountUid: String? = null,
+        deletedAt: Long = System.currentTimeMillis()
+    ): Boolean = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(expectedAccountUid) ?: return@withContext false
         try {
-            val ref = firestore.collection("accounts").document(uid)
-                .collection("photos").document(photoId)
-            try {
-                val snap = ref.get().await()
-                val remotePath = snap.getString("b2RemotePath") ?: ""
-                if (remotePath.isNotBlank()) storageUploadService.delete(remotePath)
-            } catch (_: Exception) {}
-            ref.delete().await()
-            try {
-                firestore.collection("accounts").document(uid)
-                    .collection("photo_tombstones").document(photoId)
-                    .set(
-                        mapOf(
-                            "photoId" to photoId,
-                            "deletedAt" to System.currentTimeMillis()
-                        ),
-                        SetOptions.merge()
-                    ).await()
-            } catch (_: Exception) {}
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Failed to delete remote photo: ${e.message}")
+            val account = firestore.collection("accounts").document(uid)
+            val reference = account.collection("photos").document(photoId)
+            val tombstone = account.collection("photo_tombstones").document(photoId)
+            val path = firestore.runTransaction { transaction ->
+                check(auth.currentUser?.uid == uid) { "The account changed during photo deletion" }
+                val current = transaction.get(reference)
+                val deletion = transaction.get(tombstone)
+                if ((current.getLong("updatedAt") ?: 0L) > deletedAt) null else {
+                    val remotePath = current.getString("b2RemotePath")?.takeIf { it.isNotBlank() }
+                        ?: deletion.getString("remotePath").orEmpty()
+                    transaction.set(tombstone, mapOf("photoId" to photoId,
+                        "deletedAt" to maxOf(deletedAt, deletion.getLong("deletedAt") ?: 0L),
+                        "remotePath" to remotePath), SetOptions.merge())
+                    if (current.exists()) transaction.delete(reference)
+                    remotePath
+                }
+            }.await()
+            if (!path.isNullOrBlank()) {
+                try { storageUploadService.delete(path) }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (_: Exception) { VaultLogger.w("FirestoreSync", "Deleted photo blob cleanup remains pending") }
+            }
+            auth.currentUser?.uid == uid
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Photo deletion remains pending")
+            false
         }
     }
 
-    suspend fun getRemotePhotoTombstones(userId: String?): Set<String> = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext emptySet()
-        try {
-            val snap = firestore.collection("accounts").document(uid)
-                .collection("photo_tombstones").get().await()
-            snap.documents.map { it.id }.toSet()
-        } catch (_: Exception) {
-            emptySet()
+    suspend fun getRemotePhotoDeletionTimes(userId: String?): Map<String, Long> = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(userId) ?: return@withContext emptyMap()
+        val snapshot = firestore.collection("accounts").document(uid).collection("photo_tombstones").get().await()
+        check(auth.currentUser?.uid == uid) { "The account changed during photo recovery" }
+        val times = mutableMapOf<String, Long>()
+        for (document in snapshot.documents) {
+            val stored = document.getLong("deletedAt")
+            if (stored != null && stored > 0L && stored < Long.MAX_VALUE) {
+                times[document.id] = stored
+                continue
+            }
+            // Repair old markers once so every device observes the same finite deletion intent.
+            val migrationRevision = System.currentTimeMillis().coerceAtLeast(1L)
+            val revision = firestore.runTransaction { transaction ->
+                check(auth.currentUser?.uid == uid) { "The account changed during photo recovery" }
+                val current = transaction.get(document.reference)
+                if (!current.exists()) null else {
+                    val currentRevision = current.getLong("deletedAt")
+                    if (currentRevision != null && currentRevision > 0L && currentRevision < Long.MAX_VALUE) currentRevision else {
+                        transaction.set(document.reference, mapOf("deletedAt" to migrationRevision), SetOptions.merge())
+                        migrationRevision
+                    }
+                }
+            }.await()
+            check(auth.currentUser?.uid == uid) { "The account changed during photo recovery" }
+            if (revision != null) times[document.id] = revision
         }
+        times
     }
+
+    suspend fun getRemotePhotoTombstones(userId: String?): Set<String> = getRemotePhotoDeletionTimes(userId).keys
 
     suspend fun getRemotePhoto(userId: String?, photoId: String): ProfilePhotoSyncService.PhotoMetadata? =
         withContext(Dispatchers.IO) {
@@ -618,19 +661,31 @@ class FirestoreSyncService @Inject constructor(
         alignmentY: Float,
         sortOrder: Int,
         isActive: Boolean,
-        photo: ProfilePhotoSyncService.PhotoMetadata
+        photo: ProfilePhotoSyncService.PhotoMetadata,
+        alignmentX: Float = 0f,
+        zoomScale: Float = 1f
     ): Boolean = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (photo.kind != "wallpaper" || photo.ownerKey != wallpaperId ||
+            photo.photoId != "wallpaper_$wallpaperId" || photo.updatedAt <= 0L) return@withContext false
         if (!syncAccountFileKey(uid)) return@withContext false
         try {
-            firestore.collection("accounts").document(uid).collection("wallpapers").document(wallpaperId)
-                .set(mapOf(
+            val account = firestore.collection("accounts").document(uid)
+            val reference = account.collection("wallpapers").document(wallpaperId)
+            val tombstone = account.collection("wallpaper_tombstones").document(wallpaperId)
+            firestore.runTransaction { transaction ->
+                check(auth.currentUser?.uid == uid) { "The account changed during wallpaper backup" }
+                val current = transaction.get(reference)
+                val deletion = transaction.get(tombstone)
+                if (deletion.exists()) return@runTransaction false
+                val previous = current.data.orEmpty()
+                val decision = photoPublicationDecision(photo, previous, 0L, emptySet())
+                if (decision == PhotoPublicationDecision.REJECT) return@runTransaction false
+                if (decision == PhotoPublicationDecision.KEEP_CURRENT) return@runTransaction true
+                val fields = mutableMapOf<String, Any>(
                     "id" to wallpaperId,
                     "title" to title,
                     "subtitle" to (subtitle ?: ""),
-                    "alignmentY" to alignmentY.toDouble(),
-                    "sortOrder" to sortOrder.toLong(),
-                    "isActive" to isActive,
                     "photoId" to photo.photoId,
                     "kind" to photo.kind,
                     "ownerKey" to photo.ownerKey,
@@ -642,8 +697,20 @@ class FirestoreSyncService @Inject constructor(
                     "fileSizeBytes" to photo.sizeBytes,
                     "updatedAt" to photo.updatedAt,
                     "photoCiphertextBase64" to (photo.photoCiphertextBase64 ?: "")
-                ), SetOptions.merge()).await()
-            true
+                )
+                val stateRevision = (previous["stateUpdatedAt"] as? Number)?.toLong()
+                    ?: (previous["updatedAt"] as? Number)?.toLong() ?: 0L
+                if (stateRevision <= photo.updatedAt) {
+                    fields["alignmentY"] = alignmentY.coerceIn(-1f, 1f).toDouble()
+                    fields["alignmentX"] = alignmentX.coerceIn(-1f, 1f).toDouble()
+                    fields["zoomScale"] = zoomScale.coerceIn(1f, 3f).toDouble()
+                    fields["sortOrder"] = sortOrder.toLong()
+                    fields["isActive"] = isActive
+                    fields["stateUpdatedAt"] = photo.updatedAt
+                }
+                transaction.set(reference, fields, SetOptions.merge())
+                true
+            }.await()
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Wallpaper metadata sync failed: ${e.message}")
@@ -651,13 +718,33 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
-    suspend fun syncWallpaperState(userId: String?, wallpaperId: String, alignmentY: Float, sortOrder: Int, isActive: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun syncWallpaperState(
+        userId: String?, wallpaperId: String, alignmentY: Float, sortOrder: Int, isActive: Boolean,
+        alignmentX: Float? = null, zoomScale: Float? = null, stateRevision: Long = System.currentTimeMillis()
+    ) = withContext(Dispatchers.IO) {
         val uid = getEffectiveUserId(userId) ?: return@withContext
         try {
-            firestore.collection("accounts").document(uid).collection("wallpapers").document(wallpaperId)
-                .set(mapOf("alignmentY" to alignmentY.toDouble(), "sortOrder" to sortOrder.toLong(), "isActive" to isActive, "updatedAt" to System.currentTimeMillis()), SetOptions.merge()).await()
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Wallpaper state sync failed: ${e.message}")
+            val fields = mutableMapOf<String, Any>(
+                "alignmentY" to alignmentY.coerceIn(-1f, 1f).toDouble(),
+                "sortOrder" to sortOrder.toLong(), "isActive" to isActive, "stateUpdatedAt" to stateRevision
+            )
+            alignmentX?.let { fields["alignmentX"] = it.coerceIn(-1f, 1f).toDouble() }
+            zoomScale?.let { fields["zoomScale"] = it.coerceIn(1f, 3f).toDouble() }
+            val account = firestore.collection("accounts").document(uid)
+            val reference = account.collection("wallpapers").document(wallpaperId)
+            val tombstone = account.collection("wallpaper_tombstones").document(wallpaperId)
+            firestore.runTransaction { transaction ->
+                check(auth.currentUser?.uid == uid) { "The account changed during wallpaper synchronization" }
+                val current = transaction.get(reference)
+                val deletion = transaction.get(tombstone)
+                val previousRevision = current.getLong("stateUpdatedAt") ?: current.getLong("updatedAt") ?: 0L
+                if (!deletion.exists() && previousRevision <= stateRevision) {
+                    transaction.set(reference, fields, SetOptions.merge())
+                }
+            }.await()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Wallpaper state synchronization remains pending")
         }
     }
 
@@ -674,7 +761,9 @@ class FirestoreSyncService @Inject constructor(
                     ProfilePhotoSyncService.PhotoMetadata(d.getString("photoId") ?: "wallpaper_$id", d.getString("kind") ?: "wallpaper", d.getString("ownerKey") ?: id,
                         d.getString("b2RemotePath") ?: "", d.getString("b2DownloadUrl") ?: "", iv, hash,
                         d.getString("mimeType") ?: "image/jpeg", d.getLong("fileSizeBytes") ?: 0L,
-                        d.getLong("updatedAt") ?: 0L, d.getString("photoCiphertextBase64")?.takeIf { it.isNotBlank() }))
+                        d.getLong("updatedAt") ?: 0L, d.getString("photoCiphertextBase64")?.takeIf { it.isNotBlank() }),
+                    (d.get("alignmentX") as? Number)?.toFloat()?.coerceIn(-1f, 1f),
+                    (d.get("zoomScale") as? Number)?.toFloat()?.coerceIn(1f, 3f))
             }.sortedBy { it.sortOrder }
         } catch (e: Exception) {
             VaultLogger.w("FirestoreSync", "Wallpaper metadata restore failed: ${e.message}")
@@ -682,14 +771,33 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
-    suspend fun deleteRemoteWallpaper(wallpaperId: String, expectedAccountUid: String? = null) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(expectedAccountUid) ?: return@withContext
+    suspend fun deleteRemoteWallpaper(wallpaperId: String, expectedAccountUid: String? = null): Boolean = withContext(Dispatchers.IO) {
+        val uid = getEffectiveUserId(expectedAccountUid) ?: return@withContext false
         try {
-            val ref = firestore.collection("accounts").document(uid).collection("wallpapers").document(wallpaperId)
-            ref.get().await().getString("b2RemotePath")?.takeIf { it.isNotBlank() }?.let { storageUploadService.delete(it) }
-            ref.delete().await()
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Wallpaper delete failed: ${e.message}")
+            val account = firestore.collection("accounts").document(uid)
+            val reference = account.collection("wallpapers").document(wallpaperId)
+            val tombstone = account.collection("wallpaper_tombstones").document(wallpaperId)
+            val remotePath = firestore.runTransaction { transaction ->
+                check(auth.currentUser?.uid == uid) { "The account changed during wallpaper deletion" }
+                val current = transaction.get(reference)
+                val deletion = transaction.get(tombstone)
+                val path = current.getString("b2RemotePath")?.takeIf { it.isNotBlank() }
+                    ?: deletion.getString("remotePath").orEmpty()
+                transaction.set(tombstone, mapOf("id" to wallpaperId,
+                    "deletedAt" to System.currentTimeMillis(), "remotePath" to path), SetOptions.merge())
+                if (current.exists()) transaction.delete(reference)
+                path
+            }.await()
+            if (remotePath.isNotBlank()) {
+                try { storageUploadService.delete(remotePath) }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (_: Exception) { VaultLogger.w("FirestoreSync", "Deleted wallpaper blob cleanup remains pending") }
+            }
+            auth.currentUser?.uid == uid
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("FirestoreSync", "Wallpaper deletion remains pending")
+            false
         }
     }
 

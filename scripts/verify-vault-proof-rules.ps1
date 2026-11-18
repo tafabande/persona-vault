@@ -24,6 +24,45 @@ foreach ($blockedHeaders in @(@{Authorization="Bearer $($second.idToken)"}, @{})
 Invoke-RestMethod -Method Delete -Uri "$base/chunks/0" -Headers $headers | Out-Null
 Write-Output 'Proof owner read/write/delete passed. Other-account and anonymous operations denied.'
 
+# Wallpaper metadata and deletion markers have the same account-owner boundary as photos.
+function Assert-WallpaperDenied($method, $uri, $requestHeaders, $requestBody) {
+    $request = @{Method=$method;Uri=$uri;Headers=$requestHeaders}
+    if ($method -eq 'Patch') {
+        $request.ContentType = 'application/json'
+        $request.Body = $requestBody
+    }
+    try {
+        Invoke-RestMethod @request | Out-Null
+    } catch {
+        if ([int]$_.Exception.Response.StatusCode -eq 403) { return }
+        throw
+    }
+    throw "Wallpaper rules allowed forbidden $method access to $uri"
+}
+$accountBase = "http://127.0.0.1:8080/v1/projects/$project/databases/(default)/documents/accounts/$($first.localId)"
+foreach ($collectionName in @('wallpapers', 'wallpaper_tombstones')) {
+    $collectionUri = "$accountBase/$collectionName"
+    $wallpaperUri = "$collectionUri/fixture-wallpaper"
+    $wallpaperMetadata = @{fields=@{wallpaperId=@{stringValue='fixture-wallpaper'};updatedAt=@{integerValue='1'}}} | ConvertTo-Json -Depth 5
+    Invoke-RestMethod -Method Patch -Uri $wallpaperUri -Headers $headers -ContentType 'application/json' -Body $wallpaperMetadata | Out-Null
+    Invoke-RestMethod -Method Get -Uri $wallpaperUri -Headers $headers | Out-Null
+    $wallpaperList = Invoke-RestMethod -Method Get -Uri $collectionUri -Headers $headers
+    if (@($wallpaperList.documents).Count -ne 1) { throw "Owner could not list $collectionName" }
+    $wallpaperUpdate = @{fields=@{wallpaperId=@{stringValue='fixture-wallpaper'};updatedAt=@{integerValue='2'}}} | ConvertTo-Json -Depth 5
+    Invoke-RestMethod -Method Patch -Uri $wallpaperUri -Headers $headers -ContentType 'application/json' -Body $wallpaperUpdate | Out-Null
+    $updatedWallpaper = Invoke-RestMethod -Method Get -Uri $wallpaperUri -Headers $headers
+    if ($updatedWallpaper.fields.updatedAt.integerValue -ne '2') { throw "Owner update failed for $collectionName" }
+    foreach ($blockedHeaders in @(@{Authorization="Bearer $($second.idToken)"}, @{})) {
+        Assert-WallpaperDenied 'Get' $collectionUri $blockedHeaders $null
+        foreach ($method in @('Get', 'Patch', 'Delete')) {
+            Assert-WallpaperDenied $method $wallpaperUri $blockedHeaders $wallpaperUpdate
+        }
+        Assert-WallpaperDenied 'Patch' "$collectionUri/forbidden-new-wallpaper" $blockedHeaders $wallpaperMetadata
+    }
+    Assert-WallpaperDenied 'Patch' "$wallpaperUri/unmatched/fixture" $headers $wallpaperMetadata
+    Invoke-RestMethod -Method Delete -Uri $wallpaperUri -Headers $headers | Out-Null
+    Write-Output "$collectionName owner create/read/list/update/delete passed. Other-account and anonymous access and unmatched subcollections denied."
+}
 
 $parent = $base.Replace('/proofs/fixture-proof','')
 $deleted = @{fields=@{id=@{stringValue='fixture-card'};personId=@{stringValue='owner'};isDeleted=@{booleanValue=$true};updatedAt=@{integerValue='123'}}} | ConvertTo-Json -Depth 5

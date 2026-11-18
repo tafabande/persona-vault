@@ -453,6 +453,11 @@ fun animatedPersonaColorScheme(
     val colorSpec = tween<Color>(durationMillis = duration, easing = FastOutSlowInEasing)
 
     val accentTarget = if (isDark) mood.darkAccentColor else mood.accentColor
+    val tertiaryTarget = when {
+        mood != PersonaMood.JUJUTSU_KAISEN -> accentTarget
+        isDark -> Color(0xFFB3B1FF)
+        else -> Color(0xFF65519B)
+    }
     val softAccentTarget = if (isDark) mood.darkSoftAccentColor else mood.softAccentColor
     val backgroundTarget = if (isDark) mood.darkBackgroundColor else mood.backgroundColor
     val surfaceTarget = if (isDark) mood.darkSurfaceColor else mood.surfaceColor
@@ -461,12 +466,14 @@ fun animatedPersonaColorScheme(
     val avatarBackdropTarget = if (isDark) mood.darkAvatarBackdropColor else mood.avatarBackdropColor
 
     val primary by androidx.compose.animation.animateColorAsState(accentTarget, colorSpec, label = "themePrimary")
+    val tertiary by androidx.compose.animation.animateColorAsState(tertiaryTarget, colorSpec, label = "themeTertiary")
     val primaryContainer by androidx.compose.animation.animateColorAsState(softAccentTarget, colorSpec, label = "themeSoftAccent")
     val background by androidx.compose.animation.animateColorAsState(backgroundTarget, colorSpec, label = "themeBackground")
     val surface by androidx.compose.animation.animateColorAsState(surfaceTarget, colorSpec, label = "themeSurface")
     val surfaceVariant by androidx.compose.animation.animateColorAsState(surfaceVariantTarget, colorSpec, label = "themeSurfaceVariant")
     val outline by androidx.compose.animation.animateColorAsState(outlineTarget, colorSpec, label = "themeOutline")
     val avatarBackdrop by androidx.compose.animation.animateColorAsState(avatarBackdropTarget, colorSpec, label = "themeAvatarBackdrop")
+    val lightSecondary = if (mood == PersonaMood.JUJUTSU_KAISEN) Color(0xFF686163) else PersonaTextSecondary
 
     return if (isDark) {
         darkColorScheme(
@@ -478,8 +485,8 @@ fun animatedPersonaColorScheme(
             onSecondary = Color(0xFF1A1917),
             secondaryContainer = surfaceVariant,
             onSecondaryContainer = DarkTextPrimary,
-            tertiary = primary,
-            onTertiary = personaAccentContentColor(primary),
+            tertiary = tertiary,
+            onTertiary = personaAccentContentColor(tertiary),
             tertiaryContainer = avatarBackdrop,
             onTertiaryContainer = DarkTextPrimary,
             background = background,
@@ -513,12 +520,12 @@ fun animatedPersonaColorScheme(
             onPrimary = personaAccentContentColor(primary),
             primaryContainer = primaryContainer,
             onPrimaryContainer = PersonaTextPrimary,
-            secondary = PersonaTextSecondary,
+            secondary = lightSecondary,
             onSecondary = Color.White,
             secondaryContainer = surfaceVariant,
             onSecondaryContainer = PersonaTextPrimary,
-            tertiary = primary,
-            onTertiary = personaAccentContentColor(primary),
+            tertiary = tertiary,
+            onTertiary = personaAccentContentColor(tertiary),
             tertiaryContainer = avatarBackdrop,
             onTertiaryContainer = PersonaTextPrimary,
             background = background,
@@ -526,7 +533,7 @@ fun animatedPersonaColorScheme(
             surface = surface,
             onSurface = PersonaTextPrimary,
             surfaceVariant = surfaceVariant,
-            onSurfaceVariant = PersonaTextSecondary,
+            onSurfaceVariant = lightSecondary,
             outline = outline,
             outlineVariant = outline,
             surfaceTint = Color.Transparent,
@@ -593,9 +600,10 @@ fun PimsVaultTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = PimsTypography,
-            shapes = PimsShapes,
-            content = content
-        )
+            shapes = PimsShapes
+        ) {
+            PersonaThemeContent(mood = mood, isReducedMotion = isReducedMotion, content = content)
+        }
     }
 }
 

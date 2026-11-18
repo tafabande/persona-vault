@@ -186,6 +186,7 @@ dependencies {
         exclude(group = "androidx.lifecycle")
     }
     implementation(libs.androidx.startup.runtime)
+    implementation(libs.konfetti.compose)
 
     // Credentials & Identity & Network
     implementation(libs.androidx.credentials)

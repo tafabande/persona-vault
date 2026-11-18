@@ -3,6 +3,14 @@ package com.pims.vault.presentation.avatar
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.UUID
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,25 +91,7 @@ class PersonaAvatarManager @Inject constructor(
         _avatarSource.value = source
     }
 
-    fun clearCustomPhoto() {
-        val current = _avatarConfig.value
-        current.customAvatarPath?.let { path ->
-            try {
-                val f = File(path)
-                if (f.exists()) f.delete()
-            } catch (_: Exception) {}
-        }
-        val updated = current.copy(
-            avatarSource = AvatarSource.GENERATED,
-            customAvatarPath = null
-        )
-        saveConfig(updated)
-        _customAvatarPath.value = null
-        _avatarSource.value = AvatarSource.GENERATED
-        try {
-            getPhotoBackupCoordinator()?.deleteAvatarPhotoAsync()
-        } catch (_: Exception) {}
-    }
+    fun clearCustomPhoto() = removeCustomPhoto()
 
     /**
      * Determines the current day period based strictly on device local time.
@@ -133,7 +123,7 @@ class PersonaAvatarManager @Inject constructor(
 
         return PersonaAvatarConfig(
             id = json.optString("id", "user_primary"),
-            style = AvatarStyle.valueOf(json.optString("style", AvatarStyle.SOFT.name)),
+            style = enumOrDefault(json.optString("style"), AvatarStyle.SOFT),
             seed = json.optString("seed", "persona"),
             gender = gender,
             headShape = headShape,
@@ -156,11 +146,11 @@ class PersonaAvatarManager @Inject constructor(
             } catch (_: Exception) {
                 HairColor.ESPRESSO_BLACK
             },
-            eyeType = EyeType.valueOf(json.optString("eyeType", EyeType.GENTLE_DOT.name)),
+            eyeType = enumOrDefault(json.optString("eyeType"), EyeType.GENTLE_DOT),
             eyebrowType = eyebrowType,
-            mouthType = MouthType.valueOf(json.optString("mouthType", MouthType.WARM_SMILE.name)),
-            facialFeature = FacialFeature.valueOf(json.optString("facialFeature", FacialFeature.CUTE_BLUSH.name)),
-            accessory = Accessory.valueOf(json.optString("accessory", Accessory.NONE.name)),
+            mouthType = enumOrDefault(json.optString("mouthType"), MouthType.WARM_SMILE),
+            facialFeature = enumOrDefault(json.optString("facialFeature"), FacialFeature.CUTE_BLUSH),
+            accessory = enumOrDefault(json.optString("accessory"), Accessory.NONE),
             clothingStyle = try {
                 ClothingStyle.valueOf(json.optString("clothingStyle", ClothingStyle.MINIMAL_CREW.name))
             } catch (_: Exception) {
@@ -171,7 +161,7 @@ class PersonaAvatarManager @Inject constructor(
             } catch (_: Exception) {
                 ClothingColor.TERRACOTTA
             },
-            backgroundShape = BackgroundShape.valueOf(json.optString("backgroundShape", BackgroundShape.ORGANIC_BLOB.name)),
+            backgroundShape = enumOrDefault(json.optString("backgroundShape"), BackgroundShape.ORGANIC_BLOB),
             expression = AvatarExpression.NORMAL
         )
     }
@@ -217,16 +207,7 @@ class PersonaAvatarManager @Inject constructor(
         }
         val path = config.customAvatarPath
         if (!path.isNullOrBlank()) {
-            val f = File(path)
-            if (f.exists() && f.length() > 0) return config
-            val name = f.name
-            val fallback = File(File(context.filesDir, "avatars"), name)
-            if (fallback.exists() && fallback.length() > 0) {
-                return config.copy(
-                    customAvatarPath = fallback.absolutePath,
-                    avatarSource = AvatarSource.CUSTOM_IMAGE
-                )
-            }
+            ownedPhotoFile(path, "avatars")?.let { return config.copy(customAvatarPath = it.absolutePath) }
         }
         // File not found locally: attempt download from cloud storage if not explicitly deleted
         val coordinator = getPhotoBackupCoordinator()
@@ -237,10 +218,7 @@ class PersonaAvatarManager @Inject constructor(
                 "primary_owner"
             )
         }
-        return config.copy(
-            avatarSource = AvatarSource.GENERATED,
-            customAvatarPath = null
-        )
+        return config.copy(customAvatarPath = null)
     }
 
     private fun loadConfig(): PersonaAvatarConfig {
@@ -252,63 +230,199 @@ class PersonaAvatarManager @Inject constructor(
         }
     }
 
+    @Synchronized
     fun getCurrentConfigJsonString(): String {
-        return configToJson(_avatarConfig.value).toString()
+        val stored = runCatching {
+            JSONObject(prefs.getString(KEY_CONFIG, null) ?: configToJson(_avatarConfig.value).toString())
+        }.getOrElse { configToJson(_avatarConfig.value) }
+        return cloudConfig(stored)
     }
 
+    private fun cloudConfig(config: JSONObject): String = JSONObject(config.toString()).apply {
+        remove("customAvatarPath")
+    }.toString()
+
+    private fun mergeConfigChanges(stored: JSONObject, previous: PersonaAvatarConfig, updated: PersonaAvatarConfig) {
+        val before = configToJson(previous)
+        val after = configToJson(updated)
+        after.keys().forEach { key ->
+            // Keep unsupported future enum values until this client actually changes that setting.
+            if (!stored.has(key) || before.opt(key) != after.opt(key)) stored.put(key, after.get(key))
+        }
+        if (updated.customAvatarPath == null) stored.remove("customAvatarPath")
+        else stored.put("customAvatarPath", updated.customAvatarPath)
+    }
+
+    private fun persistAvatarConfig(config: PersonaAvatarConfig, revision: Long? = null, restoredJson: JSONObject? = null) {
+        val previous = restoredJson ?: runCatching { JSONObject(prefs.getString(KEY_CONFIG, "{}") ?: "{}") }.getOrDefault(JSONObject())
+        if (restoredJson == null) {
+            mergeConfigChanges(previous, _avatarConfig.value, config)
+        }
+        if (config.customAvatarPath == null) previous.remove("customAvatarPath")
+        else previous.put("customAvatarPath", config.customAvatarPath)
+        val editor = prefs.edit().putString(KEY_CONFIG, previous.toString())
+        if (revision != null) editor.putLong(REVISION_PREFIX + "avatar_primary", revision)
+        check(editor.commit()) { "Avatar preferences could not be saved" }
+        _avatarConfig.value = config.copy(expression = AvatarExpression.NORMAL)
+        _avatarSource.value = config.avatarSource
+        _customAvatarPath.value = config.customAvatarPath
+    }
+
+    @Synchronized
     fun saveConfig(config: PersonaAvatarConfig) {
-        val healedConfig = healStaleAvatarPath(config)
-        val json = configToJson(healedConfig)
-        prefs.edit().putString(KEY_CONFIG, json.toString()).apply()
-        _avatarConfig.value = healedConfig.copy(expression = AvatarExpression.NORMAL)
-        _avatarSource.value = healedConfig.avatarSource
-        _customAvatarPath.value = healedConfig.customAvatarPath
+        val healed = healStaleAvatarPath(config)
+        val changedPhoto = healed.customAvatarPath != _customAvatarPath.value || healed.avatarSource != _avatarSource.value
+        val revision = if (changedPhoto) nextSelectionRevision("avatar_primary") else null
+        persistAvatarConfig(healed, revision)
         try {
-            getPhotoBackupCoordinator()?.backupAvatarConfigAsync(json.toString())
-            if (healedConfig.avatarSource == AvatarSource.CUSTOM_IMAGE && !healedConfig.customAvatarPath.isNullOrBlank()) {
-                getPhotoBackupCoordinator()?.backupAvatarAsync(healedConfig.customAvatarPath)
+            getPhotoBackupCoordinator()?.backupAvatarConfigAsync(getCurrentConfigJsonString())
+            if (changedPhoto && healed.avatarSource == AvatarSource.CUSTOM_IMAGE && !healed.customAvatarPath.isNullOrBlank()) {
+                getPhotoBackupCoordinator()?.clearPhotoDeleted("avatar_primary")
+                getPhotoBackupCoordinator()?.backupAvatarAsync(healed.customAvatarPath)
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) { }
     }
 
+    @Synchronized
     fun saveConfigFromJsonString(jsonString: String) {
         try {
-            val json = JSONObject(jsonString)
-            val config = healStaleAvatarPath(parseConfigFromJson(json))
-            prefs.edit().putString(KEY_CONFIG, configToJson(config).toString()).apply()
-            _avatarConfig.value = config.copy(expression = AvatarExpression.NORMAL)
-            _avatarSource.value = config.avatarSource
-            _customAvatarPath.value = config.customAvatarPath
-        } catch (_: Exception) {}
+            val local = JSONObject(prefs.getString(KEY_CONFIG, "{}") ?: "{}")
+            val current = configToJson(_avatarConfig.value)
+            current.keys().forEach { key -> if (!local.has(key)) local.put(key, current.get(key)) }
+            val remote = JSONObject(jsonString)
+            remote.keys().forEach { key -> if (key != "customAvatarPath") local.put(key, remote.get(key)) }
+            val ownedPath = ownedPhotoFile(_customAvatarPath.value, "avatars")?.absolutePath
+            if (ownedPath == null) local.remove("customAvatarPath") else {
+                local.put("customAvatarPath", ownedPath)
+                local.put("avatarSource", AvatarSource.CUSTOM_IMAGE.name)
+            }
+            persistAvatarConfig(parseConfigFromJson(local), restoredJson = local)
+        } catch (_: Exception) { }
     }
 
     fun getAvatarConfigForRelationship(personId: String, name: String, role: String): PersonaAvatarConfig {
-        val customKey = "rel_avatar_$personId"
-        val jsonStr = prefs.getString(customKey, null)
-        if (!jsonStr.isNullOrBlank()) {
-            try {
-                return parseConfigFromJson(JSONObject(jsonStr))
-            } catch (_: Exception) {}
-        }
-        return PersonaAvatarConfig.fromRelationship(name, role)
+        val saved = prefs.getString("rel_avatar_$personId", null)
+        val config = saved?.let { runCatching { parseConfigFromJson(JSONObject(it)) }.getOrNull() }
+            ?: PersonaAvatarConfig.fromRelationship(name, role)
+        val path = localPersonPhotoPath(personId)
+        return if (path == null) config.copy(customAvatarPath = null) else
+            config.copy(avatarSource = AvatarSource.CUSTOM_IMAGE, customAvatarPath = path)
     }
 
+    @Synchronized
     fun saveAvatarConfigForRelationship(personId: String, config: PersonaAvatarConfig) {
         if (personId.isBlank()) return
-        val customKey = "rel_avatar_$personId"
-        val json = configToJson(config)
-        prefs.edit().putString(customKey, json.toString()).apply()
-        try {
-            getPhotoBackupCoordinator()?.backupAvatarConfigAsync(json.toString(), personId)
-        } catch (_: Exception) {}
+        val localPath = localPersonPhotoPath(personId)
+        val local = config.copy(customAvatarPath = localPath)
+        val stored = runCatching { JSONObject(prefs.getString("rel_avatar_$personId", "{}") ?: "{}") }.getOrDefault(JSONObject())
+        mergeConfigChanges(stored, parseConfigFromJson(stored), local)
+        check(prefs.edit().putString("rel_avatar_$personId", stored.toString()).commit()) {
+            "Person avatar preferences could not be saved"
+        }
+        _personPhotosVersion.value += 1
+        try { getPhotoBackupCoordinator()?.backupAvatarConfigAsync(cloudConfig(stored), personId) }
+        catch (_: Exception) { }
     }
 
+    @Synchronized
     fun saveAvatarConfigForRelationshipFromJson(personId: String, jsonString: String) {
         if (personId.isBlank() || jsonString.isBlank()) return
         try {
-            val config = parseConfigFromJson(JSONObject(jsonString))
-            prefs.edit().putString("rel_avatar_$personId", configToJson(config).toString()).apply()
-        } catch (_: Exception) {}
+            val local = JSONObject(prefs.getString("rel_avatar_$personId", "{}") ?: "{}")
+            val remote = JSONObject(jsonString)
+            remote.keys().forEach { key -> if (key != "customAvatarPath") local.put(key, remote.get(key)) }
+            val path = localPersonPhotoPath(personId)
+            if (path == null) local.remove("customAvatarPath") else local.put("customAvatarPath", path)
+            // Parse validates supported fields while the merged JSON keeps future cosmetic attributes.
+            parseConfigFromJson(local)
+            check(prefs.edit().putString("rel_avatar_$personId", local.toString()).commit())
+            _personPhotosVersion.value += 1
+        } catch (_: Exception) { }
+    }
+
+    @Synchronized
+    fun restoreAvatarPhotoPath(path: String, revision: Long): Boolean {
+        val owned = ownedPhotoFile(path, "avatars") ?: return false
+        if (photoSelectionRevision("avatar_primary", _customAvatarPath.value) > revision) return false
+        val config = _avatarConfig.value.copy(avatarSource = AvatarSource.CUSTOM_IMAGE, customAvatarPath = owned.absolutePath)
+        persistAvatarConfig(config, revision)
+        return true
+    }
+
+    @Synchronized
+    fun restorePersonPhotoPath(personId: String, path: String, revision: Long): Boolean {
+        if (!validPersonPhotoId(personId)) return false
+        val owned = ownedPhotoFile(path, "contact_photos") ?: return false
+        val current = localPersonPhotoPath(personId)
+        if (photoSelectionRevision("contact_$personId", current) > revision) return false
+        val editor = prefs.edit().putString("person_photo_$personId", owned.absolutePath)
+            .putLong(REVISION_PREFIX + "contact_$personId", revision).putBoolean(REMOVED_PREFIX + personId, false)
+        prefs.all.filter { (key, value) -> key.startsWith(ALIAS_PREFIX) && value == personId }.keys.forEach { key ->
+            val alias = key.removePrefix(ALIAS_PREFIX)
+            editor.putString("person_photo_$alias", owned.absolutePath).putBoolean(REMOVED_PREFIX + alias, false)
+        }
+        check(editor.commit())
+        _personPhotosVersion.value += 1
+        return true
+    }
+
+    @Synchronized
+    fun applyRemotePhotoDeletion(photoId: String, revision: Long): Boolean {
+        val path = if (photoId == "avatar_primary") _customAvatarPath.value else
+            photoId.takeIf { it.startsWith("contact_") }?.removePrefix("contact_")?.let { localPersonPhotoPath(it) }
+        if (photoSelectionRevision(photoId, path) > revision) return false
+        if (photoId == "avatar_primary") {
+            persistAvatarConfig(_avatarConfig.value.copy(customAvatarPath = null, avatarSource = AvatarSource.GENERATED), revision)
+        } else if (photoId.startsWith("contact_")) {
+            val personId = photoId.removePrefix("contact_")
+            if (!validPersonPhotoId(personId)) return false
+            val aliases = prefs.all.filter { (key, value) -> key.startsWith(ALIAS_PREFIX) && value == personId }.keys
+            val editor = prefs.edit().remove("person_photo_$personId").putBoolean(REMOVED_PREFIX + personId, true)
+                .putLong(REVISION_PREFIX + photoId, revision)
+            aliases.forEach { key ->
+                val alias = key.removePrefix(ALIAS_PREFIX)
+                editor.remove("person_photo_$alias").putBoolean(REMOVED_PREFIX + alias, true)
+            }
+            check(editor.commit())
+            _personPhotosVersion.value += 1
+        } else return false
+        return true
+    }
+
+    @Synchronized
+    fun photoSelectionRevision(photoId: String, path: String? = null): Long =
+        prefs.getLong(REVISION_PREFIX + photoId, 0L).takeIf { it > 0 }
+            ?: path?.let { File(it).lastModified() } ?: 0L
+
+    private fun nextSelectionRevision(photoId: String): Long {
+        val path = if (photoId == "avatar_primary") _customAvatarPath.value else
+            photoId.removePrefix("contact_").let { localPersonPhotoPath(it) }
+        val previous = photoSelectionRevision(photoId, path)
+        val now = System.currentTimeMillis().coerceAtLeast(1L)
+        // Older recovery code used MAX_VALUE for an undated deletion marker.
+        return if (previous == Long.MAX_VALUE) now else maxOf(now, previous + 1L)
+    }
+
+    @Synchronized
+    fun isCurrentPhotoSelection(kind: String, ownerKey: String, path: String, revision: Long): Boolean {
+        val current = when (kind) {
+            "avatar" -> _customAvatarPath.value
+            "contact" -> localPersonPhotoPath(ownerKey)
+            else -> return true
+        }
+        val id = if (kind == "avatar") "avatar_primary" else "contact_$ownerKey"
+        return current == path && photoSelectionRevision(id, current) == revision
+    }
+
+    data class PersonPhotoSelection(val personId: String, val path: String, val revision: Long)
+
+    @Synchronized
+    fun localPersonPhotoSelections(): List<PersonPhotoSelection> = prefs.all.entries.mapNotNull { (key, value) ->
+        if (!key.startsWith("person_photo_") || value !is String) return@mapNotNull null
+        val id = key.removePrefix("person_photo_")
+        if (prefs.contains(ALIAS_PREFIX + id) || prefs.getBoolean(REMOVED_PREFIX + id, false)) return@mapNotNull null
+        val path = ownedPhotoFile(value, "contact_photos")?.absolutePath ?: return@mapNotNull null
+        PersonPhotoSelection(id, path, photoSelectionRevision("contact_$id", path))
     }
 
     /**
@@ -317,60 +431,85 @@ class PersonaAvatarManager @Inject constructor(
      * PhotoBackupCoordinator (encrypted B2 + Firestore metadata) so the
      * avatar survives reinstall. Returns the absolute local path.
      */
-    fun saveCustomPhoto(bitmap: Bitmap): String? {
-        return try {
-            val dir = File(context.filesDir, "avatars").apply { if (!exists()) mkdirs() }
-            val photoFile = File(dir, "avatar_custom_${System.currentTimeMillis()}.jpg")
-            val canonicalBase = context.filesDir.canonicalPath
-            if (!photoFile.canonicalPath.startsWith(canonicalBase)) return null
-            FileOutputStream(photoFile).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
-            }
-            val newPath = photoFile.absolutePath
+    fun saveCustomPhoto(bitmap: Bitmap): String? = try {
+        val file = writeOwnedBitmap(bitmap, "avatars", "avatar_custom")
+        saveConfig(_avatarConfig.value.copy(customAvatarPath = file.absolutePath, avatarSource = AvatarSource.CUSTOM_IMAGE))
+        file.absolutePath
+    } catch (_: Exception) { null }
 
-            // Delete previous custom photo if different
-            _customAvatarPath.value?.let { oldPath ->
-                try {
-                    val oldFile = File(oldPath)
-                    if (oldFile.exists() && oldFile.absolutePath != newPath) {
-                        oldFile.delete()
-                    }
-                } catch (_: Exception) {}
-            }
+    suspend fun importAvatarPhoto(uri: Uri): String = importPhoto(uri) { bitmap -> saveCustomPhoto(bitmap) }
 
-            val updated = _avatarConfig.value.copy(
-                customAvatarPath = newPath,
-                avatarSource = AvatarSource.CUSTOM_IMAGE
-            )
-            saveConfig(updated)
+    suspend fun importPersonPhoto(personId: String, uri: Uri, altId: String? = null): String =
+        importPhoto(uri) { bitmap -> saveRelationshipPhotoFromBitmap(personId, bitmap, altId) }
+
+    private suspend fun importPhoto(uri: Uri, save: (Bitmap) -> String?): String = withContext(Dispatchers.IO) {
+        val directory = File(context.cacheDir, "photo_imports").apply { check(isDirectory || mkdirs()) }
+        val incoming = File.createTempFile("source-", ".image", directory)
+        try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(incoming).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var total = 0L
+                    try {
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= 16L * 1024 * 1024) { "Choose a photo smaller than 16 MB" }
+                            output.write(buffer, 0, count)
+                        }
+                    } finally { buffer.fill(0) }
+                }
+            } ?: error("This photo could not be opened")
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(incoming.absolutePath, bounds)
+            require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 100_000_000L) {
+                "Choose a supported photo"
+            }
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1200) sample *= 2
+            val bitmap = checkNotNull(BitmapFactory.decodeFile(incoming.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }))
             try {
-                getPhotoBackupCoordinator()?.clearPhotoDeleted("avatar_primary")
-                getPhotoBackupCoordinator()?.backupAvatarAsync(newPath)
-            } catch (_: Exception) {}
-            newPath
-        } catch (_: Exception) {
-            null
-        }
+                currentCoroutineContext().ensureActive()
+                checkNotNull(save(bitmap)) { "This photo could not be saved" }
+            }
+            finally { if (!bitmap.isRecycled) bitmap.recycle() }
+        } finally { incoming.delete() }
+    }
+
+    private fun writeOwnedBitmap(bitmap: Bitmap, directory: String, prefix: String): File {
+        require(bitmap.width > 0 && bitmap.height > 0)
+        val root = context.filesDir.canonicalFile
+        val base = File(root, directory).canonicalFile
+        require(base != root && base.toPath().startsWith(root.toPath()))
+        check(base.isDirectory || base.mkdirs())
+        val target = File(base, "${prefix}_${UUID.randomUUID()}.jpg")
+        val staged = File.createTempFile(".pending-", ".jpg", base)
+        try {
+            FileOutputStream(staged).use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)) { "Photo encoding failed" }
+                output.fd.sync()
+            }
+            require(staged.length() in 1..8L * 1024 * 1024) { "The saved photo exceeds the supported size" }
+            Files.move(staged.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            return target
+        } finally { staged.delete() }
     }
 
     /**
      * Removes the custom photo and falls back seamlessly to the preserved generated avatar.
      */
+    @Synchronized
     fun removeCustomPhoto() {
-        _customAvatarPath.value?.let { path ->
-            try {
-                val file = File(path)
-                if (file.exists()) file.delete()
-            } catch (_: Exception) {}
-        }
-        val updated = _avatarConfig.value.copy(
-            customAvatarPath = null,
-            avatarSource = AvatarSource.GENERATED
-        )
-        saveConfig(updated)
+        val previous = ownedPhotoFile(_customAvatarPath.value, "avatars")
+        val config = _avatarConfig.value.copy(customAvatarPath = null, avatarSource = AvatarSource.GENERATED)
+        persistAvatarConfig(config, nextSelectionRevision("avatar_primary"))
         try {
             getPhotoBackupCoordinator()?.deleteAvatarPhotoAsync()
-        } catch (_: Exception) {}
+            getPhotoBackupCoordinator()?.backupAvatarConfigAsync(getCurrentConfigJsonString())
+        } catch (_: Exception) { }
+        previous?.delete()
     }
 
     fun updateCustomPhotoAlignment(alignX: Float, alignY: Float) {
@@ -382,32 +521,8 @@ class PersonaAvatarManager @Inject constructor(
     }
 
     fun loadCustomPhotoBitmap(): Bitmap? {
-        val path = _customAvatarPath.value ?: return null
-        // Same reinstall problem as contact photos: resolve by file name
-        // inside the current avatars dir when the stored absolute path is stale.
-        val candidates = listOfNotNull(
-            path,
-            try {
-                val name = File(path).name.takeIf { it.isNotBlank() }
-                name?.let { File(File(context.filesDir, "avatars"), it).absolutePath }
-            } catch (_: Exception) {
-                null
-            }
-        )
-        for (candidate in candidates) {
-            try {
-                val bmp = BitmapFactory.decodeFile(candidate)
-                if (bmp != null) {
-                    if (candidate != path) {
-                        // Heal the stored path.
-                        val updated = _avatarConfig.value.copy(customAvatarPath = candidate)
-                        saveConfig(updated)
-                    }
-                    return bmp
-                }
-            } catch (_: Exception) {}
-        }
-        return null
+        val file = ownedPhotoFile(_customAvatarPath.value, "avatars") ?: return null
+        return try { BitmapFactory.decodeFile(file.absolutePath) } catch (_: Exception) { null }
     }
 
     fun setTemporaryExpression(expression: AvatarExpression) {
@@ -423,114 +538,114 @@ class PersonaAvatarManager @Inject constructor(
         return PersonaAvatarConfig.fromSeed(seed, style = AvatarStyle.SOFT)
     }
 
-    fun getPersonPhotoPath(personId: String, altId: String? = null): String? {
-        if (personId.isBlank() && altId.isNullOrBlank()) return null
-        var path = if (personId.isNotBlank()) prefs.getString("person_photo_$personId", null) else null
-        if (path.isNullOrBlank() && !altId.isNullOrBlank()) {
-            path = prefs.getString("person_photo_$altId", null)
-        }
-        if (!path.isNullOrBlank()) {
-            val direct = File(path)
-            if (direct.exists() && direct.length() > 0) return direct.absolutePath
-            try {
-                val name = direct.name
-                if (name.isNotBlank()) {
-                    val fallback = File(File(context.filesDir, "contact_photos"), name)
-                    if (fallback.exists() && fallback.length() > 0) {
-                        if (personId.isNotBlank()) prefs.edit().putString("person_photo_$personId", fallback.absolutePath).apply()
-                        if (!altId.isNullOrBlank()) prefs.edit().putString("person_photo_$altId", fallback.absolutePath).apply()
-                        return fallback.absolutePath
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-        try {
-            val contactDir = File(context.filesDir, "contact_photos")
-            if (contactDir.exists()) {
-                val matches = contactDir.listFiles()?.filter {
-                    it.isFile && it.length() > 0 && (
-                        (personId.isNotBlank() && (
-                            it.name == "contact_${personId}.jpg" ||
-                            it.name.startsWith("contact_${personId}_") ||
-                            it.name == "contact_${personId}_restored.jpg"
-                        )) ||
-                        (!altId.isNullOrBlank() && (
-                            it.name == "contact_${altId}.jpg" ||
-                            it.name.startsWith("contact_${altId}_") ||
-                            it.name == "contact_${altId}_restored.jpg"
-                        ))
-                    )
-                }
-                val match = matches?.maxByOrNull { it.lastModified() }
-                if (match != null) {
-                    if (personId.isNotBlank()) prefs.edit().putString("person_photo_$personId", match.absolutePath).apply()
-                    if (!altId.isNullOrBlank()) prefs.edit().putString("person_photo_$altId", match.absolutePath).apply()
-                    return match.absolutePath
-                }
+    private fun ownedPhotoFile(path: String?, directory: String): File? {
+        if (path.isNullOrBlank()) return null
+        return runCatching {
+            val root = context.filesDir.canonicalFile
+            val base = File(root, directory).canonicalFile
+            if (base == root || !base.toPath().startsWith(root.toPath())) return@runCatching null
+            val source = File(path)
+            listOf(source, File(base, source.name)).map { it.canonicalFile }.firstOrNull { canonical ->
+                canonical.toPath().startsWith(base.toPath()) && canonical != base && canonical.isFile &&
+                    canonical.length() in 1..16L * 1024 * 1024
             }
-        } catch (_: Exception) {}
+        }.getOrNull()
+    }
 
-        // If no local pfp exists, trigger download from storage unless user explicitly deleted it
-        val coordinator = getPhotoBackupCoordinator()
-        val isDeleted = (personId.isNotBlank() && coordinator?.isPhotoDeleted("contact_$personId") == true) ||
-                        (!altId.isNullOrBlank() && coordinator?.isPhotoDeleted("contact_$altId") == true)
-        if (!isDeleted) {
-            val keyToDownload = if (personId.isNotBlank()) personId else altId ?: ""
-            if (keyToDownload.isNotBlank()) {
-                coordinator?.downloadPhotoIfMissingAsync(
-                    kind = com.pims.vault.core.sync.ProfilePhotoSyncService.KIND_CONTACT,
-                    photoId = "contact_$keyToDownload",
-                    ownerKey = keyToDownload
-                )
-            }
+    private fun validPersonPhotoId(id: String): Boolean = id.matches(Regex("[A-Za-z0-9_-]{1,160}"))
+
+    private fun localPersonPhotoPath(personId: String, altId: String? = null): String? {
+        if (personId.isBlank() && altId.isNullOrBlank()) return null
+        val owner = personId.ifBlank { altId.orEmpty() }
+        if (prefs.getBoolean(REMOVED_PREFIX + owner, false)) return null
+        for (id in listOfNotNull(personId.takeIf { it.isNotBlank() }, altId?.takeIf { it.isNotBlank() })) {
+            ownedPhotoFile(prefs.getString("person_photo_$id", null), "contact_photos")?.let { return it.absolutePath }
         }
         return null
     }
 
-    fun setPersonPhotoPath(personId: String, path: String?, altId: String? = null) {
-        val editor = prefs.edit()
-        if (path == null) {
-            if (personId.isNotBlank()) editor.remove("person_photo_$personId")
-            if (!altId.isNullOrBlank()) editor.remove("person_photo_$altId")
-            editor.apply()
-            try {
-                getPhotoBackupCoordinator()?.deleteContactPhotoAsync(personId, altId)
-            } catch (_: Exception) {}
-        } else {
-            if (personId.isNotBlank()) editor.putString("person_photo_$personId", path)
-            if (!altId.isNullOrBlank()) editor.putString("person_photo_$altId", path)
-            editor.apply()
-            try {
-                if (File(path).exists()) {
-                    val backupKey = if (personId.isNotBlank()) personId else altId ?: ""
-                    if (backupKey.isNotBlank()) {
-                        getPhotoBackupCoordinator()?.clearPhotoDeleted("contact_$backupKey")
-                        getPhotoBackupCoordinator()?.backupContactPhotoAsync(backupKey, path)
-                    }
-                }
-            } catch (_: Exception) {}
+    @Synchronized
+    fun getPersonPhotoPath(personId: String, altId: String? = null): String? {
+        if (personId.isBlank() && altId.isNullOrBlank()) return null
+        val owner = personId.ifBlank { altId.orEmpty() }
+        if (prefs.getBoolean(REMOVED_PREFIX + owner, false)) return null
+        val primary = personId.ifBlank { altId.orEmpty() }
+        val current = localPersonPhotoPath(primary, altId)
+        if (current != null) {
+            if (personId.isNotBlank() && !altId.isNullOrBlank() && personId != altId) {
+                prefs.edit().putString("person_photo_$personId", current).putString(ALIAS_PREFIX + altId, personId).apply()
+            }
+            return current
         }
-        _personPhotosVersion.value = System.currentTimeMillis()
+        val coordinator = getPhotoBackupCoordinator()
+        if (coordinator?.isPhotoDeleted("contact_$primary") == true) return null
+        // Recover historical files only by their stable person/relationship IDs.
+        val directory = File(context.filesDir, "contact_photos")
+        val keys = listOfNotNull(personId.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,160}")) },
+            altId?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,160}")) })
+        val legacy = directory.listFiles()?.filter { file ->
+            file.isFile && file.length() > 0 && keys.any { id ->
+                file.name == "contact_$id.jpg" ||
+                    file.name.matches(Regex("contact_${Regex.escape(id)}_(?:[0-9]{10,17}|[0-9a-fA-F-]{36}|restored)\\.jpg"))
+            }
+        }?.maxByOrNull { it.lastModified() }
+        if (legacy != null) {
+            if (restorePersonPhotoPath(primary, legacy.absolutePath, legacy.lastModified())) {
+                if (!altId.isNullOrBlank() && primary != altId) prefs.edit().putString(ALIAS_PREFIX + altId, primary).apply()
+                return legacy.absolutePath
+            }
+        }
+        val key = personId.ifBlank { altId.orEmpty() }
+        if (key.isNotBlank()) coordinator?.downloadPhotoIfMissingAsync("contact", "contact_$key", key)
+        return null
     }
 
-    fun saveRelationshipPhotoFromBitmap(personId: String, bitmap: Bitmap, altId: String? = null): String? {
-        return try {
-            val avatarsDir = File(context.filesDir, "contact_photos").apply { mkdirs() }
-            val primaryKey = if (personId.isNotBlank()) personId else altId ?: "unknown"
-            val destFile = File(avatarsDir, "contact_${primaryKey}_${System.currentTimeMillis()}.jpg")
-            val canonicalBase = context.filesDir.canonicalPath
-            if (!destFile.canonicalPath.startsWith(canonicalBase)) return null
-            FileOutputStream(destFile).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+    @Synchronized
+    fun setPersonPhotoPath(personId: String, path: String?, altId: String? = null) {
+        val primary = personId.ifBlank { altId.orEmpty() }
+        require(validPersonPhotoId(primary)) { "Choose a valid person before saving their photo" }
+        val editor = prefs.edit().remove(ALIAS_PREFIX + primary)
+        val revision = nextSelectionRevision("contact_$primary")
+        editor.putLong(REVISION_PREFIX + "contact_$primary", revision)
+        if (path == null) {
+            editor.remove("person_photo_$primary").putBoolean(REMOVED_PREFIX + primary, true)
+            if (!altId.isNullOrBlank()) editor.remove("person_photo_$altId").putBoolean(REMOVED_PREFIX + altId, true)
+        } else {
+            val owned = checkNotNull(ownedPhotoFile(path, "contact_photos")) { "The app-owned person photo is unavailable" }
+            editor.putString("person_photo_$primary", owned.absolutePath).putBoolean(REMOVED_PREFIX + primary, false)
+            if (!altId.isNullOrBlank() && primary != altId) {
+                editor.putString("person_photo_$altId", owned.absolutePath).putString(ALIAS_PREFIX + altId, primary)
+                    .putBoolean(REMOVED_PREFIX + altId, false)
             }
-            setPersonPhotoPath(personId, destFile.absolutePath, altId)
-            destFile.absolutePath
-        } catch (_: Exception) {
-            null
         }
+        check(editor.commit()) { "Person photo preferences could not be saved" }
+        _personPhotosVersion.value += 1
+        try {
+            val coordinator = getPhotoBackupCoordinator()
+            if (path == null) coordinator?.deleteContactPhotoAsync(primary, altId)
+            else {
+                coordinator?.clearPhotoDeleted("contact_$primary")
+                if (!altId.isNullOrBlank()) coordinator?.clearPhotoDeleted("contact_$altId")
+                coordinator?.backupContactPhotoAsync(primary, localPersonPhotoPath(primary))
+            }
+        } catch (_: Exception) { }
     }
+
+    fun saveRelationshipPhotoFromBitmap(personId: String, bitmap: Bitmap, altId: String? = null): String? = try {
+        val key = personId.ifBlank { altId.orEmpty() }
+        require(validPersonPhotoId(key)) { "Invalid person identity" }
+        val file = writeOwnedBitmap(bitmap, "contact_photos", "contact_$key")
+        setPersonPhotoPath(personId, file.absolutePath, altId)
+        file.absolutePath
+    } catch (_: Exception) { null }
+
+    private inline fun <reified T : Enum<T>> enumOrDefault(value: String, fallback: T): T =
+        runCatching { enumValueOf<T>(value) }.getOrDefault(fallback)
 
     companion object {
+        private const val REVISION_PREFIX = "photo_selection_revision_"
+        private const val REMOVED_PREFIX = "photo_removed_"
+        private const val ALIAS_PREFIX = "photo_person_alias_"
         private const val KEY_CONFIG = "user_persona_avatar_config"
         private const val KEY_BEHAVIOR = "user_persona_avatar_behavior"
 

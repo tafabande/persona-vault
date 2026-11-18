@@ -4,4 +4,5 @@
     <cache-path name="decrypted_docs" path="decrypted_docs/" />
     <cache-path name="exports" path="exports/" />
     <cache-path name="shared_cards" path="shared_cards/" />
+    <cache-path name="photo_capture" path="photo_capture/" />
 </paths>

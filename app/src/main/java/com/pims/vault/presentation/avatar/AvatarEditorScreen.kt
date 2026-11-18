@@ -1,8 +1,8 @@
 package com.pims.vault.presentation.avatar
 
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -75,6 +75,7 @@ import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import com.pims.vault.presentation.ui.util.rememberPimsSoundManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -147,27 +148,15 @@ fun AvatarEditorContent(
         uri?.let { pickedUri ->
             scope.launch {
                 try {
-                    context.contentResolver.openInputStream(pickedUri)?.use { stream ->
-                        val original = BitmapFactory.decodeStream(stream)
-                        if (original != null) {
-                            val maxDim = 1200
-                            val scaleFactor = minOf(1.0f, maxDim.toFloat() / maxOf(original.width, original.height))
-                            val targetW = (original.width * scaleFactor).toInt().coerceAtLeast(1)
-                            val targetH = (original.height * scaleFactor).toInt().coerceAtLeast(1)
-                            val scaled = if (scaleFactor < 1.0f) Bitmap.createScaledBitmap(original, targetW, targetH, true) else original
-
-                            val newPath = avatarManager?.saveCustomPhoto(scaled)
-                            if (newPath != null) {
-                                config = config.copy(
-                                    avatarSource = AvatarSource.CUSTOM_IMAGE,
-                                    customAvatarPath = newPath
-                                )
-                                haptics.success()
-                            }
-                        }
-                    }
+                    val manager = checkNotNull(avatarManager)
+                    val newPath = manager.importAvatarPhoto(pickedUri)
+                    config = config.copy(avatarSource = AvatarSource.CUSTOM_IMAGE, customAvatarPath = newPath)
+                    haptics.success()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     haptics.warning()
+                    Toast.makeText(context, "Photo could not be saved. Please choose another image.", Toast.LENGTH_LONG).show()
                 }
             }
         }

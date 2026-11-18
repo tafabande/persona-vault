@@ -55,6 +55,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +80,11 @@ import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /**
  * Dedicated full-screen page for displaying and managing all information about a person:
@@ -123,33 +130,48 @@ fun PersonDetailScreen(
         avatarManager.getPersonPhotoPath(effectivePersonId, person.id)
     }
 
-    val saveUriToPhoto: (Uri) -> Unit = { uri ->
-        try {
-            val photosDir = java.io.File(context.filesDir, "contact_photos").apply { mkdirs() }
-            val destFile = java.io.File(photosDir, "contact_${effectivePersonId}_${System.currentTimeMillis()}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
+    val photoScope = rememberCoroutineScope()
+    var pendingPhotoOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingPhotoRelationshipId by rememberSaveable { mutableStateOf<String?>(null) }
+    val saveUriToPhoto: (Uri, Pair<String, String>, File?) -> Unit = { uri, owner, capture ->
+        photoScope.launch {
+            try {
+                avatarManager.importPersonPhoto(owner.first, uri, owner.second)
+                haptics.success()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                haptics.warning()
+                Toast.makeText(context, "Photo could not be saved. Please choose another image.", Toast.LENGTH_LONG).show()
+            } finally {
+                if (capture != null) withContext(NonCancellable + Dispatchers.IO) { capture.delete() }
             }
-            avatarManager.setPersonPhotoPath(effectivePersonId, destFile.absolutePath, person.id)
-            haptics.success()
-        } catch (_: Exception) {}
+        }
     }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { saveUriToPhoto(it) }
+        val owner = pendingPhotoOwnerId?.let { it to pendingPhotoRelationshipId.orEmpty() }
+        pendingPhotoOwnerId = null
+        pendingPhotoRelationshipId = null
+        if (uri != null && owner != null) saveUriToPhoto(uri, owner, null)
     }
 
-    var cameraTempUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraTempUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var cameraTempPath by rememberSaveable { mutableStateOf<String?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success: Boolean ->
-        if (success && cameraTempUri != null) {
-            saveUriToPhoto(cameraTempUri!!)
-        }
+        val owner = pendingPhotoOwnerId?.let { it to pendingPhotoRelationshipId.orEmpty() }
+        val uri = cameraTempUri?.let(Uri::parse)
+        val capture = cameraTempPath?.let(::File)
+        pendingPhotoOwnerId = null
+        pendingPhotoRelationshipId = null
+        cameraTempUri = null
+        cameraTempPath = null
+        if (success && uri != null && owner != null) saveUriToPhoto(uri, owner, capture)
+        else if (capture != null) photoScope.launch(Dispatchers.IO) { capture.delete() }
     }
 
     BackHandler(onBack = onBack)
@@ -254,7 +276,7 @@ fun PersonDetailScreen(
                     // AVATAR & HERO
                     Box(contentAlignment = Alignment.BottomEnd) {
                         val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath).exists()
-                        val photoBitmap = remember(contactPhotoPath) {
+                        val photoBitmap = remember(contactPhotoPath, photosVersion) {
                             if (hasPhoto) {
                                 try { BitmapFactory.decodeFile(contactPhotoPath) } catch (_: Exception) { null }
                             } else null
@@ -592,15 +614,24 @@ fun PersonDetailScreen(
                         onClick = {
                             showAvatarActionChooser = false
                             try {
-                                val photoFile = File(context.cacheDir, "camera_person_${person.id}_${System.currentTimeMillis()}.jpg")
+                                val directory = File(context.cacheDir, "photo_capture").apply { check(isDirectory || mkdirs()) }
+                                val photoFile = File.createTempFile("person-", ".jpg", directory)
+                                cameraTempPath = photoFile.absolutePath
                                 val uri = androidx.core.content.FileProvider.getUriForFile(
                                     context,
                                     "${context.packageName}.fileprovider",
                                     photoFile
                                 )
-                                cameraTempUri = uri
+                                cameraTempUri = uri.toString()
+                                pendingPhotoOwnerId = effectivePersonId
+                                pendingPhotoRelationshipId = person.id
                                 cameraLauncher.launch(uri)
                             } catch (_: Exception) {
+                                cameraTempPath?.let(::File)?.delete()
+                                cameraTempPath = null
+                                cameraTempUri = null
+                                pendingPhotoOwnerId = effectivePersonId
+                                pendingPhotoRelationshipId = person.id
                                 photoPickerLauncher.launch("image/*")
                             }
                         },
@@ -615,6 +646,8 @@ fun PersonDetailScreen(
                     TextButton(
                         onClick = {
                             showAvatarActionChooser = false
+                            pendingPhotoOwnerId = effectivePersonId
+                            pendingPhotoRelationshipId = person.id
                             photoPickerLauncher.launch("image/*")
                         },
                         modifier = Modifier.fillMaxWidth()

@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.Shader
 import android.net.Uri
 import android.os.Build
+import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.presentation.media.BulkOperationResult
 import com.pims.vault.presentation.media.DeletionSafetyDecision
 import com.pims.vault.presentation.media.MediaReferenceResolver
@@ -28,6 +29,9 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -84,6 +88,7 @@ class LocalWallpaperManager @Inject constructor(
     // Undo buffer for reversible removals
     private var lastRemovedSnapshot: MediaUndoSnapshot<WallpaperItem>? = null
 
+    @Synchronized
     fun ensureAssetWallpapersExtracted() {
         try {
             val assetManager = context.assets
@@ -91,13 +96,22 @@ class LocalWallpaperManager @Inject constructor(
             for (fileName in assetFiles) {
                 val target = File(wallpaperDir, fileName)
                 if (!target.exists() || target.length() == 0L) {
+                    var pending: File? = null
                     try {
+                        val staged = File.createTempFile(".asset-", ".pending", wallpaperDir)
+                        pending = staged
                         assetManager.open("wallpapers/$fileName").use { input ->
-                            FileOutputStream(target).use { output ->
+                            FileOutputStream(staged).use { output ->
                                 input.copyTo(output)
+                                output.fd.sync()
                             }
                         }
-                    } catch (_: Exception) {}
+                        check(staged.length() > 0L)
+                        Files.move(staged.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING)
+                    } catch (_: Exception) {
+                        // A later extraction can retry while the previous complete asset remains intact.
+                    } finally { pending?.delete() }
                 }
             }
         } catch (_: Exception) {}
@@ -175,7 +189,12 @@ class LocalWallpaperManager @Inject constructor(
 
     val defaultPresets: List<WallpaperItem> by lazy {
         ensureAssetWallpapersExtracted()
-        dayPresets + nightPresets
+        dayPresets + nightPresets + WallpaperItem(
+            id = "preset_jjk_gojo", title = "Jujutsu Kaisen", subtitle = "Gojo",
+            type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = File(wallpaperDir, "wp_jjk_gojo.jpg").absolutePath,
+            isBuiltIn = true
+        )
     }
 
     private val _wallpapers = MutableStateFlow<List<WallpaperItem>>(loadWallpapers())
@@ -192,8 +211,9 @@ class LocalWallpaperManager @Inject constructor(
     private val _isAutoplayEnabled = MutableStateFlow(surfacePrefs.getBoolean("wallpaper_autoplay_enabled", false))
     val isAutoplayEnabled: StateFlow<Boolean> = _isAutoplayEnabled.asStateFlow()
 
+    @Synchronized
     fun setAutoplayEnabled(enabled: Boolean) {
-        surfacePrefs.edit().putBoolean("wallpaper_autoplay_enabled", enabled).apply()
+        if (!surfacePrefs.edit().putBoolean("wallpaper_autoplay_enabled", enabled).commit()) return
         _isAutoplayEnabled.value = enabled
     }
 
@@ -214,11 +234,11 @@ class LocalWallpaperManager @Inject constructor(
         }
     }
 
-    private fun persistActiveIndex(index: Int) {
+    private fun persistActiveIndex(index: Int): Boolean =
         try {
-            activeIndexFile.writeText(index.toString())
-        } catch (_: Exception) {}
-    }
+            writeAtomic(activeIndexFile, index.toString().toByteArray(Charsets.UTF_8))
+            true
+        } catch (_: Exception) { false }
 
     private fun loadWallpapers(): List<WallpaperItem> {
         ensureAssetWallpapersExtracted()
@@ -227,9 +247,11 @@ class LocalWallpaperManager @Inject constructor(
             val jsonStr = storeFile.readText()
             val array = JSONArray(jsonStr)
             val list = mutableListOf<WallpaperItem>()
+            val seenIds = mutableSetOf<String>()
             for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val id = obj.getString("id")
+                val obj = array.optJSONObject(i) ?: continue
+                val id = (obj.opt("id") as? String)?.takeIf { it.isNotBlank() } ?: continue
+                if (!seenIds.add(id)) continue
                 // Upgrade from old procedural presets to exquisite landscape presets
                 if (id == "preset_grad" || id == "preset_amber" || id == "preset_kariba") {
                     continue
@@ -237,15 +259,19 @@ class LocalWallpaperManager @Inject constructor(
                 list.add(
                     WallpaperItem(
                         id = id,
-                        title = obj.getString("title"),
+                        title = obj.optString("title", ""),
                         subtitle = obj.optString("subtitle").takeIf { it.isNotBlank() },
-                        type = WallpaperType.valueOf(obj.getString("type")),
+                        type = WallpaperType.entries.firstOrNull { it.name == obj.optString("type") }
+                            ?: if (obj.optString("localFilePath").isNotBlank()) WallpaperType.LOCAL_IMAGE else WallpaperType.GENERATIVE_ARTWORK,
                         artSeed = obj.optInt("artSeed", 0),
                         localFilePath = obj.optString("localFilePath").takeIf { it.isNotBlank() },
                         isBuiltIn = obj.optBoolean("isBuiltIn", false),
-                        alignmentY = obj.optDouble("alignmentY", 0.0).toFloat(),
-                        alignmentX = obj.optDouble("alignmentX", 0.0).toFloat(),
+                        alignmentY = obj.optDouble("alignmentY", 0.0).toFloat()
+                            .takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f,
+                        alignmentX = obj.optDouble("alignmentX", 0.0).toFloat()
+                            .takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f,
                         zoomScale = obj.optDouble("zoomScale", 1.0).toFloat()
+                            .takeIf { it.isFinite() }?.coerceIn(1f, 3f) ?: 1f
                     )
                 )
             }
@@ -258,15 +284,34 @@ class LocalWallpaperManager @Inject constructor(
         }
     }
 
-    private fun persistWallpapers(list: List<WallpaperItem>) {
-        try {
+    private fun persistWallpapers(
+        list: List<WallpaperItem>,
+        deletedIds: Set<String> = emptySet(),
+        deletionAccountUid: String? = null
+    ): Boolean {
+        return try {
+            val original = if (storeFile.exists()) JSONArray(storeFile.readText()) else null
+            val previous = mutableMapOf<String, JSONObject>()
+            val opaqueRows = mutableListOf<Any>()
+            if (original != null) {
+                for (index in 0 until original.length()) {
+                    val value = original.optJSONObject(index)
+                    val id = (value?.opt("id") as? String)?.takeIf { it.isNotBlank() }
+                    if (value == null || id == null || previous.containsKey(id)) {
+                        opaqueRows.add(original.get(index))
+                    } else {
+                        previous[id] = value
+                    }
+                }
+            }
             val array = JSONArray()
             list.forEach { item ->
-                val obj = JSONObject().apply {
+                val obj = previous[item.id]?.let { JSONObject(it.toString()) } ?: JSONObject()
+                obj.apply {
                     put("id", item.id)
                     put("title", item.title)
                     put("subtitle", item.subtitle ?: "")
-                    put("type", item.type.name)
+                    if (!has("type") || WallpaperType.entries.any { it.name == optString("type") }) put("type", item.type.name)
                     put("artSeed", item.artSeed)
                     put("localFilePath", item.localFilePath ?: "")
                     put("isBuiltIn", item.isBuiltIn)
@@ -276,25 +321,47 @@ class LocalWallpaperManager @Inject constructor(
                 }
                 array.put(obj)
             }
-            storeFile.writeText(array.toString())
-        } catch (_: Exception) {}
+            val retainedIds = list.map { it.id }.toSet()
+            val deletionMarkers = mutableSetOf<Pair<String, String>>()
+            opaqueRows.forEach { row ->
+                val value = row as? JSONObject
+                val deletedId = (value?.opt("deletedWallpaperId") as? String)?.takeIf { it.isNotBlank() }
+                val accountUid = (value?.opt("accountUid") as? String)?.takeIf { it.isNotBlank() }
+                if (deletedId != null && accountUid != null) {
+                    if (deletionMarkers.add(accountUid to deletedId)) array.put(row)
+                } else {
+                    val id = (value?.opt("id") as? String)?.takeIf { it.isNotBlank() }
+                    if (id == null || id in retainedIds) array.put(row)
+                }
+            }
+            if (!deletionAccountUid.isNullOrBlank()) {
+                deletedIds.forEach { id ->
+                    if (deletionMarkers.add(deletionAccountUid to id)) {
+                        array.put(JSONObject().put("deletedWallpaperId", id).put("accountUid", deletionAccountUid))
+                    }
+                }
+            }
+            writeAtomic(storeFile, array.toString().toByteArray(Charsets.UTF_8))
+            true
+        } catch (_: Exception) { false }
     }
 
+    @Synchronized
     fun selectOrAddPreset(preset: WallpaperItem) {
         val existingIndex = _wallpapers.value.indexOfFirst {
-            it.id == preset.id || (it.type == WallpaperType.GENERATIVE_ARTWORK && it.artSeed == preset.artSeed)
+            it.id == preset.id
         }
         if (existingIndex >= 0) {
             setActiveIndex(existingIndex)
         } else {
             val updated = _wallpapers.value + preset
-            persistWallpapers(updated)
+            if (!persistWallpapers(updated)) return
             _wallpapers.value = updated
-            _activeWallpaperIndex.value = updated.size - 1
-            persistActiveIndex(updated.size - 1)
+            updateActiveIndex(updated.lastIndex, syncCloud = false)
         }
     }
 
+    @Synchronized
     fun updateTransform(id: String, alignmentX: Float, alignmentY: Float, zoomScale: Float) {
         val current = _wallpapers.value.toMutableList()
         val index = current.indexOfFirst { it.id == id }
@@ -304,12 +371,13 @@ class LocalWallpaperManager @Inject constructor(
                 alignmentY = alignmentY.coerceIn(-1f, 1f),
                 zoomScale = zoomScale.coerceIn(1f, 3f)
             )
+            if (!persistWallpapers(current)) return
             _wallpapers.value = current
-            persistWallpapers(current)
             syncCustomWallpaperState()
         }
     }
 
+    @Synchronized
     fun updateAlignment(id: String, alignmentY: Float) {
         val current = _wallpapers.value.find { it.id == id } ?: return
         updateTransform(id, current.alignmentX, alignmentY, current.zoomScale)
@@ -319,18 +387,26 @@ class LocalWallpaperManager @Inject constructor(
         updateAlignment(id, alignmentY)
     }
 
+    @Synchronized
     fun setActiveIndex(index: Int) {
-        val total = _wallpapers.value.size
-        val coerced = if (total > 0) index.coerceIn(0, total - 1) else 0
-        _activeWallpaperIndex.value = coerced
-        persistActiveIndex(coerced)
-        val activeId = _wallpapers.value.getOrNull(coerced)?.id
-        if (!activeId.isNullOrBlank()) {
-            surfacePrefs.edit().putString("active_persona_wp_id", activeId).apply()
-        }
-        syncCustomWallpaperState()
+        updateActiveIndex(index, syncCloud = true)
     }
 
+    private fun updateActiveIndex(index: Int, syncCloud: Boolean): Boolean {
+        val total = _wallpapers.value.size
+        val coerced = if (total > 0) index.coerceIn(0, total - 1) else 0
+        if (!persistActiveIndex(coerced)) return false
+        val activeId = _wallpapers.value.getOrNull(coerced)?.id
+        val editor = surfacePrefs.edit()
+        if (activeId.isNullOrBlank()) editor.remove("active_persona_wp_id")
+        else editor.putString("active_persona_wp_id", activeId)
+        if (!editor.commit()) return false
+        _activeWallpaperIndex.value = coerced
+        if (syncCloud) syncCustomWallpaperState()
+        return true
+    }
+
+    @Synchronized
     fun nextWallpaper() {
         val total = _wallpapers.value.size
         if (total > 0) {
@@ -338,6 +414,7 @@ class LocalWallpaperManager @Inject constructor(
         }
     }
 
+    @Synchronized
     fun previousWallpaper() {
         val total = _wallpapers.value.size
         if (total > 0) {
@@ -346,38 +423,60 @@ class LocalWallpaperManager @Inject constructor(
     }
 
     suspend fun importFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        var pending: File? = null
+        var target: File? = null
+        var published = false
         try {
-            val targetFile = File(wallpaperDir, "local_wp_${UUID.randomUUID().toString().take(8)}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    input.copyTo(output)
+            val staged = File.createTempFile(".import-", ".image", wallpaperDir)
+            pending = staged
+            val source = context.contentResolver.openInputStream(uri) ?: return@withContext false
+            source.use { input ->
+                FileOutputStream(staged).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var total = 0L
+                    try {
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= 16L * 1024 * 1024) { "Choose an image smaller than 16 MB" }
+                            output.write(buffer, 0, count)
+                        }
+                        require(total > 0)
+                        output.fd.sync()
+                    } finally { buffer.fill(0) }
                 }
-            } ?: return@withContext false
-
-            val newItem = WallpaperItem(
-                id = "custom_${UUID.randomUUID().toString().take(8)}",
-                title = "",
-                subtitle = null,
-                type = WallpaperType.LOCAL_IMAGE,
-                localFilePath = targetFile.absolutePath,
-                isBuiltIn = false
-            )
-
-            val updated = _wallpapers.value + newItem
-            persistWallpapers(updated)
-            _wallpapers.value = updated
-            setActiveIndex(updated.size - 1)
-            backupCoordinator()?.backupAsync(newItem, updated.lastIndex, true)
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(staged.absolutePath, bounds)
+            require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 100_000_000)
+            val id = "custom_${UUID.randomUUID()}"
+            val owned = File(wallpaperDir, "local_wp_${UUID.randomUUID()}.jpg")
+            target = owned
+            Files.move(staged.toPath(), owned.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            val newItem = WallpaperItem(id, "", type = WallpaperType.LOCAL_IMAGE,
+                localFilePath = owned.absolutePath, isBuiltIn = false)
+            synchronized(this@LocalWallpaperManager) {
+                val updated = _wallpapers.value + newItem
+                check(persistWallpapers(updated)) { "Wallpaper details could not be saved" }
+                published = true
+                _wallpapers.value = updated
+                setActiveIndex(updated.lastIndex)
+                backupCoordinator()?.backupAsync(newItem, updated.lastIndex,
+                    _activeWallpaperIndex.value == updated.lastIndex)
+            }
             true
-        } catch (_: Exception) {
-            false
-        }
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (_: Exception) { false
+        } finally { pending?.delete(); if (!published) target?.delete() }
     }
 
     // --- REVERSIBLE REMOVAL & DELETION SAFETY ---
 
+    @Synchronized
     fun canUndo(): Boolean = lastRemovedSnapshot != null
 
+    @Synchronized
     fun undoLastRemoval(): Boolean {
         val snapshot = lastRemovedSnapshot ?: return false
         val current = _wallpapers.value.toMutableList()
@@ -388,7 +487,7 @@ class LocalWallpaperManager @Inject constructor(
             return false
         }
         val updated = current + restored
-        persistWallpapers(updated)
+        if (!persistWallpapers(updated)) return false
         _wallpapers.value = updated
         snapshot.priorActiveIndex?.let { prior ->
             if (prior in updated.indices) {
@@ -403,6 +502,7 @@ class LocalWallpaperManager @Inject constructor(
      * Removes one or more items from Persona wallpaper catalog.
      * SAFE DEFAULT: Preserves original files on disk. Pushes undo snapshot.
      */
+    @Synchronized
     fun removeFromPersona(ids: Collection<String>): BulkOperationResult {
         if (ids.isEmpty()) return BulkOperationResult()
         val targetIds = ids.toSet()
@@ -413,15 +513,16 @@ class LocalWallpaperManager @Inject constructor(
         val priorActiveIndex = _activeWallpaperIndex.value
         val priorActiveId = current.getOrNull(priorActiveIndex)?.id
 
+        val updated = current.filterNot { it.id in targetIds }
+        val finalList = if (updated.isEmpty()) defaultPresets else updated
+        if (!persistWallpapers(finalList)) {
+            return BulkOperationResult(failedIds = itemsToRemove.associate { it.id to "Wallpaper details could not be saved" })
+        }
         lastRemovedSnapshot = MediaUndoSnapshot(
             description = "Removed ${itemsToRemove.size} item(s) from Persona",
             items = itemsToRemove,
             priorActiveIndex = priorActiveIndex
         )
-
-        val updated = current.filterNot { it.id in targetIds }
-        val finalList = if (updated.isEmpty()) defaultPresets else updated
-        persistWallpapers(finalList)
         _wallpapers.value = finalList
 
         // Safe fallback if active wallpaper was removed
@@ -441,6 +542,7 @@ class LocalWallpaperManager @Inject constructor(
      * Confirms shared references before deleting underlying storage;
      * files referenced by other subsystems are safely preserved.
      */
+    @Synchronized
     fun deleteFromStorage(
         ids: Collection<String>,
         resolver: MediaReferenceResolver? = null
@@ -450,10 +552,14 @@ class LocalWallpaperManager @Inject constructor(
         val current = _wallpapers.value
         val itemsToDelete = current.filter { it.id in targetIds }
         if (itemsToDelete.isEmpty()) return BulkOperationResult()
+        val coordinator = backupCoordinator()
+        val deletionAccountUid = coordinator?.currentAccountUid()
 
         val succeeded = mutableListOf<String>()
         val failed = mutableMapOf<String, String>()
         val preserved = mutableListOf<String>()
+        val stagedFiles = mutableMapOf<String, Pair<File, File>>()
+        val remoteDeletions = mutableSetOf<String>()
 
         val priorActiveIndex = _activeWallpaperIndex.value
         val priorActiveId = current.getOrNull(priorActiveIndex)?.id
@@ -469,13 +575,16 @@ class LocalWallpaperManager @Inject constructor(
                 is DeletionSafetyDecision.SafeToDeleteFile -> {
                     try {
                         val file = File(item.localFilePath!!)
-                        val deleted = if (file.exists()) file.delete() else true
-                        if (deleted) {
-                            succeeded.add(item.id)
-                            if (!item.isBuiltIn) backupCoordinator()?.deleteAsync(item.id)
-                        } else {
-                            failed[item.id] = "Failed to delete file from storage"
+                        if (file.exists()) {
+                            val staged = File.createTempFile(".delete-", ".pending", file.parentFile)
+                            try {
+                                Files.move(file.toPath(), staged.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                                    StandardCopyOption.REPLACE_EXISTING)
+                            } catch (failure: Exception) { staged.delete(); throw failure }
+                            stagedFiles[item.id] = file to staged
                         }
+                        succeeded.add(item.id)
+                        if (!item.isBuiltIn) remoteDeletions.add(item.id)
                     } catch (e: Exception) {
                         failed[item.id] = e.message ?: "File deletion error"
                     }
@@ -492,15 +601,30 @@ class LocalWallpaperManager @Inject constructor(
                 }
                 is DeletionSafetyDecision.FileDoesNotExist -> {
                     succeeded.add(item.id)
-                    if (!item.isBuiltIn) backupCoordinator()?.deleteAsync(item.id)
+                    if (!item.isBuiltIn) remoteDeletions.add(item.id)
                 }
             }
         }
 
         val remaining = current.filterNot { it.id in succeeded }
         val finalList = if (remaining.isEmpty()) defaultPresets else remaining
-        persistWallpapers(finalList)
+        if (!persistWallpapers(finalList, remoteDeletions, deletionAccountUid)) {
+            stagedFiles.forEach { (id, files) ->
+                try {
+                    Files.move(files.second.toPath(), files.first.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING)
+                } catch (_: Exception) {
+                    failed[id] = "Wallpaper file recovery is pending"
+                }
+            }
+            succeeded.forEach { failed.putIfAbsent(it, "Wallpaper details could not be saved") }
+            return BulkOperationResult(failedIds = failed)
+        }
         _wallpapers.value = finalList
+        stagedFiles.values.forEach { (_, staged) -> staged.delete() }
+        if (deletionAccountUid != null) {
+            remoteDeletions.forEach { coordinator?.deleteAsync(it, expectedAccountUid = deletionAccountUid) }
+        }
 
         if (priorActiveId in succeeded) {
             setActiveIndex(0)
@@ -521,27 +645,30 @@ class LocalWallpaperManager @Inject constructor(
         return result.succeededIds.contains(id)
     }
 
+    @Synchronized
     fun removeCurrentWallpaper(): Boolean {
         val current = _wallpapers.value.getOrNull(_activeWallpaperIndex.value) ?: return false
         return removeWallpaperById(current.id)
     }
 
+    @Synchronized
     fun restoreDefaultPresets() {
         val current = _wallpapers.value
         val customOnly = current.filter { !it.isBuiltIn }
         val updated = defaultPresets + customOnly
-        persistWallpapers(updated)
+        if (!persistWallpapers(updated)) return
         _wallpapers.value = updated
         setActiveIndex(0)
     }
 
+    @Synchronized
     fun clearAllWallpapers() {
+        if (!persistWallpapers(emptyList())) return
         _wallpapers.value.forEach { item ->
             item.localFilePath?.let { path ->
                 try { File(path).delete() } catch (_: Exception) {}
             }
         }
-        persistWallpapers(emptyList())
         _wallpapers.value = emptyList()
         setActiveIndex(0)
     }
@@ -552,6 +679,7 @@ class LocalWallpaperManager @Inject constructor(
      * Applies the chosen wallpaper and transforms exclusively to the user-selected surface.
      * If application fails (e.g. system wallpaper error), current wallpaper is preserved.
      */
+    @Synchronized
     fun applyWallpaperToSurface(
         surface: WallpaperSurface,
         item: WallpaperItem,
@@ -562,14 +690,18 @@ class LocalWallpaperManager @Inject constructor(
         return try {
             when (surface) {
                 WallpaperSurface.PERSONA -> {
-                    updateTransform(item.id, alignmentX, alignmentY, zoomScale)
-                    val targetIndex = _wallpapers.value.indexOfFirst { it.id == item.id }
-                    if (targetIndex >= 0) {
-                        setActiveIndex(targetIndex)
-                    } else {
-                        selectOrAddPreset(item.copy(alignmentX = alignmentX, alignmentY = alignmentY, zoomScale = zoomScale))
-                    }
-                    surfacePrefs.edit().putString("active_persona_wp_id", item.id).apply()
+                    val updated = _wallpapers.value.toMutableList()
+                    val existing = updated.indexOfFirst { it.id == item.id }
+                    val transformed = (updated.getOrNull(existing) ?: item).copy(
+                        alignmentX = alignmentX.coerceIn(-1f, 1f),
+                        alignmentY = alignmentY.coerceIn(-1f, 1f),
+                        zoomScale = zoomScale.coerceIn(1f, 3f)
+                    )
+                    val targetIndex = if (existing >= 0) existing else updated.size
+                    if (existing >= 0) updated[existing] = transformed else updated.add(transformed)
+                    check(persistWallpapers(updated)) { "Wallpaper details could not be saved" }
+                    _wallpapers.value = updated
+                    check(updateActiveIndex(targetIndex, syncCloud = true)) { "Wallpaper selection could not be saved" }
                     Result.success(Unit)
                 }
                 WallpaperSurface.WIDGET -> {
@@ -600,6 +732,7 @@ class LocalWallpaperManager @Inject constructor(
         }
     }
 
+    @Synchronized
     fun getActiveSurfaceWallpaperId(surface: WallpaperSurface): String? {
         return when (surface) {
             WallpaperSurface.PERSONA -> _wallpapers.value.getOrNull(_activeWallpaperIndex.value)?.id
@@ -708,36 +841,66 @@ class LocalWallpaperManager @Inject constructor(
 
     fun restoreFromCloudAsync() {
         scope.launch {
-            val restored = backupCoordinator()?.restore().orEmpty()
-            if (restored.isEmpty()) return@launch
-            val local = _wallpapers.value.toMutableList()
-            var activeIndex: Int? = null
-            restored.forEach { (remote, file) ->
-                val item = WallpaperItem(
-                    id = remote.id,
-                    title = remote.title,
-                    subtitle = remote.subtitle,
-                    type = WallpaperType.LOCAL_IMAGE,
-                    localFilePath = file.absolutePath,
-                    isBuiltIn = false,
-                    alignmentY = remote.alignmentY
-                )
-                val existing = local.indexOfFirst { it.id == remote.id }
-                if (existing >= 0) local[existing] = item else local.add(item)
-                if (remote.isActive) activeIndex = local.indexOfFirst { it.id == remote.id }
+            try {
+                val (beforeFetch, activeBefore) = synchronized(this@LocalWallpaperManager) {
+                    val items = _wallpapers.value
+                    items to items.getOrNull(_activeWallpaperIndex.value)?.id
+                }
+                val restored = backupCoordinator()?.restore().orEmpty()
+                if (restored.isEmpty()) return@launch
+                synchronized(this@LocalWallpaperManager) {
+                    val local = _wallpapers.value.toMutableList()
+                    var activeIndex: Int? = null
+                    restored.forEach { (remote, file) ->
+                        val prior = beforeFetch.firstOrNull { it.id == remote.id }
+                        val current = local.firstOrNull { it.id == remote.id }
+                        if (current != prior) return@forEach
+                        val item = WallpaperItem(
+                            id = remote.id,
+                            title = remote.title,
+                            subtitle = remote.subtitle,
+                            type = WallpaperType.LOCAL_IMAGE,
+                            localFilePath = file.absolutePath,
+                            isBuiltIn = false,
+                            alignmentY = remote.alignmentY.takeIf { it.isFinite() }?.coerceIn(-1f, 1f)
+                                ?: current?.alignmentY ?: 0f,
+                            alignmentX = remote.alignmentX?.takeIf { it.isFinite() }?.coerceIn(-1f, 1f)
+                                ?: current?.alignmentX ?: 0f,
+                            zoomScale = remote.zoomScale?.takeIf { it.isFinite() }?.coerceIn(1f, 3f)
+                                ?: current?.zoomScale ?: 1f
+                        )
+                        val existing = local.indexOfFirst { it.id == remote.id }
+                        if (existing >= 0) local[existing] = item else local.add(item)
+                        if (remote.isActive) activeIndex = local.indexOfFirst { it.id == remote.id }
+                    }
+                    if (!persistWallpapers(local)) return@synchronized
+                    val activeNow = _wallpapers.value.getOrNull(_activeWallpaperIndex.value)?.id
+                    _wallpapers.value = local
+                    if (activeNow == activeBefore) activeIndex?.let { updateActiveIndex(it, syncCloud = false) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                VaultLogger.w("Wallpaper", "Wallpaper recovery remains pending")
             }
-            _wallpapers.value = local
-            persistWallpapers(local)
-            activeIndex?.let { setActiveIndex(it) }
         }
     }
 
+    @Synchronized
     fun backupAllCustomWallpapers() {
         val activeId = _wallpapers.value.getOrNull(_activeWallpaperIndex.value)?.id
         _wallpapers.value.filter { !it.isBuiltIn && !it.localFilePath.isNullOrBlank() }
             .forEachIndexed { index, item ->
                 backupCoordinator()?.backupAsync(item, index, item.id == activeId)
             }
+    }
+
+    private fun writeAtomic(target: File, bytes: ByteArray) {
+        val pending = File.createTempFile(".metadata-", ".pending", target.parentFile)
+        try {
+            FileOutputStream(pending).use { output -> output.write(bytes); output.fd.sync() }
+            Files.move(pending.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } finally { pending.delete() }
     }
 
     companion object {
