@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components
 
+import androidx.compose.runtime.Composable
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,30 +31,17 @@ fun pimsGlassMicroBorder(
  * Provides the frosted glass surface gradient:
  * Pure crisp white in light mode (zero cream tint) and deep slate in dark mode.
  */
-fun pimsGlassSurfaceBrush(
-    isDark: Boolean
-): Brush {
-    return if (isDark) {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xEE1E1E22),
-                Color(0xD41E1E22)
-            )
-        )
-    } else {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xFFFFFFFF),
-                Color(0xFFF8F9FA)
-            )
-        )
-    }
+@Composable
+fun pimsGlassSurfaceBrush(isDark: Boolean): Brush {
+    val surface = MaterialTheme.colorScheme.surfaceContainerLow
+    return Brush.verticalGradient(listOf(surface, surface))
 }
 
 /**
  * Pure modifier extension to apply clean frosted glass styling directly to any container.
  * Zero distracting borders to keep visual noise minimal.
  */
+@Composable
 fun Modifier.pimsGlassmorphism(
     isDark: Boolean,
     shape: Shape = RoundedCornerShape(16.dp),

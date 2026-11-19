@@ -70,7 +70,7 @@ class PlainNotesAttachmentTest {
         val fileStorage = EncryptedFileStorageImpl(
             context = context,
             cryptoEngine = cryptoEngine,
-            keyProvider = { staticKey }
+            keyProvider = { staticKey.copyOf() }
         )
 
         val noteId = "test_note_1"

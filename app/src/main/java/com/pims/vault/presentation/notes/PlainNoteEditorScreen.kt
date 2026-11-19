@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -129,6 +130,7 @@ fun PlainNoteEditorScreen(
     var currentNoteId by remember(noteId) { mutableStateOf(noteId) }
     var localIsSaving by remember { mutableStateOf(false) }
     val isBusy = state.isSaving || localIsSaving
+    var showDiscardConfirmation by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.error) {
         state.error?.let { err ->
@@ -144,19 +146,37 @@ fun PlainNoteEditorScreen(
         }
     }
 
-    BackHandler(enabled = !isBusy, onBack = onBack)
-
-    var isUnlocked by remember(noteId, existingNote?.isLocked) { 
-        mutableStateOf(existingNote == null || !existingNote.isLocked) 
+    var isUnlocked by remember(noteId, existingNote?.isLocked) {
+        mutableStateOf(existingNote == null || !existingNote.isLocked)
     }
-    var title by remember(isUnlocked) { 
-        mutableStateOf(if (isUnlocked) (existingNote?.title ?: "") else "") 
+    var title by remember(isUnlocked) {
+        mutableStateOf(if (isUnlocked) (existingNote?.title ?: "") else "")
     }
     var contentValue by remember(isUnlocked) {
         mutableStateOf(TextFieldValue(if (isUnlocked) (existingNote?.content ?: "") else ""))
     }
     var format by remember { mutableStateOf(existingNote?.format ?: NoteFormat.PLAIN) }
     var isLocked by remember(existingNote) { mutableStateOf(existingNote?.isLocked ?: false) }
+    var reminderAt by remember(existingNote) { mutableStateOf(existingNote?.reminderAt) }
+    var reminderTag by remember(existingNote) { mutableStateOf(existingNote?.reminderTag) }
+    var reminderRepeat by remember(existingNote) { mutableStateOf(existingNote?.reminderRepeat) }
+    var isReminderDone by remember(existingNote) { mutableStateOf(existingNote?.isReminderDone ?: false) }
+    // Multiple pending attachments: list of (ByteArray, DisplayName)
+    val pendingAttachments = remember { mutableStateListOf<Pair<ByteArray, String>>() }
+    val deletedAttachmentIds = remember { mutableStateListOf<String>() }
+    val isDirty = title != (existingNote?.title ?: "") ||
+        contentValue.text != (existingNote?.content ?: "") ||
+        format != (existingNote?.format ?: NoteFormat.PLAIN) ||
+        isLocked != (existingNote?.isLocked ?: false) ||
+        reminderAt != existingNote?.reminderAt ||
+        reminderTag != existingNote?.reminderTag ||
+        reminderRepeat != existingNote?.reminderRepeat ||
+        isReminderDone != (existingNote?.isReminderDone ?: false) ||
+        pendingAttachments.isNotEmpty() || deletedAttachmentIds.isNotEmpty()
+    val requestClose = {
+        if (isDirty) showDiscardConfirmation = true else onBack()
+    }
+    BackHandler(enabled = !isBusy, onBack = requestClose)
 
     LaunchedEffect(existingNote?.id) {
         if (existingNote?.isLocked == true && !isUnlocked && onRequestAuth != null) {
@@ -167,18 +187,10 @@ fun PlainNoteEditorScreen(
             }
         }
     }
-    var reminderAt by remember(existingNote) { mutableStateOf(existingNote?.reminderAt) }
-    var reminderTag by remember(existingNote) { mutableStateOf(existingNote?.reminderTag) }
-    var reminderRepeat by remember(existingNote) { mutableStateOf(existingNote?.reminderRepeat) }
-    var isReminderDone by remember(existingNote) { mutableStateOf(existingNote?.isReminderDone ?: false) }
     var showReminderDialog by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var previewImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var previewImageTitle by remember { mutableStateOf<String?>(null) }
-
-    // Multiple pending attachments: list of (ByteArray, DisplayName)
-    val pendingAttachments = remember { mutableStateListOf<Pair<ByteArray, String>>() }
-    val deletedAttachmentIds = remember { mutableStateListOf<String>() }
 
     // Undo / Redo history
     val undoStack = remember { mutableStateListOf<TextFieldValue>() }
@@ -235,13 +247,13 @@ fun PlainNoteEditorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = PimsDimensions.paddingMedium, vertical = 6.dp),
+                    .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter(), vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 // X Close
                 IconButton(
-                    onClick = { if (!isBusy) onBack() },
+                    onClick = { if (!isBusy) requestClose() },
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
@@ -732,7 +744,7 @@ fun PlainNoteEditorScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         TextButton(
-                            onClick = onBack,
+                            onClick = requestClose,
                             enabled = !isBusy,
                             modifier = Modifier.tactilePress()
                         ) {
@@ -771,6 +783,8 @@ fun PlainNoteEditorScreen(
                                         attachments = pendingAttachments.toList(),
                                         onComplete = {
                                             localIsSaving = false
+                                            pendingAttachments.forEach { (bytes, _) -> bytes.fill(0) }
+                                            pendingAttachments.clear()
                                             onBack()
                                         }
                                     )
@@ -913,7 +927,7 @@ fun PlainNoteEditorScreen(
                         Text("Unlock Note", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
 
-                    TextButton(onClick = onBack) {
+                    TextButton(onClick = requestClose) {
                         Text("Go Back", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -923,7 +937,7 @@ fun PlainNoteEditorScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = PimsDimensions.paddingLarge, vertical = PimsDimensions.paddingSmall)
+                    .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter(), vertical = PimsDimensions.paddingSmall)
             ) {
             // Big Bold Title TextField
             BasicTextField(
@@ -1265,6 +1279,25 @@ fun PlainNoteEditorScreen(
             )
         }
         }
+    }
+
+    if (showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = { Text("Discard your changes?") },
+            text = { Text("Your note edits and added attachments have not been saved.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingAttachments.forEach { (bytes, _) -> bytes.fill(0) }
+                    pendingAttachments.clear()
+                    showDiscardConfirmation = false
+                    onBack()
+                }) { Text("Discard changes") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirmation = false }) { Text("Keep editing") }
+            }
+        )
     }
 
     if (showStatsDialog) {

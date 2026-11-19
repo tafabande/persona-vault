@@ -118,7 +118,10 @@ data class DocumentVersionEntity(
     val notes: String? = null,
 
     @ColumnInfo(name = "created_at")
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "original_filename")
+    val originalFilename: String? = null
 )
 
 @Entity(
@@ -464,6 +467,20 @@ data class VaultItemEntity(
 
     @ColumnInfo(name = "encryption_iv")
     val encryptionIv: String,
+
+    /**
+     * Ciphertext envelope version. Existing rows are version 1 (combined
+     * AES-GCM ciphertext and tag with the IV stored separately).
+     */
+    @ColumnInfo(name = "encryption_format_version", defaultValue = "1")
+    val encryptionFormatVersion: Int = 1,
+
+    /**
+     * Key generation used for this payload. Version 1 remains readable by
+     * the legacy vault reader until authenticated migration is completed.
+     */
+    @ColumnInfo(name = "encryption_key_version", defaultValue = "1")
+    val encryptionKeyVersion: Int = 2,
 
     @ColumnInfo(name = "notes")
     val notes: String? = null,

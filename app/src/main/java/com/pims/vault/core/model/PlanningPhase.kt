@@ -51,7 +51,7 @@ object PlanningRegistry {
         PlanningPhaseState(PlanningPhase.M2_DOMAIN_STORAGE, PlanningStatus.DONE),
         PlanningPhaseState(PlanningPhase.M3_DESIGN_SYSTEM, PlanningStatus.IN_PROGRESS),
         PlanningPhaseState(PlanningPhase.M4_GRAPH_MEDICAL, PlanningStatus.PLANNED),
-        PlanningPhaseState(PlanningPhase.M5_SECURITY_VAULT, PlanningStatus.PLANNED),
+        PlanningPhaseState(PlanningPhase.M5_SECURITY_VAULT, PlanningStatus.IN_PROGRESS),
         PlanningPhaseState(PlanningPhase.M6_SHARING_PAIRING, PlanningStatus.PLANNED),
         PlanningPhaseState(PlanningPhase.M7_HARDENING, PlanningStatus.PLANNED)
     )

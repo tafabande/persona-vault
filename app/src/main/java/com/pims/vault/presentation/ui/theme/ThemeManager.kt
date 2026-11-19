@@ -25,6 +25,9 @@ class ThemeManager @Inject constructor(
             if (sharedThemeFlow == null) {
                 sharedThemeFlow = MutableStateFlow(loadInitialTheme())
             }
+            if (sharedSakuraEffectsFlow == null) {
+                sharedSakuraEffectsFlow = MutableStateFlow(prefs.getBoolean(KEY_SAKURA_EFFECTS, true))
+            }
         }
     }
 
@@ -32,6 +35,20 @@ class ThemeManager @Inject constructor(
         get() = synchronized(lock) {
             sharedThemeFlow ?: MutableStateFlow(loadInitialTheme()).also { sharedThemeFlow = it }
         }.asStateFlow()
+
+    val sakuraEffectsEnabled: StateFlow<Boolean>
+        get() = synchronized(lock) {
+            sharedSakuraEffectsFlow ?: MutableStateFlow(prefs.getBoolean(KEY_SAKURA_EFFECTS, true)).also {
+                sharedSakuraEffectsFlow = it
+            }
+        }.asStateFlow()
+
+    fun setSakuraEffectsEnabled(enabled: Boolean) {
+        synchronized(lock) {
+            prefs.edit().putBoolean(KEY_SAKURA_EFFECTS, enabled).apply()
+            sharedSakuraEffectsFlow?.value = enabled
+        }
+    }
 
     private fun loadInitialTheme(): ThemeMode {
         val saved = prefs.getString(KEY_THEME_MODE, ThemeMode.LIGHT.name)
@@ -54,8 +71,11 @@ class ThemeManager @Inject constructor(
 
     companion object {
         private const val KEY_THEME_MODE = "theme_mode_preference"
+        private const val KEY_SAKURA_EFFECTS = "sakura_effects_enabled"
         private val lock = Any()
         @Volatile
         private var sharedThemeFlow: MutableStateFlow<ThemeMode>? = null
+        @Volatile
+        private var sharedSakuraEffectsFlow: MutableStateFlow<Boolean>? = null
     }
 }

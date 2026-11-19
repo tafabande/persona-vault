@@ -3,6 +3,7 @@ package com.pims.vault.presentation.hub
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -84,6 +85,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,7 +103,9 @@ import com.pims.vault.presentation.profile.KinRelationshipItem
 import com.pims.vault.presentation.relationship.AddOrEditRelationshipNoteDialog
 import com.pims.vault.presentation.relationship.RelationshipNotesSection
 import com.pims.vault.presentation.ui.state.PersonaEmptyState
-import com.pims.vault.presentation.ui.theme.StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 private enum class PeopleCategory(val label: String) {
     ALL("All"),
@@ -380,7 +385,7 @@ private fun PersonListItem(
     val contactPhoto = remember(effectiveId, person.id, photosVersion) {
         avatarManager.getPersonPhotoPath(effectiveId, person.id)
     }
-    val contactBitmap = remember(contactPhoto) {
+    val contactBitmap = remember(contactPhoto, photosVersion) {
         contactPhoto?.let { path ->
             try {
                 val f = File(path)
@@ -490,7 +495,7 @@ fun PersonDetailSheet(
     onEditPerson: (KinRelationshipItem) -> Unit = {},
     relationshipNotes: List<RelationshipNote> = emptyList(),
     isVaultUnlocked: Boolean = false,
-    onAddNote: (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean) -> Unit = { _, _, _, _ -> },
+    onAddNote: suspend (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean, List<com.pims.vault.domain.model.RelationshipNoteAttachmentDraft>, Set<String>) -> Boolean = { _, _, _, _, _, _ -> true },
     onEditNote: (RelationshipNote) -> Unit = {},
     onDeleteNote: (RelationshipNote) -> Unit = {},
     onToggleNotePrivacy: (noteId: String, makePrivate: Boolean) -> Unit = { _, _ -> },
@@ -499,26 +504,31 @@ fun PersonDetailSheet(
     val context = LocalContext.current
     val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
     val effectiveId = person.targetPersonId.ifBlank { person.id }
-    var contactPhotoPath by remember(effectiveId, person.id) {
-        mutableStateOf(avatarManager.getPersonPhotoPath(effectiveId, person.id))
+    val photosVersion by avatarManager.personPhotosVersion.collectAsState()
+    val contactPhotoPath = remember(effectiveId, person.id, photosVersion) {
+        avatarManager.getPersonPhotoPath(effectiveId, person.id)
     }
+    val photoScope = rememberCoroutineScope()
+    var pendingPhotoOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingPhotoRelationshipId by rememberSaveable { mutableStateOf<String?>(null) }
     var showAvatarActionChooser by remember { mutableStateOf(false) }
 
     val contactPhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                val photosDir = File(context.filesDir, "contact_photos").apply { mkdirs() }
-                val destFile = File(photosDir, "contact_${effectiveId}_${System.currentTimeMillis()}.jpg")
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    destFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+        val owner = pendingPhotoOwnerId?.let { it to pendingPhotoRelationshipId.orEmpty() }
+        pendingPhotoOwnerId = null
+        pendingPhotoRelationshipId = null
+        if (uri != null && owner != null) {
+            photoScope.launch {
+                try {
+                    avatarManager.importPersonPhoto(owner.first, uri, owner.second)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Toast.makeText(context, "Photo could not be saved. Please choose another image.", Toast.LENGTH_LONG).show()
                 }
-                avatarManager.setPersonPhotoPath(effectiveId, destFile.absolutePath, person.id)
-                contactPhotoPath = destFile.absolutePath
-            } catch (_: Exception) {}
+            }
         }
     }
 
@@ -574,7 +584,7 @@ fun PersonDetailSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath!!).exists()
-                val photoBitmap = remember(contactPhotoPath) {
+                val photoBitmap = remember(contactPhotoPath, photosVersion) {
                     if (hasPhoto) {
                         try { BitmapFactory.decodeFile(contactPhotoPath) } catch (_: Exception) { null }
                     } else null
@@ -841,14 +851,19 @@ fun PersonDetailSheet(
     if (showNoteDialog) {
         AddOrEditRelationshipNoteDialog(
             initialNote = noteToEdit,
+            isVaultUnlocked = isVaultUnlocked,
+            onUnlockVault = onUnlockVaultSession,
             onDismiss = {
                 showNoteDialog = false
                 noteToEdit = null
             },
-            onSave = { topic, content, format, isPrivate ->
-                onAddNote(topic, content, format, isPrivate)
-                showNoteDialog = false
-                noteToEdit = null
+            onSave = { topic, content, format, isPrivate, attachments, removals ->
+                val saved = onAddNote(topic, content, format, isPrivate, attachments, removals)
+                if (saved) {
+                    showNoteDialog = false
+                    noteToEdit = null
+                }
+                saved
             }
         )
     }
@@ -864,6 +879,8 @@ fun PersonDetailSheet(
                     OutlinedButton(
                         onClick = {
                             showAvatarActionChooser = false
+                            pendingPhotoOwnerId = effectiveId
+                            pendingPhotoRelationshipId = person.id
                             contactPhotoPicker.launch("image/*")
                         },
                         shape = RoundedCornerShape(12.dp),
@@ -878,7 +895,6 @@ fun PersonDetailSheet(
                         TextButton(
                             onClick = {
                                 avatarManager.setPersonPhotoPath(effectiveId, null, person.id)
-                                contactPhotoPath = null
                                 showAvatarActionChooser = false
                             },
                             modifier = Modifier.fillMaxWidth()

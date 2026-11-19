@@ -44,8 +44,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import com.pims.vault.presentation.ui.components.PersonaSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -278,8 +277,7 @@ fun SecuritySettingsScreen(
                                 onCheckedChange = {
                                     haptics.selection()
                                     pinSecurityManager.setBiometricEnabled(it)
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+                                }
                             )
                         }
 

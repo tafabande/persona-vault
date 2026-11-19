@@ -31,6 +31,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -403,7 +404,7 @@ class AuthAndSessionLifecycleRegressionTests {
 
     // 14. Sign-out preserving intended user records without exposing protected data.
     @Test
-    fun test14_signOutPreservesLocalRecordsWhileLockingVault() = runBlocking {
+    fun test14_signOutPreservesLocalRecordsWhileLockingVault(): Unit = runBlocking {
         // User creates profile and signs out
         val person = PersonEntity(
             id = CANONICAL_PRIMARY_OWNER_ID,
@@ -421,13 +422,8 @@ class AuthAndSessionLifecycleRegressionTests {
         assertNotNull(stored)
         assertEquals("Persistent", stored?.firstName)
 
-        // But vault keys are locked and inaccessible
-        try {
-            sessionManager.getVaultKey()
-            org.junit.Assert.fail("Accessing locked vault key must throw")
-        } catch (e: SecurityException) {
-            assertTrue(e.message!!.contains("locked"))
-        }
+        assertThrows(SecurityException::class.java) { sessionManager.getDatabaseKey() }
+        assertThrows(SecurityException::class.java) { sessionManager.getVaultKey() }
     }
 
     // 15. Authentication failures not routing into protected screens.

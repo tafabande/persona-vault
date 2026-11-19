@@ -10,6 +10,11 @@ import javax.inject.Inject
 @HiltAndroidApp
 class PimsApplication : Application() {
 
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(base)
+        com.pims.vault.core.storage.FullVaultBackupService.applyPendingBeforeStartup(base)
+    }
+
     @Inject
     lateinit var keySecurityManager: KeySecurityManager
 
@@ -35,6 +40,12 @@ class PimsApplication : Application() {
         }
 
         // 1. Enforce Release Build integrity check (Disallow test/debug crypto in production)
+        val restoreStatus = getSharedPreferences("pims_restore_status", MODE_PRIVATE)
+        if (restoreStatus.getBoolean("sign_out", false)) {
+            com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+            check(restoreStatus.edit().remove("sign_out").commit())
+        }
+
         if (!BuildConfig.DEBUG && BuildConfig.IS_DEBUG_CRYPTO_ALLOWED) {
             throw SecurityException("CRITICAL: Release build configured with insecure debug crypto allowance!")
         }
@@ -55,6 +66,7 @@ class PimsApplication : Application() {
             )
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 entryPoint.noteReminderScheduler().rescheduleAllActiveReminders()
+                entryPoint.noteCalendarCoordinator().refresh()
             }
         } catch (e: Exception) {
             VaultLogger.e("PimsApplication", "Failed to reschedule note reminders on startup", e)

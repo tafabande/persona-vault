@@ -2,14 +2,32 @@ package com.pims.vault.domain.model
 
 enum class NoteFormat {
     PLAIN,
-    BULLETS;
+    BULLETS,
+    NUMBERED;
 
     companion object {
         fun fromString(value: String): NoteFormat {
             return when (value.uppercase()) {
                 "BULLETS" -> BULLETS
+                "NUMBERED" -> NUMBERED
                 else -> PLAIN
             }
+        }
+    }
+}
+
+fun String.toNumberedText(): String {
+    var number = 1
+    return lines().joinToString("\n") { line ->
+        val trimmed = line.trimStart()
+        when {
+            trimmed.isEmpty() -> ""
+            Regex("^\\d+\\.\\s").containsMatchIn(trimmed) -> {
+                val result = trimmed.replaceFirst(Regex("^\\d+\\.\\s*"), "$number. ")
+                number++
+                result
+            }
+            else -> "${number++}. $trimmed"
         }
     }
 }

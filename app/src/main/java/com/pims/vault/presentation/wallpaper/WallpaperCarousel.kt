@@ -137,10 +137,10 @@ fun WallpaperCarousel(
     val carouselConfig = remember(isAutoplayEnabled) {
         PersonaCarouselConfig(
             autoplay = isAutoplayEnabled,
-            autoplayIntervalMs = 6000L,
+            autoplayIntervalMs = 3000L,
             endBehaviour = CarouselEndBehaviour.CONTINUOUS_LOOP,
             indicatorStyle = CarouselIndicatorStyle.NONE,
-            slideDurationMs = 280,
+            slideDurationMs = 520,
             swipeSettlingDurationMs = 220,
             showNavigationArrows = false
         )

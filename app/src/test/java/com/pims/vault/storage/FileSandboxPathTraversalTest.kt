@@ -34,7 +34,7 @@ class FileSandboxPathTraversalTest {
         storage = EncryptedFileStorageImpl(
             context = mockContext,
             cryptoEngine = HardenedCryptoEngine(),
-            keyProvider = { testKey },
+            keyProvider = { testKey.copyOf() },
             baseDirectoryName = "vault_documents"
         )
     }

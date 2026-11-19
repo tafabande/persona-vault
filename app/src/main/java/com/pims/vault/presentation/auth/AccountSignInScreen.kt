@@ -129,7 +129,7 @@ fun AccountSignInScreen(
                 .navigationBarsPadding()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Top Bar with Skip Action

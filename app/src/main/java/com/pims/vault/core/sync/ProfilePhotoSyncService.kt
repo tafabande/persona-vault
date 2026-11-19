@@ -3,15 +3,22 @@ package com.pims.vault.core.sync
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.pims.vault.core.crypto.CryptoEngine
+import com.pims.vault.core.crypto.HardenedCryptoEngine
 import com.pims.vault.core.crypto.PortableFileKeyManager
 import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.storage.StorageUploadService
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,7 +26,8 @@ import javax.inject.Singleton
 class ProfilePhotoSyncService @Inject constructor(
     @ApplicationContext private val context: Context,
     private val storageUploadService: StorageUploadService,
-    private val portableFileKeyManager: PortableFileKeyManager
+    private val portableFileKeyManager: PortableFileKeyManager,
+    private val cryptoEngine: CryptoEngine = HardenedCryptoEngine()
 ) {
     companion object {
         const val KIND_AVATAR = "avatar"
@@ -45,20 +53,25 @@ class ProfilePhotoSyncService @Inject constructor(
     /** Reads a local image file, downscales to a sane bound, returns JPEG bytes. */
     fun readLocalJpegBytes(absolutePath: String, maxDim: Int = 1024): ByteArray? {
         return try {
-            val file = File(absolutePath)
-            if (!file.exists() || file.length() <= 0 || file.length() > MAX_PHOTO_BYTES * 2) return null
+            val root = context.filesDir.canonicalFile
+            val file = File(absolutePath).canonicalFile
+            if (file == root || !file.toPath().startsWith(root.toPath())) return null
+            if (maxDim <= 0 || !file.exists() || file.length() <= 0 || file.length() > MAX_PHOTO_BYTES * 2) return null
             val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(absolutePath, opts)
-            if (opts.outWidth <= 0 || opts.outHeight <= 0) return file.readBytes().takeIf { it.isNotEmpty() }
+            if (opts.outWidth <= 0 || opts.outHeight <= 0 || opts.outWidth.toLong() * opts.outHeight > 100_000_000L) return null
+            if (opts.outMimeType == "image/jpeg" && maxOf(opts.outWidth, opts.outHeight) <= maxDim) return file.readBytes()
             var sample = 1
             val longest = maxOf(opts.outWidth, opts.outHeight)
             while (longest / sample > maxDim) sample *= 2
             val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample }
             val bmp = BitmapFactory.decodeFile(absolutePath, decodeOpts) ?: return null
-            val out = ByteArrayOutputStream()
-            bmp.compress(Bitmap.CompressFormat.JPEG, 88, out)
-            if (bmp.isRecycled.not()) try { bmp.recycle() } catch (_: Exception) {}
-            out.toByteArray().takeIf { it.isNotEmpty() }
+            try {
+                ByteArrayOutputStream().use { out ->
+                    if (!bmp.compress(Bitmap.CompressFormat.JPEG, 88, out)) return null
+                    out.toByteArray().takeIf { it.isNotEmpty() && it.size <= MAX_PHOTO_BYTES }
+                }
+            } finally { if (!bmp.isRecycled) bmp.recycle() }
         } catch (_: Exception) {
             null
         }
@@ -80,8 +93,10 @@ class ProfilePhotoSyncService @Inject constructor(
             val result = storageUploadService.uploadProfilePhoto(ownerUid, kind, photoId, mimeType, jpegBytes)
             if (result.remotePath.isBlank() || result.downloadUrl.isBlank()) return@withContext null
             result
-        } catch (e: Exception) {
-            VaultLogger.w("PhotoSync", "Photo upload failed: ${e.message}")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("PhotoSync", "Photo upload is pending")
             null
         }
     }
@@ -98,68 +113,85 @@ class ProfilePhotoSyncService @Inject constructor(
         photoCiphertextBase64: String? = null,
         legacyKeyProvider: (() -> ByteArray)? = null
     ): Boolean = withContext(Dispatchers.IO) {
+        val candidates = mutableListOf<ByteArray>()
+        var plaintext: ByteArray? = null
+        var ciphertext: ByteArray? = null
+        var staged: File? = null
         try {
-            val ciphertextFromRemote = if (downloadUrl.isNotBlank()) {
-                storageUploadService.downloadEncryptedBytes(downloadUrl)
-            } else null
-
-            val ciphertext = ciphertextFromRemote ?: photoCiphertextBase64?.let {
-                try {
-                    android.util.Base64.decode(it, android.util.Base64.NO_WRAP)
+            require(ivHex.matches(Regex("[0-9a-fA-F]{24}")) && expectedSha256Hex.matches(Regex("[0-9a-fA-F]{64}")))
+            val root = context.filesDir.canonicalFile
+            val destination = destFile.canonicalFile
+            require(destination != root && destination.toPath().startsWith(root.toPath())) { "Invalid photo destination" }
+            val remote = if (downloadUrl.isNotBlank()) storageUploadService.downloadEncryptedBytes(downloadUrl) else null
+            ciphertext = remote ?: photoCiphertextBase64?.let {
+                require(it.length <= ((MAX_PHOTO_BYTES + 16) * 4 / 3 + 8)) { "Photo exceeds the supported size" }
+                android.util.Base64.decode(it, android.util.Base64.NO_WRAP)
+            } ?: return@withContext false
+            val encrypted = checkNotNull(ciphertext)
+            require(encrypted.size.toLong() in 17..MAX_PHOTO_BYTES + 16)
+            try {
+                candidates.addAll(portableFileKeyManager.copyReadKeyCandidates())
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // An explicitly supplied legacy key may still recover an old photo.
+            }
+            legacyKeyProvider?.let { provider ->
+                val old = try {
+                    provider()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     null
                 }
-            } ?: return@withContext false
-
-            val iv = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-            if (iv.size != 12) return@withContext false
-            val pfk = try {
-                portableFileKeyManager.copyKeyBytes()
-            } catch (_: Exception) {
-                null
+                if (old != null) {
+                    if (candidates.none { it.contentEquals(old) }) candidates.add(old)
+                    else if (candidates.none { it === old }) old.fill(0)
+                }
             }
-            val candidates = listOfNotNull(
-                pfk,
-                try { legacyKeyProvider?.invoke() } catch (_: Exception) { null }
-            )
-            var plain: ByteArray? = null
+            val iv = ivHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
             for (key in candidates) {
                 try {
-                    val engine = com.pims.vault.core.crypto.HardenedCryptoEngine()
-                    plain = engine.decrypt(com.pims.vault.core.crypto.EncryptedPayload(ciphertext, iv), key)
+                    plaintext = cryptoEngine.decrypt(com.pims.vault.core.crypto.EncryptedPayload(encrypted, iv), key)
                     break
-                } catch (_: Exception) {
-                } finally {
-                    java.util.Arrays.fill(key, 0)
-                }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: java.security.GeneralSecurityException) { }
             }
-            val bytes = plain ?: return@withContext false
-            try {
-                val digestBytes = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
-                val shaHex = digestBytes.joinToString("") { "%02x".format(it) }
-                if (!shaHex.equals(expectedSha256Hex, ignoreCase = true)) {
-                    VaultLogger.w("PhotoSync", "SHA-256 mismatch: expected $expectedSha256Hex, got $shaHex")
-                    return@withContext false
-                }
-                // AGENTS.md §4: Validate canonical path to prevent directory traversal
-                val canonicalBase = context.filesDir.canonicalPath
-                val canonicalDest = destFile.canonicalPath
-                if (!canonicalDest.startsWith(canonicalBase)) {
-                    VaultLogger.w("PhotoSync", "Path traversal detected and blocked: $canonicalDest")
-                    return@withContext false
-                }
-                // Validate decodable image before caching.
-                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext false
-                if (!bmp.isRecycled) try { bmp.recycle() } catch (_: Exception) {}
-                destFile.parentFile?.mkdirs()
-                FileOutputStream(destFile).use { it.write(bytes) }
-                true
-            } finally {
-                java.util.Arrays.fill(bytes, 0)
+            val bytes = plaintext ?: return@withContext false
+            val actual = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { "%02x".format(it) }
+            if (!actual.equals(expectedSha256Hex, true)) return@withContext false
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0 ||
+                bounds.outWidth.toLong() * bounds.outHeight > 100_000_000L) return@withContext false
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+                BitmapFactory.Options().apply { inSampleSize = sample }) ?: return@withContext false
+            try { currentCoroutineContext().ensureActive() } finally { if (!bitmap.isRecycled) bitmap.recycle() }
+            val parent = checkNotNull(destination.parentFile)
+            check(parent.isDirectory || parent.mkdirs()) { "Photo destination is unavailable" }
+            val temporary = File.createTempFile(".photo-", ".jpg", parent)
+            staged = temporary
+            FileOutputStream(temporary).use { output ->
+                output.write(bytes)
+                output.fd.sync()
             }
-        } catch (e: Exception) {
-            VaultLogger.w("PhotoSync", "Photo download failed: ${e.message}")
+            currentCoroutineContext().ensureActive()
+            Files.move(temporary.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("PhotoSync", "Photo download remains pending")
             false
+        } finally {
+            plaintext?.fill(0)
+            ciphertext?.fill(0)
+            candidates.forEach { it.fill(0) }
+            staged?.delete()
         }
     }
 }

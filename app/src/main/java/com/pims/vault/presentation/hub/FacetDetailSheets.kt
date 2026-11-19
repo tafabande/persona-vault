@@ -1,5 +1,13 @@
 package com.pims.vault.presentation.hub
 
+import androidx.compose.material.icons.filled.MoreVert
+
+import androidx.compose.foundation.layout.navigationBarsPadding
+
+import androidx.compose.foundation.layout.imePadding
+
+import androidx.compose.foundation.layout.fillMaxHeight
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -78,9 +86,10 @@ import com.pims.vault.data.local.entity.EmploymentRecordEntity
 import com.pims.vault.data.local.entity.MedicalRecordEntity
 import com.pims.vault.domain.model.DocumentWithHistory
 import com.pims.vault.presentation.ui.state.PersonaEmptyState
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.success as StateSuccess
+import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 
 // =========================================================================
 // 1. EDUCATION & PORTFOLIO FACET SHEET
@@ -107,7 +116,7 @@ fun EducationPortfolioSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 36.dp)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -211,7 +220,7 @@ fun HealthSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 36.dp)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -304,456 +313,173 @@ fun DocumentsWalletSheet(
     onUploadClick: () -> Unit,
     onDeleteClick: (DocumentWithHistory) -> Unit,
     onViewClick: (DocumentWithHistory) -> Unit = {},
-    onExportClick: (DocumentWithHistory) -> Unit = {}
+    onExportClick: (DocumentWithHistory) -> Unit = {},
+    onAddVersion: ((DocumentWithHistory) -> Unit)? = null,
+    onRestoreVersion: ((String, com.pims.vault.domain.model.DocumentVersionItem) -> Unit)? = null,
+    onVerifyVersion: ((com.pims.vault.domain.model.DocumentVersionItem) -> Unit)? = null,
+    integrityResults: Map<String, com.pims.vault.domain.model.IntegrityCheckStatus> = emptyMap(),
+    isWorking: Boolean = false,
+    onOpenExternal: (DocumentWithHistory) -> Unit = onViewClick,
+    isLoading: Boolean = false,
+    loadError: String? = null,
+    onRetryLoad: () -> Unit = {},
+    onRetryDownload: ((DocumentWithHistory) -> Unit)? = null
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearchActive by remember { mutableStateOf(false) }
-
-    val filteredDocuments = remember(documents, searchQuery) {
-        if (searchQuery.isBlank()) documents
-        else {
-            val q = searchQuery.trim().lowercase()
-            documents.filter { docWithHist ->
-                val doc = docWithHist.document
-                val titleMatch = doc.title.lowercase().contains(q)
-                val typeMatch = doc.documentType.name.lowercase().contains(q)
-                val friendlyTypeMatch = when (doc.documentType) {
-                    DocumentType.PASSPORT, DocumentType.NATIONAL_ID, DocumentType.DRIVING_LICENCE, DocumentType.BIRTH_CERTIFICATE -> "identity id passport license driving birth"
-                    DocumentType.ACADEMIC_CERTIFICATE, DocumentType.TRANSCRIPT -> "education degree certificate academic transcript"
-                    DocumentType.EMPLOYMENT_CONTRACT, DocumentType.LEGAL_CONTRACT, DocumentType.INSURANCE_POLICY -> "legal work contract employment agreement insurance policy"
-                    DocumentType.MEDICAL_RECORD -> "medical health record prescription"
-                    DocumentType.CURRICULUM_VITAE, DocumentType.PASSPORT_PHOTO, DocumentType.OTHER -> "personal cv resume photo other"
-                }.contains(q)
-                val numberMatch = doc.documentNumber?.lowercase()?.contains(q) == true
-
-                titleMatch || typeMatch || friendlyTypeMatch || numberMatch
+    var query by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf<com.pims.vault.domain.model.DocumentCategory?>(null) }
+    var expandedId by remember { mutableStateOf<String?>(null) }
+    var menuId by remember { mutableStateOf<String?>(null) }
+    var restore by remember { mutableStateOf<Pair<String, com.pims.vault.domain.model.DocumentVersionItem>?>(null) }
+    val filtered = remember(documents, query, category) {
+        val term = query.trim()
+        documents.filter { item ->
+            (category == null || item.document.category == category) &&
+                (term.isBlank() || listOf(item.document.title,
+                    com.pims.vault.presentation.document.documentTypeLabel(item.document.documentType),
+                    item.document.documentNumber.orEmpty(), item.document.issuingAuthority.orEmpty(),
+                    item.document.issuingCountry.orEmpty()).any { it.contains(term, ignoreCase = true) })
+        }.sortedByDescending { it.document.updatedAt }
+    }
+    ModalBottomSheet(onDismissRequest = onDismissRequest, sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f).navigationBarsPadding().imePadding().padding(horizontal = 24.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Documents", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                androidx.compose.material3.FilledTonalButton(onClick = onUploadClick, enabled = !isWorking) { Text("Add file") }
+                IconButton(onClick = onDismissRequest) { Icon(Icons.Default.Close, "Close documents") }
+            }
+            Spacer(Modifier.height(16.dp))
+            com.pims.vault.presentation.ui.components.PersonaTextInput(query, { query = it }, placeholder = "Search documents",
+                leadingIcon = { Icon(Icons.Default.Search, null) }, trailingIcon = {
+                    if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Clear search") }
+                })
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.FilterChip(selected = category == null, onClick = { category = null }, label = { Text("All") })
+                documents.map { it.document.category }.distinct().forEach { item ->
+                    androidx.compose.material3.FilterChip(selected = category == item, onClick = { category = item },
+                        label = { Text(item.displayLabel.substringBefore(" &")) })
+                }
+            }
+            if (isWorking || isLoading) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            loadError?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                androidx.compose.material3.TextButton(onClick = onRetryLoad) { Text("Retry") }
+            }
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
+                if (filtered.isEmpty() && !isLoading && loadError == null) {
+                    item {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(if (documents.isEmpty()) "Your documents, together" else "No matching documents",
+                                style = MaterialTheme.typography.titleLarge)
+                            if (documents.isEmpty()) {
+                                Text("Add a file to get started.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Button(onClick = onUploadClick) { Text("Add document") }
+                            } else androidx.compose.material3.TextButton(onClick = { query = ""; category = null }) { Text("Clear filters") }
+                        }
+                    }
+                }
+                items(filtered.size, key = { filtered[it].document.id }) { index ->
+                    val document = filtered[index]
+                    val current = document.currentVersion
+                    val missing = current == null || current.storagePath.isBlank() ||
+                        integrityResults[current.id] in listOf(com.pims.vault.domain.model.IntegrityCheckStatus.UNAVAILABLE,
+                            com.pims.vault.domain.model.IntegrityCheckStatus.INTEGRITY_FAILED)
+                    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.weight(1f).clickable(enabled = !missing, onClickLabel = "Preview document") {
+                                onViewClick(document)
+                            }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(28.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(document.document.title, style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text(com.pims.vault.presentation.document.documentTypeLabel(document.document.documentType) +
+                                        (current?.let { " · ${it.formattedSize}" } ?: ""),
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (missing) Text("File unavailable on this device", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            Box {
+                                IconButton(onClick = { menuId = document.document.id }) {
+                                    Icon(Icons.Default.MoreVert, "Actions for ${document.document.title}")
+                                }
+                                androidx.compose.material3.DropdownMenu(expanded = menuId == document.document.id,
+                                    onDismissRequest = { menuId = null }) {
+                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Preview") }, enabled = !missing,
+                                        onClick = { menuId = null; onViewClick(document) })
+                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Open with another app") }, enabled = !missing,
+                                        onClick = { menuId = null; onOpenExternal(document) })
+                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Save a copy") }, enabled = !missing,
+                                        onClick = { menuId = null; onExportClick(document) })
+                                    if (onRetryDownload != null) androidx.compose.material3.DropdownMenuItem(text = { Text("Retry download") }, enabled = !isWorking,
+                                        onClick = { menuId = null; onRetryDownload(document) })
+                                    if (onAddVersion != null) androidx.compose.material3.DropdownMenuItem(text = { Text("Add version") }, enabled = !isWorking,
+                                        onClick = { menuId = null; onAddVersion(document) })
+                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Version history (${document.totalVersions})") },
+                                        onClick = { menuId = null; expandedId = if (expandedId == document.document.id) null else document.document.id })
+                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Delete", color = MaterialTheme.colorScheme.error) }, enabled = !isWorking,
+                                        onClick = { menuId = null; onDeleteClick(document) })
+                                }
+                            }
+                        }
+                        if (missing && onRetryDownload != null) {
+                            androidx.compose.material3.TextButton(onClick = { onRetryDownload(document) }, enabled = !isWorking,
+                                modifier = Modifier.padding(start = 42.dp)) { Text("Retry download") }
+                        }
+                        if (expandedId == document.document.id) {
+                            document.versions.sortedByDescending { it.versionNumber }.forEach { version ->
+                                Row(Modifier.fillMaxWidth().padding(start = 42.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                                        Text("Version ${version.versionNumber}" + if (version.id == current?.id) " · Current" else "",
+                                            style = MaterialTheme.typography.bodyMedium)
+                                        Text(version.originalFilename?.takeIf(String::isNotBlank) ?: version.formattedSize,
+                                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        integrityResults[version.id]?.let { result ->
+                                            Text(when (result) {
+                                                com.pims.vault.domain.model.IntegrityCheckStatus.INTEGRITY_OK -> "Verified"
+                                                com.pims.vault.domain.model.IntegrityCheckStatus.INTEGRITY_FAILED -> "Integrity check failed"
+                                                com.pims.vault.domain.model.IntegrityCheckStatus.UNAVAILABLE -> "File unavailable"
+                                            }, style = MaterialTheme.typography.bodySmall,
+                                                color = if (result == com.pims.vault.domain.model.IntegrityCheckStatus.INTEGRITY_OK)
+                                                    MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                    IconButton(onClick = { onViewClick(document.copy(versions = listOf(version))) }, enabled = version.storagePath.isNotBlank()) {
+                                        Icon(Icons.Default.Visibility, "Open version ${version.versionNumber}")
+                                    }
+                                    var versionMenu by remember(version.id) { mutableStateOf(false) }
+                                    Box {
+                                        IconButton(onClick = { versionMenu = true }) { Icon(Icons.Default.MoreVert, "Version ${version.versionNumber} actions") }
+                                        androidx.compose.material3.DropdownMenu(expanded = versionMenu, onDismissRequest = { versionMenu = false }) {
+                                            androidx.compose.material3.DropdownMenuItem(text = { Text("Save a copy") }, onClick = {
+                                                versionMenu = false; onExportClick(document.copy(versions = listOf(version))) })
+                                            if (onVerifyVersion != null) androidx.compose.material3.DropdownMenuItem(text = { Text("Check integrity") }, onClick = {
+                                                versionMenu = false; onVerifyVersion(version) })
+                                            if (onRestoreVersion != null && version.id != current?.id) androidx.compose.material3.DropdownMenuItem(
+                                                text = { Text("Use this version") }, enabled = !isWorking, onClick = {
+                                                    versionMenu = false; restore = document.document.id to version
+                                                })
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
-
-    BackHandler(enabled = true) {
-        if (searchQuery.isNotBlank()) {
-            searchQuery = ""
-            isSearchActive = false
-        } else if (isSearchActive) {
-            isSearchActive = false
-        } else {
-            onDismissRequest()
-        }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 36.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // Header with total badge and close button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Document Wallet",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    IconButton(
-                        onClick = {
-                            isSearchActive = !isSearchActive
-                            if (!isSearchActive) searchQuery = ""
-                        },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(
-                                if (isSearchActive || searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                CircleShape
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = if (isSearchActive || searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onDismissRequest,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-
-            AnimatedVisibility(visible = isSearchActive || searchQuery.isNotBlank()) {
-                Column {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
-                            Text(
-                                "Search by name or category (e.g. Passport, Education)...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotBlank()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Clear",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
-                        )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Overhauled "Add Document" Action Area
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onUploadClick() },
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Text(
-                            text = "Add Document to Wallet",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        shadowElevation = 1.dp
-                    ) {
-                        Text(
-                            text = "+ Upload",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Document List or Empty State
-            if (filteredDocuments.isEmpty()) {
-                if (searchQuery.isNotBlank()) {
-                    PersonaEmptyState(
-                        icon = Icons.Default.Search,
-                        title = "No matching documents",
-                        description = "No documents match \"$searchQuery\". Try searching by name or category.",
-                        actionLabel = "Clear search",
-                        onActionClick = {
-                            searchQuery = ""
-                            isSearchActive = false
-                        }
-                    )
-                } else {
-                    PersonaEmptyState(
-                        icon = Icons.Default.Description,
-                        title = "Your document shelf is empty",
-                        description = "Add passports, national IDs, degrees, contracts, or records to your wallet.",
-                        actionLabel = "Upload your first document",
-                        onActionClick = onUploadClick
-                    )
-                }
-            } else {
-                filteredDocuments.forEach { doc ->
-                    val typeColor = MaterialTheme.colorScheme.primary
-
-                    val typeLabel = when (doc.document.documentType) {
-                        DocumentType.NATIONAL_ID -> "National ID"
-                        DocumentType.PASSPORT -> "Passport"
-                        DocumentType.DRIVING_LICENCE -> "Driving Licence"
-                        DocumentType.BIRTH_CERTIFICATE -> "Birth Certificate"
-                        DocumentType.ACADEMIC_CERTIFICATE -> "Degree / Cert"
-                        DocumentType.TRANSCRIPT -> "Transcript"
-                        DocumentType.CURRICULUM_VITAE -> "CV / Resume"
-                        DocumentType.EMPLOYMENT_CONTRACT -> "Employment"
-                        DocumentType.MEDICAL_RECORD -> "Medical"
-                        DocumentType.INSURANCE_POLICY -> "Insurance"
-                        DocumentType.LEGAL_CONTRACT -> "Legal"
-                        DocumentType.PASSPORT_PHOTO -> "Photo ID"
-                        DocumentType.OTHER -> "Document"
-                    }
-
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 5.dp)
-                            .clickable { onViewClick(doc) },
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    modifier = Modifier.weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    // Colored file type badge
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .background(typeColor.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Description,
-                                            contentDescription = null,
-                                            tint = typeColor,
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = doc.document.title,
-                                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1
-                                        )
-
-                                        Spacer(modifier = Modifier.height(2.dp))
-
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Text(
-                                                text = typeLabel,
-                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                                color = typeColor,
-                                                fontSize = 11.sp
-                                            )
-                                            if (doc.currentVersion?.formattedSize?.isNotBlank() == true) {
-                                                Text(
-                                                    text = "•",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Text(
-                                                    text = doc.currentVersion?.formattedSize ?: "",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontSize = 11.sp
-                                                )
-                                            }
-                                            if (doc.document.issuingCountry?.isNotBlank() == true) {
-                                                Text(
-                                                    text = "•",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Text(
-                                                    text = doc.document.issuingCountry ?: "",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    fontSize = 11.sp
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-
-                            }
-
-                            // Optional Document Number & Expiry
-                            if (!doc.document.documentNumber.isNullOrBlank() || !doc.document.expirationDate.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    if (!doc.document.documentNumber.isNullOrBlank()) {
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                                        ) {
-                                            Text(
-                                                text = "No: ${doc.document.documentNumber}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                    if (!doc.document.expirationDate.isNullOrBlank()) {
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                                        ) {
-                                            Text(
-                                                text = "Expires: ${doc.document.expirationDate}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                fontSize = 11.sp,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // Micro-Actions Row: View, Export, Delete
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                    modifier = Modifier.clickable { onViewClick(doc) }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Visibility,
-                                            contentDescription = "View",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                        Text(
-                                            text = "View",
-                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = { onExportClick(doc) },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Share,
-                                            contentDescription = "Export / Share",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = { onDeleteClick(doc) },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete",
-                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    restore?.let { (documentId, version) ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { restore = null }, title = { Text("Use version ${version.versionNumber}?") },
+            text = { Text("This adds a new current version and keeps your version history.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { restore = null; onRestoreVersion?.invoke(documentId, version) }) { Text("Use version") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { restore = null }) { Text("Cancel") } })
     }
 }
 
@@ -777,7 +503,7 @@ fun VaultSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = pimsPageGutter())
                 .padding(bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

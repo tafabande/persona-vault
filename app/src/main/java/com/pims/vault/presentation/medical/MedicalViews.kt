@@ -90,7 +90,6 @@ import com.pims.vault.domain.model.MedicationItem
 import com.pims.vault.domain.model.PrescriptionItem
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
-import com.pims.vault.presentation.vault.screens.VaultDesignTokens
 import com.pims.vault.presentation.vault.screens.VaultGroupedCard
 import com.pims.vault.presentation.vault.screens.VaultPillActionButton
 import com.pims.vault.presentation.vault.screens.VaultUnderlineField
@@ -835,20 +834,7 @@ fun MinimalEmergencyProjectionCard(
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = getVaultTextPrimary()
                     )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(VaultDesignTokens.AccentGreen.copy(alpha = 0.15f))
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = "Ready",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = VaultDesignTokens.AccentGreen
-                        )
-                    }
+
                 }
                 Text(
                     text = "Blood: ${projection.bloodType?.displayLabel?.substringBefore(" ") ?: "Unknown"}${if (projection.severeAllergies.isNotEmpty()) " · Allergies: ${projection.severeAllergies.joinToString()}" else ""}",

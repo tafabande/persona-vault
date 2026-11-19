@@ -17,6 +17,18 @@ interface StorageUploadService {
         plaintextBytes: ByteArray
     ): UploadResult
 
+    /** Uploads the app-owned encrypted original without copying plaintext into a cloud buffer. */
+    suspend fun uploadEncryptedDocumentVersion(
+        accountUid: String,
+        documentId: String,
+        versionId: String,
+        export: EncryptedFileExport
+    ): UploadResult = throw UnsupportedOperationException("Encrypted document transport is unavailable")
+
+    /** The caller closes the returned encrypted stream, including on authentication failure. */
+    suspend fun openEncryptedDocument(downloadUrl: String): java.io.InputStream? =
+        downloadEncryptedBytes(downloadUrl)?.inputStream()
+
     suspend fun uploadNoteAttachment(
         ownerPersonId: String,
         noteId: String,
@@ -46,6 +58,9 @@ interface StorageUploadService {
      */
     suspend fun downloadEncryptedBytes(downloadUrl: String): ByteArray?
 
-    /** True when B2 credentials are present; false means uploads are skipped. */
+    /** Allows a newer authenticated provider to migrate a confirmed legacy remote copy. */
+    fun isPreferredRemote(remotePath: String, downloadUrl: String): Boolean = true
+
+    /** True when the current upload provider is available. */
     fun isConfigured(): Boolean
 }

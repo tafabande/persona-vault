@@ -34,13 +34,25 @@ service cloud.firestore {
     // 1. ACCOUNT & MANAGED PERSONS (Account UID != Person ID)
     // =========================================================================
     match /accounts/{accountId} {
-      // Base account identity: owner can read; accountUid & createdAt are strictly immutable
+      function validFileKeyFingerprint() {
+        return !('fileKeyFingerprintV2' in request.resource.data) ||
+          (request.resource.data.fileKeyFingerprintV2 is string &&
+            request.resource.data.fileKeyFingerprintV2.matches('^[0-9a-f]{64}$'));
+      }
+      function preservesFileKeyFingerprint() {
+        return !('fileKeyFingerprintV2' in resource.data) ||
+          ('fileKeyFingerprintV2' in request.resource.data &&
+            request.resource.data.fileKeyFingerprintV2 == resource.data.fileKeyFingerprintV2);
+      }
+      // Account identity and an established file-key fingerprint survive every update.
       allow read: if isAccountOwner(accountId);
-      allow create: if isAccountOwner(accountId) && 
-                       request.resource.data.accountUid == accountId;
-      allow update: if isAccountOwner(accountId) && 
-                       isImmutable('accountUid') && 
-                       isImmutable('createdAt');
+      allow create: if isAccountOwner(accountId) &&
+                       request.resource.data.accountUid == accountId &&
+                       validFileKeyFingerprint();
+      allow update: if isAccountOwner(accountId) &&
+                       isImmutable('accountUid') &&
+                       isImmutable('createdAt') &&
+                       validFileKeyFingerprint() && preservesFileKeyFingerprint();
       allow delete: if false; // Accounts must be closed via backend deletion pipeline
 
       // Managed People (Me, Child, Elderly Dependents)
@@ -71,22 +83,66 @@ service cloud.firestore {
         allow read, write: if isAccountOwner(accountId);
       }
 
-      // Document Envelopes (Civic Metadata + Encrypted Restricted Attributes)
+      // Document metadata upgrades keep encrypted fields protected against stale writers.
       match /documents/{docId} {
-        allow read, write: if isAccountOwner(accountId);
+        function protectedHeader() {
+          return request.resource.data.metadataFormatVersion == 2 &&
+            request.resource.data.metadataCiphertext is string && request.resource.data.metadataIv is string &&
+            !request.resource.data.keys().hasAny(['documentType', 'title', 'documentNumber', 'issuingAuthority',
+              'issuingCountry', 'issueDate', 'expirationDate', 'securityClassification', 'isLocked', 'notes', 'createdAt']);
+        }
+        function compactDeletion() {
+          return ('isDeleted' in request.resource.data) && request.resource.data.isDeleted == true &&
+            request.resource.data.keys().hasOnly(['documentId', 'personId', 'isDeleted', 'updatedAt']);
+        }
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) &&
+          (!('metadataFormatVersion' in request.resource.data) || protectedHeader());
+        allow update: if isAccountOwner(accountId) &&
+          (!(('isDeleted' in resource.data) && resource.data.isDeleted == true) || compactDeletion()) &&
+          (compactDeletion() || !('metadataFormatVersion' in resource.data) || protectedHeader());
+        allow delete: if isAccountOwner(accountId) &&
+          !(('isDeleted' in resource.data) && resource.data.isDeleted == true);
 
-        // Document Versions: Strictly IMMUTABLE historical snapshots
         match /versions/{versionId} {
-          allow read, write: if isAccountOwner(accountId);
+          function protectedVersion() {
+            return request.resource.data.metadataFormatVersion == 2 &&
+              request.resource.data.metadataCiphertext is string && request.resource.data.metadataIv is string &&
+              !request.resource.data.keys().hasAny(['notes', 'originalFilename', 'createdAt']);
+          }
+          function activeParent() {
+            return exists(/databases/$(database)/documents/accounts/$(accountId)/documents/$(docId)) &&
+              !(('isDeleted' in get(/databases/$(database)/documents/accounts/$(accountId)/documents/$(docId)).data) &&
+                get(/databases/$(database)/documents/accounts/$(accountId)/documents/$(docId)).data.isDeleted == true);
+          }
+          allow read, delete: if isAccountOwner(accountId);
+          allow create: if isAccountOwner(accountId) && activeParent() &&
+            (!('metadataFormatVersion' in request.resource.data) || protectedVersion());
+          allow update: if isAccountOwner(accountId) && activeParent() &&
+            (!('metadataFormatVersion' in resource.data) || protectedVersion());
         }
       }
 
-      // Vault Escrow: Master KEK wrapped with 256-bit Recovery Secret
+      // Passphrase-protected portable file keys remain private to the account owner.
       match /vaultEscrow/{escrowId} {
+        function hasPassphraseRecovery() {
+          let latest = get(/databases/$(database)/documents/accounts/$(accountId)/vaultEscrow/latest).data;
+          let recovery = get(/databases/$(database)/documents/accounts/$(accountId)/vaultEscrow/$(latest.keyId)).data;
+          return latest.isCiphertext == true && latest.keyId is string &&
+            latest.keyId != 'latest' && latest.keyId != 'account_sync_pfk' &&
+            recovery.isCiphertext == true &&
+            recovery.saltBase64 is string && recovery.saltBase64.size() > 0 &&
+            recovery.wrappedKeyBase64 is string && recovery.wrappedKeyBase64.size() > 0 &&
+            recovery.wrapIvBase64 is string && recovery.wrapIvBase64.size() > 0 &&
+            recovery.kdfAlgorithm == 'PBKDF2WithHmacSHA256' &&
+            recovery.iterations is int && recovery.iterations >= 100000;
+        }
         allow read: if isAccountOwner(accountId);
-        allow create, update: if isAccountOwner(accountId) && 
-                                 request.resource.data.isCiphertext == true;
-        allow delete: if false; // Escrow is permanent protection against device loss
+        allow create, update: if isAccountOwner(accountId) && escrowId != 'account_sync_pfk' &&
+          request.resource.data.isCiphertext == true;
+        // Retire the former public-UID wrap only after passphrase recovery is durable.
+        allow delete: if isAccountOwner(accountId) && escrowId == 'account_sync_pfk' &&
+          hasPassphraseRecovery();
       }
 
       // Profile photos (avatar / contact / ID): encrypted B2 blobs, metadata only.
@@ -98,6 +154,35 @@ service cloud.firestore {
         allow read, write: if isAccountOwner(accountId);
       }
 
+      // Encrypted wallpaper metadata and deletion markers follow photo ownership.
+      match /wallpapers/{wallpaperId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+      match /wallpaper_tombstones/{tombstoneId} {
+        allow read, write: if isAccountOwner(accountId);
+      }
+
+      // App-owned encrypted originals. Chunks are immutable after publication.
+      match /media/{blobId} {
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) && request.resource.data.ownerUid == accountId;
+        allow update: if isAccountOwner(accountId) && resource.data.ownerUid == accountId &&
+          request.resource.data.ownerUid == accountId && request.resource.data.isDeleted == true;
+        allow delete: if false;
+        match /chunks/{chunkId} {
+          allow read: if isAccountOwner(accountId) &&
+            exists(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)) &&
+            get(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)).data.isDeleted == false;
+          allow create, update: if isAccountOwner(accountId) &&
+            !exists(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)) &&
+            request.resource.data.keys().hasOnly(['data']) &&
+            request.resource.data.data is bytes && request.resource.data.data.size() <= 524288;
+          allow delete: if isAccountOwner(accountId) &&
+            exists(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)) &&
+            get(/databases/$(database)/documents/accounts/$(accountId)/media/$(blobId)).data.isDeleted == true;
+        }
+      }
+
       // Active Devices & Sessions
       match /sessions/{sessionId} {
         allow read, write: if isAccountOwner(accountId);
@@ -105,7 +190,10 @@ service cloud.firestore {
 
       // Local Tombstones for Offline Sync Horizon
       match /tombstones/{tombstoneId} {
-        allow read, write: if isAccountOwner(accountId);
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId) &&
+                         request.resource.data.timestamp <= request.time;
+        allow update, delete: if false;
       }
 
       // Plain Notes & Rich Journal
@@ -119,7 +207,20 @@ service cloud.firestore {
 
       // Fortress Vault (Credentials, Logins, Secure Items)
       match /vault/{itemId} {
-        allow read, write: if isAccountOwner(accountId);
+        allow read: if isAccountOwner(accountId);
+        allow create: if isAccountOwner(accountId);
+        allow update: if isAccountOwner(accountId) &&
+          (!(('isDeleted' in resource.data) && resource.data.isDeleted == true) ||
+            (request.resource.data.isDeleted == true &&
+             request.resource.data.keys().hasOnly(['id', 'personId', 'isDeleted', 'updatedAt'])));
+        allow delete: if isAccountOwner(accountId) &&
+          !(('isDeleted' in resource.data) && resource.data.isDeleted == true);
+        match /proofs/{proofId} {
+          allow read, write: if isAccountOwner(accountId);
+          match /chunks/{chunkId} {
+            allow read, write: if isAccountOwner(accountId);
+          }
+        }
       }
 
       // Social & Online Accounts
@@ -133,6 +234,9 @@ service cloud.firestore {
       }
       match /relationshipNotes/{relNoteId} {
         allow read, write: if isAccountOwner(accountId);
+        match /attachments/{attachmentId} {
+          allow read, write: if isAccountOwner(accountId);
+        }
       }
     }
 

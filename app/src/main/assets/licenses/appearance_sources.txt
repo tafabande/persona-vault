@@ -1,0 +1,22 @@
+Jujutsu Kaisen appearance
+
+Configured palette and Gojo wallpaper
+Omarchy Gojo Theme by TheNeovimmer, copyright 2026, MIT license.
+https://github.com/TheNeovimmer/omarchy-gojo-theme
+Pinned source f410e6c3a3d84e30b76caeeb46bf15978d3a16d2.
+Palette colors.toml adapted for Material 3 light and dark semantic roles.
+Artwork backgrounds/wallhaven-6oeqk7.jpg copied without changes to wallpapers/wp_jjk_gojo.jpg.
+Full license in jjk_gojo_mit.txt. Original palette in jjk_gojo_colors.toml.
+
+Particle component
+Konfetti 2.0.5 by Dion Segijn, copyright 2017, ISC license.
+https://github.com/DanielMartinus/Konfetti/tree/v2.0.5
+Rain preset adapted for continuous low-density cherry blossoms, gentle rotation and reduced-motion controls.
+Full license in konfetti_isc.txt.
+
+Cherry blossom artwork
+Twemoji graphics by Twitter, Inc and other contributors, CC BY 4.0.
+https://github.com/jdecked/twemoji/blob/v15.1.0/assets/svg/1f338.svg
+https://creativecommons.org/licenses/by/4.0/
+SVG path geometry and colors converted mechanically to Android VectorDrawable.
+Original asset in sakura.svg. Full license in twemoji_cc_by_4.txt.

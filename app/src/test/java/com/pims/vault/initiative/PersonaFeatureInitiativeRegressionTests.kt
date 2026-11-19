@@ -59,7 +59,7 @@ class PersonaFeatureInitiativeRegressionTests {
     private val inMemoryVaultItems = mutableMapOf<String, VaultItemEntity>()
     private val inMemoryAudits = mutableListOf<AuditEventEntity>()
 
-    private val fakeVaultDao = object : VaultDao {
+    private val fakeVaultDao = object : com.pims.vault.testing.TestVaultDao() {
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
             inMemoryVaultItems[item.id] = item
             return 1L
@@ -110,6 +110,12 @@ class PersonaFeatureInitiativeRegressionTests {
         auditLogger = auditLogger
     )
 
+    private suspend fun createOwnedBank(): String =
+        com.pims.vault.domain.usecase.vault.SaveBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger)(
+            CANONICAL_PRIMARY_OWNER_ID, "Fixture Bank", "Jane Doe", "1234567890", "Current",
+            "", "", "", "", "", "", null, rootKey
+        )
+
     @Before
     fun setUp() {
         inMemoryVaultItems.clear()
@@ -122,6 +128,7 @@ class PersonaFeatureInitiativeRegressionTests {
 
     @Test
     fun testPhysicalCardCreationAndProperties() = runBlocking {
+        val bankId = createOwnedBank()
         val cardId = savePaymentReferenceUseCase(
             personId = CANONICAL_PRIMARY_OWNER_ID,
             nickname = "Personal Visa Debit",
@@ -132,7 +139,7 @@ class PersonaFeatureInitiativeRegressionTests {
             year = "2028",
             notes = "Physical standard debit",
             vaultRootKey = rootKey,
-            linkedBankAccountId = "bank-acc-1",
+            linkedBankAccountId = bankId,
             cardType = "PHYSICAL"
         )
 
@@ -142,11 +149,12 @@ class PersonaFeatureInitiativeRegressionTests {
         assertFalse(secret.isVirtual)
         assertFalse(secret.isVirtualCard)
         assertEquals("VISA", secret.provider)
-        assertEquals("bank-acc-1", secret.linkedBankAccountId)
+        assertEquals(bankId, secret.linkedBankAccountId)
     }
 
     @Test
     fun testVirtualCardCreationAndProperties() = runBlocking {
+        val bankId = createOwnedBank()
         val cardId = savePaymentReferenceUseCase(
             personId = CANONICAL_PRIMARY_OWNER_ID,
             nickname = "Online Subscriptions Card",
@@ -157,7 +165,7 @@ class PersonaFeatureInitiativeRegressionTests {
             year = "2029",
             notes = "Virtual subscription card",
             vaultRootKey = rootKey,
-            linkedBankAccountId = "bank-acc-2",
+            linkedBankAccountId = bankId,
             cardType = "VIRTUAL"
         )
 
@@ -214,6 +222,8 @@ class PersonaFeatureInitiativeRegressionTests {
             override suspend fun insertDoc(document: DocumentEntity): Long = 1L
             override suspend fun updateDoc(document: DocumentEntity) {}
             override suspend fun insertVersion(version: DocumentVersionEntity) {}
+            override suspend fun updateVersionStorage(id: String, path: String, size: Long, iv: String): Int = 0
+            override suspend fun fillMissingVersionMetadata(id: String, documentId: String, hash: String, filename: String?, notes: String?, createdAt: Long): Int = 0
             override suspend fun getLatestVersionNumber(documentId: String): Int? = 1
             override suspend fun getAllVersions(documentId: String): List<DocumentVersionEntity> = emptyList()
             override suspend fun deleteDocument(document: DocumentEntity) {}
@@ -231,6 +241,14 @@ class PersonaFeatureInitiativeRegressionTests {
             override fun observeAllAttachments(): Flow<List<PlainNoteAttachmentEntity>> = flowOf(inMemoryAttachments)
             override suspend fun getAllNotes(): List<PlainNoteEntity> = inMemoryNotes
             override suspend fun getById(id: String): PlainNoteEntity? = inMemoryNotes.find { it.id == id }
+            override suspend fun applyRemotePin(id: String, isPinned: Boolean, updatedAt: Long) {
+                val note = inMemoryNotes.find { it.id == id }
+                if (note != null && note.updatedAt < updatedAt) setPinned(id, isPinned, updatedAt)
+            }
+            override suspend fun setPinned(id: String, isPinned: Boolean, updatedAt: Long) {
+                val index = inMemoryNotes.indexOfFirst { it.id == id }
+                if (index >= 0) inMemoryNotes[index] = inMemoryNotes[index].copy(isPinned = isPinned, updatedAt = updatedAt)
+            }
             override suspend fun upsert(note: PlainNoteEntity) { inMemoryNotes.add(note) }
             override suspend fun deleteById(id: String) { inMemoryNotes.removeAll { it.id == id } }
             override suspend fun getAttachments(noteId: String): List<PlainNoteAttachmentEntity> =

@@ -1,4 +1,5 @@
 [versions]
+orgJson = "20240303"
 agp = "8.5.2"
 kotlin = "2.0.20"
 ksp = "2.0.20-1.0.25"
@@ -47,6 +48,7 @@ turbine = "1.1.0"
 
 # Animation
 riveAndroid = "11.12.0"
+konfetti = "2.0.5"
 startupRuntime = "1.1.1"
 
 # Network & Auth
@@ -57,6 +59,7 @@ zxing = "3.5.3"
 libphonenumber = "9.0.40"
 
 [libraries]
+org-json = { module = "org.json:json", version.ref = "orgJson" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
@@ -116,6 +119,7 @@ androidx-compose-ui-text-google-fonts = { group = "androidx.compose.ui", name = 
 
 # Rive & Runtime
 rive-android = { group = "app.rive", name = "rive-android", version.ref = "riveAndroid" }
+konfetti-compose = { group = "nl.dionsegijn", name = "konfetti-compose", version.ref = "konfetti" }
 androidx-startup-runtime = { group = "androidx.startup", name = "startup-runtime", version.ref = "startupRuntime" }
 
 # Network & Auth

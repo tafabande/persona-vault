@@ -40,8 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.sync.ConflictResolutionChoice
 import com.pims.vault.data.local.entity.SyncConflictEntity
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,7 +65,7 @@ fun SyncConflictSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .padding(bottom = 32.dp)
         ) {
             // Header

@@ -32,9 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 
 /**
  * Minimal recovery card embedded in the Data & Backup hub.
@@ -65,8 +63,8 @@ fun CloudRecoveryCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 val (icon, tint) = when (status) {
-                    is RecoveryViewModel.Status.Ready -> Icons.Default.CheckCircle to StateSuccess
-                    is RecoveryViewModel.Status.NotConfigured -> Icons.Default.Warning to StateWarning
+                    is RecoveryViewModel.Status.Ready -> Icons.Default.CheckCircle to MaterialTheme.colorScheme.primary
+                    is RecoveryViewModel.Status.NotConfigured -> Icons.Default.Warning to com.pims.vault.presentation.ui.theme.PimsColors.warning
                     else -> Icons.Default.Warning to MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Icon(icon, contentDescription = null, tint = tint)
@@ -127,7 +125,7 @@ fun CloudRecoveryCard(
             }
 
             when (val s = op) {
-                is RecoveryViewModel.OpState.Success -> Text(s.message, color = StateSuccess, style = MaterialTheme.typography.bodySmall)
+                is RecoveryViewModel.OpState.Success -> Text(s.message, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                 is RecoveryViewModel.OpState.Error -> Text(s.message, color = StateError, style = MaterialTheme.typography.bodySmall)
                 else -> {}
             }

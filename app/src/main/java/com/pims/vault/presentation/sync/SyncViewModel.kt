@@ -33,9 +33,9 @@ class SyncViewModel @Inject constructor(
     val activeSessions: StateFlow<List<ActiveDeviceSession>> =
         sessionManager.activeSessions
 
-    fun processSyncNow() {
+    fun processSyncNow(onComplete: (SyncQueueManager.SyncResult) -> Unit = {}) {
         viewModelScope.launch {
-            syncQueueManager.processPendingQueue()
+            onComplete(syncQueueManager.processPendingQueue())
         }
     }
 

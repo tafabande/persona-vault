@@ -55,6 +55,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,9 +77,14 @@ import com.pims.vault.presentation.relationship.RelationshipNotesSection
 import com.pims.vault.presentation.ui.components.DefaultAvatar
 import com.pims.vault.presentation.ui.theme.PersonaIcons
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
-import com.pims.vault.presentation.ui.theme.StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /**
  * Dedicated full-screen page for displaying and managing all information about a person:
@@ -94,11 +101,14 @@ fun PersonDetailScreen(
     onBack: () -> Unit,
     onEditPerson: (KinRelationshipItem) -> Unit,
     onDeletePerson: (KinRelationshipItem) -> Unit,
-    onAddNote: (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean) -> Unit,
-    onUpdateNote: (noteId: String, topic: String?, content: String, format: NoteFormat, isPrivate: Boolean) -> Unit,
+    onAddNote: suspend (topic: String?, content: String, format: NoteFormat, isPrivate: Boolean, List<com.pims.vault.domain.model.RelationshipNoteAttachmentDraft>, Set<String>) -> Boolean,
+    onUpdateNote: suspend (noteId: String, topic: String?, content: String, format: NoteFormat, isPrivate: Boolean, List<com.pims.vault.domain.model.RelationshipNoteAttachmentDraft>, Set<String>) -> Boolean,
     onDeleteNote: (noteId: String) -> Unit,
     onToggleTrusted: (Boolean) -> Unit,
     onToggleNotePrivacy: (noteId: String, makePrivate: Boolean) -> Unit = { _, _ -> },
+    onOpenAttachment: (String, String) -> Unit = { _, _ -> },
+    isVaultUnlocked: Boolean = false,
+    onUnlockVault: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -120,33 +130,48 @@ fun PersonDetailScreen(
         avatarManager.getPersonPhotoPath(effectivePersonId, person.id)
     }
 
-    val saveUriToPhoto: (Uri) -> Unit = { uri ->
-        try {
-            val photosDir = java.io.File(context.filesDir, "contact_photos").apply { mkdirs() }
-            val destFile = java.io.File(photosDir, "contact_${effectivePersonId}_${System.currentTimeMillis()}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
+    val photoScope = rememberCoroutineScope()
+    var pendingPhotoOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingPhotoRelationshipId by rememberSaveable { mutableStateOf<String?>(null) }
+    val saveUriToPhoto: (Uri, Pair<String, String>, File?) -> Unit = { uri, owner, capture ->
+        photoScope.launch {
+            try {
+                avatarManager.importPersonPhoto(owner.first, uri, owner.second)
+                haptics.success()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                haptics.warning()
+                Toast.makeText(context, "Photo could not be saved. Please choose another image.", Toast.LENGTH_LONG).show()
+            } finally {
+                if (capture != null) withContext(NonCancellable + Dispatchers.IO) { capture.delete() }
             }
-            avatarManager.setPersonPhotoPath(effectivePersonId, destFile.absolutePath, person.id)
-            haptics.success()
-        } catch (_: Exception) {}
+        }
     }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { saveUriToPhoto(it) }
+        val owner = pendingPhotoOwnerId?.let { it to pendingPhotoRelationshipId.orEmpty() }
+        pendingPhotoOwnerId = null
+        pendingPhotoRelationshipId = null
+        if (uri != null && owner != null) saveUriToPhoto(uri, owner, null)
     }
 
-    var cameraTempUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraTempUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var cameraTempPath by rememberSaveable { mutableStateOf<String?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success: Boolean ->
-        if (success && cameraTempUri != null) {
-            saveUriToPhoto(cameraTempUri!!)
-        }
+        val owner = pendingPhotoOwnerId?.let { it to pendingPhotoRelationshipId.orEmpty() }
+        val uri = cameraTempUri?.let(Uri::parse)
+        val capture = cameraTempPath?.let(::File)
+        pendingPhotoOwnerId = null
+        pendingPhotoRelationshipId = null
+        cameraTempUri = null
+        cameraTempPath = null
+        if (success && uri != null && owner != null) saveUriToPhoto(uri, owner, capture)
+        else if (capture != null) photoScope.launch(Dispatchers.IO) { capture.delete() }
     }
 
     BackHandler(onBack = onBack)
@@ -178,7 +203,7 @@ fun PersonDetailScreen(
                 }
 
                 Text(
-                    text = person.fullName,
+                    text = "People",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -243,67 +268,71 @@ fun PersonDetailScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // AVATAR & HERO
-                Box(contentAlignment = Alignment.BottomEnd) {
-                    val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath).exists()
-                    val photoBitmap = remember(contactPhotoPath) {
-                        if (hasPhoto) {
-                            try { BitmapFactory.decodeFile(contactPhotoPath) } catch (_: Exception) { null }
-                        } else null
-                    }
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // AVATAR & HERO
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath).exists()
+                        val photoBitmap = remember(contactPhotoPath, photosVersion) {
+                            if (hasPhoto) {
+                                try { BitmapFactory.decodeFile(contactPhotoPath) } catch (_: Exception) { null }
+                            } else null
+                        }
 
-                    if (photoBitmap != null) {
-                        Image(
-                            bitmap = photoBitmap.asImageBitmap(),
-                            contentDescription = person.fullName,
-                            contentScale = ContentScale.Crop,
+                        if (photoBitmap != null) {
+                            Image(
+                                bitmap = photoBitmap.asImageBitmap(),
+                                contentDescription = person.fullName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(CircleShape)
+                                    .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape)
+                                    .clickable { showAvatarActionChooser = true }
+                            )
+                        } else {
+                            DefaultAvatar(
+                                name = person.fullName,
+                                size = 72.dp,
+                                onClick = { showAvatarActionChooser = true }
+                            )
+                        }
+
+                        // Edit camera badge
+                        Box(
                             modifier = Modifier
-                                .size(96.dp)
+                                .size(30.dp)
                                 .clip(CircleShape)
-                                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape)
-                                .clickable { showAvatarActionChooser = true }
-                        )
-                    } else {
-                        DefaultAvatar(
-                            name = person.fullName,
-                            size = 96.dp,
-                            onClick = { showAvatarActionChooser = true }
-                        )
+                                .background(MaterialTheme.colorScheme.primary)
+                                .clickable { showAvatarActionChooser = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = "Change photo",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
-                    // Edit camera badge
-                    Box(
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
-                            .clickable { showAvatarActionChooser = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = "Change photo",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(16.dp)
+                    // Name & Role
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                        Text(
+                            text = person.fullName,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = person.relationRole.lowercase().replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-
-                // Name & Role
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = person.fullName,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = person.relationRole.lowercase().replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-
 
                 val tonalSurfaces = com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces.current
 
@@ -323,8 +352,8 @@ fun PersonDetailScreen(
 
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = tonalSurfaces.surfaceGrouped,
-                        border = BorderStroke(0.5.dp, tonalSurfaces.borderSubtle.copy(alpha = 0.4f)),
+                        color = Color.Transparent,
+                        border = null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column {
@@ -430,12 +459,12 @@ fun PersonDetailScreen(
                 // RELATIONSHIP NOTES SECTION (In-Place Add, Edit, Delete)
                 RelationshipNotesSection(
                     notes = relationshipNotes,
-                    isVaultUnlocked = true,
+                    isVaultUnlocked = isVaultUnlocked,
                     onAddNoteClick = {
                         noteToEdit = null
                         showNoteDialog = true
                     },
-                    onUnlockVaultClick = {},
+                    onUnlockVaultClick = onUnlockVault,
                     onEditNote = { note ->
                         noteToEdit = note
                         showNoteDialog = true
@@ -444,6 +473,7 @@ fun PersonDetailScreen(
                         noteToDelete = note
                     },
                     onTogglePrivacy = onToggleNotePrivacy,
+                    onOpenAttachment = onOpenAttachment,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -451,8 +481,8 @@ fun PersonDetailScreen(
                 if (relationshipNotes.isEmpty() && person.notes.isNotBlank()) {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = tonalSurfaces.surfaceGrouped,
-                        border = BorderStroke(0.5.dp, tonalSurfaces.borderSubtle.copy(alpha = 0.4f)),
+                        color = Color.Transparent,
+                        border = null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -494,15 +524,20 @@ fun PersonDetailScreen(
     if (showNoteDialog) {
         AddOrEditRelationshipNoteDialog(
             initialNote = noteToEdit,
+            isVaultUnlocked = isVaultUnlocked,
+            onUnlockVault = onUnlockVault,
             onDismiss = { showNoteDialog = false },
-            onSave = { topic, content, format, isPrivate ->
-                if (noteToEdit != null) {
-                    onUpdateNote(noteToEdit!!.id, topic, content, format, isPrivate)
+            onSave = { topic, content, format, isPrivate, attachments, removals ->
+                val saved = if (noteToEdit != null) {
+                    onUpdateNote(noteToEdit!!.id, topic, content, format, isPrivate, attachments, removals)
                 } else {
-                    onAddNote(topic, content, format, isPrivate)
+                    onAddNote(topic, content, format, isPrivate, attachments, removals)
                 }
-                showNoteDialog = false
-                haptics.success()
+                if (saved) {
+                    showNoteDialog = false
+                    haptics.success()
+                }
+                saved
             }
         )
     }
@@ -579,15 +614,24 @@ fun PersonDetailScreen(
                         onClick = {
                             showAvatarActionChooser = false
                             try {
-                                val photoFile = File(context.cacheDir, "camera_person_${person.id}_${System.currentTimeMillis()}.jpg")
+                                val directory = File(context.cacheDir, "photo_capture").apply { check(isDirectory || mkdirs()) }
+                                val photoFile = File.createTempFile("person-", ".jpg", directory)
+                                cameraTempPath = photoFile.absolutePath
                                 val uri = androidx.core.content.FileProvider.getUriForFile(
                                     context,
                                     "${context.packageName}.fileprovider",
                                     photoFile
                                 )
-                                cameraTempUri = uri
+                                cameraTempUri = uri.toString()
+                                pendingPhotoOwnerId = effectivePersonId
+                                pendingPhotoRelationshipId = person.id
                                 cameraLauncher.launch(uri)
                             } catch (_: Exception) {
+                                cameraTempPath?.let(::File)?.delete()
+                                cameraTempPath = null
+                                cameraTempUri = null
+                                pendingPhotoOwnerId = effectivePersonId
+                                pendingPhotoRelationshipId = person.id
                                 photoPickerLauncher.launch("image/*")
                             }
                         },
@@ -602,6 +646,8 @@ fun PersonDetailScreen(
                     TextButton(
                         onClick = {
                             showAvatarActionChooser = false
+                            pendingPhotoOwnerId = effectivePersonId
+                            pendingPhotoRelationshipId = person.id
                             photoPickerLauncher.launch("image/*")
                         },
                         modifier = Modifier.fillMaxWidth()

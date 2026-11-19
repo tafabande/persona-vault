@@ -68,7 +68,8 @@ data class PaymentReferenceSecret(
     val linkedBankAccountId: String? = null,
     val linkedBankAccountName: String? = null,
     val cardType: String = "PHYSICAL", // PHYSICAL, VIRTUAL
-    val isVirtual: Boolean = false
+    val isVirtual: Boolean = false,
+    val linkedBankAccountIds: List<String> = listOfNotNull(linkedBankAccountId)
 ) {
     val isVirtualCard: Boolean
         get() = isVirtual || cardType.equals("VIRTUAL", ignoreCase = true)
@@ -92,7 +93,8 @@ data class BankingDetailsSecret(
     val notes: String? = null,
     val linkedCardId: String? = null,
     val linkedCardSummary: String? = null,
-    val currency: String = "USD"
+    val currency: String = "USD",
+    val linkedCardIds: List<String> = listOfNotNull(linkedCardId)
 ) {
     val displayReference: String
         get() = "$bankName ($accountType, $currency) •••• ${accountNumber.takeLast(4).ifBlank { "----" }}"

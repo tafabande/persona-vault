@@ -44,7 +44,7 @@ class CrossZoneIsolationAttackTests {
     private val inMemoryItems = mutableMapOf<String, VaultItemEntity>()
     private val inMemoryAudits = mutableListOf<AuditLogEntity>()
 
-    private val fakeVaultDao = object : VaultDao {
+    private val fakeVaultDao = object : com.pims.vault.testing.TestVaultDao() {
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
             inMemoryItems[item.id] = item
             return 1L
@@ -97,11 +97,13 @@ class CrossZoneIsolationAttackTests {
             sessionManager.getZone4VaultKey()
         }
 
-        // Elevate with biometrics
-        sessionManager.unlockZone4Vault()
-        assertTrue(sessionManager.isZone4Unlocked())
-        val key = sessionManager.getZone4VaultKey()
-        assertTrue(key.isNotEmpty())
+        // A cipher without a hardware manager cannot elevate the session.
+        try {
+            sessionManager.unlockZone4Vault(androidx.biometric.BiometricPrompt.CryptoObject(javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")))
+            org.junit.Assert.fail("Unauthenticated elevation must fail")
+        } catch (_: SecurityException) {
+            assertFalse(sessionManager.isZone4Unlocked())
+        }
     }
 
     @Test

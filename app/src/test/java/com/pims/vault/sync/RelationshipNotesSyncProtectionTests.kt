@@ -19,6 +19,27 @@ import java.util.Base64
 class RelationshipNotesSyncProtectionTests {
 
     @Test
+    fun remoteCannotMoveExistingNoteToAnotherRelationship() {
+        val existing = RelationshipNoteEntity(
+            id = "note", relationshipId = "owner", topic = null, contentPlaintext = "retained",
+            encryptedPayload = null, encryptionIv = null, format = NoteFormat.PLAIN,
+            isPrivate = false, createdAt = 1L, updatedAt = 2L
+        )
+        val merged = FirestoreSyncService.resolveRelationshipNoteMerge(
+            existing, "note", "another-owner", null, "replacement", false, null, null, 1L, 100L
+        )
+        assertNull(merged)
+    }
+
+    @Test
+    fun historicalPrivateCloudRecordCannotCreateLocalNote() {
+        assertNull(FirestoreSyncService.resolveRelationshipNoteMerge(
+            null, "note", "owner", "private", "", true,
+            Base64.getEncoder().encodeToString(ByteArray(32)), "00112233445566778899aabb", 1L, 100L
+        ))
+    }
+
+    @Test
     fun testRemoteMissingCiphertextDoesNotOverwriteLocalEncryptedContentEvenIfRemoteTimestampIsNewer() {
         val localEncryptedBytes = byteArrayOf(0x01, 0x02, 0x03, 0x04)
         val localIv = "00112233445566778899aabb"
@@ -178,7 +199,7 @@ class RelationshipNotesSyncProtectionTests {
     }
 
     @Test
-    fun testValidRemoteEncryptedPrivateNoteMergedWhenBothCiphertextAndIvPresentAndNewer() {
+    fun testRemotePrivateCiphertextNeverOverwritesDeviceOnlyNote() {
         val localEncryptedBytes = byteArrayOf(0x01, 0x02)
         val localIv = "0011"
 
@@ -212,9 +233,6 @@ class RelationshipNotesSyncProtectionTests {
             remoteUpdatedAt = 2000L
         )
 
-        assertNotNull("Valid remote encrypted note with ciphertext and IV must be merged", merged)
-        assertArrayEquals(remoteBytes, merged?.encryptedPayload)
-        assertEquals(remoteIv, merged?.encryptionIv)
-        assertEquals(2000L, merged?.updatedAt)
+        assertNull("Private relationship notes remain device-only even when remote ciphertext is present", merged)
     }
 }

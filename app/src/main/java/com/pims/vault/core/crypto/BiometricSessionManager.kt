@@ -31,7 +31,8 @@ sealed interface SessionState {
  */
 class BiometricSessionManager(
     private val keySecurityManager: KeySecurityManager? = null,
-    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default)
+    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default),
+    private val portableFileKeyManager: PortableFileKeyManager? = null
 ) {
     private val mutex = Mutex()
     private val _sessionState = MutableStateFlow<SessionState>(SessionState.Locked)
@@ -47,12 +48,18 @@ class BiometricSessionManager(
     private var fileStorageKey: SecretBytes? = null
     private var auditKey: SecretBytes? = null
     private var zone4VaultMasterKey: SecretBytes? = null
+    private var zone4PreviousEnvelopeKey: SecretBytes? = null
     private val secureRandom = SecureRandom()
 
     /**
      * Unlocks the main application session (Zones 0–3).
      */
     suspend fun onAuthenticationSuccess(timeoutMs: Long = appTimeoutMs) = mutex.withLock {
+        zone4AutoLockJob?.cancel()
+        zone4VaultMasterKey?.close()
+        zone4VaultMasterKey = null
+        zone4PreviousEnvelopeKey?.close()
+        zone4PreviousEnvelopeKey = null
         wipeAppSecrets()
 
         val securityLevel = keySecurityManager?.initializeAndGetSecurityLevel() ?: KeySecurityLevel.TRUSTED_EXECUTION_ENVIRONMENT
@@ -80,26 +87,47 @@ class BiometricSessionManager(
      * Elevates privilege to unlock Zone 4 Critical Security Vault using Keystore authorization.
      * Biometric success must unlock the hardware-backed capability.
      */
-    suspend fun unlockZone4Vault(cryptoObject: BiometricPrompt.CryptoObject? = null): SecretBytes = mutex.withLock {
+    suspend fun unlockZone4Vault(cryptoObject: BiometricPrompt.CryptoObject): SecretBytes = mutex.withLock {
         val currentState = _sessionState.value
         if (currentState !is SessionState.Unlocked) {
             throw SecurityException("Cannot elevate to Zone 4 while main application is locked.")
         }
 
+        // Open or initialize the vault key envelope with the prompt-authorized cipher.
+        // Zone 4 data cannot be accessed from the root-wrapped copy alone.
+        val cipher = cryptoObject.cipher
+            ?: throw SecurityException("A Keystore-authenticated vault cipher is required")
+
         // Best-effort zeroization of any previous Zone 4 key
         zone4VaultMasterKey?.close()
         zone4VaultMasterKey = null
+        zone4PreviousEnvelopeKey?.close()
+        zone4PreviousEnvelopeKey = null
+        _sessionState.value = currentState.copy(isZone4Elevated = false)
 
-        val derivedKey = if (keySecurityManager != null) {
-            keySecurityManager.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_VAULT, isZone4 = true)
-        } else {
-            generateFallbackKey()
+        val manager = keySecurityManager
+            ?: throw SecurityException("Hardware-backed Zone 4 key management is unavailable")
+        val portableKeys = portableFileKeyManager
+            ?: throw SecurityException("Portable vault key material is unavailable")
+        val portableRootKey = portableKeys.copyKeyBytes()
+        val derivedKey = try {
+            // The authorized envelope remains a historical candidate after explicit file-key recovery.
+            zone4PreviousEnvelopeKey = manager.unlockZone4DomainSubkey(cipher, portableRootKey)
+            val current = HkdfKeyDerivation.deriveKey(portableRootKey, infoContext = HkdfKeyDerivation.CONTEXT_VAULT_V2)
+            try { SecretBytes(current) } finally { current.fill(0) }
+        } finally {
+            portableRootKey.fill(0)
         }
         zone4VaultMasterKey = derivedKey
 
         _sessionState.value = currentState.copy(isZone4Elevated = true)
         resetZone4InactivityTimer()
-        return derivedKey
+        val callerCopy = derivedKey.copyBytes()
+        return try {
+            SecretBytes(callerCopy)
+        } finally {
+            callerCopy.fill(0)
+        }
     }
 
     /**
@@ -110,6 +138,8 @@ class BiometricSessionManager(
         zone4AutoLockJob = null
         zone4VaultMasterKey?.close()
         zone4VaultMasterKey = null
+        zone4PreviousEnvelopeKey?.close()
+        zone4PreviousEnvelopeKey = null
 
         val currentState = _sessionState.value
         if (currentState is SessionState.Unlocked) {
@@ -142,6 +172,8 @@ class BiometricSessionManager(
         wipeAppSecrets()
         zone4VaultMasterKey?.close()
         zone4VaultMasterKey = null
+        zone4PreviousEnvelopeKey?.close()
+        zone4PreviousEnvelopeKey = null
 
         _sessionState.value = SessionState.Locked
     }
@@ -217,16 +249,26 @@ class BiometricSessionManager(
     }
 
     fun getZone4VaultKey(): ByteArray {
+        if (!isZone4Unlocked()) throw SecurityException("Zone 4 Vault is locked. Fresh biometric authorization is required")
         val key = zone4VaultMasterKey ?: throw SecurityException("Zone 4 Vault is locked. Fresh biometric re-authorization required.")
         return key.copyBytes()
     }
 
-    fun getVaultKey(): ByteArray {
-        if (_sessionState.value is SessionState.Locked) {
-            throw SecurityException("Application session is locked. Authenticate first.")
-        }
-        return zone4VaultMasterKey?.copyBytes() ?: getDatabaseKey()
+    /** Retained vault roots are available only during a hardware-authorized Zone 4 session. */
+    suspend fun getHistoricalZone4Keys(): List<ByteArray> = mutex.withLock {
+        check(isZone4Unlocked()) { "Unlock the security vault to read historical keys" }
+        val result = mutableListOf<ByteArray>()
+        val roots = portableFileKeyManager?.copyReadKeyCandidates().orEmpty()
+        try {
+            zone4PreviousEnvelopeKey?.let { result.add(it.copyBytes()) }
+            keySecurityManager?.readRetainedVaultRecoveryKeys()?.let { result.addAll(it) }
+            roots.forEach { root -> result.add(HkdfKeyDerivation.deriveKey(root, infoContext = HkdfKeyDerivation.CONTEXT_VAULT_V2)) }
+            result
+        } catch (failure: Exception) { result.forEach { it.fill(0) }; throw failure
+        } finally { roots.forEach { it.fill(0) } }
     }
+
+    fun getVaultKey(): ByteArray = getZone4VaultKey()
 
     fun isZone4Unlocked(): Boolean {
         val state = _sessionState.value
@@ -234,8 +276,11 @@ class BiometricSessionManager(
     }
 
     fun getHardwareSubkey(isZone4: Boolean = true): ByteArray? {
+        // Never expose the Zone 4 key through the unauthenticated domain-key path.
+        if (isZone4) return null
+        if (!isZone4Unlocked()) return null
         return try {
-            keySecurityManager?.deriveDomainSubkey(HkdfKeyDerivation.CONTEXT_VAULT, isZone4 = isZone4)?.use {
+            keySecurityManager?.deriveLegacyVaultKeyForMigration()?.use {
                 it.copyBytes()
             }
         } catch (_: Exception) {

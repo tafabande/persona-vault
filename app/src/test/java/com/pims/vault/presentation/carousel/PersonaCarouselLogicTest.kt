@@ -22,12 +22,12 @@ class PersonaCarouselLogicTest {
     data class TestCarouselItem(val id: String, val title: String)
 
     @Test
-    fun testDefaultConfigurationMatchesSpecification() {
+    fun testDefaultConfigurationUsesFastAutoplay() {
         val config = PersonaCarouselConfig()
 
         // Autoplay: All carousels unless overridden
         assertTrue(config.autoplay)
-        assertEquals(6000L, config.autoplayIntervalMs)
+        assertEquals(3000L, config.autoplayIntervalMs)
 
         // End behaviour: Continuous loop
         assertEquals(CarouselEndBehaviour.CONTINUOUS_LOOP, config.endBehaviour)

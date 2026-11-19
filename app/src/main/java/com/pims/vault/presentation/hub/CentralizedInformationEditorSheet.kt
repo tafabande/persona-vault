@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -56,6 +57,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -67,6 +70,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,7 +96,6 @@ import com.pims.vault.presentation.ui.theme.PimsRadius
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import java.time.LocalDate
 import java.util.UUID
-import kotlinx.coroutines.launch
 
 data class EditablePhone(
     val id: String = UUID.randomUUID().toString(),
@@ -194,7 +198,7 @@ enum class SectionFacet(val label: String, val icon: ImageVector) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CentralizedInformationEditorSheet(
-    sheetState: SheetState,
+    @Suppress("UNUSED_PARAMETER") sheetState: SheetState,
     initialFullName: String,
     initialOccupation: String,
     initialCountry: String,
@@ -204,7 +208,7 @@ fun CentralizedInformationEditorSheet(
     initialEmails: List<EditableEmail> = emptyList(),
     initialAddresses: List<EditableAddress> = emptyList(),
     onDismissRequest: () -> Unit,
-    onSaveAll: (
+    onSaveAll: suspend (
         fullName: String,
         occupation: String,
         country: String,
@@ -224,6 +228,7 @@ fun CentralizedInformationEditorSheet(
 ) {
     val haptics = rememberPimsHaptics()
     val context = LocalContext.current
+    val saveScope = rememberCoroutineScope()
 
     // Core Identity States
     var fullName by remember { mutableStateOf(initialFullName) }
@@ -279,7 +284,6 @@ fun CentralizedInformationEditorSheet(
     val phoneFocused = remember { mutableStateMapOf<String, Boolean>() }
     val emailTouched = remember { mutableStateMapOf<String, Boolean>() }
     val emailFocused = remember { mutableStateMapOf<String, Boolean>() }
-    val scope = rememberCoroutineScope()
 
     val draftFingerprint = listOf(
         fullName, occupation, countryVal, nationalId, selectedPhotoUri?.toString(),
@@ -290,12 +294,20 @@ fun CentralizedInformationEditorSheet(
     val originalFingerprint = remember { draftFingerprint }
     val isDirty = draftFingerprint != originalFingerprint
 
+    // The editor owns dismissal so dragging cannot hide a dirty or saving form.
+    val guardedSheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { target ->
+            if (target == SheetValue.Hidden && (isDirty || isSaving)) {
+                if (!isSaving) showDiscardConfirmation = true
+                false
+            } else true
+        }
+    )
     val requestDismiss: () -> Unit = {
-        if (isDirty) {
-            showDiscardConfirmation = true
-            scope.launch { sheetState.show() }
-        } else onDismissRequest()
-        Unit
+        if (!isSaving) {
+            if (isDirty) showDiscardConfirmation = true else onDismissRequest()
+        }
     }
 
     val hasInvalidEntries = phones.any { it.number.isNotBlank() && !isValidInternationalPhone(it.number) } ||
@@ -303,7 +315,7 @@ fun CentralizedInformationEditorSheet(
 
     ModalBottomSheet(
         onDismissRequest = requestDismiss,
-        sheetState = sheetState,
+        sheetState = guardedSheetState,
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(topStart = PimsRadius.modal, topEnd = PimsRadius.modal),
@@ -337,7 +349,11 @@ fun CentralizedInformationEditorSheet(
             }
 
             // Scrollable Content
-            LazyColumn(
+            if (isSaving) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -347,7 +363,7 @@ fun CentralizedInformationEditorSheet(
                 // 1. Core Identity Section
                 item {
                     PersonaFormSection(
-                        title = "Identity & Profile",
+                        title = "About you",
                         icon = Icons.Default.Person
                     ) {
                         PersonaTextInput(
@@ -1197,6 +1213,7 @@ fun CentralizedInformationEditorSheet(
                 ) {
                     FilledTonalButton(
                         onClick = requestDismiss,
+                        enabled = !isSaving,
                         shape = RoundedCornerShape(PimsRadius.primaryAction),
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
@@ -1223,7 +1240,7 @@ fun CentralizedInformationEditorSheet(
                             }
                             isSaving = true
                             saveError = null
-                            haptics.success()
+                            saveScope.launch {
                             try {
                                 onSaveAll(
                                     fullName,
@@ -1233,7 +1250,7 @@ fun CentralizedInformationEditorSheet(
                                     selectedPhotoUri,
                                     phones.filter { it.number.isNotBlank() },
                                     emails.filter { it.address.isNotBlank() },
-                                    addresses.filter { it.street1.isNotBlank() || it.city.isNotBlank() },
+                                    addresses.filter { listOf(it.street1, it.street2, it.city, it.state, it.postalCode, it.country).any(String::isNotBlank) },
                                     allergies.filter { it.allergen.isNotBlank() },
                                     conditions.filter { it.name.isNotBlank() },
                                     medications.filter { it.name.isNotBlank() },
@@ -1242,10 +1259,13 @@ fun CentralizedInformationEditorSheet(
                                     socials.filter { it.usernameOrUrl.isNotBlank() },
                                     customFields.filter { it.label.isNotBlank() && it.value.isNotBlank() }
                                 )
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
                             } catch (_: Exception) {
-                                saveError = "Couldn’t save changes. Please try again."
+                                saveError = "Some changes may have been saved. Please try again to finish."
                             } finally {
                                 isSaving = false
+                            }
                             }
                         },
                         enabled = isDirty && !isSaving,

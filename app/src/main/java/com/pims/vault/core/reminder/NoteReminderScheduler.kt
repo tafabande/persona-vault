@@ -22,6 +22,7 @@ import javax.inject.Singleton
 interface ReminderEntryPoint {
     fun plainNoteDao(): PlainNoteDao
     fun noteReminderScheduler(): NoteReminderScheduler
+    fun noteCalendarCoordinator(): com.pims.vault.core.calendar.NoteCalendarCoordinator
 }
 
 @Singleton

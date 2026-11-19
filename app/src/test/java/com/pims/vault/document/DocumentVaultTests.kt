@@ -41,7 +41,7 @@ class DocumentVaultTests {
 
     @Before
     fun setUp() {
-        documentDao = Mockito.mock(DocumentDao::class.java)
+        documentDao = InMemoryDocumentDao()
         fileStorage = Mockito.mock(FileStorageService::class.java)
         auditLogger = Mockito.mock(HardenedAuditLogger::class.java)
 
@@ -107,8 +107,8 @@ class DocumentVaultTests {
         )
 
         assertNotNull(docId)
-        verify(documentDao).insertDocument(any())
-        verify(documentDao).insertVersion(any())
+        assertEquals(docId, documentDao.getAllDocuments().single().id)
+        assertEquals(docId, documentDao.getAllDocumentVersions().single().documentId)
         verify(auditLogger).recordEvent(any(), eq("Document"), eq(docId), any(), any())
     }
 
@@ -129,8 +129,7 @@ class DocumentVaultTests {
         Mockito.`when`(fileStorage.deleteFile(any())).thenReturn(true)
 
         // Simulate database crash during metadata insert
-        Mockito.`when`(documentDao.insertDocument(any()))
-            .thenThrow(RuntimeException("Database disk full or constraint violation"))
+        (documentDao as InMemoryDocumentDao).failVersionInsert = true
 
         try {
             ingestDocumentUseCase(

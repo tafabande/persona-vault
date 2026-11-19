@@ -134,7 +134,10 @@ fun WallpaperOptionsSheet(
     onRemoveWallpapersBulk: ((ids: Set<String>) -> Unit)? = null,
     onDeleteWallpapersBulk: ((ids: Set<String>) -> Unit)? = null,
     mediaReferenceResolver: MediaReferenceResolver? = null,
-    activeSurfaceWallpaperId: ((WallpaperSurface) -> String?)? = null
+    activeSurfaceWallpaperId: ((WallpaperSurface) -> String?)? = null,
+    isImporting: Boolean = false,
+    importCompleted: Int = 0,
+    importTotal: Int = 0
 ) {
     val haptics = rememberPimsHaptics()
     val isReducedMotion = LocalReducedMotion.current
@@ -199,7 +202,7 @@ fun WallpaperOptionsSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .padding(bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
@@ -307,6 +310,14 @@ fun WallpaperOptionsSheet(
                         )
                     }
                 }
+            }
+
+            if (isImporting) {
+                Text(
+                    text = "Adding photos $importCompleted of $importTotal",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
 
             // 2. Surface Discrimination Selector
@@ -789,32 +800,39 @@ fun WallpaperOptionsSheet(
                     )
 
                     if (!selectionState.isSelectionMode) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(
-                                onClick = {
-                                    haptics.selection()
-                                    onRestorePresets()
-                                    stagedItem = availablePresets.firstOrNull() ?: wallpapers.firstOrNull()
-                                },
-                                modifier = Modifier.sizeIn(minHeight = 44.dp)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Restore Defaults", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold))
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    haptics.selection()
-                                    onPickFromDevice()
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.sizeIn(minHeight = 44.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Add photo", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                            }
+                        TextButton(onClick = { selectionState.enterSelectionMode() },
+                            enabled = wallpapers.isNotEmpty() && !isImporting) { Text("Select") }
+                    }
+                }
+                if (!selectionState.isSelectionMode) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextButton(
+                            onClick = {
+                                haptics.selection()
+                                onRestorePresets()
+                                stagedItem = availablePresets.firstOrNull() ?: wallpapers.firstOrNull()
+                            },
+                            modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Presets")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                haptics.selection()
+                                onPickFromDevice()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            enabled = !isImporting,
+                            modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add photos")
                         }
                     }
                 }
@@ -844,7 +862,7 @@ fun WallpaperOptionsSheet(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Tap \"Add photo\" or restore default artwork themes below.",
+                                text = "Tap \"Add photos\" or restore default artwork themes below.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center

@@ -50,9 +50,11 @@ import com.pims.vault.domain.usecase.vault.SaveGenericSecretUseCase
 import com.pims.vault.domain.usecase.vault.ReadGenericSecretUseCase
 import com.pims.vault.domain.usecase.vault.SaveIdentityCredentialUseCase
 import com.pims.vault.domain.usecase.vault.ReadIdentityCredentialUseCase
+import com.pims.vault.domain.usecase.vault.MigrateLegacyVaultItemUseCase
 import com.pims.vault.domain.model.IdentityCredentialSecret
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -88,7 +90,10 @@ data class VaultUiState(
     val proposedLinkedBankAccountName: String? = null,
     val clipboardMessage: String? = null,
     val errorMessage: String? = null,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val isSaving: Boolean = false,
+    val isMigratingLegacyItems: Boolean = false,
+    val legacyMigrationPendingCount: Int = 0
 )
 
 @HiltViewModel
@@ -119,6 +124,7 @@ class VaultViewModel @Inject constructor(
     private val saveIdentityCredentialUseCase: SaveIdentityCredentialUseCase,
     private val readIdentityCredentialUseCase: ReadIdentityCredentialUseCase,
     private val deleteVaultItemUseCase: DeleteVaultItemUseCase,
+    private val migrateLegacyVaultItemUseCase: MigrateLegacyVaultItemUseCase,
     private val sessionManager: BiometricSessionManager,
     private val personDao: com.pims.vault.data.local.dao.PersonDao,
     private val vaultDao: com.pims.vault.data.local.dao.VaultDao,
@@ -129,12 +135,19 @@ class VaultViewModel @Inject constructor(
     val uiState: StateFlow<VaultUiState> = _uiState.asStateFlow()
 
     private var sessionKey: ByteArray? = null
+    private var hardwareSessionActive = false
     private var tickerJob: Job? = null
     private var timeoutJob: Job? = null
+    private var migrationJob: Job? = null
     private var revealTimers: MutableMap<String, Job> = mutableMapOf()
     private var activePersonId: String = CANONICAL_PRIMARY_OWNER_ID
 
     init {
+        viewModelScope.launch {
+            sessionManager.sessionState.collect {
+                if (hardwareSessionActive && !sessionManager.isZone4Unlocked()) lockVault()
+            }
+        }
         viewModelScope.launch {
             val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
             if (owner != null) {
@@ -167,11 +180,21 @@ class VaultViewModel @Inject constructor(
     // Session & Elevation Lifecycle
     // ---------------------------------------------------------
 
-    fun elevateAndUnlockVault(onSuccess: (() -> Unit)? = null, onError: ((String) -> Unit)? = null) {
+    fun elevateAndUnlockVault(
+        cryptoObject: androidx.biometric.BiometricPrompt.CryptoObject,
+        onSuccess: (() -> Unit)? = null,
+        onError: ((String) -> Unit)? = null
+    ) {
         viewModelScope.launch {
             try {
-                val secretKey = sessionManager.unlockZone4Vault()
-                unlockVault(secretKey.copyBytes())
+                val secretKey = sessionManager.unlockZone4Vault(cryptoObject)
+                try {
+                    hardwareSessionActive = true
+                    unlockVault(secretKey.copyBytes())
+                } finally {
+                    secretKey.close()
+                }
+                startLegacyMigration()
                 onSuccess?.invoke()
             } catch (e: Exception) {
                 val msg = e.message ?: "Failed to elevate to Zone 4 Vault"
@@ -181,7 +204,8 @@ class VaultViewModel @Inject constructor(
         }
     }
 
-    fun unlockVault(vaultKey: ByteArray) {
+    internal fun unlockVault(vaultKey: ByteArray) {
+        sessionKey?.fill(0)
         sessionKey = vaultKey
         _uiState.update {
             it.copy(
@@ -195,6 +219,9 @@ class VaultViewModel @Inject constructor(
     }
 
     fun lockVault() {
+        hardwareSessionActive = false
+        migrationJob?.cancel()
+        migrationJob = null
         sessionKey?.fill(0)
         sessionKey = null
         timeoutJob?.cancel()
@@ -217,6 +244,11 @@ class VaultViewModel @Inject constructor(
                 activeDecryptedNote = null,
                 activeDecryptedPayment = null,
                 activeDecryptedBanking = null,
+                activeDecryptedApiKey = null,
+                activeDecryptedSshKey = null,
+                activeDecryptedAccessToken = null,
+                activeDecryptedGeneric = null,
+                activeDecryptedIdentity = null,
                 activeItemId = null,
                 isEditing = false,
                 editorCategory = null,
@@ -380,76 +412,71 @@ class VaultViewModel @Inject constructor(
     }
 
     private suspend fun getCandidateVaultKeys(): List<ByteArray> {
+        check(_uiState.value.isVaultUnlocked) { "Unlock the security vault to read this item" }
+        if (hardwareSessionActive && !sessionManager.isZone4Unlocked()) {
+            lockVault()
+            throw SecurityException("The security vault session expired")
+        }
         val keys = mutableListOf<ByteArray>()
+        fun addCandidate(candidate: ByteArray) {
+            if (keys.any { it.contentEquals(candidate) }) candidate.fill(0) else keys.add(candidate)
+        }
 
         // 1. Current active session key if already unsealed
         sessionKey?.let { keys.add(it) }
 
         // 2. Zone 4 hardware derived key from BiometricSessionManager
         try {
-            val secretKey = sessionManager.unlockZone4Vault()
-            val bytes = secretKey.copyBytes()
+            val bytes = sessionManager.getZone4VaultKey()
             if (sessionKey == null) {
                 sessionKey = bytes
                 _uiState.update { it.copy(isVaultUnlocked = true) }
             }
-            if (keys.none { it.contentEquals(bytes) }) {
-                keys.add(bytes)
-            }
+            addCandidate(bytes)
         } catch (e: Exception) {
             VaultLogger.w("VaultViewModel", "Zone 4 hardware key unwrap failed: ${e.message}")
         }
 
+        try { sessionManager.getHistoricalZone4Keys().forEach(::addCandidate) } catch (_: Exception) {}
+
         // 3. Alternate hardware root subkey candidate (e.g. if wrapped under rootKeyAlias)
         try {
             val rootSubkey = sessionManager.getHardwareSubkey(isZone4 = false)
-            if (rootSubkey != null && keys.none { it.contentEquals(rootSubkey) }) {
-                keys.add(rootSubkey)
-            }
+            rootSubkey?.let(::addCandidate)
         } catch (_: Exception) {}
 
         // 4. Deterministic person-scoped fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val fallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${activePersonId}".toByteArray(Charsets.UTF_8))
-            if (keys.none { it.contentEquals(fallbackKey) }) {
-                keys.add(fallbackKey)
-            }
+            addCandidate(fallbackKey)
         } catch (_: Exception) {}
 
         // 5. Deterministic canonical primary owner fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val primaryFallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_${CANONICAL_PRIMARY_OWNER_ID}".toByteArray(Charsets.UTF_8))
-            if (keys.none { it.contentEquals(primaryFallbackKey) }) {
-                keys.add(primaryFallbackKey)
-            }
+            addCandidate(primaryFallbackKey)
         } catch (_: Exception) {}
 
         // 6. Historical persistent fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val histFallbackKey = digest.digest("PIMS_VAULT_ZONE4_PERSISTENT_FALLBACK_V1".toByteArray(Charsets.UTF_8))
-            if (keys.none { it.contentEquals(histFallbackKey) }) {
-                keys.add(histFallbackKey)
-            }
+            addCandidate(histFallbackKey)
         } catch (_: Exception) {}
 
         // 7. Historical subkey fallback key
         try {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val subkeyFallbackKey = digest.digest("PIMS_VAULT_SUBKEY_${HkdfKeyDerivation.CONTEXT_VAULT}".toByteArray(Charsets.UTF_8))
-            if (keys.none { it.contentEquals(subkeyFallbackKey) }) {
-                keys.add(subkeyFallbackKey)
-            }
+            addCandidate(subkeyFallbackKey)
         } catch (_: Exception) {}
 
         // 8. Database domain subkey
         try {
             val dbKey = sessionManager.getDatabaseKey()
-            if (keys.none { it.contentEquals(dbKey) }) {
-                keys.add(dbKey)
-            }
+            addCandidate(dbKey)
         } catch (_: Exception) {}
 
         if (keys.isEmpty()) {
@@ -461,14 +488,65 @@ class VaultViewModel @Inject constructor(
     }
 
     private suspend fun getOrDeriveVaultKey(): ByteArray {
+        if (hardwareSessionActive && !sessionManager.isZone4Unlocked()) {
+            lockVault()
+            throw SecurityException("The security vault session expired")
+        }
         sessionKey?.let { return it }
         // Fail closed for writes: only the authoritative hardware-backed session key may be used for writes and edits.
         // Never fall back to candidate/legacy/deterministic keys for write operations.
-        val secretKey = sessionManager.unlockZone4Vault()
-        val bytes = secretKey.copyBytes()
+        val bytes = sessionManager.getZone4VaultKey()
         sessionKey = bytes
         _uiState.update { it.copy(isVaultUnlocked = true) }
         return bytes
+    }
+
+    private fun startLegacyMigration() {
+        if (migrationJob?.isActive == true) return
+        migrationJob = viewModelScope.launch {
+            _uiState.update { it.copy(isMigratingLegacyItems = true, legacyMigrationPendingCount = 0) }
+            var pending = 0
+            val targetKey = sessionKey
+            var candidates: List<ByteArray> = emptyList()
+            try {
+                if (targetKey == null) return@launch
+                candidates = getCandidateVaultKeys()
+                val legacyItems = vaultDao.getAllVaultItems().filter { it.encryptionKeyVersion != 2 }
+                for (item in legacyItems) {
+                    if (!isActive || !_uiState.value.isVaultUnlocked) break
+                    var migrated = false
+                    for (candidate in candidates) {
+                        try {
+                            if (migrateLegacyVaultItemUseCase(item.id, candidate, targetKey)) {
+                                migrated = true
+                                break
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            // Try the next historical key candidate. The source row remains untouched on failure.
+                        }
+                    }
+                    val currentVersion = vaultDao.getVaultItemById(item.id)?.encryptionKeyVersion ?: continue
+                    if (migrated) {
+                        runCatching {
+                            vaultDao.getVaultItemById(item.id)?.let { firestoreSyncService?.syncVaultItem(null, it) }
+                        }.onFailure { VaultLogger.w("VaultViewModel", "Vault crypto version sync will retry later: ${it.message}") }
+                    } else if (currentVersion != 2) {
+                        pending++
+                    }
+                    _uiState.update { it.copy(legacyMigrationPendingCount = pending) }
+                }
+            } finally {
+                candidates.forEach { if (it !== sessionKey) it.fill(0) }
+                _uiState.update {
+                    it.copy(
+                        isMigratingLegacyItems = false,
+                        legacyMigrationPendingCount = pending
+                    )
+                }
+            }
+        }
     }
 
     fun openItem(item: VaultItemHeader) {
@@ -556,6 +634,19 @@ class VaultViewModel @Inject constructor(
                         }
                     }
                     if (decryptedSuccessfully) {
+                        val targetKey = sessionKey
+                        if (targetKey != null) {
+                            runCatching {
+                                val upgraded = migrateLegacyVaultItemUseCase(item.id, key, targetKey)
+                                if (upgraded) {
+                                    vaultDao.getVaultItemById(item.id)?.let { migrated ->
+                                        firestoreSyncService?.syncVaultItem(null, migrated)
+                                    }
+                                }
+                            }.onFailure { migrationError ->
+                                VaultLogger.w("VaultViewModel", "Could not upgrade legacy payload for ${item.id}: ${migrationError.message}")
+                            }
+                        }
                         // Scope candidate keys strictly to reading this item.
                         // A candidate/fallback key that decrypts an existing record must NEVER
                         // mutate or contaminate the authoritative sessionKey used for new writes and edits.
@@ -568,6 +659,17 @@ class VaultViewModel @Inject constructor(
             }
 
             if (!decryptedSuccessfully) {
+                val restored = candidateKeys.any { sourceKey ->
+                    runCatching { migrateLegacyVaultItemUseCase.restoreAuthenticatedArchive(item.id, listOf(sourceKey)) }
+                        .getOrDefault(false)
+                }
+                if (restored) {
+                    candidateKeys.forEach { candidate -> if (candidate !== sessionKey) candidate.fill(0) }
+                    VaultLogger.w("VaultViewModel", "Restored the retained legacy ciphertext for item ${item.id}")
+                    openItem(item)
+                    return@launch
+                }
+                candidateKeys.forEach { candidate -> if (candidate !== sessionKey) candidate.fill(0) }
                 VaultLogger.e("VaultViewModel", "Decryption failed for item ${item.id}: ${lastException?.message}", lastException)
                 _uiState.update {
                     it.copy(
@@ -575,6 +677,8 @@ class VaultViewModel @Inject constructor(
                         errorMessage = "This secret cannot be decrypted with your device's current security keys."
                     )
                 }
+            } else {
+                candidateKeys.forEach { candidate -> if (candidate !== sessionKey) candidate.fill(0) }
             }
         }
     }
@@ -667,6 +771,8 @@ class VaultViewModel @Inject constructor(
         }
     }
 
+    fun clearError() { _uiState.update { it.copy(errorMessage = null) } }
+
     fun closeEditor(keepActiveItem: Boolean = true) {
         recordUserActivity()
         _uiState.update {
@@ -719,8 +825,11 @@ class VaultViewModel @Inject constructor(
         passwordPlain: String,
         websiteUrl: String?,
         notes: String?,
-        existingId: String? = null
+        existingId: String? = null,
+        onSaved: () -> Unit = {}
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -737,8 +846,13 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+                onSaved()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -752,6 +866,8 @@ class VaultViewModel @Inject constructor(
         periodSeconds: Int = 30,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -769,8 +885,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -781,6 +901,8 @@ class VaultViewModel @Inject constructor(
         codes: List<String>,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -795,8 +917,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -819,8 +945,11 @@ class VaultViewModel @Inject constructor(
         title: String,
         noteContent: String,
         existingId: String? = null,
-        tags: List<String> = emptyList()
+        tags: List<String> = emptyList(),
+        onSaved: () -> Unit = {}
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -835,8 +964,13 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+                onSaved()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -855,12 +989,17 @@ class VaultViewModel @Inject constructor(
         cvv: String? = null,
         linkedBankAccountId: String? = null,
         linkedBankAccountName: String? = null,
-        cardType: String = "PHYSICAL"
+        cardType: String = "PHYSICAL",
+        linkedBankAccountIds: List<String>? = null,
+        onSaved: () -> Unit = {}
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
+                prepareWalletItemsForWrite(existingId, true, linkedBankAccountIds ?: listOfNotNull(linkedBankAccountId), key)
                 val id = savePaymentReferenceUseCase(
                     personId = activePersonId,
                     nickname = nickname,
@@ -878,47 +1017,18 @@ class VaultViewModel @Inject constructor(
                     linkedBankAccountId = linkedBankAccountId,
                     linkedBankAccountName = linkedBankAccountName,
                     cardType = cardType,
-                    isVirtual = cardType.equals("VIRTUAL", ignoreCase = true)
+                    isVirtual = cardType.equals("VIRTUAL", ignoreCase = true),
+                    linkedBankAccountIds = linkedBankAccountIds
                 )
-                if (existingId == null && !linkedBankAccountId.isNullOrBlank()) {
-                    try {
-                        val currentBank = readBankAccountUseCase(linkedBankAccountId, key)
-                        saveBankAccountUseCase(
-                            personId = activePersonId,
-                            bankName = currentBank.bankName,
-                            accountHolderName = currentBank.accountHolderName,
-                            accountNumber = currentBank.accountNumber,
-                            accountType = currentBank.accountType,
-                            sortCode = currentBank.sortCode,
-                            swiftBic = currentBank.swiftBic,
-                            iban = currentBank.iban,
-                            routingNumber = currentBank.routingNumber,
-                            bsb = currentBank.bsb,
-                            branchName = currentBank.branchName,
-                            notes = currentBank.notes,
-                            vaultRootKey = key,
-                            existingId = linkedBankAccountId,
-                            linkedCardId = id,
-                            linkedCardSummary = "$nickname (•••• $lastFour)",
-                            currency = currentBank.currency
-                        )
-                        syncItemToRemote(linkedBankAccountId)
-                        if (_uiState.value.activeItemId == linkedBankAccountId) {
-                            _uiState.update {
-                                it.copy(
-                                    activeDecryptedBanking = currentBank.copy(
-                                        linkedCardId = id,
-                                        linkedCardSummary = "$nickname (•••• $lastFour)"
-                                    )
-                                )
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-                syncItemToRemote(id)
+                syncWalletItemsToRemote()
                 closeEditor()
+                onSaved()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -928,6 +1038,7 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
+                prepareWalletItemsForWrite(cardId, true, emptyList(), key)
                 val current = readPaymentReferenceUseCase(cardId, key)
                 savePaymentReferenceUseCase(
                     personId = activePersonId,
@@ -945,6 +1056,7 @@ class VaultViewModel @Inject constructor(
                     cvv = current.cvv,
                     linkedBankAccountId = current.linkedBankAccountId,
                     linkedBankAccountName = current.linkedBankAccountName,
+                    linkedBankAccountIds = current.linkedBankAccountIds,
                     cardType = current.cardType,
                     isVirtual = current.isVirtual
                 )
@@ -957,215 +1069,121 @@ class VaultViewModel @Inject constructor(
         }
     }
 
-    fun linkCardToBankAccount(cardId: String, bankAccountId: String, bankAccountName: String) {
+    fun linkCardToBankAccount(cardId: String, bankAccountId: String, bankAccountName: String) =
+        changeWalletLinks(cardId, true, bankAccountId, false)
+
+    fun unlinkCardFromBankAccount(cardId: String, bankAccountId: String? = null) =
+        changeWalletLinks(cardId, true, bankAccountId, true)
+
+    fun linkBankAccountToCard(bankAccountId: String, cardId: String, cardSummary: String) =
+        changeWalletLinks(bankAccountId, false, cardId, false)
+
+    fun unlinkBankAccountFromCard(bankAccountId: String, cardId: String? = null) =
+        changeWalletLinks(bankAccountId, false, cardId, true)
+
+    private fun changeWalletLinks(itemId: String, isCard: Boolean, targetId: String?, remove: Boolean) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
-                val currentCard = readPaymentReferenceUseCase(cardId, key)
-                savePaymentReferenceUseCase(
-                    personId = activePersonId,
-                    nickname = currentCard.nickname,
-                    provider = currentCard.provider,
-                    cardholderName = currentCard.cardholderName,
-                    lastFour = currentCard.lastFourDigits,
-                    month = currentCard.expiryMonth,
-                    year = currentCard.expiryYear,
-                    notes = currentCard.notes,
-                    vaultRootKey = key,
-                    existingId = cardId,
-                    status = currentCard.status,
-                    fullCardNumber = currentCard.fullCardNumber,
-                    cvv = currentCard.cvv,
-                    linkedBankAccountId = bankAccountId,
-                    linkedBankAccountName = bankAccountName,
-                    cardType = currentCard.cardType,
-                    isVirtual = currentCard.isVirtual
-                )
-                val refreshed = currentCard.copy(
-                    linkedBankAccountId = bankAccountId,
-                    linkedBankAccountName = bankAccountName
-                )
-                if (_uiState.value.activeItemId == cardId) {
-                    _uiState.update { it.copy(activeDecryptedPayment = refreshed) }
+                prepareWalletItemsForWrite(itemId, isCard, listOfNotNull(targetId), key)
+                fun changed(ids: List<String>) = if (remove) {
+                    if (targetId == null) emptyList() else ids.filterNot { it == targetId }
+                } else (ids + requireNotNull(targetId)).distinct()
+                if (isCard) {
+                    val c = readPaymentReferenceUseCase(itemId, key)
+                    savePaymentReferenceUseCase(activePersonId, c.nickname, c.provider, c.cardholderName,
+                        c.lastFourDigits, c.expiryMonth, c.expiryYear, c.notes, key, existingId = itemId,
+                        status = c.status, fullCardNumber = c.fullCardNumber, cvv = c.cvv,
+                        cardType = c.cardType, isVirtual = c.isVirtual, linkedBankAccountIds = changed(c.linkedBankAccountIds))
+                } else {
+                    val b = readBankAccountUseCase(itemId, key)
+                    saveBankAccountUseCase(activePersonId, b.bankName, b.accountHolderName, b.accountNumber,
+                        b.accountType, b.sortCode, b.swiftBic, b.iban, b.routingNumber, b.bsb, b.branchName,
+                        b.notes, key, existingId = itemId, currency = b.currency, linkedCardIds = changed(b.linkedCardIds))
                 }
-                syncItemToRemote(cardId)
+                val active = _uiState.value.activeItemId
+                if (active != null) {
+                    when (vaultDao.getVaultItemById(active)?.category) {
+                        VaultCategory.PAYMENT_REFERENCE -> { val refreshed = readPaymentReferenceUseCase(active, key); _uiState.update { it.copy(activeDecryptedPayment = refreshed) } }
+                        VaultCategory.BANK_ACCOUNT -> { val refreshed = readBankAccountUseCase(active, key); _uiState.update { it.copy(activeDecryptedBanking = refreshed) } }
+                        else -> Unit
+                    }
+                }
+                syncWalletItemsToRemote()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to link card: ${e.message}") }
-            }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not update wallet links. Try again.") }
+            } finally { _uiState.update { it.copy(isSaving = false) } }
         }
     }
 
-    fun unlinkCardFromBankAccount(cardId: String) {
-        recordUserActivity()
-        viewModelScope.launch {
-            try {
-                val key = getOrDeriveVaultKey()
-                val currentCard = readPaymentReferenceUseCase(cardId, key)
-                val previousBankId = currentCard.linkedBankAccountId
-                savePaymentReferenceUseCase(
-                    personId = activePersonId,
-                    nickname = currentCard.nickname,
-                    provider = currentCard.provider,
-                    cardholderName = currentCard.cardholderName,
-                    lastFour = currentCard.lastFourDigits,
-                    month = currentCard.expiryMonth,
-                    year = currentCard.expiryYear,
-                    notes = currentCard.notes,
-                    vaultRootKey = key,
-                    existingId = cardId,
-                    status = currentCard.status,
-                    fullCardNumber = currentCard.fullCardNumber,
-                    cvv = currentCard.cvv,
-                    linkedBankAccountId = null,
-                    linkedBankAccountName = null,
-                    cardType = currentCard.cardType,
-                    isVirtual = currentCard.isVirtual
-                )
-                val refreshed = currentCard.copy(
-                    linkedBankAccountId = null,
-                    linkedBankAccountName = null
-                )
-                if (_uiState.value.activeItemId == cardId) {
-                    _uiState.update { it.copy(activeDecryptedPayment = refreshed) }
-                }
-                syncItemToRemote(cardId)
-
-                // If the bank account also referenced this card, clear it
-                if (!previousBankId.isNullOrBlank()) {
+    private suspend fun prepareWalletItemsForWrite(itemId: String?, isCard: Boolean, selectedIds: List<String>, key: ByteArray) {
+        val candidates = getCandidateVaultKeys()
+        try {
+            suspend fun migrate(id: String) {
+                val item = vaultDao.getVaultItemById(id) ?: return
+                require(item.personId == activePersonId) { "Wallet links must belong to the selected person" }
+                if (item.encryptionKeyVersion == 2) return
+                for (candidate in candidates) {
                     try {
-                        val currentBank = readBankAccountUseCase(previousBankId, key)
-                        if (currentBank.linkedCardId == cardId) {
-                            saveBankAccountUseCase(
-                                personId = activePersonId,
-                                bankName = currentBank.bankName,
-                                accountHolderName = currentBank.accountHolderName,
-                                accountNumber = currentBank.accountNumber,
-                                accountType = currentBank.accountType,
-                                sortCode = currentBank.sortCode,
-                                swiftBic = currentBank.swiftBic,
-                                iban = currentBank.iban,
-                                routingNumber = currentBank.routingNumber,
-                                bsb = currentBank.bsb,
-                                branchName = currentBank.branchName,
-                                notes = currentBank.notes,
-                                vaultRootKey = key,
-                                existingId = previousBankId,
-                                linkedCardId = null,
-                                linkedCardSummary = null
-                            )
-                            syncItemToRemote(previousBankId)
-                        }
-                    } catch (_: Exception) {}
+                        if (migrateLegacyVaultItemUseCase(id, candidate, key)) return
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // Historical candidates authenticate before any migration write.
+                    }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to unlink card: ${e.message}") }
+                check(vaultDao.getVaultItemById(id)?.encryptionKeyVersion == 2) {
+                    "Unlock and open the linked wallet record before trying again"
+                }
             }
+            itemId?.let { migrate(it) }
+            val previousIds = if (itemId == null) emptyList() else if (isCard) {
+                readPaymentReferenceUseCase(itemId, key).linkedBankAccountIds
+            } else {
+                readBankAccountUseCase(itemId, key).linkedCardIds
+            }
+            val targetCategory = if (isCard) VaultCategory.BANK_ACCOUNT else VaultCategory.PAYMENT_REFERENCE
+            (previousIds + selectedIds).distinct().forEach { id ->
+                val target = vaultDao.getVaultItemById(id)
+                if (target != null && target.personId == activePersonId && target.category == targetCategory) {
+                    migrate(id)
+                } else {
+                    require(id in previousIds) { "Wallet links must refer to an existing record owned by the selected person" }
+                }
+            }
+        } finally {
+            candidates.forEach { if (it !== sessionKey) it.fill(0) }
         }
     }
 
-    fun linkBankAccountToCard(bankAccountId: String, cardId: String, cardSummary: String) {
-        recordUserActivity()
-        viewModelScope.launch {
-            try {
-                val key = getOrDeriveVaultKey()
-                val currentBank = readBankAccountUseCase(bankAccountId, key)
-                saveBankAccountUseCase(
-                    personId = activePersonId,
-                    bankName = currentBank.bankName,
-                    accountHolderName = currentBank.accountHolderName,
-                    accountNumber = currentBank.accountNumber,
-                    accountType = currentBank.accountType,
-                    sortCode = currentBank.sortCode,
-                    swiftBic = currentBank.swiftBic,
-                    iban = currentBank.iban,
-                    routingNumber = currentBank.routingNumber,
-                    bsb = currentBank.bsb,
-                    branchName = currentBank.branchName,
-                    notes = currentBank.notes,
-                    vaultRootKey = key,
-                    existingId = bankAccountId,
-                    linkedCardId = cardId,
-                    linkedCardSummary = cardSummary
-                )
-                val refreshed = currentBank.copy(
-                    linkedCardId = cardId,
-                    linkedCardSummary = cardSummary
-                )
-                if (_uiState.value.activeItemId == bankAccountId) {
-                    _uiState.update { it.copy(activeDecryptedBanking = refreshed) }
-                }
-                syncItemToRemote(bankAccountId)
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to link bank account: ${e.message}") }
-            }
+    private suspend fun syncWalletItemsToRemote() {
+        val personId = activePersonId
+        val itemIds = try {
+            vaultDao.getAllVaultItems().filter {
+                it.personId == personId && it.category in setOf(VaultCategory.PAYMENT_REFERENCE, VaultCategory.BANK_ACCOUNT)
+            }.map { it.id }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("VaultViewModel", "Wallet backup will retry after a local read failure")
+            return
         }
-    }
-
-    fun unlinkBankAccountFromCard(bankAccountId: String) {
-        recordUserActivity()
-        viewModelScope.launch {
-            try {
-                val key = getOrDeriveVaultKey()
-                val currentBank = readBankAccountUseCase(bankAccountId, key)
-                val previousCardId = currentBank.linkedCardId
-                saveBankAccountUseCase(
-                    personId = activePersonId,
-                    bankName = currentBank.bankName,
-                    accountHolderName = currentBank.accountHolderName,
-                    accountNumber = currentBank.accountNumber,
-                    accountType = currentBank.accountType,
-                    sortCode = currentBank.sortCode,
-                    swiftBic = currentBank.swiftBic,
-                    iban = currentBank.iban,
-                    routingNumber = currentBank.routingNumber,
-                    bsb = currentBank.bsb,
-                    branchName = currentBank.branchName,
-                    notes = currentBank.notes,
-                    vaultRootKey = key,
-                    existingId = bankAccountId,
-                    linkedCardId = null,
-                    linkedCardSummary = null
-                )
-                val refreshed = currentBank.copy(
-                    linkedCardId = null,
-                    linkedCardSummary = null
-                )
-                if (_uiState.value.activeItemId == bankAccountId) {
-                    _uiState.update { it.copy(activeDecryptedBanking = refreshed) }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            itemIds.forEach { id ->
+                try {
+                    val item = vaultDao.getVaultItemById(id)
+                    if (item != null && item.personId == personId) {
+                        firestoreSyncService?.syncVaultItem(null, item)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    VaultLogger.w("VaultViewModel", "Wallet backup will retry after a sync failure")
                 }
-                syncItemToRemote(bankAccountId)
-
-                // If the card also referenced this bank account, clear it
-                if (!previousCardId.isNullOrBlank()) {
-                    try {
-                        val currentCard = readPaymentReferenceUseCase(previousCardId, key)
-                        if (currentCard.linkedBankAccountId == bankAccountId) {
-                            savePaymentReferenceUseCase(
-                                personId = activePersonId,
-                                nickname = currentCard.nickname,
-                                provider = currentCard.provider,
-                                cardholderName = currentCard.cardholderName,
-                                lastFour = currentCard.lastFourDigits,
-                                month = currentCard.expiryMonth,
-                                year = currentCard.expiryYear,
-                                notes = currentCard.notes,
-                                vaultRootKey = key,
-                                existingId = previousCardId,
-                                status = currentCard.status,
-                                fullCardNumber = currentCard.fullCardNumber,
-                                cvv = currentCard.cvv,
-                                linkedBankAccountId = null,
-                                linkedBankAccountName = null,
-                                cardType = currentCard.cardType,
-                                isVirtual = currentCard.isVirtual
-                            )
-                            syncItemToRemote(previousCardId)
-                        }
-                    } catch (_: Exception) {}
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Failed to unlink bank account: ${e.message}") }
             }
         }
     }
@@ -1185,12 +1203,17 @@ class VaultViewModel @Inject constructor(
         existingId: String? = null,
         linkedCardId: String? = null,
         linkedCardSummary: String? = null,
-        currency: String = "USD"
+        currency: String = "USD",
+        linkedCardIds: List<String>? = null,
+        onSaved: () -> Unit = {}
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
                 val key = getOrDeriveVaultKey()
+                prepareWalletItemsForWrite(existingId, false, linkedCardIds ?: listOfNotNull(linkedCardId), key)
                 val id = saveBankAccountUseCase(
                     personId = activePersonId,
                     bankName = bankName,
@@ -1208,7 +1231,8 @@ class VaultViewModel @Inject constructor(
                     existingId = existingId,
                     linkedCardId = linkedCardId,
                     linkedCardSummary = linkedCardSummary,
-                    currency = currency
+                    currency = currency,
+                    linkedCardIds = linkedCardIds
                 )
                 // The editor must reflect the encrypted record that was actually
                 // persisted.  Do not render a form-value fallback as if it had
@@ -1225,22 +1249,44 @@ class VaultViewModel @Inject constructor(
                         errorMessage = null
                     )
                 }
-                syncItemToRemote(id)
+                syncWalletItemsToRemote()
+                onSaved()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
 
     fun deleteItem(itemId: String) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
-                deleteVaultItemUseCase(itemId)
-                firestoreSyncService?.deleteVaultItem(activePersonId, itemId)
+                val source = vaultDao.getVaultItemById(itemId) ?: return@launch
+                require(source.personId == activePersonId) { "Item ownership does not match the selected person" }
+                val key = getOrDeriveVaultKey()
+                if (source.category in setOf(VaultCategory.PAYMENT_REFERENCE, VaultCategory.BANK_ACCOUNT)) {
+                    prepareWalletItemsForWrite(itemId, source.category == VaultCategory.PAYMENT_REFERENCE, emptyList(), key)
+                }
+                deleteVaultItemUseCase(itemId, key, activePersonId)
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try { firestoreSyncService?.deleteVaultItem(null, itemId) }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { /* The durable deletion is retried by the next full sync. */ }
+                }
+                syncWalletItemsToRemote()
                 closeActiveItem()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not delete this item. Try again.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1269,6 +1315,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1287,8 +1335,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1303,6 +1355,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1321,8 +1375,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1336,6 +1394,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1353,8 +1413,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1367,6 +1431,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1383,8 +1449,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }
@@ -1400,6 +1470,8 @@ class VaultViewModel @Inject constructor(
         notes: String?,
         existingId: String? = null
     ) {
+        if (_uiState.value.isSaving) return
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         recordUserActivity()
         viewModelScope.launch {
             try {
@@ -1419,8 +1491,12 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.message) }
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not save. Please retry.") }
+            } finally {
+                _uiState.update { it.copy(isSaving = false) }
             }
         }
     }

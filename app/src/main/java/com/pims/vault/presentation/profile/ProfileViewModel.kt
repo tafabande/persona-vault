@@ -128,9 +128,11 @@ sealed interface ProfileEvent {
     data class AddCustomField(
         val label: String,
         val value: String,
-        val category: InformationCategory = InformationCategory.PERSONAL
+        val category: InformationCategory = InformationCategory.PERSONAL,
+        val id: String? = null,
+        val onComplete: (Boolean) -> Unit = {}
     ) : ProfileEvent
-    data class DeleteCustomField(val label: String) : ProfileEvent
+    data class DeleteCustomField(val id: String) : ProfileEvent
 
     data class AddPhone(val phone: String, val label: String, val isPrimary: Boolean) : ProfileEvent
     data class AddEmail(val email: String, val label: String, val isPrimary: Boolean) : ProfileEvent
@@ -156,7 +158,8 @@ sealed interface ProfileEvent {
         val startDate: String?,
         val endDate: String?,
         val isCurrent: Boolean,
-        val responsibilities: String?
+        val responsibilities: String?,
+        val recordId: String? = null
     ) : ProfileEvent
     data class DeleteWorkHistory(val id: String) : ProfileEvent
 
@@ -167,7 +170,8 @@ sealed interface ProfileEvent {
         val startDate: String?,
         val endDate: String?,
         val grade: String?,
-        val description: String?
+        val description: String?,
+        val recordId: String? = null
     ) : ProfileEvent
     data class DeleteQualification(val id: String) : ProfileEvent
 
@@ -181,9 +185,9 @@ sealed interface ProfileEvent {
     ) : ProfileEvent
     data class DeleteCertificate(val id: String) : ProfileEvent
 
-    data class AddAllergy(val allergen: String, val severity: AllergySeverity, val reaction: String?) : ProfileEvent
-    data class AddMedicalCondition(val condition: String, val status: ConditionStatus, val notes: String?) : ProfileEvent
-    data class AddMedication(val name: String, val dosage: String, val frequency: String, val notes: String?) : ProfileEvent
+    data class AddAllergy(val allergen: String, val severity: AllergySeverity, val reaction: String?, val recordId: String? = null) : ProfileEvent
+    data class AddMedicalCondition(val condition: String, val status: ConditionStatus, val notes: String?, val recordId: String? = null) : ProfileEvent
+    data class AddMedication(val name: String, val dosage: String, val frequency: String, val notes: String?, val recordId: String? = null) : ProfileEvent
     data class DeleteMedicalRecord(val id: String) : ProfileEvent
 
     data class AddRelationship(
@@ -206,7 +210,8 @@ sealed interface ProfileEvent {
         val platform: String,
         val username: String?,
         val url: String,
-        val displayName: String? = null
+        val displayName: String? = null,
+        val recordId: String? = null
     ) : ProfileEvent
     data class DeleteSocialAccount(val accountId: String) : ProfileEvent
 
@@ -511,9 +516,11 @@ class ProfileViewModel @Inject constructor(
 
     fun reconcileContacts(
         phones: List<com.pims.vault.presentation.hub.EditablePhone>,
-        emails: List<com.pims.vault.presentation.hub.EditableEmail>
+        emails: List<com.pims.vault.presentation.hub.EditableEmail>,
+        onComplete: ((Result<Unit>) -> Unit)? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
+            try {
             val ownerId = getOrCreatePrimaryOwnerId()
             val existingContacts = contactDao.getContactsForPerson(ownerId)
 
@@ -603,14 +610,20 @@ class ProfileViewModel @Inject constructor(
             }
 
             loadFullProfileAndRelationships()
+                onComplete?.invoke(Result.success(Unit))
+            } catch (error: Exception) {
+                _uiState.update { it.copy(errorMessage = "Could not save profile information") }
+                onComplete?.invoke(Result.failure(error))
+            }
         }
     }
 
-    fun reconcileAddresses(addresses: List<com.pims.vault.presentation.hub.EditableAddress>) {
+    fun reconcileAddresses(addresses: List<com.pims.vault.presentation.hub.EditableAddress>, onComplete: ((Result<Unit>) -> Unit)? = null) {
         viewModelScope.launch(Dispatchers.IO) {
+            try {
             val ownerId = getOrCreatePrimaryOwnerId()
             val existingAddresses = addressDao.getAddressesForPerson(ownerId)
-            val validAddresses = addresses.filter { it.street1.isNotBlank() || it.city.isNotBlank() }
+            val validAddresses = addresses.filter { listOf(it.street1, it.street2, it.city, it.state, it.postalCode, it.country).any(String::isNotBlank) }
             val validIds = validAddresses.map { it.id }.toSet()
 
             for (dbAddr in existingAddresses) {
@@ -652,6 +665,11 @@ class ProfileViewModel @Inject constructor(
             }
 
             loadFullProfileAndRelationships()
+                onComplete?.invoke(Result.success(Unit))
+            } catch (error: Exception) {
+                _uiState.update { it.copy(errorMessage = "Could not save profile information") }
+                onComplete?.invoke(Result.failure(error))
+            }
         }
     }
 
@@ -808,27 +826,27 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.AddCustomField -> {
-                        val ownerId = getOrCreatePrimaryOwnerId()
-                        val currentMeta = parseNotesMeta(_uiState.value.person?.notes)
-                        val list = currentMeta.customFields.filterNot { it.label.equals(event.label, ignoreCase = true) }.toMutableList()
-                        list.add(CustomField(label = event.label.trim(), value = event.value.trim(), category = event.category, sensitivity = event.category.defaultSensitivity))
-                        val updatedMeta = currentMeta.copy(customFields = list)
-                        val notesJson = serializeNotesMeta(updatedMeta)
-
-                        val currentPerson = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID) ?: PersonEntity(id = ownerId, isPrimaryOwner = true, firstName = "", lastName = "")
-                        personDao.insertOrUpdate(currentPerson.copy(notes = notesJson))
-                        _uiState.update { it.copy(customFields = list, userFeedbackMessage = "Added ${event.label}") }
+                        val field = CustomField(
+                            id = event.id ?: UUID.randomUUID().toString(),
+                            label = event.label.trim(), value = event.value.trim(), category = event.category,
+                            sensitivity = event.category.defaultSensitivity
+                        )
+                        val saved = try {
+                            require(field.label.isNotBlank() && field.value.isNotBlank())
+                            val list = changeCustomFields { fields -> fields.filterNot { it.id == field.id } + field }
+                            _uiState.update { it.copy(customFields = list, errorMessage = null, userFeedbackMessage = "Information saved") }
+                            true
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            _uiState.update { it.copy(errorMessage = "Could not save this field. Please retry.") }
+                            false
+                        }
+                        event.onComplete(saved)
                     }
 
                     is ProfileEvent.DeleteCustomField -> {
-                        val ownerId = getOrCreatePrimaryOwnerId()
-                        val currentMeta = parseNotesMeta(_uiState.value.person?.notes)
-                        val list = currentMeta.customFields.filterNot { it.label.equals(event.label, ignoreCase = true) }
-                        val updatedMeta = currentMeta.copy(customFields = list)
-                        val notesJson = serializeNotesMeta(updatedMeta)
-
-                        val currentPerson = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID) ?: PersonEntity(id = ownerId, isPrimaryOwner = true, firstName = "", lastName = "")
-                        personDao.insertOrUpdate(currentPerson.copy(notes = notesJson))
+                        val list = changeCustomFields { fields -> fields.filterNot { it.id == event.id } }
                         _uiState.update { it.copy(customFields = list, userFeedbackMessage = "Field removed") }
                     }
 
@@ -926,7 +944,7 @@ class ProfileViewModel @Inject constructor(
                     is ProfileEvent.AddWorkHistory -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
                         val emp = EmploymentRecordEntity(
-                            id = UUID.randomUUID().toString(),
+                            id = event.recordId ?: UUID.randomUUID().toString(),
                             personId = ownerId,
                             company = event.company.trim(),
                             position = event.position.trim(),
@@ -955,7 +973,7 @@ class ProfileViewModel @Inject constructor(
                     is ProfileEvent.AddQualification -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
                         val edu = EducationRecordEntity(
-                            id = UUID.randomUUID().toString(),
+                            id = event.recordId ?: UUID.randomUUID().toString(),
                             personId = ownerId,
                             institution = event.institution.trim(),
                             qualification = event.qualification.trim(),
@@ -1011,7 +1029,7 @@ class ProfileViewModel @Inject constructor(
                     is ProfileEvent.AddAllergy -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
                         val med = MedicalRecordEntity(
-                            id = UUID.randomUUID().toString(),
+                            id = event.recordId ?: UUID.randomUUID().toString(),
                             personId = ownerId,
                             recordType = MedicalRecordType.ALLERGY,
                             title = event.allergen.trim(),
@@ -1029,7 +1047,7 @@ class ProfileViewModel @Inject constructor(
                     is ProfileEvent.AddMedicalCondition -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
                         val med = MedicalRecordEntity(
-                            id = UUID.randomUUID().toString(),
+                            id = event.recordId ?: UUID.randomUUID().toString(),
                             personId = ownerId,
                             recordType = MedicalRecordType.CONDITION,
                             title = event.condition.trim(),
@@ -1047,7 +1065,7 @@ class ProfileViewModel @Inject constructor(
                     is ProfileEvent.AddMedication -> {
                         val ownerId = getOrCreatePrimaryOwnerId()
                         val med = MedicalRecordEntity(
-                            id = UUID.randomUUID().toString(),
+                            id = event.recordId ?: UUID.randomUUID().toString(),
                             personId = ownerId,
                             recordType = MedicalRecordType.MEDICATION,
                             title = event.name.trim(),
@@ -1190,7 +1208,7 @@ class ProfileViewModel @Inject constructor(
                         val owner = personDao.getPersonById(CANONICAL_PRIMARY_OWNER_ID)
                         if (owner != null) {
                             val account = com.pims.vault.data.local.entity.SocialAccountEntity(
-                                id = UUID.randomUUID().toString(),
+                                id = event.recordId ?: UUID.randomUUID().toString(),
                                 personId = owner.id,
                                 platform = event.platform,
                                 username = event.username,
@@ -1411,6 +1429,28 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    private suspend fun changeCustomFields(change: (List<CustomField>) -> List<CustomField>): List<CustomField> {
+        val ownerId = getOrCreatePrimaryOwnerId()
+        repeat(3) {
+            val person = checkNotNull(personDao.getPersonById(ownerId))
+            val meta = parseNotesMeta(person.notes)
+            val fields = change(meta.customFields)
+            if (personDao.updateNotesIfMatches(ownerId, person.notes, serializeNotesMeta(meta.copy(customFields = fields), person.notes))) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        personDao.getPersonById(ownerId)?.let { firestoreSyncService.syncPerson(null, it) }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The local write has succeeded. Cloud retry follows the normal sync path.
+                    }
+                }
+                return fields
+            }
+        }
+        error("Profile changed while saving")
+    }
+
     private data class NotesMeta(
         val sexuality: String = "",
         val bloodGroup: String = "",
@@ -1432,7 +1472,8 @@ class ProfileViewModel @Inject constructor(
             if (arr != null) {
                 for (i in 0 until arr.length()) {
                     val item = arr.getJSONObject(i)
-                    val id = item.optString("id", UUID.randomUUID().toString())
+                    val id = item.optString("id", "").takeIf(String::isNotBlank)
+                        ?: UUID.nameUUIDFromBytes("PIMS/custom-field/legacy/v1/$i".toByteArray(Charsets.UTF_8)).toString()
                     val l = item.optString("label", "")
                     val v = item.optString("value", "")
                     val cat = InformationCategory.fromName(item.optString("category", "PERSONAL"))
@@ -1446,8 +1487,8 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    private fun serializeNotesMeta(meta: NotesMeta): String {
-        val obj = JSONObject()
+    private fun serializeNotesMeta(meta: NotesMeta, original: String? = null): String {
+        val obj = original?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
         obj.put("sexuality", meta.sexuality)
         obj.put("bloodGroup", meta.bloodGroup)
         if (!meta.idPhotoPath.isNullOrBlank()) {

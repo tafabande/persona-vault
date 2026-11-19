@@ -1,57 +1,45 @@
 package com.pims.vault.presentation.hub
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.material3.HorizontalDivider
 import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.pims.vault.presentation.ui.components.PersonaSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -72,36 +60,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.components.ContextualExplanation
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
 import com.pims.vault.presentation.ui.theme.ThemeMode
+import com.pims.vault.presentation.ui.theme.ThemeManager
+import com.pims.vault.presentation.ui.theme.PersonaMood
+import com.pims.vault.presentation.ui.theme.JujutsuKaisenThemePreview
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.style.TextOverflow
 
-/**
- * MoreView
- *
- * Implements a quiet, human-readable settings hub organized into clean collapsible groups:
- * - User Profile & Account (clean, minimalist, zero provider badges)
- * - Personalisation (Theme Mode, Mood, Wallpapers)
- * - Security
- * - Data & Backup
- * - Preferences (Sounds, Haptics, Motion, Language, Accessibility)
- * - About (Walkthrough, Privacy, Version)
- *
- * Supports Light, Dark, and System theme modes with smooth animated transitions.
- */
+/** Settings hub with direct navigation and shared preference rows. */
 @Composable
 fun MoreView(
     userName: String = "",
@@ -142,14 +116,12 @@ fun MoreView(
     val context = LocalContext.current
     val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context) }
     val avatarConfig by avatarManager.avatarConfig.collectAsState()
+    val themeManager = remember(context.applicationContext) { ThemeManager(context.applicationContext) }
+    val sakuraEffectsEnabled by themeManager.sakuraEffectsEnabled.collectAsState()
 
-    // Collapsible Category Section States
-    var personalisationExpanded by remember { mutableStateOf(true) }
-    var securityExpanded by remember { mutableStateOf(false) }
-    var backupExpanded by remember { mutableStateOf(false) }
-    var preferencesExpanded by remember { mutableStateOf(false) }
-    var aboutExpanded by remember { mutableStateOf(false) }
-    var advancedDiagnosticsExpanded by remember { mutableStateOf(false) }
+    var showThemePicker by remember { mutableStateOf(false) }
+    var showMoodPicker by remember { mutableStateOf(false) }
+    var showThemeCredits by remember { mutableStateOf(false) }
 
     // Account Upgrade Dialog State
     var showUpgradeDialog by remember { mutableStateOf(false) }
@@ -162,635 +134,200 @@ fun MoreView(
     var showVersionDialog by remember { mutableStateOf(false) }
     var docReminderLeadDays by remember { mutableIntStateOf(30) }
 
+    val themeLabel = when (currentThemeMode) {
+        ThemeMode.LIGHT -> "Light"
+        ThemeMode.DARK -> "Dark"
+        ThemeMode.SYSTEM -> "System"
+    }
+    val onSelect: (() -> Unit) -> Unit = { action ->
+        haptics.selection()
+        action()
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = pimsPageGutter()),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = 680.dp)
+            .statusBarsPadding(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = pimsPageGutter(), end = pimsPageGutter(), top = 12.dp, bottom = 32.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        item { Spacer(modifier = Modifier.height(12.dp)) }
-
-        // Header: Clean title without lock pill
-        item {
-            Text(
-                text = "Settings",
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-
-        // Account Profile Section (clean, minimalist, flat layout)
-        if (userName.isNotBlank() || userEmail.isNotBlank()) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 8.dp)
-                    ) {
-                        com.pims.vault.presentation.avatar.PersonaAvatar(
-                            name = userName,
-                            config = avatarConfig,
-                            size = 52.dp,
-                            onClick = onOpenAvatarEditor
-                        )
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = userName.ifBlank { "Personal Vault Account" },
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (userEmail.isNotBlank()) {
-                                Text(
-                                    text = userEmail,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    if (isLocalOnly || userEmail.isBlank()) {
-                        Surface(
-                            onClick = {
-                                haptics.selection()
-                                onSignInClicked()
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .tactilePress()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Cloud,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Column {
-                                        Text(
-                                            text = "Log In / Sign In",
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Text(
-                                            text = "Connect Persona Cloud for multi-device sync",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                    }
-
-                    // Manage Account Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                haptics.selection()
-                                showManageAccountSheet = true
-                            }
-                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "Manage Account",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-                    androidx.compose.material3.HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                        thickness = 0.5.dp
-                    )
+        item(key = "header") {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Settings", modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold
+                )
+                IconButton(onClick = { onSelect(onLockClicked) }) {
+                    Icon(Icons.Default.Lock, "Lock vault")
                 }
             }
         }
-
-
-
-        // =====================================================================
-        // 0. PERSONALISATION (Collapsible - Mood, Avatar, Wallpapers)
-        // =====================================================================
-        item {
-            CollapsibleCategoryHeader(
-                icon = Icons.Default.Palette,
-                title = "Personalisation",
-                isExpanded = personalisationExpanded,
-                onClick = {
-                    haptics.light()
-                    personalisationExpanded = !personalisationExpanded
-                }
-            )
-        }
-
-        item {
-            AnimatedVisibility(
-                visible = personalisationExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+        item(key = "account") {
+            Surface(
+                onClick = { onSelect { showManageAccountSheet = true } },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                color = Color.Transparent
             ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                    // Theme Mode Selector
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .clip(RoundedCornerShape(10.dp))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            val modes = listOf(
-                                ThemeMode.LIGHT to "Light",
-                                ThemeMode.DARK to "Dark",
-                                ThemeMode.SYSTEM to "System"
-                            )
-                            modes.forEach { (mode, label) ->
-                                val isSelected = currentThemeMode == mode
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(36.dp)
-                                        .then(
-                                            if (isSelected) {
-                                                Modifier.background(
-                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                )
-                                            } else Modifier
-                                        )
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            haptics.selection()
-                                            onThemeModeSelected(mode)
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.labelLarge.copy(
-                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
-                                        ),
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    com.pims.vault.presentation.ui.components.PersonaMoodSelector(
-                        selectedMood = currentMood,
-                        onMoodSelected = onMoodSelected
-                    )
-
-                    QuietSettingRow(
-                        title = "Home Wallpapers",
-                        onClick = {
-                            haptics.selection()
-                            onOpenWallpaperOptions()
-                        }
-                    )
-
-                    QuietSettingRow(
-                        title = "Profile Avatar",
-                        onClick = {
-                            haptics.selection()
-                            onOpenAvatarEditor()
-                        }
-                    )
-                }
-            }
-        }
-
-        // =====================================================================
-        // 1. SECURITY (Collapsible)
-        // =====================================================================
-        item {
-            CollapsibleCategoryHeader(
-                icon = Icons.Default.Security,
-                title = "Security",
-                isExpanded = securityExpanded,
-                onClick = {
-                    haptics.light()
-                    securityExpanded = !securityExpanded
-                }
-            )
-        }
-
-        item {
-            AnimatedVisibility(
-                visible = securityExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                Row(
+                    Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    QuietSettingRow(
-                        title = "Security & PIN Policies",
-                        trailingText = "Biometrics & App PIN",
-                        onClick = {
-                            haptics.light()
-                            onSecurityClicked()
-                        }
+                    com.pims.vault.presentation.avatar.PersonaAvatar(
+                        name = userName, config = avatarConfig, size = 48.dp,
+                        onClick = onOpenAvatarEditor
                     )
-                }
-            }
-        }
-
-        // =====================================================================
-        // 3. DATA & BACKUP (Collapsible)
-        // =====================================================================
-        item {
-            CollapsibleCategoryHeader(
-                icon = Icons.Default.Storage,
-                title = "Data & Backup",
-                isExpanded = backupExpanded,
-                onClick = {
-                    haptics.light()
-                    backupExpanded = !backupExpanded
-                }
-            )
-        }
-
-        item {
-            AnimatedVisibility(
-                visible = backupExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Calm status row
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = StateSuccess.copy(alpha = 0.06f), spotColor = StateSuccess.copy(alpha = 0.04f))
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        StateSuccess.copy(alpha = 0.12f),
-                                        StateSuccess.copy(alpha = 0.06f)
-                                    )
-                                ),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .border(
-                                BorderStroke(0.4.dp, StateSuccess.copy(alpha = 0.15f)),
-                                RoundedCornerShape(10.dp)
-                            )
-                            .clip(RoundedCornerShape(10.dp))
-                    ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = if (isLocalOnly) "Stored locally on this device" else syncStatusText,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = StateSuccess,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                            userName.ifBlank { "Persona Vault" },
+                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis
                         )
-                    }
-
-                    QuietSettingRow(
-                        title = "Information Library & Search",
-                        onClick = {
-                            haptics.light()
-                            onOpenInformationLibrary()
-                        }
-                    )
-                    QuietSettingRow(
-                        title = "Export Backup",
-                        onClick = {
-                            haptics.light()
-                            onDataBackupClicked()
-                        }
-                    )
-                    QuietSettingRow(
-                        title = "Import Archive",
-                        onClick = {
-                            haptics.light()
-                            onDataBackupClicked()
-                        }
-                    )
-                    QuietSettingRow(
-                        title = "Deleted Items",
-                        onClick = {
-                            haptics.light()
-                            onDataBackupClicked()
-                        }
-                    )
-
-                    // Advanced Diagnostics (Nested progressive disclosure)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                haptics.light()
-                                advancedDiagnosticsExpanded = !advancedDiagnosticsExpanded
-                            }
-                            .padding(vertical = 8.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
                         Text(
-                            text = "Storage Diagnostics",
+                            if (isLocalOnly || userEmail.isBlank()) "Local account" else userEmail,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
-
-                    AnimatedVisibility(visible = advancedDiagnosticsExpanded) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QuietSettingRow(
-                                title = "Local Cache & Storage Health",
-                                onClick = {
-                                    haptics.light()
-                                    onStorageClicked()
-                                }
-                            )
-                        }
-                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
-
-        // =====================================================================
-        // 4. PREFERENCES (Collapsible - Sounds, Notifications, Language, Accessibility)
-        // =====================================================================
-        item {
-            CollapsibleCategoryHeader(
-                icon = Icons.Default.Tune,
-                title = "Preferences",
-                isExpanded = preferencesExpanded,
-                onClick = {
-                    haptics.light()
-                    preferencesExpanded = !preferencesExpanded
+        if (isLocalOnly || userEmail.isBlank()) {
+            item(key = "sign_in") {
+                SettingsRow("Sign in", onClick = { onSelect(onSignInClicked) })
+            }
+        }
+        item(key = "appearance") {
+            SettingsSection("Appearance") {
+                SettingsRow("Theme", value = themeLabel, onClick = { onSelect { showThemePicker = true } })
+                SettingsRow(
+                    "Appearance", value = currentMood.title,
+                    onClick = { onSelect { showMoodPicker = true } }
+                )
+                if (currentMood == PersonaMood.JUJUTSU_KAISEN || currentMood == PersonaMood.SAKURA_BLOSSOM) {
+                    SettingsSwitchRow("Sakura effects", sakuraEffectsEnabled) { enabled ->
+                        onSelect { themeManager.setSakuraEffectsEnabled(enabled) }
+                    }
                 }
+                SettingsRow("Home wallpaper", onClick = { onSelect(onOpenWallpaperOptions) })
+                SettingsRow("Profile photo", onClick = { onSelect(onOpenAvatarEditor) })
+            }
+        }
+        item(key = "security") {
+            SettingsSection("Security") {
+                SettingsRow("Security & app PIN", onClick = { onSelect(onSecurityClicked) })
+                SettingsRow("Connected devices", onClick = { onSelect(onDevicesClicked) })
+            }
+        }
+        item(key = "data") {
+            SettingsSection("Data") {
+                SettingsRow("Backup & recovery", onClick = { onSelect(onDataBackupClicked) })
+                SettingsRow("Storage", onClick = { onSelect(onStorageClicked) })
+                SettingsRow("Information library", onClick = { onSelect(onOpenInformationLibrary) })
+            }
+            Text(
+                if (isLocalOnly) "Stored on this device" else syncStatusText,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
-        item {
-            AnimatedVisibility(
-                visible = preferencesExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Tactile In-App Sounds Toggle
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
-                            .background(
-                                color = MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .border(
-                                BorderStroke(0.4.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
-                                RoundedCornerShape(10.dp)
-                            )
-                            .clip(RoundedCornerShape(10.dp))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = "In-App Sounds",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Switch(
-                                checked = isSoundEnabled,
-                                onCheckedChange = {
-                                    haptics.selection()
-                                    onToggleSound(it)
-                                }
-                            )
-                        }
-                    }
-
-                    // Tactile Haptics Toggle
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
-                            .background(
-                                color = MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .border(
-                                BorderStroke(0.4.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
-                                RoundedCornerShape(10.dp)
-                            )
-                            .clip(RoundedCornerShape(10.dp))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Tactile Haptics",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Switch(
-                                checked = isHapticsEnabled,
-                                onCheckedChange = {
-                                    haptics.selection()
-                                    onToggleHaptics(it)
-                                }
-                            )
-                        }
-                    }
-
-                    // Reduced Motion Toggle
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(2.dp, RoundedCornerShape(10.dp), ambientColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), spotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
-                            .background(
-                                color = MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .border(
-                                BorderStroke(0.4.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
-                                RoundedCornerShape(10.dp)
-                            )
-                            .clip(RoundedCornerShape(10.dp))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Reduced Motion",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Switch(
-                                checked = isReducedMotion,
-                                onCheckedChange = {
-                                    haptics.selection()
-                                    onToggleReducedMotion(it)
-                                }
-                            )
-                        }
-                    }
-
-                    QuietSettingRow(
-                        title = "Language",
-                        trailingText = "System Default",
-                        onClick = {
-                            haptics.light()
-                            showLanguageDialog = true
-                        }
-                    )
-
-                    QuietSettingRow(
-                        title = "Document Reminders",
-                        trailingText = "${docReminderLeadDays}d before",
-                        onClick = {
-                            haptics.light()
-                            showDocRemindersDialog = true
-                        }
-                    )
-
-                    QuietSettingRow(
-                        title = "Accessibility",
-                        onClick = {
-                            haptics.light()
-                            showAccessibilityDialog = true
-                        }
-                    )
+        item(key = "preferences") {
+            SettingsSection("Preferences") {
+                SettingsSwitchRow("In-app sounds", isSoundEnabled) { enabled ->
+                    onSelect { onToggleSound(enabled) }
                 }
+                SettingsSwitchRow("Haptics", isHapticsEnabled) { enabled ->
+                    onSelect { onToggleHaptics(enabled) }
+                }
+                SettingsSwitchRow("Reduce motion", isReducedMotion) { enabled ->
+                    onSelect { onToggleReducedMotion(enabled) }
+                }
+                SettingsRow("Language", value = "System", onClick = { onSelect { showLanguageDialog = true } })
+                SettingsRow(
+                    "Document reminders", value = "${docReminderLeadDays} days",
+                    onClick = { onSelect { showDocRemindersDialog = true } }
+                )
+                SettingsRow("Accessibility", onClick = { onSelect { showAccessibilityDialog = true } })
             }
         }
-
-        // =====================================================================
-        // 5. ABOUT (Collapsible)
-        // =====================================================================
-        item {
-            CollapsibleCategoryHeader(
-                icon = Icons.Default.Info,
-                title = "About",
-                isExpanded = aboutExpanded,
-                onClick = {
-                    haptics.light()
-                    aboutExpanded = !aboutExpanded
-                }
-            )
-        }
-
-        item {
-            AnimatedVisibility(
-                visible = aboutExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    QuietSettingRow(
-                        title = "Revisit Walkthrough",
-                        onClick = {
-                            haptics.light()
-                            onRevisitWalkthrough()
-                        }
-                    )
-                    QuietSettingRow(
-                        title = "Privacy & Local Isolation",
-                        onClick = {
-                            haptics.light()
-                            showPrivacyDialog = true
-                        }
-                    )
-                    QuietSettingRow(
-                        title = "Version",
-                        trailingText = com.pims.vault.BuildConfig.VERSION_NAME,
-                        onClick = {
-                            haptics.light()
-                            showVersionDialog = true
-                        }
-                    )
-                }
+        item(key = "about") {
+            SettingsSection("About") {
+                SettingsRow("Walkthrough", onClick = { onSelect(onRevisitWalkthrough) })
+                SettingsRow("Privacy", onClick = { onSelect { showPrivacyDialog = true } })
+                SettingsRow(
+                    "Version", value = com.pims.vault.BuildConfig.VERSION_NAME,
+                    onClick = { onSelect { showVersionDialog = true } }
+                )
             }
         }
+    }
 
-        item { Spacer(modifier = Modifier.height(20.dp)) }
+    if (showThemePicker) {
+        AlertDialog(
+            onDismissRequest = { showThemePicker = false },
+            title = { Text("Theme") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()).selectableGroup()) {
+                    val modes = listOf(
+                        ThemeMode.LIGHT to "Light",
+                        ThemeMode.DARK to "Dark",
+                        ThemeMode.SYSTEM to "System"
+                    )
+                    modes.forEach { (mode, label) ->
+                        SettingsChoiceRow(label, currentThemeMode == mode) {
+                            onSelect { onThemeModeSelected(mode) }
+                            showThemePicker = false
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showThemePicker = false }) { Text("Close") } }
+        )
+    }
+    if (showMoodPicker) {
+        AlertDialog(
+            onDismissRequest = { showMoodPicker = false },
+            title = { Text("Appearance") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()).selectableGroup()) {
+                    JujutsuKaisenThemePreview(selected = currentMood == PersonaMood.JUJUTSU_KAISEN) {
+                        onSelect { onMoodSelected(PersonaMood.JUJUTSU_KAISEN) }
+                        showMoodPicker = false
+                    }
+                    PersonaMood.entries.filter { it != PersonaMood.JUJUTSU_KAISEN }.forEach { mood ->
+                        SettingsChoiceRow(mood.title, currentMood == mood, mood.accentColor) {
+                            onSelect { onMoodSelected(mood) }
+                            showMoodPicker = false
+                        }
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showMoodPicker = false
+                    showThemeCredits = true
+                }) { Text("Credits") }
+            },
+            confirmButton = { TextButton(onClick = { showMoodPicker = false }) { Text("Close") } }
+        )
+    }
+    if (showThemeCredits) {
+        val credits = remember(context) {
+            context.assets.open("licenses/appearance_sources.txt").bufferedReader().use { it.readText() }
+        }
+        AlertDialog(
+            onDismissRequest = { showThemeCredits = false },
+            title = { Text("Theme credits") },
+            text = {
+                Text(credits, Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall)
+            },
+            confirmButton = { TextButton(onClick = { showThemeCredits = false }) { Text("Close") } }
+        )
     }
 
     // Account Upgrade Dialog
@@ -1020,78 +557,66 @@ fun MoreView(
 }
 
 @Composable
-private fun CollapsibleCategoryHeader(
-    icon: ImageVector,
+private fun SettingsSection(
     title: String,
-    isExpanded: Boolean,
-    onClick: () -> Unit
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-0.2).sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            title, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Column(Modifier.fillMaxWidth(), content = content)
     }
 }
 
 @Composable
-private fun QuietSettingRow(
+private fun SettingsRow(title: String, value: String? = null, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .heightIn(min = 56.dp).padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        if (value != null) {
+            Text(value, Modifier.widthIn(max = 112.dp), style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onCheckedChange)
+            .heightIn(min = 56.dp).padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@Composable
+private fun SettingsChoiceRow(
     title: String,
-    trailingText: String? = null,
-    textColor: Color = MaterialTheme.colorScheme.onSurface,
+    selected: Boolean,
+    swatch: Color? = null,
     onClick: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
+    Row(
+        Modifier.fillMaxWidth().selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick)
+            .heightIn(min = 56.dp).padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = textColor
-            )
-
-            if (trailingText != null) {
-                Text(
-                    text = trailingText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-            thickness = 0.5.dp
-        )
+        if (swatch != null) Box(Modifier.size(20.dp).background(swatch, CircleShape))
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        androidx.compose.material3.RadioButton(selected = selected, onClick = null)
     }
 }
 

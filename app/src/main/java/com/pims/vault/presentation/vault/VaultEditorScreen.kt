@@ -3,6 +3,7 @@ package com.pims.vault.presentation.vault
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +38,56 @@ fun VaultEditorScreen(
         uiState.vaultItems.find { it.id == itemId }
     }
 
+    if (uiState.isSaving) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = {},
+            properties = androidx.compose.ui.window.DialogProperties(securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)
+        ) {
+            androidx.compose.material3.Surface(shape = MaterialTheme.shapes.large) {
+                androidx.compose.foundation.layout.Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                    Text("Saving…", modifier = Modifier.padding(top = 12.dp))
+                }
+            }
+        }
+    }
+    val hasEditableContent = itemId == null || when (category) {
+        VaultCategory.PASSWORD -> uiState.activeDecryptedPassword != null
+        VaultCategory.PAYMENT_REFERENCE -> uiState.activeDecryptedPayment != null
+        VaultCategory.BANK_ACCOUNT -> uiState.activeDecryptedBanking != null
+        else -> false
+    }
+    if (!uiState.isSaving && hasEditableContent && category != VaultCategory.SECURE_NOTE && uiState.errorMessage != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::clearError,
+            title = { Text("Could not save") },
+            text = { Text("Your draft is still here. Review it and try saving again.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = viewModel::clearError) { Text("Keep editing") } },
+            properties = androidx.compose.ui.window.DialogProperties(securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)
+        )
+    }
+    val requiresLoadedPayload = itemId != null && when (category) {
+        VaultCategory.PASSWORD -> uiState.activeDecryptedPassword == null
+        VaultCategory.PAYMENT_REFERENCE -> uiState.activeDecryptedPayment == null
+        VaultCategory.BANK_ACCOUNT -> uiState.activeDecryptedBanking == null
+        VaultCategory.SECURE_NOTE -> uiState.activeDecryptedNote == null
+        else -> false
+    }
+    if (requiresLoadedPayload) {
+        androidx.compose.foundation.layout.Column(
+            Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+        ) {
+            if (uiState.isLoading) androidx.compose.material3.CircularProgressIndicator()
+            Text(if (uiState.isLoading) "Opening vault item…" else "Unlock the vault and reopen this item to edit it.")
+            if (!uiState.isLoading && existingItem != null) {
+                androidx.compose.material3.TextButton(onClick = { viewModel.openItem(existingItem) }) { Text("Retry") }
+            }
+            androidx.compose.material3.TextButton(onClick = onNavigateBack) { Text("Back") }
+        }
+        return
+    }
     when (category) {
         VaultCategory.PASSWORD -> {
             val isEditingPassword = itemId != null
@@ -59,8 +110,7 @@ fun VaultEditorScreen(
                 },
                 onNavigateBack = onNavigateBack,
                 onSavePassword = { title, username, password, website, notes ->
-                    viewModel.savePassword(title, username, password, website, notes, itemId)
-                    onNavigateBack()
+                    viewModel.savePassword(title, username, password, website, notes, itemId, onSaved = onNavigateBack)
                 }
             )
         }
@@ -87,7 +137,11 @@ fun VaultEditorScreen(
                 initialLinkedBankAccountId = decryptedPayment?.linkedBankAccountId ?: uiState.proposedLinkedBankAccountId,
                 initialLinkedBankAccountName = decryptedPayment?.linkedBankAccountName ?: uiState.proposedLinkedBankAccountName,
                 initialCardType = decryptedPayment?.cardType ?: "PHYSICAL",
-                onSaveCard = { bankName, holder, number, expiry, cvv, linkedAccId, linkedAccName, cardType ->
+                initialLinkedBankAccountIds = decryptedPayment?.linkedBankAccountIds ?: listOfNotNull(uiState.proposedLinkedBankAccountId),
+                proofSection = { existingItem?.let { com.pims.vault.presentation.vault.components.VaultProofSection(it.id, it.personId) } },
+                availableBankAccounts = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT },
+                isSaving = uiState.isSaving,
+                onSaveCard = { bankName, holder, number, expiry, cvv, linkedAccId, linkedAccName, cardType, linkedAccIds ->
                     val cleanExpiry = expiry.filter { it.isDigit() }
                     val month = cleanExpiry.take(2).ifBlank { decryptedPayment?.expiryMonth ?: "01" }.padStart(2, '0')
                     val year = cleanExpiry.drop(2).take(4).ifBlank { decryptedPayment?.expiryYear ?: "00" }
@@ -130,11 +184,12 @@ fun VaultEditorScreen(
                         status = decryptedPayment?.status ?: com.pims.vault.core.model.CardStatus.IN_USE,
                         fullCardNumber = fullNumberToSave,
                         cvv = cvvToSave,
-                        linkedBankAccountId = linkedAccId ?: decryptedPayment?.linkedBankAccountId ?: uiState.proposedLinkedBankAccountId,
-                        linkedBankAccountName = linkedAccName ?: decryptedPayment?.linkedBankAccountName ?: uiState.proposedLinkedBankAccountName,
-                        cardType = cardType
+                        linkedBankAccountId = linkedAccId,
+                        linkedBankAccountName = linkedAccName,
+                        linkedBankAccountIds = linkedAccIds,
+                        cardType = cardType,
+                        onSaved = onNavigateBack
                     )
-                    onNavigateBack()
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -166,6 +221,9 @@ fun VaultEditorScreen(
                 initialBranchName = decryptedBanking?.branchName.orEmpty(),
                 initialNotes = decryptedBanking?.notes.orEmpty(),
                 initialLinkedCardId = decryptedBanking?.linkedCardId,
+                initialLinkedCardIds = decryptedBanking?.linkedCardIds.orEmpty(),
+                knownBankNames = uiState.vaultItems.filter { it.category == VaultCategory.BANK_ACCOUNT }.map { it.title },
+                isSaving = uiState.isSaving,
                 initialLinkedCardSummary = decryptedBanking?.linkedCardSummary,
                 initialCurrency = decryptedBanking?.currency ?: "USD",
                 onSaveAccount = { result ->
@@ -187,11 +245,12 @@ fun VaultEditorScreen(
                         branchName = result.branchName,
                         notes = result.notes,
                         linkedCardId = result.linkedCardId,
+                        linkedCardIds = result.linkedCardIds,
                         linkedCardSummary = result.linkedCardSummary,
                         existingId = itemId,
-                        currency = result.currency
+                        currency = result.currency,
+                        onSaved = onNavigateBack
                     )
-                    onNavigateBack()
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -201,10 +260,11 @@ fun VaultEditorScreen(
                 title = existingItem?.title.orEmpty(),
                 content = uiState.activeDecryptedNote?.noteContent.orEmpty(),
                 tags = uiState.activeDecryptedNote?.tags ?: emptyList(),
+                isSaving = uiState.isSaving,
+                errorMessage = uiState.errorMessage,
                 onDismiss = onNavigateBack,
                 onSave = { title, content, format, tags ->
-                    viewModel.saveSecureNote(title, content, itemId, tags)
-                    onNavigateBack()
+                    viewModel.saveSecureNote(title, content, itemId, tags, onSaved = onNavigateBack)
                 }
             )
         }
@@ -220,12 +280,16 @@ fun SecureNoteEditorScreen(
     content: String,
     tags: List<String> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (String, String, NoteFormat, List<String>) -> Unit
+    onSave: (String, String, NoteFormat, List<String>) -> Unit,
+    isSaving: Boolean = false,
+    errorMessage: String? = null
 ) {
     SecureNoteEditorModal(
         initialTitle = title,
         initialContent = content,
         initialTags = tags,
+        isSaving = isSaving,
+        errorMessage = errorMessage,
         isEditingExisting = title.isNotBlank() || content.isNotBlank(),
         onSave = { savedTitle, savedContent, savedTags ->
             onSave(savedTitle, savedContent, NoteFormat.PLAIN, savedTags)

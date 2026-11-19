@@ -50,7 +50,7 @@ class BackupCryptoEngine(
         const val MAX_PACKAGE_SIZE_BYTES = 100L * 1024L * 1024L // 100 MB
         const val MAX_MANIFEST_SIZE_BYTES = 512 * 1024 // 512 KB
         const val MAX_BLOB_COUNT = 1000
-        const val MAX_SINGLE_BLOB_SIZE_BYTES = 50L * 1024L * 1024L // 50 MB
+        const val MAX_SINGLE_BLOB_SIZE_BYTES = 51L * 1024L * 1024L // Includes PCSF overhead for a 50 MiB document.
         const val MAX_TABLE_COUNT = 50
 
         // Domain Info Strings for HKDF

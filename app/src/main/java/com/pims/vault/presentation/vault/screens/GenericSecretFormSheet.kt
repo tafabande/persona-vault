@@ -274,7 +274,7 @@ fun GenericSecretFormSheet(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = errorMessage ?: "",
-                        color = Color(0xFFEF4444),
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.error,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )

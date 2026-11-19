@@ -42,7 +42,7 @@ class DisasterRecoveryAndClockTests {
     private val inMemoryItems = mutableMapOf<String, VaultItemEntity>()
     private val inMemoryAudits = mutableListOf<AuditLogEntity>()
 
-    private val fakeVaultDao = object : VaultDao {
+    private val fakeVaultDao = object : com.pims.vault.testing.TestVaultDao() {
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
             inMemoryItems[item.id] = item
             return 1L

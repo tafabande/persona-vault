@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -231,6 +232,15 @@ fun <T> PersonaCarousel(
                     modifier = Modifier
                         .fillMaxSize()
                         .clipToBounds()
+                        .graphicsLayer {
+                            if (!isReducedMotion) {
+                                val offset = kotlin.math.abs((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
+                                val scale = 1f - 0.035f * offset
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = 1f - 0.18f * offset
+                            }
+                        }
                         .combinedClickable(
                             onClick = {
                                 if (config.enableHaptics) haptics.light()

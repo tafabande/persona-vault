@@ -253,8 +253,8 @@ fun PersonaBrandEmblem(
     Surface(
         modifier = modifier.size(size),
         shape = RoundedCornerShape(24.dp),
-        color = if (isDark) Color(0xFF1E2228) else Color(0xFFF1F3F5),
-        border = BorderStroke(1.dp, if (isDark) Color(0xFF2E343E) else Color(0xFFE2E5E9))
+        color = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer,
+        border = null
     ) {
         Box(contentAlignment = Alignment.Center) {
             androidx.compose.foundation.Image(

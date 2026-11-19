@@ -312,8 +312,8 @@ class BackupAdversarialTests {
             stagingDir = stagingDir,
             journalFile = journalFile,
             onCommitToLiveStorage = { db, blobs ->
-                restoredDb = db
-                restoredBlobs = blobs
+                restoredDb = db.copyOf()
+                restoredBlobs = blobs.mapValues { it.value.copyOf() }
             }
         ).toList()
 

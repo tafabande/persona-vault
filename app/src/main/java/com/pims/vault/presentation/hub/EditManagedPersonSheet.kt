@@ -3,6 +3,9 @@ package com.pims.vault.presentation.hub
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +33,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -42,6 +46,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -102,7 +108,7 @@ private data class EditableManagedNote(
     val text: String
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditManagedPersonSheet(
     person: KinRelationshipItem?,
@@ -115,26 +121,29 @@ fun EditManagedPersonSheet(
     onDismissRequest: () -> Unit
 ) {
     if (person == null) return
+    // Keep the editor's baseline stable when a background sync emits a new person object.
+    val editingPerson = remember(person.id) { person }
+    val fieldColumns = if (LocalConfiguration.current.screenWidthDp < 400 || LocalDensity.current.fontScale > 1.3f) 1 else 2
 
-    var editFirstName by remember(person) { mutableStateOf(person.fullName.substringBefore(" ")) }
-    var editLastName by remember(person) { mutableStateOf(person.fullName.substringAfter(" ", "")) }
-    var editRole by remember(person) { mutableStateOf(person.relationRole) }
-    var editContacts by remember(person) {
-        val stored = person.phoneContacts.map {
+    var editFirstName by remember(editingPerson.id) { mutableStateOf(editingPerson.fullName.substringBefore(" ")) }
+    var editLastName by remember(editingPerson.id) { mutableStateOf(editingPerson.fullName.substringAfter(" ", "")) }
+    var editRole by remember(editingPerson.id) { mutableStateOf(editingPerson.relationRole) }
+    var editContacts by remember(editingPerson.id) {
+        val stored = editingPerson.phoneContacts.map {
             EditableManagedContact(id = it.id, type = ContactType.PHONE, value = it.value, label = it.label, isPrimary = it.isPrimary)
-        } + person.emailContacts.map {
+        } + editingPerson.emailContacts.map {
             EditableManagedContact(id = it.id, type = ContactType.EMAIL, value = it.value, label = it.label, isPrimary = it.isPrimary)
         }
-        val legacy = person.phone.split(",").map { it.trim() }.filter(String::isNotBlank).mapIndexed { index, value ->
+        val legacy = editingPerson.phone.split(",").map { it.trim() }.filter(String::isNotBlank).mapIndexed { index, value ->
             EditableManagedContact(id = null, type = ContactType.PHONE, value = value, label = if (index == 0) "Mobile" else "Other", isPrimary = index == 0)
-        } + person.email.split(",").map { it.trim() }.filter(String::isNotBlank).mapIndexed { index, value ->
+        } + editingPerson.email.split(",").map { it.trim() }.filter(String::isNotBlank).mapIndexed { index, value ->
             EditableManagedContact(id = null, type = ContactType.EMAIL, value = value, label = if (index == 0) "Personal" else "Other", isPrimary = index == 0)
         }
         mutableStateOf(stored.ifEmpty { legacy })
     }
-    var editAddress by remember(person) { mutableStateOf(person.address) }
-    var editAddresses by remember(person) {
-        mutableStateOf(person.addresses.map { address ->
+    var editAddress by remember(editingPerson.id) { mutableStateOf(editingPerson.address) }
+    var editAddresses by remember(editingPerson.id) {
+        mutableStateOf(editingPerson.addresses.map { address ->
             EditableManagedAddress(
                 id = address.id,
                 label = address.label,
@@ -148,18 +157,17 @@ fun EditManagedPersonSheet(
             )
         })
     }
-    var editDob by remember(person) { mutableStateOf(person.dateOfBirth) }
-    var editAnniversary by remember(person) { mutableStateOf(person.anniversary) }
-    var editNotesList by remember(person) {
-        val entries = person.editableRelationshipNotes.map { EditableManagedNote(id = it.id, topic = it.topic ?: "Personal note", text = it.contentPlaintext.orEmpty()) }
+    var editDob by remember(editingPerson.id) { mutableStateOf(editingPerson.dateOfBirth) }
+    var editAnniversary by remember(editingPerson.id) { mutableStateOf(editingPerson.anniversary) }
+    var editNotesList by remember(editingPerson.id) {
+        val entries = editingPerson.editableRelationshipNotes.map { EditableManagedNote(id = it.id, topic = it.topic ?: "Personal note", text = it.contentPlaintext.orEmpty()) }
         mutableStateOf(entries.ifEmpty { listOf(EditableManagedNote(id = null, topic = "Personal note", text = "")) })
     }
-    val editManagedPersonSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showDiscardConfirmation by remember(person) { mutableStateOf(false) }
-    var attemptedSave by remember(person) { mutableStateOf(false) }
-    var isSaving by remember(person) { mutableStateOf(false) }
-    var saveError by remember(person) { mutableStateOf<String?>(null) }
-    val originalSnapshot = remember(person) {
+    var showDiscardConfirmation by remember(editingPerson.id) { mutableStateOf(false) }
+    var attemptedSave by remember(editingPerson.id) { mutableStateOf(false) }
+    var isSaving by remember(editingPerson.id) { mutableStateOf(false) }
+    var saveError by remember(editingPerson.id) { mutableStateOf<String?>(null) }
+    val originalSnapshot = remember(editingPerson.id) {
         listOf(editFirstName, editLastName, editRole, editContacts, editAddress, editAddresses, editDob, editAnniversary, editNotesList)
     }
     val isDirty = listOf(editFirstName, editLastName, editRole, editContacts, editAddress, editAddresses, editDob, editAnniversary, editNotesList) != originalSnapshot
@@ -168,7 +176,20 @@ fun EditManagedPersonSheet(
     }.values.any { it.size > 1 }
     val invalidPhone = editContacts.any { it.type == ContactType.PHONE && it.value.isNotBlank() && !com.pims.vault.presentation.ui.components.isValidInternationalPhone(it.value) }
     val invalidEmail = editContacts.any { it.type == ContactType.EMAIL && it.value.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(it.value.trim()).matches() }
-    val requestDismiss: () -> Unit = { if (isDirty) showDiscardConfirmation = true else onDismissRequest(); Unit }
+    val requestDismiss: () -> Unit = {
+        if (!isSaving) {
+            if (isDirty) showDiscardConfirmation = true else onDismissRequest()
+        }
+    }
+    val editManagedPersonSheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { target ->
+            if (target == SheetValue.Hidden && (isDirty || isSaving)) {
+                if (!isSaving) showDiscardConfirmation = true
+                false
+            } else true
+        }
+    )
 
     ModalBottomSheet(
         onDismissRequest = requestDismiss,
@@ -192,28 +213,22 @@ fun EditManagedPersonSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(
-                        text = "People / Manage profiles",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Edit profile",
+                        text = "Edit ${editingPerson.fullName}",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Text(person.fullName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick = requestDismiss) {
+                TextButton(onClick = requestDismiss, enabled = !isSaving) {
                     Icon(Icons.Default.Close, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Close")
                 }
             }
 
-            PersonaFormSection(title = "Person details", icon = Icons.Default.Person) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PersonaFormSection(title = "About them", icon = Icons.Default.Person) {
+                FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = fieldColumns) {
                 PersonaTextInput(
                     value = editFirstName,
                     onValueChange = { editFirstName = it.take(100) },
@@ -221,14 +236,14 @@ fun EditManagedPersonSheet(
                     isError = attemptedSave && editFirstName.isBlank(),
                     errorMessage = if (attemptedSave && editFirstName.isBlank()) "Enter a first name" else null,
                     keyboardCapitalization = KeyboardCapitalization.Words,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f), enabled = !isSaving
                 )
                 PersonaTextInput(
                     value = editLastName,
                     onValueChange = { editLastName = it.take(100) },
                     label = "Last name · optional",
                     keyboardCapitalization = KeyboardCapitalization.Words,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f), enabled = !isSaving
                 )
                 }
             PersonaSearchableCombobox(
@@ -238,7 +253,7 @@ fun EditManagedPersonSheet(
                 label = "Relationship · required",
                 placeholder = "Type or select relationship...",
                 allowCustom = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(), enabled = !isSaving
             )
             if (attemptedSave && editRole.isBlank()) {
                 Text("Choose or enter a relationship", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -246,20 +261,21 @@ fun EditManagedPersonSheet(
             }
 
             PersonaFormSection(title = "Contact information", icon = Icons.Default.Phone) {
-                Text("These numbers and addresses belong to ${person.fullName}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ContactMethodEditor(
                     title = "Phone numbers",
                     type = ContactType.PHONE,
                     contacts = editContacts,
                     onContactsChange = { editContacts = it },
-                    attemptedSave = attemptedSave
+                    attemptedSave = attemptedSave,
+                    enabled = !isSaving
                 )
                 ContactMethodEditor(
                     title = "Email addresses",
                     type = ContactType.EMAIL,
                     contacts = editContacts,
                     onContactsChange = { editContacts = it },
-                    attemptedSave = attemptedSave
+                    attemptedSave = attemptedSave,
+                    enabled = !isSaving
                 )
             }
 
@@ -268,14 +284,14 @@ fun EditManagedPersonSheet(
                     value = editAddress,
                     onValueChange = { editAddress = it.take(300) },
                     label = "Country or region of residence · optional",
-                    placeholder = "Country or region"
+                    placeholder = "Country or region", enabled = !isSaving
                 )
                 Text("Postal or physical addresses", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 editAddresses.forEachIndexed { index, address ->
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Address ${index + 1}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { editAddresses = editAddresses.filterNot { it.key == address.key } }, modifier = Modifier.height(44.dp)) {
+                            TextButton(onClick = { editAddresses = editAddresses.filterNot { it.key == address.key } }, modifier = Modifier.heightIn(min = 48.dp), enabled = !isSaving) {
                                 Text("Remove address", color = MaterialTheme.colorScheme.error)
                             }
                         }
@@ -286,17 +302,17 @@ fun EditManagedPersonSheet(
                                 val label = AddressLabel.values().first { it.name.replace('_', ' ').equals(selected, true) }
                                 editAddresses = editAddresses.map { if (it.key == address.key) it.copy(label = label) else it }
                             },
-                            label = "Address type"
+                            label = "Address type", enabled = !isSaving
                         )
-                        PersonaTextInput(address.street1, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(street1 = v.take(200)) else it } }, label = "Street address · optional")
-                        PersonaTextInput(address.street2, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(street2 = v.take(120)) else it } }, label = "Apartment / unit · optional")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            PersonaTextInput(address.city, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(city = v.take(100)) else it } }, label = "Town / city", modifier = Modifier.weight(1f))
-                            PersonaTextInput(address.region, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(region = v.take(100)) else it } }, label = "Region", modifier = Modifier.weight(1f))
+                        PersonaTextInput(address.street1, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(street1 = v.take(200)) else it } }, label = "Street address · optional", enabled = !isSaving)
+                        PersonaTextInput(address.street2, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(street2 = v.take(120)) else it } }, label = "Apartment / unit · optional", enabled = !isSaving)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = fieldColumns) {
+                            PersonaTextInput(address.city, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(city = v.take(100)) else it } }, label = "Town / city", modifier = Modifier.weight(1f), enabled = !isSaving)
+                            PersonaTextInput(address.region, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(region = v.take(100)) else it } }, label = "Region", modifier = Modifier.weight(1f), enabled = !isSaving)
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            PersonaTextInput(address.postalCode, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(postalCode = v.take(24)) else it } }, label = "Postal code", modifier = Modifier.weight(0.7f))
-                            PersonaTextInput(address.country, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(country = v.take(100)) else it } }, label = "Country", modifier = Modifier.weight(1.3f))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = fieldColumns) {
+                            PersonaTextInput(address.postalCode, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(postalCode = v.take(24)) else it } }, label = "Postal code", modifier = Modifier.weight(0.7f), enabled = !isSaving)
+                            PersonaTextInput(address.country, { v -> editAddresses = editAddresses.map { if (it.key == address.key) it.copy(country = v.take(100)) else it } }, label = "Country", modifier = Modifier.weight(1.3f), enabled = !isSaving)
                         }
                         if (index < editAddresses.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     }
@@ -305,7 +321,7 @@ fun EditManagedPersonSheet(
                     editAddresses = editAddresses + EditableManagedAddress(
                         id = null, label = AddressLabel.HOME, street1 = "", street2 = "", city = "", region = "", postalCode = "", country = "", isCurrent = editAddresses.isEmpty()
                     )
-                }, modifier = Modifier.height(44.dp)) {
+                }, modifier = Modifier.heightIn(min = 48.dp), enabled = !isSaving) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("Add address")
                 }
@@ -314,7 +330,7 @@ fun EditManagedPersonSheet(
             PersonaFormSection(title = "Important dates") {
             StandardDateInput(
                 isoDate = editDob,
-                onDateChange = { editDob = it },
+                onDateChange = { if (!isSaving) editDob = it },
                 label = "Date of birth · optional",
                 maxDate = LocalDate.now()
             )
@@ -322,7 +338,7 @@ fun EditManagedPersonSheet(
             AnimatedVisibility(visible = isRomanticOrMaritalRelationship(editRole)) {
                 StandardDateInput(
                     isoDate = editAnniversary,
-                    onDateChange = { editAnniversary = it },
+                    onDateChange = { if (!isSaving) editAnniversary = it },
                     label = "Relationship anniversary · optional",
                     maxDate = LocalDate.now()
                 )
@@ -337,8 +353,8 @@ fun EditManagedPersonSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Notes on this relationship", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium))
-                    TextButton(onClick = { editNotesList = editNotesList + EditableManagedNote(id = null, topic = "Personal note", text = "") }) {
+                    Text("Notes on this relationship", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium), modifier = Modifier.weight(1f))
+                    TextButton(onClick = { editNotesList = editNotesList + EditableManagedNote(id = null, topic = "Personal note", text = "") }, enabled = !isSaving) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Add Note", fontSize = 12.sp)
@@ -357,11 +373,11 @@ fun EditManagedPersonSheet(
                                     editNotesList = editNotesList.map { if (it.key == noteItem.key) it.copy(text = newVal.take(5000)) else it }
                                 },
                                 label = if (idx == 0) "Personal note · optional" else "Personal note ${idx + 1} · optional",
-                                singleLine = false
+                                singleLine = false, enabled = !isSaving
                             )
                         }
                         if (editNotesList.size > 1) {
-                            TextButton(onClick = { editNotesList = editNotesList.filterNot { it.key == noteItem.key } }, modifier = Modifier.height(44.dp)) {
+                            TextButton(onClick = { editNotesList = editNotesList.filterNot { it.key == noteItem.key } }, modifier = Modifier.heightIn(min = 48.dp), enabled = !isSaving) {
                                 Text("Remove note", color = MaterialTheme.colorScheme.error)
                             }
                         }
@@ -379,8 +395,8 @@ fun EditManagedPersonSheet(
                     val savedContacts = editContacts.mapNotNull { draft ->
                         val value = draft.value.trim()
                         if (value.isBlank()) null else ContactMethodEntity(
-                            id = draft.id ?: java.util.UUID.randomUUID().toString(),
-                            personId = person.targetPersonId,
+                            id = draft.id ?: draft.key,
+                            personId = editingPerson.targetPersonId,
                             contactType = draft.type,
                             label = draft.label,
                             value = value,
@@ -397,11 +413,11 @@ fun EditManagedPersonSheet(
                     val enteredNotes = editNotesList.filter { it.text.isNotBlank() }
                     val savedNotes = enteredNotes.joinToString("\n\n") { it.text.trim() }
                     val relationshipNotes = enteredNotes.map { note ->
-                        val old = person.editableRelationshipNotes.firstOrNull { it.id == note.id }
+                        val old = editingPerson.editableRelationshipNotes.firstOrNull { it.id == note.id }
                         old?.copy(topic = note.topic, contentPlaintext = note.text.trim(), updatedAt = System.currentTimeMillis())
                             ?: RelationshipNoteEntity(
-                                id = java.util.UUID.randomUUID().toString(),
-                                relationshipId = person.id,
+                                id = note.id ?: note.key,
+                                relationshipId = editingPerson.id,
                                 topic = note.topic,
                                 contentPlaintext = note.text.trim(),
                                 format = NoteFormat.PLAIN,
@@ -409,9 +425,9 @@ fun EditManagedPersonSheet(
                             )
                     }
                     val addressRecords = editAddresses.mapNotNull { address ->
-                        if (address.street1.isBlank() && address.city.isBlank() && address.country.isBlank()) null else AddressEntity(
-                            id = address.id ?: java.util.UUID.randomUUID().toString(),
-                            personId = person.targetPersonId,
+                        if (listOf(address.street1, address.street2, address.city, address.region, address.postalCode, address.country).all(String::isBlank)) null else AddressEntity(
+                            id = address.id ?: address.key,
+                            personId = editingPerson.targetPersonId,
                             label = address.label,
                             streetLine1 = address.street1.trim(),
                             streetLine2 = address.street2.trim().takeIf(String::isNotBlank),
@@ -421,15 +437,18 @@ fun EditManagedPersonSheet(
                             country = address.country.trim(),
                             isCurrent = address.isCurrent
                         )
-                    }.mapIndexed { index, address -> address.copy(isCurrent = index == 0) }
+                    }.let { addresses ->
+                        val currentId = addresses.firstOrNull { it.isCurrent }?.id ?: addresses.firstOrNull()?.id
+                        addresses.map { it.copy(isCurrent = it.id == currentId) }
+                    }
                     isSaving = true
                     saveError = null
                     profileViewModel.onEvent(
                         ProfileEvent.UpdatePersonDetails(
-                            personId = person.targetPersonId,
-                            firstName = editFirstName.ifBlank { person.fullName },
+                            personId = editingPerson.targetPersonId,
+                            firstName = editFirstName.ifBlank { editingPerson.fullName },
                             lastName = editLastName,
-                            relationRole = editRole.ifBlank { person.relationRole },
+                            relationRole = editRole.ifBlank { editingPerson.relationRole },
                             phone = savedPhone,
                             email = savedEmail,
                             address = editAddress,
@@ -443,10 +462,10 @@ fun EditManagedPersonSheet(
                     ) { result ->
                         isSaving = false
                         result.onSuccess {
-                            recentActivityManager.recordActivity("Updated ${person.fullName}'s profile")
+                            recentActivityManager.recordActivity("Updated ${editingPerson.fullName}'s profile")
                             soundManager.success()
                             haptics.success()
-                            toastController.showSuccess("Updated ${person.fullName}'s details")
+                            toastController.showSuccess("Updated ${editingPerson.fullName}'s details")
                             onDismissRequest()
                         }.onFailure {
                             saveError = "Couldn’t save these changes. Try again."
@@ -454,14 +473,14 @@ fun EditManagedPersonSheet(
                     }
                 },
                 enabled = isDirty && !isSaving,
-                modifier = Modifier.fillMaxWidth(0.90f).height(48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(PimsRadius.primaryAction)
             ) {
                 Text(if (isSaving) "Saving…" else "Save changes", fontWeight = FontWeight.SemiBold)
             }
 
             saveError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            TextButton(onClick = requestDismiss, modifier = Modifier.align(Alignment.CenterHorizontally).height(48.dp)) { Text("Cancel") }
+            TextButton(onClick = requestDismiss, modifier = Modifier.align(Alignment.CenterHorizontally).heightIn(min = 48.dp), enabled = !isSaving) { Text("Cancel") }
         }
     }
 
@@ -469,29 +488,31 @@ fun EditManagedPersonSheet(
         AlertDialog(
             onDismissRequest = { showDiscardConfirmation = false },
             title = { Text("Discard changes?") },
-            text = { Text("Your edits to ${person.fullName} haven’t been saved.") },
+            text = { Text("Your edits to ${editingPerson.fullName} haven’t been saved.") },
             confirmButton = {
-                TextButton(onClick = { showDiscardConfirmation = false; onDismissRequest() }) { Text("Discard") }
+                TextButton(onClick = { showDiscardConfirmation = false; onDismissRequest() }, enabled = !isSaving) { Text("Discard") }
             },
-            dismissButton = { TextButton(onClick = { showDiscardConfirmation = false }) { Text("Keep editing") } },
+            dismissButton = { TextButton(onClick = { showDiscardConfirmation = false }, enabled = !isSaving) { Text("Keep editing") } },
             shape = RoundedCornerShape(PimsRadius.modal)
         )
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ContactMethodEditor(
     title: String,
     type: ContactType,
     contacts: List<EditableManagedContact>,
     onContactsChange: (List<EditableManagedContact>) -> Unit,
-    attemptedSave: Boolean
+    attemptedSave: Boolean,
+    enabled: Boolean
 ) {
     val entries = contacts.filter { it.type == type }
     val labels = if (type == ContactType.PHONE) listOf("Mobile", "Work", "Home", "Other") else listOf("Personal", "Work", "Home", "Other")
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium))
+            Text(title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium), modifier = Modifier.weight(1f))
             TextButton(
                 onClick = {
                     val current = contacts.toMutableList()
@@ -499,7 +520,7 @@ private fun ContactMethodEditor(
                     current.add(EditableManagedContact(id = null, type = type, value = "", label = labels.first(), isPrimary = firstOfType))
                     onContactsChange(current)
                 },
-                modifier = Modifier.height(44.dp)
+                modifier = Modifier.heightIn(min = 48.dp), enabled = enabled
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
@@ -507,7 +528,8 @@ private fun ContactMethodEditor(
             }
         }
         entries.forEachIndexed { index, entry ->
-            val duplicate = entry.value.isNotBlank() && entries.count { it.value.trim().equals(entry.value.trim(), ignoreCase = true) } > 1
+            fun normalized(value: String) = if (type == ContactType.PHONE) value.filter(Char::isDigit) else value.trim().lowercase()
+            val duplicate = entry.value.isNotBlank() && entries.count { normalized(it.value) == normalized(entry.value) } > 1
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (type == ContactType.PHONE) {
@@ -520,7 +542,7 @@ private fun ContactMethodEditor(
                                 duplicate -> "This phone number is already listed"
                                 attemptedSave && entry.value.isNotBlank() && !com.pims.vault.presentation.ui.components.isValidInternationalPhone(entry.value) -> "Enter a valid number for its country code"
                                 else -> null
-                            }
+                            }, enabled = enabled
                         )
                     } else {
                         PersonaTextInput(
@@ -535,7 +557,7 @@ private fun ContactMethodEditor(
                                 duplicate -> "This email is already listed"
                                 attemptedSave && entry.value.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(entry.value.trim()).matches() -> "Enter a valid email address"
                                 else -> null
-                            }
+                            }, enabled = enabled
                         )
                     }
                 }
@@ -545,13 +567,13 @@ private fun ContactMethodEditor(
                         options = labels,
                         onOptionSelected = { label -> onContactsChange(contacts.map { if (it.key == entry.key) it.copy(label = label) else it }) },
                         label = "Label",
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(), enabled = enabled
                     )
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (!entry.isPrimary) {
                         TextButton(onClick = {
                             onContactsChange(contacts.map { if (it.type == type) it.copy(isPrimary = it.key == entry.key) else it })
-                        }, modifier = Modifier.height(44.dp)) { Text("Make primary") }
+                        }, modifier = Modifier.heightIn(min = 48.dp), enabled = enabled) { Text("Make primary") }
                     } else {
                         Text("Primary", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
@@ -567,7 +589,7 @@ private fun ContactMethodEditor(
                                 reordered[priorPosition] = current
                                 onContactsChange(reordered)
                             },
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(48.dp), enabled = enabled
                         ) { Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move ${type.name.lowercase()} up") }
                     }
                     if (index < entries.lastIndex) {
@@ -581,7 +603,7 @@ private fun ContactMethodEditor(
                                 reordered[nextPosition] = current
                                 onContactsChange(reordered)
                             },
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(48.dp), enabled = enabled
                         ) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move ${type.name.lowercase()} down") }
                     }
                     TextButton(onClick = {
@@ -591,7 +613,7 @@ private fun ContactMethodEditor(
                             if (replacementIndex >= 0) remaining[replacementIndex] = remaining[replacementIndex].copy(isPrimary = true)
                         }
                         onContactsChange(remaining)
-                    }, modifier = Modifier.height(44.dp)) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                    }, modifier = Modifier.heightIn(min = 48.dp), enabled = enabled) { Text("Remove", color = MaterialTheme.colorScheme.error) }
                     }
                 }
                 if (type == ContactType.PHONE && duplicate) Text("This phone number is already listed", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

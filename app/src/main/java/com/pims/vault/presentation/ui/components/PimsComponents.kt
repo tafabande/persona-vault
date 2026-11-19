@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
@@ -81,9 +83,9 @@ import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.PimsRadius
 import com.pims.vault.presentation.ui.theme.PimsTheme
 import com.pims.vault.presentation.ui.theme.PimsColors
-import com.pims.vault.presentation.ui.theme.StateError
-import com.pims.vault.presentation.ui.theme.StateSuccess
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.success as StateSuccess
+import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
 import com.pims.vault.presentation.ui.theme.pimsTactile
 import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.width
@@ -537,32 +539,10 @@ fun StatusPill(
     isSyncing: Boolean = text.contains("Syncing", ignoreCase = true),
     onClick: (() -> Unit)? = null
 ) {
-    val isDark = LocalPimsDarkTheme.current
-
-    // Blue for Synced, Red for Please Sync
-    val accentColor = if (isGood) {
-        if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB) // Sky / Royal Blue
-    } else {
-        if (isDark) Color(0xFFF87171) else Color(0xFFDC2626) // Vivid Coral / Crimson Red
-    }
-
-    val textColor = if (isGood) {
-        if (isDark) Color(0xFFBFDBFE) else Color(0xFF1D4ED8)
-    } else {
-        if (isDark) Color(0xFFFECACA) else Color(0xFFB91C1C)
-    }
-
-    val backgroundColor = if (isDark) {
-        accentColor.copy(alpha = 0.16f)
-    } else {
-        accentColor.copy(alpha = 0.10f)
-    }
-
-    val borderColor = if (isDark) {
-        accentColor.copy(alpha = 0.35f)
-    } else {
-        accentColor.copy(alpha = 0.25f)
-    }
+    val accentColor = if (isGood) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+    val textColor = accentColor
+    val backgroundColor = accentColor.copy(alpha = 0.1f)
+    val borderColor = Color.Transparent
 
     // Animation for syncing rotation and beacon pulse
     val infiniteTransition = rememberInfiniteTransition(label = "StatusPillPulse")
@@ -866,9 +846,9 @@ fun RecentActivityItem(
 }
 
 /**
- * Default Avatar: Simple WhatsApp-style profile icon
- * Shows male or female silhouette based on gender hint or name hash
+ * One neutral avatar with a stable accent variation from the active palette.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun DefaultAvatar(
     name: String,
@@ -878,26 +858,20 @@ fun DefaultAvatar(
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val drawableRes = if (isFemale != null) {
-        if (isFemale) AppResources.Drawable.ic_default_avatar_female else AppResources.Drawable.ic_default_avatar_male
-    } else {
-        val hash = name.hashCode()
-        if (hash % 2 == 0) AppResources.Drawable.ic_default_avatar_male else AppResources.Drawable.ic_default_avatar_female
+    val tint = MaterialTheme.colorScheme.primary
+    val amount = 0.08f + Math.floorMod(name.hashCode(), 4) * 0.04f
+    val background = androidx.compose.ui.graphics.lerp(MaterialTheme.colorScheme.surface, tint, amount)
+    Box(
+        modifier = modifier.size(size).clip(CircleShape).background(background)
+            .combinedClickable(
+                enabled = onClick != null || onLongClick != null,
+                onClick = { onClick?.invoke() },
+                onLongClick = onLongClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(Icons.Default.Person, "$name profile", tint = tint, modifier = Modifier.size(size * 0.56f))
     }
-
-    val interactionModifier = if (onClick != null || onLongClick != null) {
-        Modifier.pimsTactile { onClick?.invoke() }
-    } else {
-        Modifier
-    }
-
-    androidx.compose.foundation.Image(
-        painter = androidx.compose.ui.res.painterResource(id = drawableRes),
-        contentDescription = "$name profile",
-        modifier = modifier
-            .size(size)
-            .then(interactionModifier)
-    )
 }
 
 /**

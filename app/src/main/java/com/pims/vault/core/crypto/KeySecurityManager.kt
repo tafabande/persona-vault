@@ -48,6 +48,7 @@ class KeySecurityManager(
     private val sharedPreferences: SharedPreferences? = null
 ) {
     private var cachedSecurityLevel: KeySecurityLevel? = null
+    private val zone4AuthKeyAlias = "${zone4KeyAlias}_BIOMETRIC_V3"
 
     private val keyStore: KeyStore by lazy {
         keyStoreInstance ?: KeyStore.getInstance(keyStoreProvider).apply { load(null) }
@@ -62,10 +63,6 @@ class KeySecurityManager(
         if (!keyStore.containsAlias(rootKeyAlias)) {
             generateMasterKey(rootKeyAlias, requireUserAuth = false)
         }
-        if (!keyStore.containsAlias(zone4KeyAlias)) {
-            generateMasterKey(zone4KeyAlias, requireUserAuth = true)
-        }
-
         val level = detectSecurityLevel(rootKeyAlias)
         cachedSecurityLevel = level
         return level
@@ -85,7 +82,7 @@ class KeySecurityManager(
             generateKeyWithStrongBox(alias, useStrongBox = false, requireUserAuth = requireUserAuth)
         } catch (_: Exception) {
             try {
-                generateSoftwareFallbackKey(alias)
+                generateSoftwareFallbackKey(alias, requireUserAuth)
             } catch (_: Exception) {
                 // Non-Android environment fallback
             }
@@ -114,9 +111,6 @@ class KeySecurityManager(
                 @Suppress("DEPRECATION")
                 specBuilder.setUserAuthenticationValidityDurationSeconds(300)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                specBuilder.setInvalidatedByBiometricEnrollment(true)
-            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && useStrongBox) {
@@ -127,7 +121,7 @@ class KeySecurityManager(
         keyGenerator.generateKey()
     }
 
-    private fun generateSoftwareFallbackKey(alias: String) {
+    private fun generateSoftwareFallbackKey(alias: String, requireUserAuth: Boolean) {
         val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, keyStoreProvider)
         val specBuilder = KeyGenParameterSpec.Builder(
             alias,
@@ -137,6 +131,19 @@ class KeySecurityManager(
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
             .setRandomizedEncryptionRequired(true)
+
+        if (requireUserAuth) {
+            specBuilder.setUserAuthenticationRequired(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                specBuilder.setUserAuthenticationParameters(
+                    300,
+                    KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                specBuilder.setUserAuthenticationValidityDurationSeconds(300)
+            }
+        }
 
         keyGenerator.init(specBuilder.build())
         keyGenerator.generateKey()
@@ -167,17 +174,149 @@ class KeySecurityManager(
     }
 
     /**
-     * Creates a BiometricPrompt.CryptoObject initialized with the Keystore Zone 4 key.
-     * Android Keystore physically requires biometric authentication to operate this cipher.
+     * Creates a BiometricPrompt.CryptoObject initialized with the auth-per-use Zone 4 key.
+     * Zone 4 key bytes are only opened or initialized by the cipher returned from this prompt.
      */
     fun createZone4BiometricCryptoObject(): BiometricPrompt.CryptoObject? {
         return try {
-            val secretKey = keyStore.getKey(zone4KeyAlias, null) as? SecretKey ?: return null
+            if (!keyStore.containsAlias(zone4AuthKeyAlias)) {
+                generateZone4BiometricKey()
+            }
+            val secretKey = keyStore.getKey(zone4AuthKeyAlias, null) as? SecretKey ?: return null
+            val keyInfo = SecretKeyFactory.getInstance(secretKey.algorithm, keyStoreProvider)
+                .getKeySpec(secretKey, KeyInfo::class.java) as KeyInfo
+            if (!keyInfo.isUserAuthenticationRequired) {
+                throw SecurityException("Zone 4 Keystore key does not enforce user authentication")
+            }
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+            val prefs = zone4WrappedPreferences() ?: return null
+            val wrappedIv = prefs.getString(ZONE4_DOMAIN_IV_KEY, null)
+            val wrappedCiphertext = prefs.getString(ZONE4_DOMAIN_CIPHER_KEY, null)
+            val wrappedAlias = prefs.getString(ZONE4_DOMAIN_ALIAS_KEY, null)
+            when {
+                wrappedIv.isNullOrBlank() && wrappedCiphertext.isNullOrBlank() ->
+                    cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+                wrappedIv.isNullOrBlank() || wrappedCiphertext.isNullOrBlank() ->
+                    throw WrappedKeyDecryptionException(
+                        HkdfKeyDerivation.CONTEXT_VAULT,
+                        "Incomplete authentication-bound vault key material"
+                    )
+                wrappedAlias != zone4AuthKeyAlias -> cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+                else -> cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    secretKey,
+                    javax.crypto.spec.GCMParameterSpec(128, base64Decode(wrappedIv))
+                )
+            }
             BiometricPrompt.CryptoObject(cipher)
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /** Returns the vault key only after the prompt-authorized cipher has unwrapped or wrapped it. */
+    fun unlockZone4DomainSubkey(authorizedCipher: Cipher, portableRootKey: ByteArray): SecretBytes {
+        val prefs = zone4WrappedPreferences()
+            ?: throw IllegalStateException("Persistent storage is unavailable for the Zone 4 key")
+        val ivValue = prefs.getString(ZONE4_DOMAIN_IV_KEY, null)
+        val ciphertextValue = prefs.getString(ZONE4_DOMAIN_CIPHER_KEY, null)
+        val envelopeAlias = prefs.getString(ZONE4_DOMAIN_ALIAS_KEY, null)
+        if (ivValue.isNullOrBlank() != ciphertextValue.isNullOrBlank()) {
+            throw WrappedKeyDecryptionException(
+                HkdfKeyDerivation.CONTEXT_VAULT,
+                "Incomplete authentication-bound vault key material"
+            )
+        }
+
+        if (!ivValue.isNullOrBlank() && !ciphertextValue.isNullOrBlank() && envelopeAlias == zone4AuthKeyAlias) {
+            val iv = base64Decode(ivValue)
+            val cipherBytes = base64Decode(ciphertextValue)
+            try {
+                val cipherIv = authorizedCipher.iv
+                if (!java.security.MessageDigest.isEqual(iv, cipherIv)) {
+                    throw WrappedKeyDecryptionException(
+                        HkdfKeyDerivation.CONTEXT_VAULT,
+                        "Authentication-bound vault key IV changed during unlock"
+                    )
+                }
+                val rawKey = authorizedCipher.doFinal(cipherBytes)
+                return try {
+                    SecretBytes(rawKey)
+                } finally {
+                    rawKey.fill(0)
+                }
+            } catch (error: Exception) {
+                throw WrappedKeyDecryptionException(
+                    HkdfKeyDerivation.CONTEXT_VAULT,
+                    "Authentication-bound vault key could not be opened",
+                    error
+                )
+            } finally {
+                iv.fill(0)
+                cipherBytes.fill(0)
+            }
+        }
+
+        // V2 is stable across recovered devices because it derives from the portable root key,
+        // while its local envelope requires this device's per-use biometric key.
+        val keyBytes = HkdfKeyDerivation.deriveKey(
+            ikm = portableRootKey,
+            infoContext = HkdfKeyDerivation.CONTEXT_VAULT_V2
+        )
+        try {
+            val wrapped = authorizedCipher.doFinal(keyBytes)
+            val iv = authorizedCipher.iv
+            val committed = prefs.edit()
+                .putString(ZONE4_DOMAIN_IV_KEY, base64Encode(iv))
+                .putString(ZONE4_DOMAIN_CIPHER_KEY, base64Encode(wrapped))
+                .putString(ZONE4_DOMAIN_ALIAS_KEY, zone4AuthKeyAlias)
+                .commit()
+            if (!committed || !prefs.contains(ZONE4_DOMAIN_IV_KEY) || !prefs.contains(ZONE4_DOMAIN_CIPHER_KEY)) {
+                throw IllegalStateException("Persistent storage did not confirm the authentication-bound Zone 4 key")
+            }
+            val returnedKey = keyBytes.copyOf()
+            return try {
+                SecretBytes(returnedKey)
+            } finally {
+                returnedKey.fill(0)
+            }
+        } catch (error: Exception) {
+            throw IllegalStateException("Unable to persist the authentication-bound Zone 4 key", error)
+        } finally {
+            keyBytes.fill(0)
+        }
+    }
+
+    private fun zone4WrappedPreferences(): SharedPreferences? =
+        sharedPreferences ?: context?.getSharedPreferences("pims_keystore_wrapped_subkeys", Context.MODE_PRIVATE)
+
+    private fun generateZone4BiometricKey() {
+        fun generate(useStrongBox: Boolean) {
+            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, keyStoreProvider)
+            val spec = KeyGenParameterSpec.Builder(
+                zone4AuthKeyAlias,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .setRandomizedEncryptionRequired(true)
+                .setUserAuthenticationRequired(true)
+                .setInvalidatedByBiometricEnrollment(false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                spec.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
+            } else {
+                @Suppress("DEPRECATION")
+                spec.setUserAuthenticationValidityDurationSeconds(-1)
+            }
+            if (useStrongBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) spec.setIsStrongBoxBacked(true)
+            generator.init(spec.build())
+            generator.generateKey()
+        }
+        try {
+            generate(true)
+        } catch (_: Exception) {
+            generate(false)
         }
     }
 
@@ -188,6 +327,13 @@ class KeySecurityManager(
         } catch (_: Throwable) {
             java.util.Base64.getDecoder().decode(str)
         }
+    }
+
+    companion object {
+        internal const val VAULT_RECOVERY_PREFIX = "PIMS/vault/recovery-archive/"
+        private const val ZONE4_DOMAIN_IV_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_iv_v2"
+        private const val ZONE4_DOMAIN_CIPHER_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_cipher_v2"
+        private const val ZONE4_DOMAIN_ALIAS_KEY = "${HkdfKeyDerivation.CONTEXT_VAULT}_zone4_alias_v2"
     }
 
     private fun base64Encode(bytes: ByteArray): String {
@@ -213,6 +359,51 @@ class KeySecurityManager(
      *    a replacement key and NEVER overwrites or clears existing preferences.
      */
     fun deriveDomainSubkey(domainContext: String, isZone4: Boolean = false): SecretBytes {
+        require(domainContext != HkdfKeyDerivation.CONTEXT_VAULT && !domainContext.startsWith(VAULT_RECOVERY_PREFIX)) {
+            "Zone 4 vault keys must be opened through the authenticated key envelope"
+        }
+        return deriveRootWrappedDomainSubkey(domainContext)
+    }
+
+    internal fun deriveLegacyVaultKeyForMigration(): SecretBytes =
+        deriveRootWrappedDomainSubkey(HkdfKeyDerivation.CONTEXT_VAULT)
+
+    /** Called only by the hardware-authorized session for read-only recovery candidates. */
+    internal fun readRetainedVaultRecoveryKeys(): List<ByteArray> {
+        val preferences = sharedPreferences ?: context?.getSharedPreferences("pims_keystore_wrapped_subkeys", Context.MODE_PRIVATE)
+            ?: return emptyList()
+        val result = mutableListOf<ByteArray>()
+        try {
+            preferences.all.keys.filter { it.startsWith(VAULT_RECOVERY_PREFIX) && it.endsWith("_cipher") }.forEach { name ->
+                val domain = name.removeSuffix("_cipher")
+                require(domain.removePrefix(VAULT_RECOVERY_PREFIX).matches(Regex("[0-9a-f]{64}")))
+                deriveRootWrappedDomainSubkey(domain).use { result.add(it.copyBytes()) }
+            }
+            return result
+        } catch (failure: Exception) { result.forEach { it.fill(0) }; throw failure }
+    }
+
+    /** Prepares imported recovery keys under this device's root; does not change live keys. */
+    internal fun wrapRecoveryKeys(keys: Map<String, ByteArray>): Map<String, String> {
+        initializeAndGetSecurityLevel()
+        val master = keyStore.getKey(rootKeyAlias, null) as? SecretKey
+            ?: throw SecurityException("Device wrapping key is unavailable")
+        return buildMap {
+            keys.forEach { (domain, raw) ->
+                require(domain in setOf(HkdfKeyDerivation.CONTEXT_DATABASE, HkdfKeyDerivation.CONTEXT_FILES,
+                    HkdfKeyDerivation.CONTEXT_AUDIT, HkdfKeyDerivation.CONTEXT_VAULT) ||
+                    (domain.startsWith(VAULT_RECOVERY_PREFIX) && domain.removePrefix(VAULT_RECOVERY_PREFIX).matches(Regex("[0-9a-f]{64}"))))
+                require(raw.size == 32)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.ENCRYPT_MODE, master)
+                put("${domain}_iv", base64Encode(cipher.iv))
+                put("${domain}_cipher", base64Encode(cipher.doFinal(raw)))
+            }
+        }
+    }
+
+    @Synchronized
+    private fun deriveRootWrappedDomainSubkey(domainContext: String): SecretBytes {
         val targetAlias = rootKeyAlias
 
         if (!keyStore.containsAlias(targetAlias)) {
@@ -246,7 +437,7 @@ class KeySecurityManager(
                 val decryptCipher = Cipher.getInstance("AES/GCM/NoPadding")
                 decryptCipher.init(Cipher.DECRYPT_MODE, masterKey, javax.crypto.spec.GCMParameterSpec(128, iv))
                 val rawSubkey = decryptCipher.doFinal(cipherBytes)
-                return SecretBytes(rawSubkey)
+                return try { SecretBytes(rawSubkey) } finally { rawSubkey.fill(0) }
             } catch (e: Exception) {
                 // Key material exists but cannot be decrypted by the Keystore master key.
                 // CRITICAL SAFETY RULE: Never generate a replacement key, and never overwrite/delete existing preferences!
@@ -286,6 +477,6 @@ class KeySecurityManager(
             throw IllegalStateException("Unable to persist domain key '$domainContext'; refusing to use an ephemeral key", e)
         }
 
-        return SecretBytes(rawSubkey)
+        return try { SecretBytes(rawSubkey) } finally { rawSubkey.fill(0) }
     }
 }

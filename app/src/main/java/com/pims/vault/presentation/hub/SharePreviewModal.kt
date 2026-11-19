@@ -33,6 +33,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +72,9 @@ fun SharePreviewModal(
     onCopyShareLink: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isSharing by remember { mutableStateOf(false) }
+    var shareError by remember { mutableStateOf<String?>(null) }
     val cleanSeed = remember(personName, phone, email, occupation, linkedIn, country) {
         PersonaVCardHelper.formatVCard(
             fullName = personName,
@@ -85,7 +96,7 @@ fun SharePreviewModal(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
                 .padding(bottom = 36.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -129,15 +140,15 @@ fun SharePreviewModal(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Action Buttons: Share Card Photo and Copy Link
+            shareError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            // Export exactly the contact payload shown in the preview.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedButton(
                     onClick = {
-                        val shareUrl = "https://persona.vault/p/${personName.lowercase().replace(" ", "")}"
-                        onCopyShareLink(shareUrl)
+                        onCopyShareLink(cleanSeed)
                     },
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
@@ -147,33 +158,49 @@ fun SharePreviewModal(
                 ) {
                     Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Copy Link", fontWeight = FontWeight.SemiBold)
+                    Text("Copy contact", fontWeight = FontWeight.SemiBold)
                 }
 
                 Button(
+                    enabled = !isSharing,
                     onClick = {
-                        try {
-                            val imageFile = generateCardBitmap(
-                                context = context,
-                                personName = personName,
-                                qrSeed = cleanSeed
-                            )
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                imageFile
-                            )
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "image/png"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                putExtra(Intent.EXTRA_SUBJECT, "$personName's Contact Card")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        if (isSharing) return@Button
+                        isSharing = true
+                        shareError = null
+                        scope.launch {
+                            var imageFile: File? = null
+                            var shared = false
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    imageFile = generateCardBitmap(
+                                        context = context,
+                                        personName = personName,
+                                        qrSeed = cleanSeed
+                                    )
+                                }
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    checkNotNull(imageFile)
+                                )
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "image/png"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    putExtra(Intent.EXTRA_SUBJECT, "$personName's Contact Card")
+                                    clipData = android.content.ClipData.newUri(context.contentResolver, "Contact card", uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share Contact Card"))
+                                shared = true
+                                onDismissRequest()
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                shareError = "Could not share this image. Please try again."
+                            } finally {
+                                if (!shared) imageFile?.delete()
+                                isSharing = false
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Contact Card"))
-                            onDismissRequest()
-                        } catch (_: Exception) {
-                            val shareUrl = "https://persona.vault/p/${personName.lowercase().replace(" ", "")}"
-                            onCopyShareLink(shareUrl)
                         }
                     },
                     shape = RoundedCornerShape(16.dp),
@@ -188,14 +215,14 @@ fun SharePreviewModal(
                 ) {
                     Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Share Card", fontWeight = FontWeight.Bold)
+                    Text(if (isSharing) "Preparing…" else "Share image", fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
 
-private fun generateCardBitmap(
+internal fun generateCardBitmap(
     context: Context,
     personName: String,
     qrSeed: String
@@ -203,52 +230,67 @@ private fun generateCardBitmap(
     val width = 1200
     val height = 756
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
+    try {
+        val canvas = Canvas(bitmap)
 
-    // Dark matte finish background
-    val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.parseColor("#121316")
+        // Dark matte finish background
+        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#121316")
+        }
+        val cardRect = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        canvas.drawRoundRect(cardRect, 48f, 48f, cardPaint)
+
+        // Border
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.parseColor("#2C2E35")
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+        }
+        canvas.drawRoundRect(cardRect, 48f, 48f, borderPaint)
+
+        // Name on the left (vertically centered)
+        val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = 62f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        val availableNameWidth = 560f
+        val name = personName.ifBlank { "Personal Contact" }
+        while (namePaint.measureText(name) > availableNameWidth && namePaint.textSize > 24f) namePaint.textSize -= 2f
+        val displayName = android.text.TextUtils.ellipsize(name, android.text.TextPaint(namePaint), availableNameWidth, android.text.TextUtils.TruncateAt.END)
+        canvas.drawText(displayName.toString(), 88f, (height / 2f) + 20f, namePaint)
+
+        // QR Code on the right side
+        val qrSize = 340
+        val qrLeft = width - qrSize - 88f
+        val qrTop = (height - qrSize) / 2f
+        val qrBgRect = RectF(qrLeft - 16f, qrTop - 16f, qrLeft + qrSize + 16f, qrTop + qrSize + 16f)
+
+        val qrBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+        }
+        canvas.drawRoundRect(qrBgRect, 28f, 28f, qrBgPaint)
+
+        val qrBitmap = QrCodeGenerator.generateQrBitmap(qrSeed, qrSize)
+        try {
+            canvas.drawBitmap(qrBitmap, qrLeft, qrTop, null)
+        } finally {
+            qrBitmap.recycle()
+        }
+
+        // Save to cache
+        val cacheDir = File(context.cacheDir, "shared_cards").apply { check(isDirectory || mkdirs()) { "Could not prepare image export" } }
+        val file = File.createTempFile("persona_card_", ".png", cacheDir)
+        try {
+            FileOutputStream(file).use { out ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) { "Could not encode image" }
+            }
+            return file
+        } catch (error: Exception) {
+            file.delete()
+            throw error
+        }
+    } finally {
+        bitmap.recycle()
     }
-    val cardRect = RectF(0f, 0f, width.toFloat(), height.toFloat())
-    canvas.drawRoundRect(cardRect, 48f, 48f, cardPaint)
-
-    // Border
-    val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.parseColor("#2C2E35")
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-    }
-    canvas.drawRoundRect(cardRect, 48f, 48f, borderPaint)
-
-    // Name on the left (vertically centered)
-    val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE
-        textSize = 62f
-        typeface = android.graphics.Typeface.DEFAULT_BOLD
-    }
-    canvas.drawText(personName.ifBlank { "Personal Contact" }, 88f, (height / 2f) + 20f, namePaint)
-
-    // QR Code on the right side
-    val qrSize = 340
-    val qrLeft = width - qrSize - 88f
-    val qrTop = (height - qrSize) / 2f
-    val qrBgRect = RectF(qrLeft - 16f, qrTop - 16f, qrLeft + qrSize + 16f, qrTop + qrSize + 16f)
-
-    val qrBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE
-    }
-    canvas.drawRoundRect(qrBgRect, 28f, 28f, qrBgPaint)
-
-    val qrBitmap = QrCodeGenerator.generateQrBitmap(qrSeed, qrSize)
-    if (qrBitmap != null) {
-        canvas.drawBitmap(qrBitmap, qrLeft, qrTop, null)
-    }
-
-    // Save to cache
-    val cacheDir = File(context.cacheDir, "shares").apply { if (!exists()) mkdirs() }
-    val file = File(cacheDir, "persona_card_${System.currentTimeMillis()}.png")
-    FileOutputStream(file).use { out ->
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-    }
-    return file
 }

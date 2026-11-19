@@ -36,12 +36,14 @@ import com.pims.vault.data.local.entity.PlainNoteEntity
 import com.pims.vault.data.local.entity.PlainNoteAttachmentEntity
 import com.pims.vault.data.local.entity.RelationshipEntity
 import com.pims.vault.data.local.entity.RelationshipNoteEntity
+import com.pims.vault.data.local.entity.RelationshipNoteAttachmentEntity
 import com.pims.vault.data.local.entity.SocialAccountEntity
 import com.pims.vault.data.local.entity.SyncConflictEntity
 import com.pims.vault.data.local.entity.SyncQueueEntity
 import com.pims.vault.data.local.entity.SharingProfileEntity
 import com.pims.vault.data.local.entity.SharingProfileDao
 import com.pims.vault.data.local.entity.VaultItemEntity
+import com.pims.vault.data.local.entity.VaultItemMigrationArchiveEntity
 
 @Database(
     entities = [
@@ -50,6 +52,7 @@ import com.pims.vault.data.local.entity.VaultItemEntity
         AddressEntity::class,
         RelationshipEntity::class,
         RelationshipNoteEntity::class,
+        RelationshipNoteAttachmentEntity::class,
         DocumentEntity::class,
         DocumentVersionEntity::class,
         MedicalProfileEntity::class,
@@ -58,14 +61,19 @@ import com.pims.vault.data.local.entity.VaultItemEntity
         EmploymentRecordEntity::class,
         SocialAccountEntity::class,
         VaultItemEntity::class,
+        VaultItemMigrationArchiveEntity::class,
         AuditEventEntity::class,
         SyncQueueEntity::class,
         SyncConflictEntity::class,
         SharingProfileEntity::class,
         PlainNoteEntity::class,
-        PlainNoteAttachmentEntity::class
+        PlainNoteAttachmentEntity::class,
+        com.pims.vault.data.local.entity.CalendarReminderLinkEntity::class,
+        com.pims.vault.data.local.entity.VaultProofEntity::class,
+        com.pims.vault.data.local.entity.VaultDeletionEntity::class,
+        com.pims.vault.data.local.entity.DocumentDeletionEntity::class
     ],
-    version = 12,
+    version = 18,
     exportSchema = true
 )
 @TypeConverters(RoomConverters::class)
@@ -76,8 +84,12 @@ abstract class PimsDatabase : RoomDatabase() {
     abstract fun addressDao(): AddressDao
     abstract fun relationshipDao(): RelationshipDao
     abstract fun relationshipNoteDao(): RelationshipNoteDao
+    abstract fun calendarReminderLinkDao(): com.pims.vault.data.local.dao.CalendarReminderLinkDao
+    abstract fun vaultProofDao(): com.pims.vault.data.local.dao.VaultProofDao
+    abstract fun vaultDeletionDao(): com.pims.vault.data.local.dao.VaultDeletionDao
     abstract fun plainNoteDao(): PlainNoteDao
     abstract fun documentDao(): DocumentDao
+    abstract fun documentDeletionDao(): com.pims.vault.data.local.dao.DocumentDeletionDao
     abstract fun medicalDao(): MedicalDao
     abstract fun educationDao(): EducationDao
     abstract fun employmentDao(): EmploymentDao
@@ -312,6 +324,142 @@ abstract class PimsDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds version markers while preserving all existing ciphertext as legacy v1. */
+        val MIGRATION_12_13 = object : androidx.room.migration.Migration(12, 13) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `vault_items` ADD COLUMN `encryption_format_version` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `vault_items` ADD COLUMN `encryption_key_version` INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        /** Stores source ciphertext during lazy key upgrades so interrupted upgrades remain recoverable. */
+        val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `vault_item_migration_archive` (
+                        `archive_id` TEXT NOT NULL,
+                        `vault_item_id` TEXT NOT NULL,
+                        `encryption_format_version` INTEGER NOT NULL,
+                        `encryption_key_version` INTEGER NOT NULL,
+                        `encrypted_payload` BLOB NOT NULL,
+                        `encryption_iv` TEXT NOT NULL,
+                        `archived_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`archive_id`),
+                        FOREIGN KEY(`vault_item_id`) REFERENCES `vault_items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_vault_item_migration_archive_vault_item_id` ON `vault_item_migration_archive` (`vault_item_id`)")
+            }
+        }
+
+        /** Adds device calendar links and encrypted credential proof metadata. */
+        val MIGRATION_17_18 = object : androidx.room.migration.Migration(17, 18) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // Earlier upgrades left nullable address dates and INTEGER medical date columns.
+                // Rebuild these leaf tables transactionally, preserving every record and identifier.
+                db.execSQL("""
+                    CREATE TABLE `__pims18_addresses` (`id` TEXT NOT NULL,
+                    `person_id` TEXT NOT NULL,
+                    `label` TEXT NOT NULL,
+                    `street_line1` TEXT NOT NULL,
+                    `street_line2` TEXT,
+                    `city` TEXT NOT NULL,
+                    `state_province` TEXT,
+                    `postal_code` TEXT,
+                    `country` TEXT NOT NULL,
+                    `is_current` INTEGER NOT NULL,
+                    `valid_from` INTEGER,
+                    `valid_to` INTEGER,
+                    `notes` TEXT,
+                    `security_classification` TEXT NOT NULL,
+                    `created_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`person_id`) REFERENCES `persons`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )
+                """.trimIndent())
+                db.execSQL("INSERT INTO `__pims18_addresses` (`id`, `person_id`, `label`, `street_line1`, `street_line2`, `city`, `state_province`, `postal_code`, `country`, `is_current`, `valid_from`, `valid_to`, `notes`, `security_classification`, `created_at`) SELECT `id`, `person_id`, `label`, `street_line1`, `street_line2`, `city`, `state_province`, `postal_code`, `country`, `is_current`, `valid_from`, `valid_to`, `notes`, `security_classification`, `created_at` FROM `addresses`")
+                db.execSQL("DROP TABLE `addresses`")
+                db.execSQL("ALTER TABLE `__pims18_addresses` RENAME TO `addresses`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_addresses_person_id` ON `addresses` (`person_id`)")
+                db.execSQL("""
+                    CREATE TABLE `__pims18_medical_records` (`id` TEXT NOT NULL,
+                    `person_id` TEXT NOT NULL,
+                    `record_type` TEXT NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `substance_or_diagnosis` TEXT,
+                    `severity` TEXT,
+                    `status` TEXT,
+                    `dosage` TEXT,
+                    `frequency` TEXT,
+                    `route` TEXT,
+                    `start_date` TEXT,
+                    `end_date` TEXT,
+                    `practitioner_name` TEXT,
+                    `facility_name` TEXT,
+                    `contact_phone` TEXT,
+                    `contact_email` TEXT,
+                    `address` TEXT,
+                    `specialty` TEXT,
+                    `patient_number` TEXT,
+                    `policy_number` TEXT,
+                    `membership_number` TEXT,
+                    `plan_name` TEXT,
+                    `valid_until` TEXT,
+                    `visit_date` TEXT,
+                    `treatment` TEXT,
+                    `follow_up_date` TEXT,
+                    `instructions` TEXT,
+                    `photo_uri` TEXT,
+                    `is_emergency_card_visible` INTEGER NOT NULL,
+                    `notes` TEXT,
+                    `security_classification` TEXT NOT NULL,
+                    `created_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`person_id`) REFERENCES `persons`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )
+                """.trimIndent())
+                db.execSQL("INSERT INTO `__pims18_medical_records` (`id`, `person_id`, `record_type`, `title`, `substance_or_diagnosis`, `severity`, `status`, `dosage`, `frequency`, `route`, `start_date`, `end_date`, `practitioner_name`, `facility_name`, `contact_phone`, `contact_email`, `address`, `specialty`, `patient_number`, `policy_number`, `membership_number`, `plan_name`, `valid_until`, `visit_date`, `treatment`, `follow_up_date`, `instructions`, `photo_uri`, `is_emergency_card_visible`, `notes`, `security_classification`, `created_at`) SELECT `id`, `person_id`, `record_type`, `title`, `substance_or_diagnosis`, `severity`, `status`, `dosage`, `frequency`, `route`, `start_date`, `end_date`, `practitioner_name`, `facility_name`, `contact_phone`, `contact_email`, `address`, `specialty`, `patient_number`, `policy_number`, `membership_number`, `plan_name`, `valid_until`, `visit_date`, `treatment`, `follow_up_date`, `instructions`, `photo_uri`, `is_emergency_card_visible`, `notes`, `security_classification`, `created_at` FROM `medical_records`")
+                db.execSQL("DROP TABLE `medical_records`")
+                db.execSQL("ALTER TABLE `__pims18_medical_records` RENAME TO `medical_records`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_medical_records_person_id` ON `medical_records` (`person_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_medical_records_record_type` ON `medical_records` (`record_type`)")
+                db.execSQL("ALTER TABLE document_versions ADD COLUMN original_filename TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS document_deletions (document_id TEXT NOT NULL PRIMARY KEY, person_id TEXT NOT NULL, account_uid TEXT, deleted_at INTEGER NOT NULL, synced INTEGER NOT NULL DEFAULT 0, storage_paths_json TEXT NOT NULL DEFAULT '[]')")
+            }
+        }
+
+        val MIGRATION_16_17 = object : androidx.room.migration.Migration(16, 17) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS calendar_reminder_links (note_id TEXT NOT NULL PRIMARY KEY, calendar_id INTEGER NOT NULL, event_id INTEGER NOT NULL, content_hash TEXT NOT NULL)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS vault_proofs (id TEXT NOT NULL PRIMARY KEY, item_id TEXT NOT NULL, storage_path TEXT NOT NULL, mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, sha256_hash TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, remote_account_uid TEXT, is_deleted INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_vault_proofs_item_id ON vault_proofs(item_id)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS vault_deletions (item_id TEXT NOT NULL PRIMARY KEY, person_id TEXT NOT NULL, account_uid TEXT, deleted_at INTEGER NOT NULL, synced INTEGER NOT NULL DEFAULT 0)")
+            }
+        }
+
+        val MIGRATION_15_16 = object : androidx.room.migration.Migration(15, 16) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE plain_notes ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `relationship_note_attachments` (
+                        `id` TEXT NOT NULL,
+                        `note_id` TEXT NOT NULL,
+                        `storage_path` TEXT NOT NULL,
+                        `mime_type` TEXT NOT NULL,
+                        `file_size_bytes` INTEGER NOT NULL,
+                        `sha256_hash` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`note_id`) REFERENCES `relationship_notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_relationship_note_attachments_note_id` ON `relationship_note_attachments` (`note_id`)")
+            }
+        }
+
         /**
          * Builder helper for instantiating the database.
          * The open helper factory can be plugged in later for SQLCipher / encryption
@@ -337,7 +485,13 @@ abstract class PimsDatabase : RoomDatabase() {
                 MIGRATION_8_9,
                 MIGRATION_9_10,
                 MIGRATION_10_11,
-                MIGRATION_11_12
+                MIGRATION_11_12,
+                MIGRATION_12_13,
+                MIGRATION_13_14,
+                MIGRATION_14_15,
+                MIGRATION_15_16,
+                MIGRATION_16_17,
+                MIGRATION_17_18
             ).addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     super.onOpen(db)

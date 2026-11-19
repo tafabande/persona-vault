@@ -38,6 +38,7 @@ import com.pims.vault.domain.repository.MedicalRepository
 import com.pims.vault.domain.repository.PersonRepository
 import com.pims.vault.domain.repository.RelationshipRepository
 import com.pims.vault.domain.repository.VaultRepository
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import java.io.InputStream
 import java.io.OutputStream
@@ -191,10 +192,18 @@ class RelationshipRepositoryImpl(
 
 class DocumentRepositoryImpl(
     private val documentDao: DocumentDao,
-    private val fileStorage: FileStorageService,
-    private val auditLogger: HardenedAuditLogger,
-    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
+    fileStorage: FileStorageService,
+    auditLogger: HardenedAuditLogger,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null,
+    deletionStore: com.pims.vault.core.sync.DocumentDeletionStore? = null
 ) : DocumentRepository {
+    private val ingest = com.pims.vault.domain.usecase.document.IngestDocumentUseCase(documentDao, fileStorage, auditLogger)
+    private val addVersion = com.pims.vault.domain.usecase.document.AddDocumentVersionUseCase(documentDao, fileStorage, auditLogger)
+    private val decrypt = com.pims.vault.domain.usecase.document.DecryptDocumentUseCase(fileStorage, auditLogger)
+    private val verifyIntegrity = com.pims.vault.domain.usecase.document.VerifyDocumentIntegrityUseCase(fileStorage, auditLogger)
+    private val delete = com.pims.vault.domain.usecase.document.DeleteDocumentUseCase(documentDao, fileStorage, auditLogger, deletionStore)
+    private val syncScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
     override fun getDocumentsForPersonFlow(personId: String): Flow<List<DocumentWithVersions>> =
         documentDao.getDocumentsForPersonFlow(personId)
 
@@ -204,132 +213,54 @@ class DocumentRepositoryImpl(
     override fun getDocumentFlow(documentId: String): Flow<DocumentWithVersions?> =
         documentDao.getDocumentWithVersionsFlow(documentId)
 
-    override suspend fun createDocument(
-        document: DocumentEntity,
-        initialFileStream: InputStream,
-        mimeType: String,
-        notes: String?
-    ): String {
-        documentDao.insertDocument(document)
-        val meta = fileStorage.storeEncryptedFile(
-            documentId = document.id,
-            versionNumber = 1,
-            mimeType = mimeType,
-            inputStream = initialFileStream
-        )
-        val initialVersion = DocumentVersionEntity(
-            id = UUID.randomUUID().toString(),
-            documentId = document.id,
-            versionNumber = 1,
-            fileStoragePath = meta.relativePath,
-            fileSizeBytes = meta.sizeBytes,
-            mimeType = meta.mimeType,
-            sha256Hash = meta.sha256Hex,
-            encryptionIv = meta.encryptionIvHex,
-            notes = notes
-        )
-        documentDao.insertVersion(initialVersion)
-        try {
-            firestoreSyncService?.syncDocument(null, document)
-            firestoreSyncService?.syncDocumentVersion(null, document.id, initialVersion)
-        } catch (_: Exception) {}
-
-        auditLogger.recordEvent(
-            eventType = AuditEventType.CREATE,
-            entityType = "Document",
-            entityId = document.id,
-            description = "Created document '${document.title}' with initial version"
-        )
-        return document.id
+    override suspend fun createDocument(document: DocumentEntity, initialFileStream: InputStream,
+        mimeType: String, notes: String?): String {
+        val id = ingest(document, initialFileStream, mimeType, versionNotes = notes)
+        requestVersionSync(id, null)
+        return id
     }
 
-    override suspend fun addDocumentVersion(
-        documentId: String,
-        fileStream: InputStream,
-        mimeType: String,
-        notes: String?
-    ): DocumentVersionEntity {
-        val currentMax = documentDao.getLatestVersionNumber(documentId) ?: 0
-        val nextVersion = currentMax + 1
-
-        val meta = fileStorage.storeEncryptedFile(
-            documentId = documentId,
-            versionNumber = nextVersion,
-            mimeType = mimeType,
-            inputStream = fileStream
-        )
-
-        val versionEntity = DocumentVersionEntity(
-            id = UUID.randomUUID().toString(),
-            documentId = documentId,
-            versionNumber = nextVersion,
-            fileStoragePath = meta.relativePath,
-            fileSizeBytes = meta.sizeBytes,
-            mimeType = meta.mimeType,
-            sha256Hash = meta.sha256Hex,
-            encryptionIv = meta.encryptionIvHex,
-            notes = notes
-        )
-        documentDao.insertVersion(versionEntity)
-
-        auditLogger.recordEvent(
-            eventType = AuditEventType.UPDATE,
-            entityType = "DocumentVersion",
-            entityId = versionEntity.id,
-            description = "Appended Version $nextVersion to document $documentId"
-        )
-        return versionEntity
+    override suspend fun addDocumentVersion(documentId: String, fileStream: InputStream,
+        mimeType: String, notes: String?): DocumentVersionEntity {
+        val version = addVersion(documentId, fileStream, mimeType, notes)
+        requestVersionSync(documentId, version.id)
+        return version
     }
 
     override suspend fun exportDocumentVersion(version: DocumentVersionEntity, outputStream: OutputStream) {
-        fileStorage.readDecryptedFile(
-            relativePath = version.fileStoragePath,
-            encryptionIvHex = version.encryptionIv,
-            expectedSha256Hex = version.sha256Hash,
-            outputStream = outputStream
-        )
-        auditLogger.recordEvent(
-            eventType = AuditEventType.READ,
-            entityType = "DocumentVersion",
-            entityId = version.id,
-            description = "Decrypted and read version ${version.versionNumber} of document ${version.documentId}"
-        )
+        decrypt(version.domainVersion(), outputStream)
     }
 
-    override suspend fun verifyDocumentVersionIntegrity(version: DocumentVersionEntity): Boolean {
-        val isValid = fileStorage.verifyIntegrity(
-            relativePath = version.fileStoragePath,
-            encryptionIvHex = version.encryptionIv,
-            expectedSha256Hex = version.sha256Hash
-        )
-        if (!isValid) {
-            auditLogger.recordEvent(
-                eventType = AuditEventType.INTEGRITY_CHECK_FAILED,
-                entityType = "DocumentVersion",
-                entityId = version.id,
-                description = "INTEGRITY CHECK FAILED for document version ${version.id}"
-            )
-        }
-        return isValid
-    }
+    override suspend fun verifyDocumentVersionIntegrity(version: DocumentVersionEntity): Boolean =
+        verifyIntegrity(version.domainVersion()) == com.pims.vault.domain.model.IntegrityCheckStatus.INTEGRITY_OK
 
     override suspend fun deleteDocument(documentId: String) {
-        val versions = documentDao.getAllVersions(documentId)
-        versions.forEach { v ->
-            try { fileStorage.deleteFile(v.fileStoragePath) } catch (_: Exception) {}
+        delete(documentId)
+        val service = firestoreSyncService ?: return
+        syncScope.launch {
+            try { service.deleteRemoteDocument(documentId) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { VaultLogger.w("DocumentRepository", "Document deletion will retry during sync") }
         }
-        documentDao.deleteDocumentById(documentId)
-        try {
-            firestoreSyncService?.deleteRemoteDocument(documentId)
-        } catch (_: Exception) {}
-
-        auditLogger.recordEvent(
-            eventType = AuditEventType.DELETE,
-            entityType = "Document",
-            entityId = documentId,
-            description = "Permanently deleted document $documentId"
-        )
     }
+
+    private fun requestVersionSync(documentId: String, versionId: String?) {
+        val service = firestoreSyncService ?: return
+        syncScope.launch {
+            try {
+                val current = documentDao.getDocumentWithVersions(documentId) ?: return@launch
+                service.syncDocument(null, current.document)
+                val version = if (versionId == null) current.versions.minByOrNull { it.versionNumber }
+                    else current.versions.find { it.id == versionId }
+                if (version != null) service.syncDocumentVersion(null, documentId, version)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { VaultLogger.w("DocumentRepository", "Document backup will retry during sync") }
+        }
+    }
+
+    private fun DocumentVersionEntity.domainVersion() = com.pims.vault.domain.model.DocumentVersionItem(
+        id, documentId, versionNumber, fileStoragePath, mimeType, originalFilename,
+        fileSizeBytes, sha256Hash, encryptionIv, notes = notes, createdAt = createdAt)
 }
 
 class MedicalRepositoryImpl(
@@ -398,11 +329,9 @@ class VaultRepositoryImpl(
         val id = UUID.randomUUID().toString()
         val vaultKey = sessionManager.getVaultKey()
 
-        val encrypted = cryptoEngine.encrypt(
-            plainBytes = plaintextSecret,
-            keyBytes = vaultKey,
-            associatedData = id.toByteArray(Charsets.UTF_8)
-        )
+        val encrypted = try {
+            cryptoEngine.encrypt(plaintextSecret, vaultKey, id.toByteArray(Charsets.UTF_8))
+        } finally { vaultKey.fill(0) }
 
         val entity = VaultItemEntity(
             id = id,
@@ -412,6 +341,7 @@ class VaultRepositoryImpl(
             accountIdentifier = accountIdentifier,
             encryptedPayload = encrypted.combinedCiphertextWithTag,
             encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
+            encryptionKeyVersion = 2,
             notes = notes
         )
         vaultDao.insertOrUpdate(entity)
@@ -439,11 +369,9 @@ class VaultRepositoryImpl(
             iv = ivBytes
         )
 
-        val decrypted = cryptoEngine.decrypt(
-            payload = payload,
-            keyBytes = vaultKey,
-            associatedData = item.id.toByteArray(Charsets.UTF_8)
-        )
+        val decrypted = try {
+            cryptoEngine.decrypt(payload, vaultKey, item.id.toByteArray(Charsets.UTF_8))
+        } finally { vaultKey.fill(0) }
 
         auditLogger.recordEvent(
             eventType = AuditEventType.READ,

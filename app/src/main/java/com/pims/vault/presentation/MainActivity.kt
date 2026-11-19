@@ -64,6 +64,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
+import com.pims.vault.core.crypto.KeySecurityManager
 import com.pims.vault.core.crypto.KeySecurityLevel
 import com.pims.vault.core.crypto.SessionState
 import com.pims.vault.core.session.AccountMode
@@ -245,6 +246,8 @@ class MainViewModel @Inject constructor(
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
+
+    @Inject lateinit var keySecurityManager: KeySecurityManager
 
     companion object {
         const val EXTRA_QUICK_ACTION = "com.pims.vault.action.QUICK_ACTION"
@@ -431,6 +434,9 @@ class MainActivity : FragmentActivity() {
                                         onSignInClicked = { viewModel.openSignIn() },
                                         onRequestBiometricAuth = { title, subtitle, onSuccess, onError ->
                                             requestBiometricAuthentication(title, subtitle, onSuccess, onError)
+                                        },
+                                        onRequestVaultBiometricAuth = { title, subtitle, onSuccess, onError ->
+                                            requestVaultBiometricAuthentication(title, subtitle, onSuccess, onError)
                                         }
                                     )
                                 }
@@ -511,6 +517,54 @@ class MainActivity : FragmentActivity() {
             .build()
 
         prompt.authenticate(promptInfo)
+    }
+
+    private fun requestVaultBiometricAuthentication(
+        title: String,
+        subtitle: String,
+        onSuccess: (BiometricPrompt.CryptoObject) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val biometricManager = androidx.biometric.BiometricManager.from(this)
+        val strongBiometric = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
+        if (biometricManager.canAuthenticate(strongBiometric) != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+            onError("A strong biometric is required to unlock the vault")
+            return
+        }
+        val cryptoObject = keySecurityManager.createZone4BiometricCryptoObject()
+        if (cryptoObject == null) {
+            onError("Hardware vault key is unavailable or cannot be opened")
+            return
+        }
+        val biometricPrompt = BiometricPrompt(
+            this,
+            ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    val authorized = result.cryptoObject
+                    if (authorized?.cipher == null) onError("The device did not authorize the vault key operation")
+                    else onSuccess(authorized)
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    onError(errString.toString())
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    // A failed biometric sample is non-terminal; keep the prompt active.
+                }
+            }
+        )
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setAllowedAuthenticators(strongBiometric)
+            .setNegativeButtonText("Cancel")
+            .build()
+        biometricPrompt.authenticate(promptInfo, cryptoObject)
     }
 
     private fun showBiometricPrompt() {

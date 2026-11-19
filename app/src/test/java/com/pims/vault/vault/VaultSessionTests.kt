@@ -68,7 +68,7 @@ class VaultSessionTests {
     private val cryptoEngine = StandardCryptoEngine()
     private val masterKey = ByteArray(32) { 0x11 }
 
-    private val fakeVaultDao = object : VaultDao {
+    private val fakeVaultDao = object : com.pims.vault.testing.TestVaultDao() {
         private val items = mutableMapOf<String, VaultItemEntity>()
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
             items[item.id] = item
@@ -145,7 +145,8 @@ class VaultSessionTests {
             deleteVaultItemUseCase = DeleteVaultItemUseCase(fakeVaultDao, auditLogger),
             sessionManager = sessionManager,
             personDao = fakePersonDao,
-            vaultDao = fakeVaultDao
+            vaultDao = fakeVaultDao,
+            migrateLegacyVaultItemUseCase = com.pims.vault.domain.usecase.vault.MigrateLegacyVaultItemUseCase(fakeVaultDao, cryptoEngine)
         )
     }
 
@@ -159,6 +160,41 @@ class VaultSessionTests {
     fun testVaultInitiallyLocked() {
         assertFalse(viewModel.uiState.value.isVaultUnlocked)
         assertEquals(300, viewModel.uiState.value.timeoutRemainingSeconds)
+    }
+
+    @Test
+    fun failedSaveKeepsEditorOpenAndDoesNotSignalNavigation() = runTest(testDispatcher) {
+        viewModel.openEditor(VaultCategory.SECURE_NOTE)
+        var navigated = false
+        viewModel.saveSecureNote("Draft", "Retain this draft", onSaved = { navigated = true })
+        assertTrue(viewModel.uiState.value.isSaving)
+        testDispatcher.scheduler.runCurrent()
+        assertFalse(viewModel.uiState.value.isSaving)
+        assertFalse(navigated)
+        assertTrue(viewModel.uiState.value.isEditing)
+        assertNotNull(viewModel.uiState.value.errorMessage)
+        assertTrue(fakeVaultDao.getAllVaultItems().isEmpty())
+    }
+
+    @Test
+    fun repeatedSaveCreatesOnlyOneItemAndSignalsSuccessOnce() = runTest(testDispatcher) {
+        viewModel.unlockVault(ByteArray(32) { 0x55 })
+        viewModel.openEditor(VaultCategory.SECURE_NOTE)
+        var saved = 0
+        viewModel.saveSecureNote("Draft", "One item", onSaved = { saved++ })
+        viewModel.saveSecureNote("Draft", "One item", onSaved = { saved++ })
+        // Encryption uses Dispatchers.IO; drive Main while allowing the real worker to finish.
+        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(3)
+        do {
+            testDispatcher.scheduler.runCurrent()
+            if (!viewModel.uiState.value.isSaving) break
+            Thread.sleep(10)
+        } while (System.nanoTime() < deadline)
+        assertEquals(1, fakeVaultDao.getAllVaultItems().size)
+        assertEquals(1, saved)
+        assertFalse(viewModel.uiState.value.isSaving)
+        assertFalse(viewModel.uiState.value.isEditing)
+        viewModel.lockVault()
     }
 
     @Test

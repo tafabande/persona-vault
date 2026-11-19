@@ -68,7 +68,7 @@ class CryptographicRecoveryExperimentTest {
     }
 
     // In-memory disposable VaultDao
-    private val fakeVaultDao = object : VaultDao {
+    private val fakeVaultDao = object : com.pims.vault.testing.TestVaultDao() {
         val items = mutableMapOf<String, VaultItemEntity>()
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
             items[item.id] = item

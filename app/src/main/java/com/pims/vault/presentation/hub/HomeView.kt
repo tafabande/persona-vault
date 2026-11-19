@@ -80,7 +80,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.pims.vault.presentation.ui.theme.PersonaAccent
 import com.pims.vault.presentation.ui.theme.pimsApplePress
 import com.pims.vault.presentation.ui.theme.pimsTactile
-import com.pims.vault.presentation.ui.theme.StateWarning
+import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
 
@@ -190,7 +191,7 @@ fun HomeView(
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = pimsPageGutter(), vertical = 8.dp)
             ) {
                 HomeHeaderRow(
                     displayName = displayName,

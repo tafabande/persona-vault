@@ -80,19 +80,19 @@ class KeySecurityManagerSafetyRegressionTest {
             sharedPreferences = fakePrefs
         )
 
-        assertFalse(fakePrefs.contains("PIMS/vault/v1_iv"))
-        assertFalse(fakePrefs.contains("PIMS/vault/v1_cipher"))
+        assertFalse(fakePrefs.contains("PIMS/files/v1_iv"))
+        assertFalse(fakePrefs.contains("PIMS/files/v1_cipher"))
 
         // First initialization
-        val subkey = manager.deriveDomainSubkey("PIMS/vault/v1")
+        val subkey = manager.deriveDomainSubkey("PIMS/files/v1")
         assertNotNull(subkey)
         assertEquals(32, subkey.bytes.size)
 
         // SharedPreferences must now contain non-empty IV and ciphertext
-        assertTrue(fakePrefs.contains("PIMS/vault/v1_iv"))
-        assertTrue(fakePrefs.contains("PIMS/vault/v1_cipher"))
-        val ivStr = fakePrefs.getString("PIMS/vault/v1_iv", null)
-        val cipherStr = fakePrefs.getString("PIMS/vault/v1_cipher", null)
+        assertTrue(fakePrefs.contains("PIMS/files/v1_iv"))
+        assertTrue(fakePrefs.contains("PIMS/files/v1_cipher"))
+        val ivStr = fakePrefs.getString("PIMS/files/v1_iv", null)
+        val cipherStr = fakePrefs.getString("PIMS/files/v1_cipher", null)
         assertFalse(ivStr.isNullOrBlank())
         assertFalse(cipherStr.isNullOrBlank())
     }
@@ -108,19 +108,19 @@ class KeySecurityManagerSafetyRegressionTest {
         )
 
         // First call initializes
-        val subkeyFirst = manager.deriveDomainSubkey("PIMS/vault/v1")
-        val initialIv = fakePrefs.getString("PIMS/vault/v1_iv", null)
-        val initialCipher = fakePrefs.getString("PIMS/vault/v1_cipher", null)
+        val subkeyFirst = manager.deriveDomainSubkey("PIMS/files/v1")
+        val initialIv = fakePrefs.getString("PIMS/files/v1_iv", null)
+        val initialCipher = fakePrefs.getString("PIMS/files/v1_cipher", null)
 
         // Second call unwraps existing material
-        val subkeySecond = manager.deriveDomainSubkey("PIMS/vault/v1")
+        val subkeySecond = manager.deriveDomainSubkey("PIMS/files/v1")
 
         // Keys must be identical across calls
         assertArrayEquals(subkeyFirst.bytes, subkeySecond.bytes)
 
         // Preferences must remain byte-for-byte identical (no unnecessary re-writes)
-        assertEquals(initialIv, fakePrefs.getString("PIMS/vault/v1_iv", null))
-        assertEquals(initialCipher, fakePrefs.getString("PIMS/vault/v1_cipher", null))
+        assertEquals(initialIv, fakePrefs.getString("PIMS/files/v1_iv", null))
+        assertEquals(initialCipher, fakePrefs.getString("PIMS/files/v1_cipher", null))
     }
 
     @Test
@@ -134,9 +134,9 @@ class KeySecurityManagerSafetyRegressionTest {
         )
 
         // Initialize under Master Key A
-        val subkeyA = managerA.deriveDomainSubkey("PIMS/vault/v1")
-        val storedIv = fakePrefs.getString("PIMS/vault/v1_iv", null)
-        val storedCipher = fakePrefs.getString("PIMS/vault/v1_cipher", null)
+        val subkeyA = managerA.deriveDomainSubkey("PIMS/files/v1")
+        val storedIv = fakePrefs.getString("PIMS/files/v1_iv", null)
+        val storedCipher = fakePrefs.getString("PIMS/files/v1_cipher", null)
         assertNotNull(storedIv)
         assertNotNull(storedCipher)
 
@@ -150,14 +150,14 @@ class KeySecurityManagerSafetyRegressionTest {
 
         // Decryption MUST fail with typed WrappedKeyDecryptionException
         val exception = assertThrows(WrappedKeyDecryptionException::class.java) {
-            managerB.deriveDomainSubkey("PIMS/vault/v1")
+            managerB.deriveDomainSubkey("PIMS/files/v1")
         }
-        assertEquals("PIMS/vault/v1", exception.domainContext)
+        assertEquals("PIMS/files/v1", exception.domainContext)
 
         // CRITICAL INVARIANT: Stored preference entries must remain 100% byte-for-byte identical!
         // No replacement key generated, no entries deleted or overwritten!
-        assertEquals(storedIv, fakePrefs.getString("PIMS/vault/v1_iv", null))
-        assertEquals(storedCipher, fakePrefs.getString("PIMS/vault/v1_cipher", null))
+        assertEquals(storedIv, fakePrefs.getString("PIMS/files/v1_iv", null))
+        assertEquals(storedCipher, fakePrefs.getString("PIMS/files/v1_cipher", null))
     }
 
     @Test
@@ -171,9 +171,9 @@ class KeySecurityManagerSafetyRegressionTest {
         )
 
         // Initialize
-        manager.deriveDomainSubkey("PIMS/vault/v1")
-        val storedIv = fakePrefs.getString("PIMS/vault/v1_iv", null)
-        val storedCipher = fakePrefs.getString("PIMS/vault/v1_cipher", null)
+        manager.deriveDomainSubkey("PIMS/files/v1")
+        val storedIv = fakePrefs.getString("PIMS/files/v1_iv", null)
+        val storedCipher = fakePrefs.getString("PIMS/files/v1_cipher", null)
 
         // Switch to bad key
         Mockito.`when`(mockKeyStore.getKey(eq("PIMS_ROOT_MASTER_KEY_V1"), anyOrNull())).thenReturn(masterKeyB)
@@ -181,12 +181,12 @@ class KeySecurityManagerSafetyRegressionTest {
         // Multiple retry attempts
         for (i in 1..3) {
             val ex = assertThrows(WrappedKeyDecryptionException::class.java) {
-                manager.deriveDomainSubkey("PIMS/vault/v1")
+                manager.deriveDomainSubkey("PIMS/files/v1")
             }
-            assertEquals("PIMS/vault/v1", ex.domainContext)
+            assertEquals("PIMS/files/v1", ex.domainContext)
             // Assert preferences are untouched after every retry
-            assertEquals(storedIv, fakePrefs.getString("PIMS/vault/v1_iv", null))
-            assertEquals(storedCipher, fakePrefs.getString("PIMS/vault/v1_cipher", null))
+            assertEquals(storedIv, fakePrefs.getString("PIMS/files/v1_iv", null))
+            assertEquals(storedCipher, fakePrefs.getString("PIMS/files/v1_cipher", null))
         }
     }
 
@@ -201,7 +201,7 @@ class KeySecurityManagerSafetyRegressionTest {
             sharedPreferences = fakePrefs
         )
         // Initialize under Key A
-        manager.deriveDomainSubkey("PIMS/vault/v1")
+        manager.deriveDomainSubkey("PIMS/files/v1")
 
         // Switch to Key B to trigger WrappedKeyDecryptionException
         Mockito.`when`(mockKeyStore.getKey(eq("PIMS_ROOT_MASTER_KEY_V1"), anyOrNull())).thenReturn(masterKeyB)
@@ -210,63 +210,12 @@ class KeySecurityManagerSafetyRegressionTest {
             keySecurityManager = manager
         )
 
-        // Unlock Zone 0-3 session so unlockZone4Vault is allowed to be invoked
-        sessionManager.onAuthenticationSuccess()
-
-        val fakeVaultDao = InMemoryVaultDao()
-        val fakeAuditDao = InMemoryAuditDao()
-        val fakePersonDao = InMemoryPersonDao()
-        val auditLogger = HardenedAuditLogger(fakeAuditDao, ByteArray(32) { 0x44 })
-
-        val viewModel = VaultViewModel(
-            getVaultItemsUseCase = GetVaultItemsUseCase(fakeVaultDao),
-            savePasswordUseCase = SavePasswordUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readPasswordSecretUseCase = ReadPasswordSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveTotpSecretUseCase = SaveTotpSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readTotpSecretUseCase = ReadTotpSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            generateLiveTotpUseCase = GenerateLiveTotpUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveRecoveryCodesUseCase = SaveRecoveryCodesUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readRecoveryCodesUseCase = ReadRecoveryCodesUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            consumeRecoveryCodeUseCase = ConsumeRecoveryCodeUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveSecureNoteUseCase = SaveSecureNoteUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readSecureNoteUseCase = ReadSecureNoteUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            savePaymentReferenceUseCase = SavePaymentReferenceUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readPaymentReferenceUseCase = ReadPaymentReferenceUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveBankAccountUseCase = SaveBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readBankAccountUseCase = ReadBankAccountUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveApiKeyUseCase = SaveApiKeyUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readApiKeySecretUseCase = ReadApiKeySecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveSshKeyUseCase = SaveSshKeyUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readSshKeySecretUseCase = ReadSshKeySecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveAccessTokenUseCase = SaveAccessTokenUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readAccessTokenSecretUseCase = ReadAccessTokenSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveGenericSecretUseCase = SaveGenericSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readGenericSecretUseCase = ReadGenericSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            saveIdentityCredentialUseCase = SaveIdentityCredentialUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            readIdentityCredentialUseCase = ReadIdentityCredentialUseCase(fakeVaultDao, cryptoEngine, auditLogger),
-            deleteVaultItemUseCase = DeleteVaultItemUseCase(fakeVaultDao, auditLogger),
-            sessionManager = sessionManager,
-            personDao = fakePersonDao,
-            vaultDao = fakeVaultDao
-        )
-
-        // Attempt write when sessionKey is null and hardware key unwrapping fails
-        viewModel.savePassword(
-            title = "Blocked Secret",
-            username = "blocked_user",
-            passwordPlain = "blocked_password",
-            websiteUrl = "https://blocked.example.com",
-            notes = "This must fail closed"
-        )
-        testDispatcher.scheduler.runCurrent()
-
-        // 1. Error message must be populated
-        assertNotNull(viewModel.uiState.value.errorMessage)
-        assertTrue(viewModel.uiState.value.errorMessage!!.contains("failed to decrypt"))
-
-        // 2. NO record must be persisted into the database with a fallback key!
-        val items = fakeVaultDao.getAllVaultItems()
-        assertTrue("Database must remain empty; caller failed closed without writing fallback record", items.isEmpty())
+        try {
+            sessionManager.onAuthenticationSuccess()
+            org.junit.Assert.fail("Corrupt wrapped material must prevent app authentication")
+        } catch (_: WrappedKeyDecryptionException) {
+            assertFalse(sessionManager.isZone4Unlocked())
+        }
     }
 
     @Test
@@ -318,10 +267,15 @@ class KeySecurityManagerSafetyRegressionTest {
             deleteVaultItemUseCase = DeleteVaultItemUseCase(fakeVaultDao, auditLogger),
             sessionManager = sessionManager,
             personDao = fakePersonDao,
-            vaultDao = fakeVaultDao
+            vaultDao = fakeVaultDao,
+            migrateLegacyVaultItemUseCase = com.pims.vault.domain.usecase.vault.MigrateLegacyVaultItemUseCase(fakeVaultDao, cryptoEngine)
         )
 
-        // Save password with valid hardware key derivation
+        val testRoot = manager.deriveDomainSubkey("PIMS/files/v1")
+        viewModel.unlockVault(testRoot.copyBytes())
+        testRoot.close()
+
+        // Exercise the ViewModel with an explicitly supplied test session key.
         viewModel.savePassword(
             title = "Valid Secret",
             username = "valid_user",
@@ -337,7 +291,7 @@ class KeySecurityManagerSafetyRegressionTest {
         assertEquals("Valid Secret", items[0].title)
 
         // Verify it can be read back using the authoritative vault key
-        val authSubkey = manager.deriveDomainSubkey("PIMS/vault/v1")
+        val authSubkey = manager.deriveDomainSubkey("PIMS/files/v1")
         val readUseCase = ReadPasswordSecretUseCase(fakeVaultDao, cryptoEngine, auditLogger)
         val secret = readUseCase(items[0].id, authSubkey.bytes)
         assertEquals("valid_password_123", secret.passwordPlaintext)
@@ -397,7 +351,7 @@ class KeySecurityManagerSafetyRegressionTest {
         }
     }
 
-    class InMemoryVaultDao : VaultDao {
+    class InMemoryVaultDao : com.pims.vault.testing.TestVaultDao() {
         private val map = mutableMapOf<String, VaultItemEntity>()
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
             map[item.id] = item

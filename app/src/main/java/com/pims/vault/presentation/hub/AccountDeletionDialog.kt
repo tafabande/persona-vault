@@ -33,7 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.ui.theme.StateError
+import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 
 @Composable
 fun AccountDeletionDialog(

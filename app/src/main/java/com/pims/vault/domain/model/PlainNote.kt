@@ -24,7 +24,8 @@ data class PlainNote(
     val reminderTag: String? = null,
     val reminderRepeat: String? = null,
     val isReminderDone: Boolean = false,
-    val isLocked: Boolean = false
+    val isLocked: Boolean = false,
+    val isPinned: Boolean = false
 ) {
     val tags: List<String>
         get() {

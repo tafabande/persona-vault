@@ -84,17 +84,16 @@ fun CardDetailScreen(
         viewModel.openItem(card)
     }
 
+    val decryptedPayment = uiState.activeDecryptedPayment
     val isDebit = card.accountIdentifier?.contains("Debit", ignoreCase = true) == true
     val isCredit = card.accountIdentifier?.contains("Credit", ignoreCase = true) == true
-    val isVirtual = card.accountIdentifier?.contains("Virtual", ignoreCase = true) == true
+    val isVirtual = decryptedPayment?.isVirtualCard ?: (card.accountIdentifier?.contains("Virtual", ignoreCase = true) == true)
     val cardType = when {
         isVirtual -> "Virtual"
         isCredit -> "Credit"
         isDebit -> "Debit"
         else -> "Card"
     }
-
-    val decryptedPayment = uiState.activeDecryptedPayment
 
     val actualPan = decryptedPayment?.fullCardNumber?.ifBlank { null }
 
@@ -124,6 +123,14 @@ fun CardDetailScreen(
         cardholderName = cardholderName,
         expiry = expiry,
         linkedAccountName = linkedAccountName,
+        linkedAccountIds = decryptedPayment?.linkedBankAccountIds.orEmpty(),
+        linksEnabled = !uiState.isSaving,
+        onAccountSelectionChange = { ids ->
+            val before = decryptedPayment?.linkedBankAccountIds.orEmpty()
+            (ids - before.toSet()).forEach { viewModel.linkCardToBankAccount(card.id, it, "") }
+            (before - ids.toSet()).forEach { viewModel.unlinkCardFromBankAccount(card.id, it) }
+        },
+        proofSection = { com.pims.vault.presentation.vault.components.VaultProofSection(card.id, card.personId) },
         notes = notes,
         availableBankAccounts = availableBankAccounts,
         onBack = onBack,
@@ -164,7 +171,11 @@ fun CardDetailScreen(
     onCopyNumber: (String) -> Unit,
     onCopyCvv: ((String) -> Unit)? = null,
     onCopyExpiry: ((String) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    linkedAccountIds: List<String> = emptyList(),
+    linksEnabled: Boolean = true,
+    onAccountSelectionChange: ((List<String>) -> Unit)? = null,
+    proofSection: @Composable () -> Unit = {}
 ) {
     var isPanRevealed by remember { mutableStateOf(false) }
     var isCvvRevealed by remember { mutableStateOf(false) }
@@ -197,7 +208,7 @@ fun CardDetailScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter())
         ) {
             // Top Bar
             Row(
@@ -288,6 +299,9 @@ fun CardDetailScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = issuer,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
@@ -703,133 +717,15 @@ fun CardDetailScreen(
                     }
                 }
 
-                if (!linkedAccountName.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    VaultGroupedCard {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AccountBalance,
-                                contentDescription = null,
-                                tint = getVaultTextSecondary(),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = linkedAccountName,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = getVaultTextPrimary()
-                                )
-                                Text(
-                                    text = "Linked bank account",
-                                    fontSize = 12.sp,
-                                    color = getVaultTextSecondary()
-                                )
-                            }
-                            if (onUnlinkAccount != null) {
-                                IconButton(
-                                    onClick = onUnlinkAccount,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Unlink bank account",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else if (onLinkAccount != null && availableBankAccounts.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    VaultGroupedCard {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showLinkBankDialog = true }
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AccountBalance,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Link Bank Account",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "Explicitly associate with a saved bank account",
-                                    fontSize = 12.sp,
-                                    color = getVaultTextSecondary()
-                                )
-                            }
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Link account",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (showLinkBankDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showLinkBankDialog = false },
-                        title = { Text("Link Bank Account", fontWeight = FontWeight.Bold) },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Select a bank account to link to this payment card:", style = MaterialTheme.typography.bodyMedium)
-                                availableBankAccounts.forEach { bank ->
-                                    Surface(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                showLinkBankDialog = false
-                                                onLinkAccount?.invoke(bank.id, bank.title)
-                                            },
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(Icons.Default.AccountBalance, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column {
-                                                Text(bank.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                                bank.accountIdentifier?.let {
-                                                    Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        confirmButton = {},
-                        dismissButton = {
-                            TextButton(onClick = { showLinkBankDialog = false }) {
-                                Text("Cancel")
-                            }
-                        }
+                Spacer(modifier = Modifier.height(16.dp))
+                if (onAccountSelectionChange != null) {
+                    com.pims.vault.presentation.vault.components.WalletLinksPicker(
+                        "Bank accounts", availableBankAccounts, linkedAccountIds, onAccountSelectionChange, enabled = linksEnabled
                     )
+                } else if (!linkedAccountName.isNullOrBlank()) {
+                    Text(linkedAccountName, style = MaterialTheme.typography.bodyLarge)
                 }
+                proofSection()
 
                 if (!notes.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(16.dp))

@@ -3,6 +3,17 @@ package com.pims.vault.core.storage
 import java.io.InputStream
 import java.io.OutputStream
 
+class EncryptedFileExport(
+    val storageId: String,
+    val sizeBytes: Long,
+    val cipherSha256Hex: String,
+    private val source: () -> InputStream,
+    private val dispose: () -> Unit
+) : AutoCloseable {
+    fun openStream(): InputStream = source()
+    override fun close() = dispose()
+}
+
 /**
  * Metadata recorded when a binary file is securely ingested into the vault.
  */
@@ -22,7 +33,8 @@ data class StoredFileMetadata(
 interface FileStorageService {
     /**
      * Stores an input stream in encrypted form. Returns the metadata needed for version records.
-     * Computes the SHA-256 hash of the original plaintext for non-repudiation and tamper checks.
+     * Authenticates a durable staged file before atomic publication. An unsuccessful
+     * write leaves the previously published ciphertext intact.
      */
     suspend fun storeEncryptedFile(
         documentId: String,
@@ -64,6 +76,23 @@ interface FileStorageService {
         mimeType: String,
         inputStream: InputStream
     ): StoredFileMetadata
+
+    /** Creates a portable encrypted upload copy without writing plaintext to disk. */
+    suspend fun prepareEncryptedExport(
+        relativePath: String,
+        encryptionIvHex: String,
+        expectedSha256Hex: String
+    ): EncryptedFileExport = throw UnsupportedOperationException("Encrypted export is unavailable")
+
+    /** Authenticates a downloaded PCSF file before making it available to readers. */
+    suspend fun storeRestoredChunkedCiphertext(
+        documentId: String,
+        versionNumber: Int,
+        mimeType: String,
+        inputStream: InputStream,
+        expectedPlaintextSha256Hex: String,
+        expectedPlaintextSizeBytes: Long
+    ): StoredFileMetadata = throw UnsupportedOperationException("Chunked restore is unavailable")
 
     /**
      * Securely deletes the physical encrypted file from storage.

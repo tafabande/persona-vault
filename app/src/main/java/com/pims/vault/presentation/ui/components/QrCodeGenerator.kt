@@ -18,13 +18,15 @@ object QrCodeGenerator {
         darkColor: Int = Color.BLACK,
         lightColor: Int = Color.WHITE
     ): Bitmap {
+        require(content.isNotBlank()) { "QR content is empty" }
+        require(size > 0) { "QR size must be positive" }
         val hints = mapOf(
             EncodeHintType.CHARACTER_SET to "UTF-8",
             EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
-            EncodeHintType.MARGIN to 1
+            EncodeHintType.MARGIN to 4
         )
         val bitMatrix = QRCodeWriter().encode(
-            content.ifBlank { "https://persona.vault" },
+            content,
             BarcodeFormat.QR_CODE,
             size,
             size,
@@ -55,24 +57,24 @@ object PersonaVCardHelper {
         linkedIn: String = "",
         country: String = ""
     ): String {
-        return buildString {
-            appendLine("BEGIN:VCARD")
-            appendLine("VERSION:3.0")
-            appendLine("FN:${fullName.ifBlank { "Personal Contact" }}")
-            if (occupation.isNotBlank()) appendLine("TITLE:$occupation")
-            if (phone.isNotBlank()) appendLine("TEL:$phone")
-            if (email.isNotBlank()) appendLine("EMAIL:$email")
-            if (linkedIn.isNotBlank()) {
-                val url = if (linkedIn.startsWith("http://") || linkedIn.startsWith("https://")) {
-                    linkedIn
-                } else {
-                    "https://linkedin.com/in/$linkedIn"
-                }
-                appendLine("URL:$url")
-            }
-            if (country.isNotBlank()) appendLine("ADR:;;;$country;;;")
-            appendLine("NOTE:Shared securely from Persona Vault")
-            append("END:VCARD")
+        fun text(value: String): String = value.replace("\\", "\\\\")
+            .replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+            .replace(";", "\\;").replace(",", "\\,")
+        fun line(value: String): String = value.replace("\r", "").replace("\n", "")
+        val lines = mutableListOf("BEGIN:VCARD", "VERSION:3.0", "FN:${text(fullName.ifBlank { "Personal Contact" })}")
+        // Preserve the supplied name without guessing surname boundaries.
+        lines.add("N:;${text(fullName.ifBlank { "Personal Contact" })};;;")
+        if (occupation.isNotBlank()) lines.add("TITLE:${text(occupation)}")
+        if (phone.isNotBlank()) lines.add("TEL:${line(phone)}")
+        if (email.isNotBlank()) lines.add("EMAIL:${text(email)}")
+        if (linkedIn.isNotBlank()) {
+            val supplied = line(linkedIn).trim()
+            val url = if (supplied.startsWith("https://", true) || supplied.startsWith("http://", true)) supplied
+                else "https://linkedin.com/in/${supplied.removePrefix("@")}"
+            lines.add("URL:$url")
         }
+        if (country.isNotBlank()) lines.add("ADR:;;;;;;${text(country)}")
+        lines.add("END:VCARD")
+        return lines.joinToString("\r\n")
     }
 }

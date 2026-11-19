@@ -110,7 +110,7 @@ class FullLifecycleE2ETests {
         override suspend fun deleteById(id: String) { inMemoryPersons.remove(id) }
     }
 
-    private val fakeVaultDao = object : VaultDao {
+    private val fakeVaultDao = object : com.pims.vault.testing.TestVaultDao() {
         override suspend fun insertOrUpdate(item: VaultItemEntity): Long {
             inMemoryVault[item.id] = item
             return 1L

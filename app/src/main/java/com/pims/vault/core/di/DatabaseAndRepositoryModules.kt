@@ -74,6 +74,10 @@ object DatabaseModule {
     @Provides fun provideSyncQueueDao(db: PimsDatabase): com.pims.vault.data.local.dao.SyncQueueDao = db.syncQueueDao()
     @Provides fun provideSyncConflictDao(db: PimsDatabase): com.pims.vault.data.local.dao.SyncConflictDao = db.syncConflictDao()
     @Provides fun provideSharingProfileDao(db: PimsDatabase): com.pims.vault.data.local.entity.SharingProfileDao = db.sharingProfileDao()
+    @Provides fun provideCalendarReminderLinkDao(db: PimsDatabase): com.pims.vault.data.local.dao.CalendarReminderLinkDao = db.calendarReminderLinkDao()
+    @Provides fun provideDocumentDeletionDao(db: PimsDatabase): com.pims.vault.data.local.dao.DocumentDeletionDao = db.documentDeletionDao()
+    @Provides fun provideVaultDeletionDao(db: PimsDatabase): com.pims.vault.data.local.dao.VaultDeletionDao = db.vaultDeletionDao()
+    @Provides fun provideVaultProofDao(db: PimsDatabase): com.pims.vault.data.local.dao.VaultProofDao = db.vaultProofDao()
     @Provides fun providePlainNoteDao(db: PimsDatabase): com.pims.vault.data.local.dao.PlainNoteDao = db.plainNoteDao()
 }
 
@@ -122,8 +126,9 @@ object RepositoryModule {
         documentDao: DocumentDao,
         fileStorage: FileStorageService,
         auditLogger: HardenedAuditLogger,
-        firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService
-    ): DocumentRepository = DocumentRepositoryImpl(documentDao, fileStorage, auditLogger, firestoreSyncService)
+        firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService,
+        documentDeletions: com.pims.vault.core.sync.DocumentDeletionStore
+    ): DocumentRepository = DocumentRepositoryImpl(documentDao, fileStorage, auditLogger, firestoreSyncService, documentDeletions)
 
     @Provides
     @Singleton
