@@ -227,6 +227,24 @@ enum class PersonaMood(
         darkSurfaceVariantColor = Color(0xFF1C2132),
         darkAvatarBackdropColor = Color(0xFF29233D),
         darkDividerColor = Color(0xFF34364D)
+    ),
+    SAKURA_BLOSSOM(
+        title = "Sakura Blossom",
+        subtitle = "Peach blossoms · soft rose",
+        accentColor = Color(0xFF9C435E),
+        softAccentColor = Color(0xFFFFDCE6),
+        backgroundColor = Color(0xFFFFF5F6),
+        surfaceColor = Color(0xFFFFFBFA),
+        surfaceVariantColor = Color(0xFFF7E7E9),
+        avatarBackdropColor = Color(0xFFFBDCE2),
+        dividerColor = Color(0xFFEACDD3),
+        darkAccentColor = Color(0xFFFFA5BA),
+        darkSoftAccentColor = Color(0xFF432530),
+        darkBackgroundColor = Color(0xFF1C1219),
+        darkSurfaceColor = Color(0xFF281A23),
+        darkSurfaceVariantColor = Color(0xFF37242D),
+        darkAvatarBackdropColor = Color(0xFF4A2937),
+        darkDividerColor = Color(0xFF4E303D)
     )
 }
 

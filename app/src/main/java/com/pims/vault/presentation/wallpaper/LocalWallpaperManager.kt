@@ -24,6 +24,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -52,6 +56,18 @@ data class WallpaperItem(
     val alignmentX: Float = 0f,
     val zoomScale: Float = 1f
 )
+
+data class WallpaperImportProgress(val completed: Int, val total: Int)
+
+data class WallpaperImportResult(
+    val importedItems: List<WallpaperItem>,
+    val failedUris: Map<Uri, String>,
+    val requestedCount: Int,
+    val activatedId: String? = null
+) {
+    val importedIds: List<String> get() = importedItems.map { it.id }
+    val failedCount: Int get() = failedUris.size
+}
 
 /**
  * LocalWallpaperManager
@@ -84,6 +100,9 @@ class LocalWallpaperManager @Inject constructor(
     private val storeFile = File(context.filesDir, "wallpapers_meta.json")
     private val activeIndexFile = File(context.filesDir, "wallpapers_active.txt")
     private val surfacePrefs = context.getSharedPreferences("persona_wallpaper_surfaces", Context.MODE_PRIVATE)
+    private val importMutex = Mutex()
+    private val _importProgress = MutableStateFlow<WallpaperImportProgress?>(null)
+    val importProgress: StateFlow<WallpaperImportProgress?> = _importProgress.asStateFlow()
 
     // Undo buffer for reversible removals
     private var lastRemovedSnapshot: MediaUndoSnapshot<WallpaperItem>? = null
@@ -422,20 +441,85 @@ class LocalWallpaperManager @Inject constructor(
         }
     }
 
-    suspend fun importFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+    suspend fun importFromUri(uri: Uri): Boolean = importFromUris(listOf(uri)).importedItems.isNotEmpty()
+
+    suspend fun importFromUris(uris: List<Uri>): WallpaperImportResult = withContext(Dispatchers.IO) {
+        importMutex.withLock {
+            val sources = uris.distinct()
+            val prepared = linkedMapOf<Uri, WallpaperItem>()
+            val failed = linkedMapOf<Uri, String>()
+            var published = false
+            var activatedId: String? = null
+            try {
+                _importProgress.value = WallpaperImportProgress(0, sources.size)
+                sources.forEachIndexed { index, uri ->
+                    currentCoroutineContext().ensureActive()
+                    try {
+                        prepared[uri] = prepareWallpaperImport(uri)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        failed[uri] = "This image could not be added. Choose a supported image smaller than 16 MB."
+                    }
+                    _importProgress.value = WallpaperImportProgress(index + 1, sources.size)
+                }
+                currentCoroutineContext().ensureActive()
+                if (prepared.isNotEmpty()) {
+                    synchronized(this@LocalWallpaperManager) {
+                        val existing = _wallpapers.value
+                        val previousActive = existing.getOrNull(_activeWallpaperIndex.value)
+                        val updated = existing + prepared.values
+                        if (persistWallpapers(updated)) {
+                            published = true
+                            _wallpapers.value = updated
+                            if (updateActiveIndex(existing.size, syncCloud = false)) {
+                                activatedId = prepared.values.first().id
+                            }
+                            val activeId = updated.getOrNull(_activeWallpaperIndex.value)?.id
+                            val backup = try { backupCoordinator() } catch (_: Exception) { null }
+                            if (backup != null) {
+                                if (activatedId != null && previousActive != null && !previousActive.isBuiltIn) {
+                                    try { backup.syncStateAsync(previousActive, existing.indexOf(previousActive), false) }
+                                    catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (_: Exception) { VaultLogger.w("Wallpaper", "Wallpaper selection backup remains pending") }
+                                }
+                                prepared.values.forEachIndexed { index, item ->
+                                    try { backup.backupAsync(item, existing.size + index, item.id == activeId) }
+                                    catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (_: Exception) { VaultLogger.w("Wallpaper", "Wallpaper backup remains pending") }
+                                }
+                            }
+                        } else {
+                            prepared.keys.forEach { uri -> failed[uri] = "Wallpaper details could not be saved. Please try again." }
+                        }
+                    }
+                }
+                WallpaperImportResult(if (published) prepared.values.toList() else emptyList(), failed.toMap(), sources.size, activatedId)
+            } finally {
+                if (!published) prepared.values.forEach { item -> item.localFilePath?.let { File(it).delete() } }
+                _importProgress.value = null
+            }
+        }
+    }
+
+    private suspend fun prepareWallpaperImport(uri: Uri): WallpaperItem {
         var pending: File? = null
         var target: File? = null
-        var published = false
+        var prepared = false
         try {
-            val staged = File.createTempFile(".import-", ".image", wallpaperDir)
+            val root = context.filesDir.canonicalFile
+            val directory = wallpaperDir.canonicalFile
+            require(directory != root && directory.toPath().startsWith(root.toPath()))
+            val staged = File.createTempFile(".import-", ".image", directory)
             pending = staged
-            val source = context.contentResolver.openInputStream(uri) ?: return@withContext false
+            val source = context.contentResolver.openInputStream(uri) ?: error("This image could not be opened")
             source.use { input ->
                 FileOutputStream(staged).use { output ->
                     val buffer = ByteArray(64 * 1024)
                     var total = 0L
                     try {
                         while (true) {
+                            currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
                             total += count
@@ -450,25 +534,18 @@ class LocalWallpaperManager @Inject constructor(
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(staged.absolutePath, bounds)
             require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 100_000_000)
-            val id = "custom_${UUID.randomUUID()}"
-            val owned = File(wallpaperDir, "local_wp_${UUID.randomUUID()}.jpg")
+            currentCoroutineContext().ensureActive()
+            val owned = File(directory, "local_wp_${UUID.randomUUID()}.jpg")
             target = owned
             Files.move(staged.toPath(), owned.toPath(), StandardCopyOption.ATOMIC_MOVE)
-            val newItem = WallpaperItem(id, "", type = WallpaperType.LOCAL_IMAGE,
+            val item = WallpaperItem("custom_${UUID.randomUUID()}", "", type = WallpaperType.LOCAL_IMAGE,
                 localFilePath = owned.absolutePath, isBuiltIn = false)
-            synchronized(this@LocalWallpaperManager) {
-                val updated = _wallpapers.value + newItem
-                check(persistWallpapers(updated)) { "Wallpaper details could not be saved" }
-                published = true
-                _wallpapers.value = updated
-                setActiveIndex(updated.lastIndex)
-                backupCoordinator()?.backupAsync(newItem, updated.lastIndex,
-                    _activeWallpaperIndex.value == updated.lastIndex)
-            }
-            true
-        } catch (cancelled: CancellationException) { throw cancelled
-        } catch (_: Exception) { false
-        } finally { pending?.delete(); if (!published) target?.delete() }
+            prepared = true
+            return item
+        } finally {
+            pending?.delete()
+            if (!prepared) target?.delete()
+        }
     }
 
     // --- REVERSIBLE REMOVAL & DELETION SAFETY ---

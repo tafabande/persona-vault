@@ -100,7 +100,9 @@ class SharedControlsDeviceTest {
             }
         }
         compose.mainClock.advanceTimeBy(1_000)
-        compose.onNodeWithTag("motion_toggle").performClick().assertIsOn()
+        compose.onNodeWithTag("motion_toggle").performClick()
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithTag("motion_toggle").assertIsOn()
         saveSyntheticPreview("gojo-motion.png")
     }
 

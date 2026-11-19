@@ -209,7 +209,7 @@ fun MoreView(
                     "Appearance", value = currentMood.title,
                     onClick = { onSelect { showMoodPicker = true } }
                 )
-                if (currentMood == PersonaMood.JUJUTSU_KAISEN) {
+                if (currentMood == PersonaMood.JUJUTSU_KAISEN || currentMood == PersonaMood.SAKURA_BLOSSOM) {
                     SettingsSwitchRow("Sakura effects", sakuraEffectsEnabled) { enabled ->
                         onSelect { themeManager.setSakuraEffectsEnabled(enabled) }
                     }

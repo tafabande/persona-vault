@@ -479,6 +479,7 @@ fun PersonaDashboardScreen(
     val wallpapers by wallpaperManager.wallpapers.collectAsState()
     val activeWallpaperIndex by wallpaperManager.activeWallpaperIndex.collectAsState()
     val isWallpaperAutoplayEnabled by wallpaperManager.isAutoplayEnabled.collectAsState()
+    val wallpaperImportProgress by wallpaperManager.importProgress.collectAsState()
     val moodManager = remember { com.pims.vault.presentation.ui.theme.PersonaMoodManager(context) }
     val currentMood by moodManager.currentMood.collectAsState()
     val motionManager = remember { com.pims.vault.presentation.ui.theme.PersonaMotionManager(context) }
@@ -509,16 +510,21 @@ fun PersonaDashboardScreen(
     }
 
     val wallpaperPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { selectedUris: List<Uri> ->
+        if (selectedUris.isNotEmpty()) {
             scope.launch {
-                val success = wallpaperManager.importFromUri(uri)
-                if (success) {
-                    recentActivityManager.recordActivity("Added new profile wallpaper")
+                val result = wallpaperManager.importFromUris(selectedUris)
+                if (result.importedItems.isNotEmpty()) {
+                    recentActivityManager.recordActivity("Added ${result.importedItems.size} profile wallpapers")
                     soundManager.success()
-                    snackbarHostState.showSnackbar("✓ Wallpaper updated locally")
                 }
+                val message = when {
+                    result.failedCount == 0 -> "Added ${result.importedItems.size} wallpapers"
+                    result.importedItems.isEmpty() -> "No photos could be added. Choose images under 16 MB."
+                    else -> "Added ${result.importedItems.size} wallpapers. ${result.failedCount} could not be added."
+                }
+                snackbarHostState.showSnackbar(message)
             }
         }
     }
@@ -2324,6 +2330,9 @@ fun PersonaDashboardScreen(
             wallpapers = wallpapers,
             availablePresets = wallpaperManager.defaultPresets,
             currentIndex = activeWallpaperIndex,
+            isImporting = wallpaperImportProgress != null,
+            importCompleted = wallpaperImportProgress?.completed ?: 0,
+            importTotal = wallpaperImportProgress?.total ?: 0,
             onSelectWallpaper = { index ->
                 wallpaperManager.setActiveIndex(index)
                 soundManager.navigation()
