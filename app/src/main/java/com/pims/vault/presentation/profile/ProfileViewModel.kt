@@ -1,5 +1,9 @@
 package com.pims.vault.presentation.profile
 
+import androidx.room.withTransaction
+import com.pims.vault.data.local.database.PimsDatabase
+import com.pims.vault.core.sync.SyncWorkScheduler
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.crypto.BiometricSessionManager
@@ -31,6 +35,7 @@ import com.pims.vault.data.local.entity.RelationshipEntity
 import com.pims.vault.data.local.entity.RelationshipNoteEntity
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.core.sync.FirestoreSyncService
+import com.pims.vault.core.sync.StructuredRecord
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,7 +78,7 @@ data class KinRelationshipItem(
     val phoneContacts: List<ContactMethodEntity> = emptyList(),
     val emailContacts: List<ContactMethodEntity> = emptyList(),
     val addresses: List<AddressEntity> = emptyList(),
-    val editableRelationshipNotes: List<RelationshipNoteEntity> = emptyList()
+    val restrictedLegacyNotes: List<String> = emptyList()
 )
 
 private fun parseEpochDate(isoDate: String): Long? =
@@ -225,10 +230,8 @@ sealed interface ProfileEvent {
         val address: String,
         val dob: String,
         val anniversary: String,
-        val notes: String,
         val contactMethods: List<ContactMethodEntity>? = null,
-        val addressRecords: List<AddressEntity>? = null,
-        val relationshipNotes: List<RelationshipNoteEntity>? = null
+        val addressRecords: List<AddressEntity>? = null
     ) : ProfileEvent
 
     data object ClearFeedback : ProfileEvent
@@ -245,9 +248,11 @@ class ProfileViewModel @Inject constructor(
     private val medicalDao: MedicalDao,
     private val relationshipDao: RelationshipDao,
     private val relationshipNoteDao: RelationshipNoteDao,
+    private val database: PimsDatabase,
     private val socialAccountDao: com.pims.vault.data.local.dao.SocialAccountDao,
     private val sessionManager: BiometricSessionManager,
-    private val firestoreSyncService: FirestoreSyncService
+    private val firestoreSyncService: FirestoreSyncService,
+    private val syncWorkScheduler: SyncWorkScheduler
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -260,6 +265,48 @@ class ProfileViewModel @Inject constructor(
 
     init {
         observeSessionAndProfile()
+    }
+
+    private suspend fun loadPeopleNotes(
+        relationshipId: String
+    ): Pair<List<RelationshipNoteEntity>, List<String>> = database.withTransaction {
+        val relationship = relationshipDao.getRelationshipById(relationshipId)
+            ?: return@withTransaction emptyList<RelationshipNoteEntity>() to emptyList()
+        val person = personDao.getPersonById(relationship.targetPersonId)
+        val legacyPerson = person?.takeUnless { it.isPrimaryOwner }?.let { legacyPersonNote(it.notes) }
+        val rows = relationshipNoteDao.getNotesForRelationship(relationshipId)
+        val restricted = restrictedPeopleNoteHistory(relationship.notes)
+        val unclassified = relationship.notes.takeIf { restricted == null }
+        val unmatched = unmatchedPeopleNotes(unclassified, legacyPerson?.content, rows)
+        if (restricted != null || unmatched.isNotEmpty() && rows.any { it.isPrivate }) {
+            // Keep uncertain historical copies behind the Vault gate even after a private note is removed.
+            val history = (restricted.orEmpty() + unmatched).distinct()
+            if (history != restricted) {
+                relationshipDao.update(relationship.copy(notes = encodeRestrictedPeopleNoteHistory(history)))
+            }
+            if (person != null && legacyPerson != null) {
+                check(personDao.updateNotesIfMatches(person.id, person.notes, legacyPerson.remainingMetadata))
+            }
+            return@withTransaction rows to history
+        }
+
+        val migrated = unmatched.mapIndexed { position, content ->
+            val suggestedId = migratedPeopleNoteId(relationshipId, position)
+            val id = if (relationshipNoteDao.getNoteById(suggestedId) == null) suggestedId else UUID.randomUUID().toString()
+            RelationshipNoteEntity(
+                id = id,
+                relationshipId = relationshipId,
+                topic = "Note",
+                contentPlaintext = content,
+                createdAt = relationship.createdAt,
+                updatedAt = relationship.updatedAt
+            ).also { relationshipNoteDao.insertOrUpdate(it) }
+        }
+        if (!relationship.notes.isNullOrBlank()) relationshipDao.update(relationship.copy(notes = null))
+        if (person != null && legacyPerson != null) {
+            check(personDao.updateNotesIfMatches(person.id, person.notes, legacyPerson.remainingMetadata))
+        }
+        (rows + migrated) to emptyList()
     }
 
     private fun observeSessionAndProfile() {
@@ -296,19 +343,11 @@ class ProfileViewModel @Inject constructor(
                         val phone = targetContacts.firstOrNull { it.contactType == ContactType.PHONE }?.value ?: ""
                         val email = targetContacts.firstOrNull { it.contactType == ContactType.EMAIL }?.value ?: ""
 
-                        val allDossierNotes = relationshipNoteDao.getNotesForRelationshipFlow(item.relationship.id).firstOrNull() ?: emptyList()
-                        val dossierNotes = allDossierNotes.mapNotNull { it.contentPlaintext?.trim() }.filter { it.isNotBlank() }
-                        val directNotes = listOfNotNull(
-                            item.relationship.notes?.trim()?.takeIf { it.isNotBlank() },
-                            target.notes?.trim()?.takeIf { it.isNotBlank() }
-                        ).firstOrNull() ?: ""
-                        val effectiveNotes = if (directNotes.isNotBlank()) {
-                            directNotes
-                        } else if (dossierNotes.isNotEmpty()) {
-                            dossierNotes.joinToString("\n\n")
-                        } else {
-                            ""
-                        }
+                        val (dossierNotes, restrictedLegacyNotes) = loadPeopleNotes(item.relationship.id)
+                        val effectiveNotes = dossierNotes.asSequence()
+                            .filterNot { it.isPrivate }
+                            .mapNotNull { it.contentPlaintext?.takeIf(String::isNotBlank) }
+                            .firstOrNull().orEmpty()
 
                         KinRelationshipItem(
                             id = item.relationship.id,
@@ -326,44 +365,12 @@ class ProfileViewModel @Inject constructor(
                             phoneContacts = targetContacts.filter { it.contactType == ContactType.PHONE },
                             emailContacts = targetContacts.filter { it.contactType == ContactType.EMAIL },
                             addresses = targetAddresses,
-                            editableRelationshipNotes = buildList {
-                                addAll(allDossierNotes.filter { it.format == NoteFormat.PLAIN && !it.isPrivate && it.contentPlaintext != null })
-                                val legacy = item.relationship.notes?.takeIf { raw ->
-                                    raw.isNotBlank() && none { it.contentPlaintext == raw }
-                                }
-                                legacy?.let { value ->
-                                    add(RelationshipNoteEntity(
-                                        id = "legacy-relationship-note-${item.relationship.id}",
-                                        relationshipId = item.relationship.id,
-                                        topic = "Personal note",
-                                        contentPlaintext = value,
-                                        format = NoteFormat.PLAIN,
-                                        isPrivate = false
-                                    ))
-                                }
-                            }
+                            restrictedLegacyNotes = restrictedLegacyNotes
                         )
                     }
 
                     // Load Social accounts
                     val socials = socialAccountDao.getSocialAccountsFlow(p.id).firstOrNull() ?: emptyList()
-
-                    // Auto-purge duplicate contacts in local DB & Firestore, keeping distinct contacts only
-                    val seenContactKeys = mutableSetOf<String>()
-                    val distinctContacts = mutableListOf<ContactMethodEntity>()
-                    fullProfile.contactMethods.forEach { cm ->
-                        val norm = if (cm.contactType == ContactType.PHONE) cm.value.filter { it.isDigit() }.ifBlank { cm.value.trim() } else cm.value.trim().lowercase()
-                        val key = "${cm.contactType}:$norm"
-                        if (key in seenContactKeys) {
-                            viewModelScope.launch(Dispatchers.IO) {
-                                contactDao.deleteById(cm.id)
-                                try { firestoreSyncService.deleteRemoteContact(cm.id) } catch (_: Exception) {}
-                            }
-                        } else {
-                            seenContactKeys.add(key)
-                            distinctContacts.add(cm)
-                        }
-                    }
 
                     val effectiveKinItems = kinItems
 
@@ -371,7 +378,7 @@ class ProfileViewModel @Inject constructor(
                         it.copy(
                             isLoading = false,
                             person = p,
-                            contacts = distinctContacts,
+                            contacts = fullProfile.contactMethods,
                             addresses = fullProfile.addresses.distinctBy { a -> "${a.streetLine1}:${a.city}:${a.country}".lowercase() },
                             employmentRecords = fullProfile.employmentRecords,
                             educationRecords = edu,
@@ -452,8 +459,9 @@ class ProfileViewModel @Inject constructor(
 
         if (phone.isBlank()) {
             existingPhone?.let {
-                contactDao.deleteById(it.id)
-                try { firestoreSyncService.deleteRemoteContact(it.id) } catch (_: Exception) {}
+                firestoreSyncService.deleteStructuredRecord(StructuredRecord.CONTACT, it.id) {
+                    contactDao.deleteById(it.id)
+                }
             }
             loadFullProfileAndRelationships()
             return
@@ -490,8 +498,9 @@ class ProfileViewModel @Inject constructor(
 
         if (email.isBlank()) {
             existingEmail?.let {
-                contactDao.deleteById(it.id)
-                try { firestoreSyncService.deleteRemoteContact(it.id) } catch (_: Exception) {}
+                firestoreSyncService.deleteStructuredRecord(StructuredRecord.CONTACT, it.id) {
+                    contactDao.deleteById(it.id)
+                }
             }
             loadFullProfileAndRelationships()
             return
@@ -529,23 +538,20 @@ class ProfileViewModel @Inject constructor(
             val validEmailIds = validEmails.map { it.id }.toSet()
             val existingDbEmails = existingContacts.filter { it.contactType == ContactType.EMAIL }
 
-            val seenEmails = mutableSetOf<String>()
             for (dbContact in existingDbEmails) {
-                val norm = dbContact.value.trim().lowercase()
-                if (dbContact.id !in validEmailIds || norm in seenEmails) {
-                    contactDao.deleteById(dbContact.id)
-                    try { firestoreSyncService.deleteRemoteContact(dbContact.id) } catch (_: Exception) {}
-                } else {
-                    seenEmails.add(norm)
+                if (dbContact.id !in validEmailIds) {
+                    firestoreSyncService.deleteStructuredRecord(StructuredRecord.CONTACT, dbContact.id) {
+                        contactDao.deleteById(dbContact.id)
+                    }
                 }
             }
 
             var primaryEmailSet = false
-            validEmails.distinctBy { it.address.trim().lowercase() }.forEachIndexed { idx, editEmail ->
+            validEmails.forEachIndexed { idx, editEmail ->
                 val isPrim = editEmail.isPrimary || (idx == 0 && !primaryEmailSet)
                 if (isPrim) primaryEmailSet = true
 
-                val existing = existingDbEmails.firstOrNull { it.id == editEmail.id || it.value.trim().equals(editEmail.address.trim(), ignoreCase = true) }
+                val existing = existingDbEmails.firstOrNull { it.id == editEmail.id }
                 val entity = if (existing != null) {
                     existing.copy(
                         value = editEmail.address.trim(),
@@ -571,24 +577,20 @@ class ProfileViewModel @Inject constructor(
             val validPhoneIds = validPhones.map { it.id }.toSet()
             val existingDbPhones = existingContacts.filter { it.contactType == ContactType.PHONE }
 
-            val seenPhones = mutableSetOf<String>()
             for (dbContact in existingDbPhones) {
-                val digits = dbContact.value.filter { it.isDigit() }.ifBlank { dbContact.value.trim() }
-                if (dbContact.id !in validPhoneIds || digits in seenPhones) {
-                    contactDao.deleteById(dbContact.id)
-                    try { firestoreSyncService.deleteRemoteContact(dbContact.id) } catch (_: Exception) {}
-                } else {
-                    seenPhones.add(digits)
+                if (dbContact.id !in validPhoneIds) {
+                    firestoreSyncService.deleteStructuredRecord(StructuredRecord.CONTACT, dbContact.id) {
+                        contactDao.deleteById(dbContact.id)
+                    }
                 }
             }
 
             var primaryPhoneSet = false
-            validPhones.distinctBy { it.number.filter { c -> c.isDigit() }.ifBlank { it.number.trim() } }.forEachIndexed { idx, editPhone ->
+            validPhones.forEachIndexed { idx, editPhone ->
                 val isPrim = editPhone.isPrimary || (idx == 0 && !primaryPhoneSet)
                 if (isPrim) primaryPhoneSet = true
 
-                val digits = editPhone.number.filter { it.isDigit() }.ifBlank { editPhone.number.trim() }
-                val existing = existingDbPhones.firstOrNull { it.id == editPhone.id || it.value.filter { c -> c.isDigit() } == digits }
+                val existing = existingDbPhones.firstOrNull { it.id == editPhone.id }
                 val entity = if (existing != null) {
                     existing.copy(
                         value = editPhone.number.trim(),
@@ -628,8 +630,9 @@ class ProfileViewModel @Inject constructor(
 
             for (dbAddr in existingAddresses) {
                 if (dbAddr.id !in validIds) {
-                    addressDao.deleteById(dbAddr.id)
-                    try { firestoreSyncService.deleteRemoteAddress(dbAddr.id) } catch (_: Exception) {}
+                    firestoreSyncService.deleteStructuredRecord(StructuredRecord.ADDRESS, dbAddr.id) {
+                        addressDao.deleteById(dbAddr.id)
+                    }
                 }
             }
 
@@ -675,7 +678,7 @@ class ProfileViewModel @Inject constructor(
 
     fun onEvent(event: ProfileEvent, onComplete: ((Result<Unit>) -> Unit)? = null) {
         val isPersonalSave = event is ProfileEvent.SavePersonalDetails
-        val isManagedPersonSave = event is ProfileEvent.UpdatePersonDetails
+        val isManagedPersonSave = event is ProfileEvent.UpdatePersonDetails || event is ProfileEvent.AddRelationship
         if (isPersonalSave && !personalSaveInProgress.compareAndSet(false, true)) return
         if (isManagedPersonSave && !managedPersonSaveInProgress.compareAndSet(false, true)) {
             onComplete?.invoke(Result.failure(IllegalStateException("A profile save is already in progress")))
@@ -905,9 +908,8 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.DeleteContact -> {
-                        contactDao.deleteById(event.contactId)
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try { firestoreSyncService.deleteRemoteContact(event.contactId) } catch (_: Exception) {}
+                        firestoreSyncService.deleteStructuredRecord(StructuredRecord.CONTACT, event.contactId) {
+                            contactDao.deleteById(event.contactId)
                         }
                         _uiState.update { it.copy(userFeedbackMessage = "Contact removed") }
                     }
@@ -934,9 +936,8 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.DeleteAddress -> {
-                        addressDao.deleteById(event.addressId)
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try { firestoreSyncService.deleteRemoteAddress(event.addressId) } catch (_: Exception) {}
+                        firestoreSyncService.deleteStructuredRecord(StructuredRecord.ADDRESS, event.addressId) {
+                            addressDao.deleteById(event.addressId)
                         }
                         _uiState.update { it.copy(userFeedbackMessage = "Address removed") }
                     }
@@ -963,9 +964,8 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.DeleteWorkHistory -> {
-                        employmentDao.deleteById(event.id)
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try { firestoreSyncService.deleteRemoteEmployment(event.id) } catch (_: Exception) {}
+                        firestoreSyncService.deleteStructuredRecord(StructuredRecord.EMPLOYMENT, event.id) {
+                            employmentDao.deleteById(event.id)
                         }
                         _uiState.update { it.copy(userFeedbackMessage = "Work record removed") }
                     }
@@ -991,9 +991,8 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.DeleteQualification -> {
-                        educationDao.deleteById(event.id)
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try { firestoreSyncService.deleteRemoteEducation(event.id) } catch (_: Exception) {}
+                        firestoreSyncService.deleteStructuredRecord(StructuredRecord.EDUCATION, event.id) {
+                            educationDao.deleteById(event.id)
                         }
                         _uiState.update { it.copy(userFeedbackMessage = "Qualification removed") }
                     }
@@ -1019,9 +1018,8 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.DeleteCertificate -> {
-                        educationDao.deleteById(event.id)
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try { firestoreSyncService.deleteRemoteEducation(event.id) } catch (_: Exception) {}
+                        firestoreSyncService.deleteStructuredRecord(StructuredRecord.EDUCATION, event.id) {
+                            educationDao.deleteById(event.id)
                         }
                         _uiState.update { it.copy(userFeedbackMessage = "Certificate removed") }
                     }
@@ -1082,9 +1080,8 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.DeleteMedicalRecord -> {
-                        medicalDao.deleteById(event.id)
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try { firestoreSyncService.deleteRemoteMedicalRecord(event.id) } catch (_: Exception) {}
+                        firestoreSyncService.deleteStructuredRecord(StructuredRecord.MEDICAL_RECORD, event.id) {
+                            medicalDao.deleteById(event.id)
                         }
                         _uiState.update { it.copy(userFeedbackMessage = "Medical record removed") }
                     }
@@ -1096,10 +1093,8 @@ class ProfileViewModel @Inject constructor(
                         val first = parts.firstOrNull().orEmpty()
                         val last = parts.getOrNull(1).orEmpty()
 
-                        val savedNotes = if (!event.photoPath.isNullOrBlank()) {
-                            serializeNotesMeta(NotesMeta(idPhotoPath = event.photoPath, userNotes = event.notes.trim().takeIf { it.isNotBlank() }))
-                        } else {
-                            event.notes.trim().takeIf { it.isNotBlank() }
+                        val personMetadata = event.photoPath?.takeIf(String::isNotBlank)?.let {
+                            serializeNotesMeta(NotesMeta(idPhotoPath = it))
                         }
 
                         val targetPerson = PersonEntity(
@@ -1109,92 +1104,92 @@ class ProfileViewModel @Inject constructor(
                             lastName = last,
                             dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
                             countryOfResidence = event.address.trim().takeIf { it.isNotBlank() },
-                            notes = savedNotes
+                            notes = personMetadata
                         )
-                        personDao.insertOrUpdate(targetPerson)
+                        database.withTransaction {
+                            personDao.insertOrUpdate(targetPerson)
 
-                        if (event.contactMethods != null) {
-                            event.contactMethods.forEach { contact ->
-                                if (contact.personId != targetId || contact.contactType !in setOf(ContactType.PHONE, ContactType.EMAIL)) {
-                                    throw SecurityException("Contact must belong to the new person")
+                            if (event.contactMethods != null) {
+                                event.contactMethods.forEach { contact ->
+                                    if (contact.personId != targetId || contact.contactType !in setOf(ContactType.PHONE, ContactType.EMAIL)) {
+                                        throw SecurityException("Contact must belong to the new person")
+                                    }
+                                    contactDao.insertOrUpdate(contact)
                                 }
-                                contactDao.insertOrUpdate(contact)
-                                viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.syncContact(null, contact) } }
+                            } else if (event.phone.isNotBlank()) {
+                                contactDao.insertOrUpdate(
+                                    ContactMethodEntity(
+                                        id = UUID.randomUUID().toString(),
+                                        personId = targetId,
+                                        contactType = ContactType.PHONE,
+                                        label = event.role,
+                                        value = event.phone.trim(),
+                                        isPrimary = true
+                                    )
+                                )
                             }
-                        } else if (event.phone.isNotBlank()) {
-                            contactDao.insertOrUpdate(
-                                ContactMethodEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    personId = targetId,
-                                    contactType = ContactType.PHONE,
-                                    label = event.role,
-                                    value = event.phone.trim(),
-                                    isPrimary = true
+
+                            if (event.contactMethods == null && event.email.isNotBlank()) {
+                                contactDao.insertOrUpdate(
+                                    ContactMethodEntity(
+                                        id = UUID.randomUUID().toString(),
+                                        personId = targetId,
+                                        contactType = ContactType.EMAIL,
+                                        label = event.role,
+                                        value = event.email.trim(),
+                                        isPrimary = true
+                                    )
                                 )
-                            )
-                        }
+                            }
 
-                        if (event.email.isNotBlank()) {
-                            contactDao.insertOrUpdate(
-                                ContactMethodEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    personId = targetId,
-                                    contactType = ContactType.EMAIL,
-                                    label = event.role,
-                                    value = event.email.trim(),
-                                    isPrimary = true
+                            val relType = when (event.role.lowercase()) {
+                                "mother", "father", "parent" -> RelationshipType.PARENT
+                                "sister", "brother", "sibling" -> RelationshipType.SIBLING
+                                "wife", "husband", "spouse" -> RelationshipType.SPOUSE
+                                "child", "kid", "son", "daughter" -> RelationshipType.CHILD
+                                "partner" -> RelationshipType.PARTNER
+                                "friend" -> RelationshipType.FRIEND
+                                else -> RelationshipType.OTHER
+                            }
+
+                            val rel = RelationshipEntity(
+                                id = UUID.randomUUID().toString(),
+                                sourcePersonId = ownerId,
+                                targetPersonId = targetId,
+                                relationshipType = relType,
+                                customLabel = event.role.trim().ifBlank { "Next of Kin" },
+                                startDate = parseEpochDate(event.anniversary),
+                                isVerified = event.isNextOfKin
+                            )
+                            relationshipDao.insertOrUpdate(rel)
+
+                            if (event.notes.trim().isNotBlank()) {
+                                relationshipNoteDao.insertOrUpdate(
+                                    RelationshipNoteEntity(
+                                        id = UUID.randomUUID().toString(),
+                                        relationshipId = rel.id,
+                                        topic = "Note",
+                                        contentPlaintext = event.notes.trim(),
+                                        format = NoteFormat.PLAIN,
+                                        isPrivate = false,
+                                        createdAt = System.currentTimeMillis(),
+                                        updatedAt = System.currentTimeMillis()
+                                    )
                                 )
-                            )
+                            }
                         }
-
-                        val relType = when (event.role.lowercase()) {
-                            "mother", "father", "parent" -> RelationshipType.PARENT
-                            "sister", "brother", "sibling" -> RelationshipType.SIBLING
-                            "wife", "husband", "spouse" -> RelationshipType.SPOUSE
-                            "child", "kid", "son", "daughter" -> RelationshipType.CHILD
-                            "partner" -> RelationshipType.PARTNER
-                            "friend" -> RelationshipType.FRIEND
-                            else -> RelationshipType.OTHER
-                        }
-
-                        val rel = RelationshipEntity(
-                            id = UUID.randomUUID().toString(),
-                            sourcePersonId = ownerId,
-                            targetPersonId = targetId,
-                            relationshipType = relType,
-                            customLabel = event.role.trim().ifBlank { "Next of Kin" },
-                            startDate = parseEpochDate(event.anniversary),
-                            notes = event.notes.trim().takeIf { it.isNotBlank() },
-                            isVerified = event.isNextOfKin
-                        )
-                        relationshipDao.insertOrUpdate(rel)
-
-                        if (event.notes.trim().isNotBlank()) {
-                            relationshipNoteDao.insertOrUpdate(
-                                RelationshipNoteEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    relationshipId = rel.id,
-                                    topic = "Personal Notes",
-                                    contentPlaintext = event.notes.trim(),
-                                    format = NoteFormat.PLAIN,
-                                    isPrivate = false,
-                                    createdAt = System.currentTimeMillis(),
-                                    updatedAt = System.currentTimeMillis()
-                                )
-                            )
-                        }
+                        syncWorkScheduler.requestSync()
 
                         loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Added ${event.role} (${event.fullName})") }
                     }
 
                     is ProfileEvent.DeleteRelationship -> {
-                        relationshipDao.deleteById(event.relationshipId)
-                        // Purge relationship-scoped notes locally so the tab
-                        // can't render orphan notes after the pull.
+                        firestoreSyncService.deleteStructuredRecord(StructuredRecord.RELATIONSHIP, event.relationshipId) {
+                            relationshipDao.deleteById(event.relationshipId)
+                            relationshipNoteDao.deleteForRelationship(event.relationshipId)
+                        }
                         viewModelScope.launch(Dispatchers.IO) {
-                            try { relationshipNoteDao.deleteForRelationship(event.relationshipId) } catch (_: Exception) {}
-                            try { firestoreSyncService.deleteRemoteRelationship(event.relationshipId) } catch (_: Exception) {}
                             try {
                                 com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context)
                                     .setPersonPhotoPath(event.targetPersonId, null, event.relationshipId)
@@ -1225,9 +1220,8 @@ class ProfileViewModel @Inject constructor(
                     }
 
                     is ProfileEvent.DeleteSocialAccount -> {
-                        socialAccountDao.deleteById(event.accountId)
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try { firestoreSyncService.deleteRemoteSocialAccount(event.accountId) } catch (_: Exception) {}
+                        firestoreSyncService.deleteStructuredRecord(StructuredRecord.SOCIAL_ACCOUNT, event.accountId) {
+                            socialAccountDao.deleteById(event.accountId)
                         }
                         loadFullProfileAndRelationships()
                         _uiState.update { it.copy(userFeedbackMessage = "Social profile removed") }
@@ -1256,22 +1250,11 @@ class ProfileViewModel @Inject constructor(
                                     throw SecurityException("Address ownership cannot be changed through profile editing")
                                 }
                             }
-                            event.relationshipNotes?.forEach { note ->
-                                if (note.relationshipId != owningRelationship.id || note.format != NoteFormat.PLAIN || note.isPrivate) {
-                                    throw SecurityException("Notes must remain scoped to their relationship")
-                                }
-                                val persisted = relationshipNoteDao.getNoteById(note.id)
-                                if (persisted != null && persisted.relationshipId != owningRelationship.id) {
-                                    throw SecurityException("Notes must remain scoped to their relationship")
-                                }
-                            }
-                            val effectiveNotes = event.notes.trim().takeIf { it.isNotBlank() } ?: existing.notes
                             val updated = existing.copy(
                                 firstName = event.firstName.trim(),
                                 lastName = event.lastName.trim(),
                                 dateOfBirth = event.dob.trim().takeIf { it.isNotBlank() },
                                 countryOfResidence = event.address.trim().takeIf { it.isNotBlank() },
-                                notes = effectiveNotes,
                                 updatedAt = System.currentTimeMillis()
                             )
                             personDao.insertOrUpdate(updated)
@@ -1295,9 +1278,8 @@ class ProfileViewModel @Inject constructor(
                                     }
                                 }
                                 currentContacts.filter { it.contactType in managedTypes && it.id !in submittedIds }.forEach { stale ->
-                                    contactDao.deleteById(stale.id)
-                                    viewModelScope.launch(Dispatchers.IO) {
-                                        runCatching { firestoreSyncService.deleteRemoteContact(stale.id) }
+                                    firestoreSyncService.deleteStructuredRecord(StructuredRecord.CONTACT, stale.id) {
+                                        contactDao.deleteById(stale.id)
                                     }
                                 }
                             } else if (event.phone.isNotBlank()) {
@@ -1350,65 +1332,18 @@ class ProfileViewModel @Inject constructor(
                                     viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.syncAddress(null, address) } }
                                 }
                                 existingAddresses.filter { it.id !in submittedAddressIds }.forEach { stale ->
-                                    addressDao.deleteById(stale.id)
-                                    viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.deleteRemoteAddress(stale.id) } }
-                                }
-                            }
-                            val relationship = owningRelationship
-                            if (event.relationshipNotes != null && relationship != null) {
-                                val existingNotes = relationshipNoteDao.getNotesForRelationshipFlow(relationship.id).firstOrNull().orEmpty()
-                                val safeExisting = existingNotes.filter { it.format == NoteFormat.PLAIN && !it.isPrivate && it.contentPlaintext != null }
-                                val submitted = event.relationshipNotes.filter {
-                                    it.relationshipId == relationship.id && it.format == NoteFormat.PLAIN && !it.isPrivate
-                                }
-                                val submittedIds = submitted.mapTo(mutableSetOf()) { it.id }
-                                submitted.forEach { relationshipNoteDao.insertOrUpdate(it) }
-                                safeExisting.filter { it.id !in submittedIds }.forEach { stale ->
-                                    relationshipNoteDao.deleteById(stale.id)
-                                    viewModelScope.launch(Dispatchers.IO) { runCatching { firestoreSyncService.deleteRemoteRelationshipNote(stale.id) } }
-                                }
-                            }
-
-                            run {
-                                val rel = owningRelationship
-                                    val relNotes = if (event.relationshipNotes != null) {
-                                        event.relationshipNotes.firstOrNull()?.contentPlaintext?.takeIf { it.isNotBlank() }
-                                    } else event.notes.trim().takeIf { it.isNotBlank() } ?: rel.notes
-                                    relationshipDao.insertOrUpdate(
-                                        rel.copy(
-                                            customLabel = event.relationRole.trim(),
-                                            startDate = parseEpochDate(event.anniversary),
-                                            notes = relNotes,
-                                            updatedAt = System.currentTimeMillis()
-                                        )
-                                    )
-
-                                    if (event.relationshipNotes == null && event.notes.trim().isNotBlank()) {
-                                        val existingNotes = relationshipNoteDao.getNotesForRelationshipFlow(rel.id).firstOrNull() ?: emptyList()
-                                        val primaryNote = existingNotes.firstOrNull()
-                                        if (primaryNote != null) {
-                                            relationshipNoteDao.insertOrUpdate(
-                                                primaryNote.copy(
-                                                    contentPlaintext = event.notes.trim(),
-                                                    updatedAt = System.currentTimeMillis()
-                                                )
-                                            )
-                                        } else {
-                                            relationshipNoteDao.insertOrUpdate(
-                                                RelationshipNoteEntity(
-                                                    id = UUID.randomUUID().toString(),
-                                                    relationshipId = rel.id,
-                                                    topic = "Personal Notes",
-                                                    contentPlaintext = event.notes.trim(),
-                                                    format = NoteFormat.PLAIN,
-                                                    isPrivate = false,
-                                                    createdAt = System.currentTimeMillis(),
-                                                    updatedAt = System.currentTimeMillis()
-                                                )
-                                            )
-                                        }
+                                    firestoreSyncService.deleteStructuredRecord(StructuredRecord.ADDRESS, stale.id) {
+                                        addressDao.deleteById(stale.id)
                                     }
+                                }
                             }
+                            relationshipDao.update(
+                                owningRelationship.copy(
+                                    customLabel = event.relationRole.trim(),
+                                    startDate = parseEpochDate(event.anniversary),
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            )
                             loadFullProfileAndRelationships()
                             _uiState.update { it.copy(userFeedbackMessage = "Updated ${event.firstName}'s details") }
                         }

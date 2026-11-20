@@ -1,9 +1,11 @@
 package com.pims.vault.presentation.hub
 
-import com.pims.vault.core.storage.readBoundedBytes
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
+import com.pims.vault.core.storage.decodePhotoPreview
+import com.pims.vault.core.storage.importOwnedPhoto
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -38,20 +40,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Cake
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -99,7 +87,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import java.io.File
-import java.io.FileOutputStream
 
 @OptIn(ExperimentalLayoutApi::class)
 data class RelationshipContactInput(
@@ -191,7 +178,7 @@ fun ConnectPersonScreen(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    photoError = "Could not add this photo. Choose an image up to 8 MB and try again."
+                    photoError = "Could not add this photo. Choose an image up to 16 MB and try again."
                 } finally {
                     imported?.let { (bitmap, path) ->
                         bitmap.recycle()
@@ -246,7 +233,7 @@ fun ConnectPersonScreen(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = PersonaIcons.Close,
                         contentDescription = "Close",
                         tint = textPrimary,
                         modifier = Modifier.size(24.dp)
@@ -291,7 +278,7 @@ fun ConnectPersonScreen(
                         )
                     }
                     IconButton(enabled = !isPickingPhoto, onClick = { photoPickerLauncher.launch("image/*") }) {
-                        Icon(Icons.Default.CameraAlt, "Upload a photo", tint = MaterialTheme.colorScheme.primary)
+                        Icon(PersonaIcons.CameraAlt, "Upload a photo", tint = MaterialTheme.colorScheme.primary)
                     }
                     if (photo != null) {
                         TextButton(enabled = !isPickingPhoto, onClick = {
@@ -314,7 +301,7 @@ fun ConnectPersonScreen(
                 // Section 1: Relationship & Identity
                 PersonaFormSection(
                     title = "About them",
-                    icon = Icons.Default.Person
+                    icon = PersonaIcons.Me
                 ) {
                     PersonaSearchableCombobox(
                         value = relRole,
@@ -354,7 +341,7 @@ fun ConnectPersonScreen(
                 // Section 2: Contact Information
                 PersonaFormSection(
                     title = "Contact details",
-                    icon = Icons.Default.Phone
+                    icon = PersonaIcons.PhoneOutlined
                 ) {
                     RelationshipContactEditor(
                         title = "Phone numbers",
@@ -380,7 +367,7 @@ fun ConnectPersonScreen(
                             label = "Country or region of residence · optional",
                             placeholder = "Country or region",
                             leadingIcon = {
-                                Icon(Icons.Default.Home, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
+                                Icon(PersonaIcons.Home, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
                             }
                         )
                     }
@@ -391,7 +378,7 @@ fun ConnectPersonScreen(
                 if (showDatesSection) {
                     PersonaFormSection(
                         title = "Important dates",
-                        icon = Icons.Default.Cake
+                        icon = PersonaIcons.Birthday
                     ) {
                         if (showDobField || relDob.isNotBlank()) {
                             PersonaTextInput(
@@ -400,7 +387,7 @@ fun ConnectPersonScreen(
                                 label = "Birthday / Date of Birth",
                                 placeholder = "YYYY-MM-DD (e.g. 1994-06-15)",
                                 leadingIcon = {
-                                    Icon(Icons.Default.Cake, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Birthday, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
                                 }
                             )
                         }
@@ -412,7 +399,7 @@ fun ConnectPersonScreen(
                                 label = "Anniversary",
                                 placeholder = "YYYY-MM-DD (e.g. 2020-09-12)",
                                 leadingIcon = {
-                                    Icon(Icons.Default.DateRange, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Calendar, contentDescription = null, tint = textSecondary, modifier = Modifier.size(18.dp))
                                 }
                             )
                         }
@@ -423,7 +410,7 @@ fun ConnectPersonScreen(
                 if (showNotesField || relNotes.isNotBlank()) {
                     PersonaFormSection(
                         title = "Notes",
-                        icon = Icons.Default.Description
+                        icon = PersonaIcons.Documents
                     ) {
                         PersonaTextInput(
                             value = relNotes,
@@ -485,7 +472,7 @@ fun ConnectPersonScreen(
                                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Add,
+                                        imageVector = PersonaIcons.Add,
                                         contentDescription = null,
                                         modifier = Modifier.size(15.dp)
                                     )
@@ -612,7 +599,7 @@ private fun RelationshipContactEditor(
                 },
                 modifier = Modifier.height(44.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(PersonaIcons.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp)); Text(if (type == ContactType.PHONE) "Add phone" else "Add email")
             }
         }
@@ -665,14 +652,14 @@ private fun RelationshipContactEditor(
                         val reordered = entries.toMutableList()
                         reordered[index] = reordered[index - 1].also { reordered[index - 1] = reordered[index] }
                         onEntriesChange(reordered)
-                    }, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move ${type.name.lowercase()} up") }
+                    }, modifier = Modifier.size(48.dp)) { Icon(PersonaIcons.MoveUp, contentDescription = "Move ${type.name.lowercase()} up") }
                 }
                 if (index < entries.lastIndex) {
                     IconButton(onClick = {
                         val reordered = entries.toMutableList()
                         reordered[index] = reordered[index + 1].also { reordered[index + 1] = reordered[index] }
                         onEntriesChange(reordered)
-                    }, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move ${type.name.lowercase()} down") }
+                    }, modifier = Modifier.size(48.dp)) { Icon(PersonaIcons.MoveDown, contentDescription = "Move ${type.name.lowercase()} down") }
                 }
                 TextButton(onClick = {
                     val remaining = entries.filterNot { it.key == entry.key }.toMutableList()
@@ -686,34 +673,14 @@ private fun RelationshipContactEditor(
     }
 }
 
-private fun importContactPhoto(context: android.content.Context, uri: Uri): Pair<Bitmap, String> {
-    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBoundedBytes(8 * 1024 * 1024) }
-        ?: error("Could not read photo")
+private suspend fun importContactPhoto(context: android.content.Context, uri: Uri): Pair<Bitmap, String> {
+    val owned = importOwnedPhoto(context, uri, "contact_photos", "contact_draft")
     try {
-        require(bytes.isNotEmpty() && bytes.size <= 8 * 1024 * 1024)
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 48_000_000)
-        var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1024) sample *= 2
-        val bitmap = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
-            BitmapFactory.Options().apply { inSampleSize = sample }))
-        var file: File? = null
-        try {
-            val photos = File(context.filesDir, "contact_photos").apply { check(isDirectory || mkdirs()) }
-            val destination = File.createTempFile("contact_", ".jpg", photos)
-            file = destination
-            FileOutputStream(destination).use { output ->
-                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output))
-            }
-            return bitmap to destination.absolutePath
-        } catch (error: Exception) {
-            bitmap.recycle()
-            file?.delete()
-            throw error
-        }
-    } finally {
-        bytes.fill(0)
+        val preview = checkNotNull(decodePhotoPreview(owned)) { "Could not display photo" }
+        return preview to owned.absolutePath
+    } catch (failure: Exception) {
+        owned.delete()
+        throw failure
     }
 }
 

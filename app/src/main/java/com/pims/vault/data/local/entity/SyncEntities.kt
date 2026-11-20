@@ -21,7 +21,8 @@ enum class SyncOperationStatus {
     PENDING,        // Waiting for connectivity
     IN_PROGRESS,    // Transmission underway
     CONFLICT,       // Server rejected due to version mismatch
-    FAILED          // Max retries exceeded
+    FAILED,         // A failed attempt is available for retry
+    ACKNOWLEDGED    // A published structured deletion still guards against stale pulls
 }
 
 /**

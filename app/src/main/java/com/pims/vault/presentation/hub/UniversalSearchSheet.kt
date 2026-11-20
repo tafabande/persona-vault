@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
@@ -19,18 +21,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.MedicalServices
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -57,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.domain.model.DocumentWithHistory
+import com.pims.vault.domain.model.VaultIdentityType
+import com.pims.vault.core.model.VaultCategory
 import com.pims.vault.presentation.medical.MedicalUiState
 import com.pims.vault.presentation.profile.KinRelationshipItem
 import com.pims.vault.presentation.profile.ProfileUiState
@@ -116,7 +108,7 @@ fun UniversalSearchSheet(
                         doc.issuingCountry
                     ).joinToString(" · ").ifBlank { "Identity & Verification Record" },
                     domain = SearchDomain.DOCUMENTS,
-                    icon = Icons.Default.Description,
+                    icon = PersonaIcons.Documents,
                     badge = doc.documentType.name.replace("_", " "),
                     onClick = {
                         onDismissRequest()
@@ -134,7 +126,7 @@ fun UniversalSearchSheet(
                     title = person.fullName,
                     subtitle = "${person.relationRole} • ${person.phone.ifBlank { person.email.ifBlank { "No contact listed" } }}",
                     domain = SearchDomain.PEOPLE,
-                    icon = Icons.Default.People,
+                    icon = PersonaIcons.People,
                     badge = person.relationRole,
                     onClick = {
                         onDismissRequest()
@@ -153,7 +145,7 @@ fun UniversalSearchSheet(
                         title = allergy.allergen,
                         subtitle = "Allergy · Reaction: ${allergy.reaction ?: "Severe"} (${allergy.severity.name})",
                         domain = SearchDomain.HEALTH,
-                        icon = Icons.Default.MedicalServices,
+                        icon = PersonaIcons.MedicalServices,
                         badge = "Allergy",
                         onClick = {
                             onDismissRequest()
@@ -169,7 +161,7 @@ fun UniversalSearchSheet(
                         title = cond.name,
                         subtitle = "Medical Condition · ${cond.status.name} · ${cond.notes ?: "Diagnosed record"}",
                         domain = SearchDomain.HEALTH,
-                        icon = Icons.Default.Favorite,
+                        icon = PersonaIcons.Favorite,
                         badge = "Condition",
                         onClick = {
                             onDismissRequest()
@@ -185,7 +177,7 @@ fun UniversalSearchSheet(
                         title = med.name,
                         subtitle = "Medication · Dosage: ${med.dosage} (${med.frequency})",
                         domain = SearchDomain.HEALTH,
-                        icon = Icons.Default.MedicalServices,
+                        icon = PersonaIcons.MedicalServices,
                         badge = "Medication",
                         onClick = {
                             onDismissRequest()
@@ -202,9 +194,13 @@ fun UniversalSearchSheet(
                 UnifiedSearchResult(
                     id = "vault_${item.id}",
                     title = item.title,
-                    subtitle = item.accountIdentifier?.let { "Account: $it" } ?: "Secret item",
+                    subtitle = if (item.category == VaultCategory.IDENTITY_CREDENTIAL) {
+                        VaultIdentityType.fromHeader(item).label
+                    } else {
+                        item.accountIdentifier?.let { "Account: $it" } ?: "Secret item"
+                    },
                     domain = SearchDomain.VAULT,
-                    icon = Icons.Default.Key,
+                    icon = PersonaIcons.Key,
                     badge = item.category.name,
                     onClick = {
                         onDismissRequest()
@@ -222,7 +218,7 @@ fun UniversalSearchSheet(
                     title = edu.qualification,
                     subtitle = "${edu.institution} · ${edu.fieldOfStudy ?: "Graduated"}",
                     domain = SearchDomain.PROFILE,
-                    icon = Icons.Default.School,
+                    icon = PersonaIcons.Education,
                     badge = "Education",
                     onClick = onDismissRequest
                 )
@@ -237,7 +233,7 @@ fun UniversalSearchSheet(
                     title = cf.label,
                     subtitle = "${cf.category.displayName} · ${cf.value}",
                     domain = SearchDomain.PROFILE,
-                    icon = Icons.Default.Badge,
+                    icon = PersonaIcons.Identity,
                     badge = cf.category.displayName,
                     onClick = onDismissRequest
                 )
@@ -250,7 +246,7 @@ fun UniversalSearchSheet(
                     title = cert.qualification,
                     subtitle = "${cert.institution} · ${cert.fieldOfStudy ?: "Verified"}",
                     domain = SearchDomain.PROFILE,
-                    icon = Icons.Default.Badge,
+                    icon = PersonaIcons.Identity,
                     badge = "Certificate",
                     onClick = onDismissRequest
                 )
@@ -263,7 +259,7 @@ fun UniversalSearchSheet(
                     title = emp.position,
                     subtitle = "${emp.company} · ${emp.startDate} - ${emp.endDate ?: "Present"}",
                     domain = SearchDomain.PROFILE,
-                    icon = Icons.Default.Work,
+                    icon = PersonaIcons.Work,
                     badge = "Employment",
                     onClick = onDismissRequest
                 )
@@ -323,7 +319,7 @@ fun UniversalSearchSheet(
 
                 IconButton(onClick = onDismissRequest) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = PersonaIcons.Close,
                         contentDescription = "Close",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -342,7 +338,7 @@ fun UniversalSearchSheet(
                 },
                 leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.Search,
+                        imageVector = PersonaIcons.Search,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.tertiary
                     )
@@ -351,7 +347,7 @@ fun UniversalSearchSheet(
                     if (searchQuery.isNotBlank()) {
                         IconButton(onClick = { searchQuery = "" }) {
                             Icon(
-                                imageVector = Icons.Default.Close,
+                                imageVector = PersonaIcons.Close,
                                 contentDescription = "Clear",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )

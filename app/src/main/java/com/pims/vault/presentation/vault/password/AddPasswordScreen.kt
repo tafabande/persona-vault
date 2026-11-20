@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.vault.password
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -25,22 +27,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoFixHigh
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notes
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -161,7 +147,7 @@ fun AddPasswordScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Key,
+                                imageVector = PersonaIcons.Key,
                                 contentDescription = null,
                                 tint = accent,
                                 modifier = Modifier.size(18.dp)
@@ -179,7 +165,7 @@ fun AddPasswordScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = PersonaIcons.ArrowBack,
                             contentDescription = "Back",
                             tint = textPrimary
                         )
@@ -249,9 +235,9 @@ fun AddPasswordScreen(
                     onValueChange = { title = it },
                     label = "Service / Account Title",
                     placeholder = "e.g. GitHub, Google, Netflix",
-                    leadingIcon = Icons.Default.Shield,
+                    leadingIcon = PersonaIcons.TrustedContact,
                     trailingIcon = if (title.isNotEmpty()) {
-                        { IconButton(onClick = { title = "" }) { Icon(Icons.Default.Clear, contentDescription = "Clear", tint = textSecondary, modifier = Modifier.size(18.dp)) } }
+                        { IconButton(onClick = { title = "" }) { Icon(PersonaIcons.Clear, contentDescription = "Clear", tint = textSecondary, modifier = Modifier.size(18.dp)) } }
                     } else null,
                     isDark = isDark,
                     keyboardOptions = KeyboardOptions(
@@ -267,9 +253,9 @@ fun AddPasswordScreen(
                     onValueChange = { username = it },
                     label = "Username or Email",
                     placeholder = "e.g. alex@example.com",
-                    leadingIcon = Icons.Default.Person,
+                    leadingIcon = PersonaIcons.Me,
                     trailingIcon = if (username.isNotEmpty()) {
-                        { IconButton(onClick = { username = "" }) { Icon(Icons.Default.Clear, contentDescription = "Clear", tint = textSecondary, modifier = Modifier.size(18.dp)) } }
+                        { IconButton(onClick = { username = "" }) { Icon(PersonaIcons.Clear, contentDescription = "Clear", tint = textSecondary, modifier = Modifier.size(18.dp)) } }
                     } else null,
                     isDark = isDark,
                     modifier = Modifier.googleAutofill(listOf(AutofillType.Username, AutofillType.EmailAddress)) { username = it },
@@ -287,13 +273,13 @@ fun AddPasswordScreen(
                         onValueChange = { password = it },
                         label = "Password",
                         placeholder = "Enter password",
-                        leadingIcon = Icons.Default.Lock,
+                        leadingIcon = PersonaIcons.Lock,
                         visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         modifier = Modifier.googleAutofill(listOf(AutofillType.Password)) { password = it },
                         trailingIcon = {
                             IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
                                 Icon(
-                                    imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    imageVector = if (isPasswordVisible) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                     contentDescription = if (isPasswordVisible) "Hide" else "Show",
                                     tint = textSecondary,
                                     modifier = Modifier.size(20.dp)
@@ -342,7 +328,7 @@ fun AddPasswordScreen(
                     onValueChange = { websiteUrl = it },
                     label = "Website URL (optional)",
                     placeholder = "https://example.com",
-                    leadingIcon = Icons.Default.Language,
+                    leadingIcon = PersonaIcons.Language,
                     isDark = isDark,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Uri,
@@ -357,7 +343,7 @@ fun AddPasswordScreen(
                     onValueChange = { notes = it },
                     label = "Notes (optional)",
                     placeholder = "Recovery phrases, security questions, notes...",
-                    leadingIcon = Icons.Default.Notes,
+                    leadingIcon = PersonaIcons.NotesSymbol,
                     singleLine = false,
                     maxLines = 4,
                     isDark = isDark,
@@ -390,7 +376,7 @@ fun AddPasswordScreen(
                 enabled = title.isNotBlank() && password.isNotBlank()
             ) {
                 Icon(
-                    imageVector = Icons.Default.Security,
+                    imageVector = PersonaIcons.Security,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
@@ -488,7 +474,7 @@ private fun PasswordLivePreviewCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Shield,
+                            imageVector = PersonaIcons.TrustedContact,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(13.dp)
@@ -583,8 +569,8 @@ private fun detectBrand(title: String, url: String): BrandInfo {
     val q = "$title $url".lowercase()
     return when {
         q.contains("google") -> BrandInfo("G", listOf(Color(0xFF4285F4), Color(0xFF1A73E8)))
-        q.contains("github") -> BrandInfo("🐙", listOf(Color(0xFF24292E), Color(0xFF0F1419)))
-        q.contains("apple") || q.contains("icloud") -> BrandInfo("🍎", listOf(Color(0xFF1C1C1E), Color(0xFF000000)))
+        q.contains("github") -> BrandInfo("GH", listOf(Color(0xFF24292E), Color(0xFF0F1419)))
+        q.contains("apple") || q.contains("icloud") -> BrandInfo("A", listOf(Color(0xFF1C1C1E), Color(0xFF000000)))
         q.contains("netflix") -> BrandInfo("N", listOf(Color(0xFFE50914), Color(0xFF831010)))
         q.contains("spotify") -> BrandInfo("S", listOf(Color(0xFF1DB954), Color(0xFF128C3E)))
         q.contains("amazon") -> BrandInfo("a", listOf(Color(0xFFFF9900), Color(0xFF232F3E)))
@@ -592,7 +578,7 @@ private fun detectBrand(title: String, url: String): BrandInfo {
         q.contains("twitter") || q.contains(" x ") || q.startsWith("x") -> BrandInfo("𝕏", listOf(Color(0xFF14171A), Color(0xFF000000)))
         q.contains("slack") -> BrandInfo("#", listOf(Color(0xFF4A154B), Color(0xFF611f69)))
         q.contains("discord") -> BrandInfo("D", listOf(Color(0xFF5865F2), Color(0xFF404EED)))
-        q.contains("bank") || q.contains("chase") || q.contains("citi") || q.contains("wells") -> BrandInfo("🏦", listOf(Color(0xFF0D9488), Color(0xFF115E59)))
+        q.contains("bank") || q.contains("chase") || q.contains("citi") || q.contains("wells") -> BrandInfo("B", listOf(Color(0xFF0D9488), Color(0xFF115E59)))
         else -> {
             val letter = title.trim().firstOrNull()?.uppercase() ?: "P"
             BrandInfo(letter, listOf(Color(0xFF1E293B), Color(0xFF0F172A)))

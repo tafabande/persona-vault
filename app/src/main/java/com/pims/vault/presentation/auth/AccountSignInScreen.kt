@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.auth
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -32,15 +34,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -160,7 +153,7 @@ fun AccountSignInScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            imageVector = PersonaIcons.ArrowForward,
                             contentDescription = "Skip",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(14.dp)
@@ -348,7 +341,7 @@ fun AccountSignInScreen(
                         label = { Text("Full Name") },
                         placeholder = { Text("Your preferred name") },
                         leadingIcon = {
-                            Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Icon(PersonaIcons.Me, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
@@ -375,7 +368,7 @@ fun AccountSignInScreen(
                     label = { Text("Email Address") },
                     placeholder = { Text("name@example.com") },
                     leadingIcon = {
-                        Icon(Icons.Default.Email, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(PersonaIcons.Email, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
@@ -401,12 +394,12 @@ fun AccountSignInScreen(
                     label = { Text("Password") },
                     placeholder = { Text("••••••••") },
                     leadingIcon = {
-                        Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(PersonaIcons.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     },
                     trailingIcon = {
                         IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
                             Icon(
-                                imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                imageVector = if (isPasswordVisible) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                 contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -471,7 +464,7 @@ fun AccountSignInScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ErrorOutline,
+                            imageVector = PersonaIcons.Danger,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(18.dp)
@@ -500,7 +493,7 @@ fun AccountSignInScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CheckCircle,
+                            imageVector = PersonaIcons.Success,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)

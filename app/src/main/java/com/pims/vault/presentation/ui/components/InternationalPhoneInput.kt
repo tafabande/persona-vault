@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,12 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -501,7 +497,7 @@ fun InternationalPhoneInput(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
+                        imageVector = PersonaIcons.ArrowDropDown,
                         contentDescription = "Select country calling code",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
@@ -585,7 +581,7 @@ fun InternationalPhoneInput(
                         modifier = Modifier.size(PimsControlSize.iconTouchTarget)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Clear,
+                            imageVector = PersonaIcons.Clear,
                             contentDescription = "Clear phone number",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
@@ -683,7 +679,7 @@ fun CountryPickerSheet(
                 }
 
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(PersonaIcons.Close, contentDescription = "Close")
                 }
             }
 
@@ -694,7 +690,7 @@ fun CountryPickerSheet(
                 placeholder = { Text("Search country, dial code or ISO...") },
                 leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.Search,
+                        imageVector = PersonaIcons.Search,
                         contentDescription = "Search",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -702,7 +698,7 @@ fun CountryPickerSheet(
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                            Icon(PersonaIcons.Clear, contentDescription = "Clear search")
                         }
                     }
                 },
@@ -834,7 +830,7 @@ private fun CountryRowItem(
 
             if (isSelected) {
                 Icon(
-                    imageVector = Icons.Default.Check,
+                    imageVector = PersonaIcons.Check,
                     contentDescription = "Selected",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)

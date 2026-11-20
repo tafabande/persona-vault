@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
@@ -16,16 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -81,7 +73,7 @@ fun DataBackupHubSheet(
 
                 IconButton(onClick = onDismissRequest) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = PersonaIcons.Close,
                         contentDescription = "Close",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -125,7 +117,7 @@ fun DataBackupHubSheet(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        imageVector = if (syncIsGood) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                        imageVector = if (syncIsGood) PersonaIcons.Success else PersonaIcons.Warning,
                                         contentDescription = null,
                                         tint = if (syncIsGood) MaterialTheme.colorScheme.primary else com.pims.vault.presentation.ui.theme.PimsColors.warning,
                                         modifier = Modifier.size(20.dp)
@@ -160,7 +152,7 @@ fun DataBackupHubSheet(
 
                 item {
                     DataActionRow(
-                        icon = Icons.Default.FileUpload,
+                        icon = PersonaIcons.FileUpload,
                         title = "Export Backup",
                         subtitle = "Create a local backup file",
                         onClick = onExportBackup
@@ -169,7 +161,7 @@ fun DataBackupHubSheet(
 
                 item {
                     DataActionRow(
-                        icon = Icons.Default.FileDownload,
+                        icon = PersonaIcons.FileDownload,
                         title = "Import Backup",
                         subtitle = "Restore your vault from a backup file",
                         onClick = onRestoreBackup
@@ -178,7 +170,7 @@ fun DataBackupHubSheet(
 
                 item {
                     DataActionRow(
-                        icon = Icons.Default.Delete,
+                        icon = PersonaIcons.Delete,
                         title = "Deleted Items",
                         subtitle = "View and restore recently deleted items",
                         onClick = onOpenSyncConflicts

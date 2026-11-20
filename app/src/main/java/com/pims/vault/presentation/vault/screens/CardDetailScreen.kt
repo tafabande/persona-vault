@@ -1,5 +1,10 @@
 package com.pims.vault.presentation.vault.screens
 
+import com.pims.vault.presentation.ui.components.PersonaMenuItem
+import com.pims.vault.presentation.ui.components.PersonaMenu
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,30 +23,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Notes
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -217,41 +201,27 @@ fun CardDetailScreen(
                     .padding(vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(36.dp).tactilePress { onBack() }) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = getVaultTextPrimary(),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                PersonaIconAction(PersonaIcons.ArrowBack, "Back", onBack)
 
                 Spacer(modifier = Modifier.weight(1f))
 
                 Box {
-                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(36.dp).tactilePress { showMenu = true }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            tint = getVaultTextPrimary(),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    DropdownMenu(
+                    PersonaIconAction(PersonaIcons.MoreActions, "Options", { showMenu = true })
+                    PersonaMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Edit") },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                        PersonaMenuItem(
+                            label = "Edit",
+                            icon = PersonaIcons.Edit,
                             onClick = {
                                 showMenu = false
                                 onEdit()
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        PersonaMenuItem(
+                            label = "Delete",
+                            icon = PersonaIcons.Delete,
                             onClick = {
                                 showMenu = false
                                 onDelete()
@@ -324,7 +294,7 @@ fun CardDetailScreen(
                                 }
 
                                 Icon(
-                                    imageVector = Icons.Default.Wifi,
+                                    imageVector = PersonaIcons.Wifi,
                                     contentDescription = "Contactless",
                                     tint = Color.White.copy(alpha = 0.8f),
                                     modifier = Modifier.size(20.dp)
@@ -378,7 +348,7 @@ fun CardDetailScreen(
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = if (isPanRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        imageVector = if (isPanRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                         contentDescription = if (isPanRevealed) "Hide number" else "Reveal number",
                                         tint = Color.White.copy(alpha = 0.85f),
                                         modifier = Modifier.size(14.dp)
@@ -507,7 +477,7 @@ fun CardDetailScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CreditCard,
+                            imageVector = PersonaIcons.CreditCard,
                             contentDescription = null,
                             tint = getVaultTextSecondary(),
                             modifier = Modifier.size(20.dp)
@@ -521,7 +491,7 @@ fun CardDetailScreen(
                             modifier = Modifier.weight(1f)
                         )
                         Icon(
-                            imageVector = if (isPanRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            imageVector = if (isPanRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                             contentDescription = null,
                             tint = getVaultTextSecondary(),
                             modifier = Modifier.size(18.dp)
@@ -539,7 +509,7 @@ fun CardDetailScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ContentCopy,
+                            imageVector = PersonaIcons.ContentCopy,
                             contentDescription = null,
                             tint = getVaultTextSecondary(),
                             modifier = Modifier.size(20.dp)
@@ -553,7 +523,7 @@ fun CardDetailScreen(
                             modifier = Modifier.weight(1f)
                         )
                         Icon(
-                            imageVector = Icons.Default.ContentCopy,
+                            imageVector = PersonaIcons.ContentCopy,
                             contentDescription = "Copy number",
                             tint = getVaultTextSecondary(),
                             modifier = Modifier.size(18.dp)
@@ -578,7 +548,7 @@ fun CardDetailScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Lock,
+                                imageVector = PersonaIcons.Lock,
                                 contentDescription = null,
                                 tint = getVaultTextSecondary(),
                                 modifier = Modifier.size(20.dp)
@@ -592,7 +562,7 @@ fun CardDetailScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             Icon(
-                                imageVector = Icons.Default.ContentCopy,
+                                imageVector = PersonaIcons.ContentCopy,
                                 contentDescription = "Copy CVV",
                                 tint = getVaultTextSecondary(),
                                 modifier = Modifier.size(18.dp)
@@ -612,7 +582,7 @@ fun CardDetailScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Person,
+                            imageVector = PersonaIcons.Me,
                             contentDescription = null,
                             tint = getVaultTextSecondary(),
                             modifier = Modifier.size(20.dp)
@@ -643,7 +613,7 @@ fun CardDetailScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.DateRange,
+                            imageVector = PersonaIcons.Calendar,
                             contentDescription = null,
                             tint = getVaultTextSecondary(),
                             modifier = Modifier.size(20.dp)
@@ -664,7 +634,7 @@ fun CardDetailScreen(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.ContentCopy,
+                            imageVector = PersonaIcons.ContentCopy,
                             contentDescription = "Copy expiry",
                             tint = getVaultTextSecondary(),
                             modifier = Modifier.size(16.dp)
@@ -682,7 +652,7 @@ fun CardDetailScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Security,
+                                imageVector = PersonaIcons.Security,
                                 contentDescription = null,
                                 tint = getVaultTextSecondary(),
                                 modifier = Modifier.size(20.dp)
@@ -702,17 +672,11 @@ fun CardDetailScreen(
                                     color = getVaultTextSecondary()
                                 )
                             }
-                            IconButton(
-                                onClick = { isCvvRevealed = !isCvvRevealed },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isCvvRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = null,
-                                    tint = getVaultTextSecondary(),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                            PersonaIconAction(
+                                if (isCvvRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
+                                if (isCvvRevealed) "Hide security code" else "Show security code",
+                                { isCvvRevealed = !isCvvRevealed }
+                            )
                         }
                     }
                 }
@@ -756,7 +720,6 @@ fun CardDetailScreen(
             // Bottom Sticky Button: "Edit details"
             VaultPillActionButton(
                 text = "Edit details",
-                leadingDot = false,
                 onClick = onEdit,
                 modifier = Modifier
                     .padding(bottom = 24.dp)

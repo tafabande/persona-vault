@@ -1,11 +1,11 @@
 package com.pims.vault.presentation.vault
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -309,7 +309,7 @@ fun VaultUnsupportedEditorScreen(onDismiss: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = PersonaIcons.ArrowBack,
                             contentDescription = "Back"
                         )
                     }

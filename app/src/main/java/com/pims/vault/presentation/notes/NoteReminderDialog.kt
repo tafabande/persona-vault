@@ -1,5 +1,10 @@
 package com.pims.vault.presentation.notes
 
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PimsSpacing
+
 import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
@@ -27,18 +32,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Tag
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -235,7 +228,7 @@ fun NoteReminderDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = if (step == 1) Icons.Default.Tag else Icons.Default.Alarm,
+                                imageVector = if (step == 1) PersonaIcons.Tag else PersonaIcons.Alarm,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(20.dp)
@@ -258,7 +251,7 @@ fun NoteReminderDialog(
 
                     IconButton(onClick = onDismissRequest) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = PersonaIcons.Close,
                             contentDescription = "Close",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -308,7 +301,7 @@ fun NoteReminderDialog(
                         singleLine = true,
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.Tag,
+                                imageVector = PersonaIcons.Tag,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
@@ -363,22 +356,8 @@ fun NoteReminderDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = onDismissRequest) {
-                            Text("Cancel")
-                        }
-
-                        Button(
-                            onClick = { step = 2 },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            )
-                        ) {
-                            Text("Next", fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
-                        }
+                        PersonaAction("Cancel", onDismissRequest, style = PersonaActionStyle.Text)
+                        PersonaAction("Next", onClick = { step = 2 })
                     }
                 } else {
                     // STEP 2: Date & Time Picker
@@ -393,7 +372,7 @@ fun NoteReminderDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Tag,
+                                imageVector = PersonaIcons.Tag,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
@@ -429,7 +408,7 @@ fun NoteReminderDialog(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CalendarMonth,
+                                imageVector = PersonaIcons.CalendarMonth,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp)
@@ -469,7 +448,7 @@ fun NoteReminderDialog(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AccessTime,
+                                imageVector = PersonaIcons.AccessTime,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp)
@@ -511,46 +490,30 @@ fun NoteReminderDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         if (onClearReminder != null && initialReminderAt != null) {
-                            TextButton(
+                            PersonaAction(
+                                label = "Remove",
                                 onClick = {
                                     onClearReminder()
                                     onDismissRequest()
                                 },
-                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Remove")
-                            }
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.DeleteOutline
+                            )
                         } else {
-                            TextButton(onClick = { step = 1 }) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Back")
-                            }
+                            PersonaAction("Back", { step = 1 }, style = PersonaActionStyle.Text)
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = onDismissRequest) {
-                                Text("Cancel")
-                            }
-
-                            Button(
+                        Row(horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s)) {
+                            PersonaAction("Cancel", onDismissRequest, style = PersonaActionStyle.Text)
+                            PersonaAction(
+                                label = "Set reminder",
                                 onClick = {
                                     onSetReminder(targetMillis, cleanTag(), "NONE")
                                     onDismissRequest()
                                 },
                                 enabled = isFuture,
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                )
-                            ) {
-                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Set Reminder", fontWeight = FontWeight.Bold)
-                            }
+                                icon = PersonaIcons.Check
+                            )
                         }
                     }
                 }

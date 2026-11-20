@@ -1,5 +1,13 @@
 package com.pims.vault.presentation.vault.screens
 
+import com.pims.vault.presentation.ui.components.PersonaConfirmationDialog
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaMenuItem
+import com.pims.vault.presentation.ui.components.PersonaMenu
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -23,45 +31,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockReset
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -121,17 +98,13 @@ fun KeyDetailScreen(
     // Dynamic screenshot protection: Active when sensitive secret is revealed or for private keys
     val isPrivateKey = currentItem.category == VaultCategory.SSH_KEY
     DisposableEffect(isSecretRevealed, isPrivateKey) {
-        val activity = context as? android.app.Activity
-        if (isPrivateKey || isSecretRevealed) {
-            activity?.window?.setFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                android.view.WindowManager.LayoutParams.FLAG_SECURE
-            )
-        } else {
-            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-        }
+        val window = (context as? android.app.Activity)?.window
+        val flag = android.view.WindowManager.LayoutParams.FLAG_SECURE
+        val addedFlag = window != null && (window.attributes.flags and flag) == 0 &&
+            (isPrivateKey || isSecretRevealed)
+        if (addedFlag) window?.addFlags(flag)
         onDispose {
-            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            if (addedFlag) window?.clearFlags(flag)
         }
     }
 
@@ -182,17 +155,17 @@ fun KeyDetailScreen(
     }
 
     val headerIcon: ImageVector = when (currentItem.category) {
-        VaultCategory.PASSWORD -> Icons.Default.Key
-        VaultCategory.SECURE_NOTE -> Icons.Default.Description
-        VaultCategory.TOTP_2FA -> Icons.Default.Lock
-        VaultCategory.API_KEY -> Icons.Default.Code
-        VaultCategory.SSH_KEY -> Icons.Default.Terminal
-        VaultCategory.ACCESS_TOKEN -> Icons.Default.Security
-        VaultCategory.RECOVERY_CODE -> Icons.Default.LockReset
-        VaultCategory.GENERIC_SECRET -> Icons.Default.Lock
-        VaultCategory.PAYMENT_REFERENCE -> Icons.Default.CreditCard
-        VaultCategory.BANK_ACCOUNT -> Icons.Default.AccountBalance
-        else -> Icons.Default.Key
+        VaultCategory.PASSWORD -> PersonaIcons.Key
+        VaultCategory.SECURE_NOTE -> PersonaIcons.Documents
+        VaultCategory.TOTP_2FA -> PersonaIcons.Lock
+        VaultCategory.API_KEY -> PersonaIcons.Code
+        VaultCategory.SSH_KEY -> PersonaIcons.Terminal
+        VaultCategory.ACCESS_TOKEN -> PersonaIcons.Security
+        VaultCategory.RECOVERY_CODE -> PersonaIcons.LockReset
+        VaultCategory.GENERIC_SECRET -> PersonaIcons.Lock
+        VaultCategory.PAYMENT_REFERENCE -> PersonaIcons.CreditCard
+        VaultCategory.BANK_ACCOUNT -> PersonaIcons.AccountBalance
+        else -> PersonaIcons.Key
     }
 
     val typeLabel = when (currentItem.category) {
@@ -360,79 +333,29 @@ fun KeyDetailScreen(
         }
     }
 
-    // Export confirmation dialog
     if (showExportConfirmDialog) {
-        AlertDialog(
+        PersonaConfirmationDialog(
             onDismissRequest = { showExportConfirmDialog = false },
-            containerColor = getVaultCardSurface(),
-            titleContentColor = getVaultTextPrimary(),
-            textContentColor = getVaultTextSecondary(),
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.FileDownload,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            },
-            title = {
-                Text(text = "Export Plaintext Secret?", fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Text(
-                    text = "Exporting will save this secret as an unencrypted plain text file using the system file picker. Anyone with access to the exported file or device storage will be able to read it.\n\nBiometric authentication will be required before the file is saved.",
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showExportConfirmDialog = false
-                        onTriggerExport()
-                    }
-                ) {
-                    Text("Authenticate & Export", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showExportConfirmDialog = false }) {
-                    Text("Cancel", color = getVaultTextPrimary())
-                }
+            title = "Export plaintext secret?",
+            message = "Anyone who can access the exported file can read the secret. Authenticate to choose where to save it.",
+            confirmText = "Authenticate and export",
+            onConfirm = {
+                showExportConfirmDialog = false
+                onTriggerExport()
             }
         )
     }
 
-    // Delete confirmation dialog
     if (showDeleteConfirmDialog) {
-        AlertDialog(
+        PersonaConfirmationDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
-            containerColor = getVaultCardSurface(),
-            titleContentColor = getVaultTextPrimary(),
-            textContentColor = getVaultTextSecondary(),
-            title = {
-                Text(text = "Delete \"${currentItem.title}\"?", fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Text(
-                    text = "This will permanently delete this item from your vault. This action cannot be undone.",
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirmDialog = false
-                        onDelete()
-                    }
-                ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                    Text("Cancel", color = getVaultTextPrimary())
-                }
+            title = "Delete \"${currentItem.title}\"?",
+            message = "This permanently deletes the item from your vault.",
+            confirmText = "Delete",
+            isDestructive = true,
+            onConfirm = {
+                showDeleteConfirmDialog = false
+                onDelete()
             }
         )
     }
@@ -454,41 +377,27 @@ fun KeyDetailScreen(
                     .padding(vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = getVaultTextPrimary(),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                PersonaIconAction(PersonaIcons.ArrowBack, "Back", onBack)
 
                 Spacer(modifier = Modifier.weight(1f))
 
                 Box {
-                    IconButton(onClick = { showMenu = true }, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            tint = getVaultTextPrimary(),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    DropdownMenu(
+                    PersonaIconAction(PersonaIcons.MoreActions, "Options", { showMenu = true })
+                    PersonaMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Edit") },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                        PersonaMenuItem(
+                            label = "Edit",
+                            icon = PersonaIcons.Edit,
                             onClick = {
                                 showMenu = false
                                 onEdit()
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Export Secret (Plaintext)") },
-                            leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                        PersonaMenuItem(
+                            label = "Export Secret (Plaintext)",
+                            icon = PersonaIcons.FileDownload,
                             enabled = isDecrypted,
                             onClick = {
                                 showMenu = false
@@ -499,9 +408,9 @@ fun KeyDetailScreen(
                                 }
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        PersonaMenuItem(
+                            label = "Delete",
+                            icon = PersonaIcons.Delete,
                             onClick = {
                                 showMenu = false
                                 showDeleteConfirmDialog = true
@@ -614,7 +523,7 @@ fun KeyDetailScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Default.LockReset,
+                                    imageVector = PersonaIcons.LockReset,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(20.dp)
@@ -635,27 +544,13 @@ fun KeyDetailScreen(
                                 lineHeight = 18.sp
                             )
                             Spacer(modifier = Modifier.height(12.dp))
-                            Button(
+                            PersonaAction(
+                                label = if (currentItem.category == VaultCategory.PASSWORD) "Re-enter Password" else "Re-enter Secret",
                                 onClick = onEdit,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onError
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (currentItem.category == VaultCategory.PASSWORD) "Re-enter Password" else "Re-enter Secret",
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onError
-                                )
-                            }
+                                modifier = Modifier.fillMaxWidth(),
+                                icon = PersonaIcons.Edit,
+                                style = PersonaActionStyle.Quiet
+                            )
                         }
                     }
                 }
@@ -673,7 +568,7 @@ fun KeyDetailScreen(
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
-                                            imageVector = Icons.Default.Timer,
+                                            imageVector = PersonaIcons.Timer,
                                             contentDescription = null,
                                             tint = getVaultTextSecondary(),
                                             modifier = Modifier.size(16.dp)
@@ -734,7 +629,7 @@ fun KeyDetailScreen(
                                         modifier = Modifier.size(42.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.ContentCopy,
+                                            imageVector = PersonaIcons.ContentCopy,
                                             contentDescription = "Copy code",
                                             tint = getVaultTextPrimary(),
                                             modifier = Modifier.size(20.dp)
@@ -780,7 +675,7 @@ fun KeyDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Person,
+                                    imageVector = PersonaIcons.Me,
                                     contentDescription = null,
                                     tint = getVaultTextSecondary(),
                                     modifier = Modifier.size(18.dp)
@@ -800,7 +695,7 @@ fun KeyDetailScreen(
                                     )
                                 }
                                 Icon(
-                                    imageVector = Icons.Default.ContentCopy,
+                                    imageVector = PersonaIcons.ContentCopy,
                                     contentDescription = "Copy username",
                                     tint = getVaultTextSecondary(),
                                     modifier = Modifier.size(16.dp)
@@ -821,7 +716,7 @@ fun KeyDetailScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Lock,
+                                        imageVector = PersonaIcons.Lock,
                                         contentDescription = null,
                                         tint = getVaultTextSecondary(),
                                         modifier = Modifier.size(18.dp)
@@ -841,17 +736,7 @@ fun KeyDetailScreen(
                                             color = getVaultTextSecondary()
                                         )
                                     }
-                                    IconButton(
-                                        onClick = { isSecretRevealed = !isSecretRevealed },
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = if (isSecretRevealed) "Hide password" else "Reveal password",
-                                            tint = getVaultTextSecondary(),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
+                                    PersonaIconAction(if (isSecretRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility, if (isSecretRevealed) "Hide password" else "Reveal password", { isSecretRevealed = !isSecretRevealed })
                                     IconButton(
                                         onClick = {
                                             viewModel.copyToClipboard(context, passwordPlain, currentItem.title, isSecret = true)
@@ -859,7 +744,7 @@ fun KeyDetailScreen(
                                         modifier = Modifier.size(36.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.ContentCopy,
+                                            imageVector = PersonaIcons.ContentCopy,
                                             contentDescription = "Copy password",
                                             tint = getVaultTextSecondary(),
                                             modifier = Modifier.size(18.dp)
@@ -900,7 +785,7 @@ fun KeyDetailScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Lock,
+                                        imageVector = PersonaIcons.Lock,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.size(18.dp)
@@ -921,25 +806,13 @@ fun KeyDetailScreen(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(10.dp))
-                                OutlinedButton(
+                                PersonaAction(
+                                    label = "Re-enter Password",
                                     onClick = onEdit,
-                                    shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.fillMaxWidth(),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Re-enter Password",
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
+                                    icon = PersonaIcons.Edit,
+                                    style = PersonaActionStyle.Quiet
+                                )
                             }
                         }
 
@@ -967,7 +840,7 @@ fun KeyDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.OpenInBrowser,
+                                    imageVector = PersonaIcons.OpenInBrowser,
                                     contentDescription = null,
                                     tint = getVaultTextSecondary(),
                                     modifier = Modifier.size(18.dp)
@@ -1004,7 +877,7 @@ fun KeyDetailScreen(
                                 verticalAlignment = Alignment.Top
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Description,
+                                    imageVector = PersonaIcons.Documents,
                                     contentDescription = null,
                                     tint = getVaultTextSecondary(),
                                     modifier = Modifier.size(18.dp).padding(top = 2.dp)
@@ -1041,7 +914,7 @@ fun KeyDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    imageVector = if (isSecretRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                     contentDescription = null,
                                     tint = getVaultTextPrimary(),
                                     modifier = Modifier.size(20.dp)
@@ -1094,7 +967,7 @@ fun KeyDetailScreen(
                                                                 if (codeEntry.isUsed) {
                                                                     Text(text = "USED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = getVaultTextSecondary())
                                                                 } else {
-                                                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp), tint = getVaultTextSecondary())
+                                                                    Icon(PersonaIcons.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp), tint = getVaultTextSecondary())
                                                                 }
                                                             }
                                                         }
@@ -1130,7 +1003,7 @@ fun KeyDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.ContentCopy,
+                                    imageVector = PersonaIcons.ContentCopy,
                                     contentDescription = null,
                                     tint = getVaultTextPrimary(),
                                     modifier = Modifier.size(20.dp)
@@ -1152,7 +1025,7 @@ fun KeyDetailScreen(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = Icons.Default.Lock,
+                                        imageVector = PersonaIcons.Lock,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.size(18.dp)
@@ -1173,25 +1046,13 @@ fun KeyDetailScreen(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
-                                OutlinedButton(
+                                PersonaAction(
+                                    label = "Re-enter Secret",
                                     onClick = onEdit,
-                                    shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier.fillMaxWidth(),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Re-enter Secret",
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
+                                    icon = PersonaIcons.Edit,
+                                    style = PersonaActionStyle.Quiet
+                                )
                             }
                         }
                     }
@@ -1295,7 +1156,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Lock, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Lock, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = issuer, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1314,7 +1175,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Person, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Me, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = account, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1330,7 +1191,7 @@ fun KeyDetailScreen(
                                     .padding(horizontal = 16.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                Icon(PersonaIcons.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Column {
                                     Text(text = "$algo · $digits digits · ${period}s refresh", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1353,7 +1214,7 @@ fun KeyDetailScreen(
                                     .padding(horizontal = 16.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Code, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                Icon(PersonaIcons.Code, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Column {
                                     Text(text = env, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1370,7 +1231,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Link, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Link, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(text = endpoint, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary(), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1387,7 +1248,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = expires, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1404,7 +1265,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
-                                    Icon(Icons.Default.Description, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp).padding(top = 2.dp))
+                                    Icon(PersonaIcons.Documents, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp).padding(top = 2.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = notes, fontSize = 14.sp, color = getVaultTextPrimary(), lineHeight = 20.sp)
@@ -1428,7 +1289,7 @@ fun KeyDetailScreen(
                                     .padding(horizontal = 16.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Terminal, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                Icon(PersonaIcons.Terminal, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Column {
                                     Text(text = "$user@$host", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1445,7 +1306,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(text = fingerprint, fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = getVaultTextPrimary())
@@ -1462,7 +1323,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
-                                    Icon(Icons.Default.Description, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp).padding(top = 2.dp))
+                                    Icon(PersonaIcons.Documents, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp).padding(top = 2.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = notes, fontSize = 14.sp, color = getVaultTextPrimary(), lineHeight = 20.sp)
@@ -1486,7 +1347,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = scopes, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1505,7 +1366,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Security, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = expires, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1524,7 +1385,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
-                                    Icon(Icons.Default.Description, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp).padding(top = 2.dp))
+                                    Icon(PersonaIcons.Documents, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp).padding(top = 2.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = notes, fontSize = 14.sp, color = getVaultTextPrimary(), lineHeight = 20.sp)
@@ -1548,7 +1409,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Key, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Key, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = secType, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1567,7 +1428,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Lock, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.Lock, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = provider, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1586,7 +1447,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
-                                    Icon(Icons.Default.Description, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp).padding(top = 2.dp))
+                                    Icon(PersonaIcons.Documents, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp).padding(top = 2.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = notes, fontSize = 14.sp, color = getVaultTextPrimary(), lineHeight = 20.sp)
@@ -1607,7 +1468,7 @@ fun KeyDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.LockReset, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
+                                    Icon(PersonaIcons.LockReset, contentDescription = null, tint = getVaultTextSecondary(), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column {
                                         Text(text = ref, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = getVaultTextPrimary())
@@ -1636,7 +1497,6 @@ fun KeyDetailScreen(
             // Bottom Action: "Edit details"
             VaultPillActionButton(
                 text = "Edit details",
-                leadingDot = true,
                 onClick = onEdit,
                 modifier = Modifier.padding(bottom = 24.dp)
             )

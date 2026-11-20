@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +21,7 @@ class NetworkStateMonitor @Inject constructor(
 
     val networkState: Flow<NetworkState> = callbackFlow {
         if (connectivityManager == null) {
-            trySend(NetworkState.ONLINE)
+            trySend(NetworkState.OFFLINE)
             awaitClose {}
             return@callbackFlow
         }
@@ -31,8 +30,8 @@ class NetworkStateMonitor @Inject constructor(
         trySend(if (isConnectedInitially) NetworkState.ONLINE else NetworkState.OFFLINE)
 
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                trySend(NetworkState.ONLINE)
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                trySend(if (hasInternet(capabilities)) NetworkState.ONLINE else NetworkState.OFFLINE)
             }
 
             override fun onLost(network: Network) {
@@ -44,14 +43,10 @@ class NetworkStateMonitor @Inject constructor(
             }
         }
 
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-
         try {
-            connectivityManager.registerNetworkCallback(request, callback)
-        } catch (e: Exception) {
-            trySend(NetworkState.ONLINE)
+            connectivityManager.registerDefaultNetworkCallback(callback)
+        } catch (_: Exception) {
+            trySend(NetworkState.OFFLINE)
         }
 
         awaitClose {
@@ -63,12 +58,16 @@ class NetworkStateMonitor @Inject constructor(
 
     fun isCurrentlyConnected(): Boolean {
         return try {
-            if (connectivityManager == null) return true
+            if (connectivityManager == null) return false
             val activeNetwork = connectivityManager.activeNetwork ?: return false
             val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        } catch (e: Exception) {
+            hasInternet(capabilities)
+        } catch (_: Exception) {
             false
         }
     }
+
+    private fun hasInternet(capabilities: NetworkCapabilities): Boolean =
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }

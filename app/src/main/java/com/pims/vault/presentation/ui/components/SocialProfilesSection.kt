@@ -22,16 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -306,7 +296,7 @@ fun SocialProfilesSection(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Default.Language,
+                            imageVector = PersonaIcons.Language,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
@@ -338,7 +328,7 @@ fun SocialProfilesSection(
                         modifier = Modifier.size(34.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Cloud,
+                            imageVector = PersonaIcons.Cloud,
                             contentDescription = "Sync",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
@@ -355,7 +345,7 @@ fun SocialProfilesSection(
                         modifier = Modifier.size(34.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CloudDownload,
+                            imageVector = PersonaIcons.CloudDownload,
                             contentDescription = "Restore",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
@@ -405,7 +395,7 @@ fun SocialProfilesSection(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Link,
+                            imageVector = PersonaIcons.Link,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(22.dp)
@@ -504,7 +494,7 @@ fun SocialProfilesSection(
                                                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                                                 ) {
                                                     Icon(
-                                                        imageVector = Icons.Default.Lock,
+                                                        imageVector = PersonaIcons.Lock,
                                                         contentDescription = null,
                                                         tint = MaterialTheme.colorScheme.primary,
                                                         modifier = Modifier.size(10.dp)
@@ -557,7 +547,7 @@ fun SocialProfilesSection(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.OpenInNew,
+                                        imageVector = PersonaIcons.OpenInNew,
                                         contentDescription = "Open link",
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(18.dp)
@@ -771,7 +761,7 @@ private fun AddSocialProfileDialog(
                         focusedLabelColor = MaterialTheme.colorScheme.primary
                     ),
                     leadingIcon = {
-                        Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(PersonaIcons.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -792,7 +782,7 @@ private fun AddSocialProfileDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Security,
+                                imageVector = PersonaIcons.Security,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
@@ -817,7 +807,7 @@ private fun AddSocialProfileDialog(
                             trailingIcon = {
                                 IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
                                     Icon(
-                                        imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        imageVector = if (isPasswordVisible) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                         contentDescription = if (isPasswordVisible) "Hide password" else "Show password"
                                     )
                                 }

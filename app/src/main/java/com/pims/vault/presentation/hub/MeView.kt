@@ -1,6 +1,7 @@
 package com.pims.vault.presentation.hub
 
-import android.graphics.BitmapFactory
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,31 +27,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MedicalServices
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.MedicalServices
-import androidx.compose.material.icons.outlined.People
-import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -88,6 +64,7 @@ import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
+import kotlinx.coroutines.launch
 
 /**
  * MeView - Profile & Identity Hub
@@ -145,6 +122,7 @@ fun MeView(
     onOpenAvatarEditor: () -> Unit = onEditProfileClick,
     onViewPublicDossier: () -> Unit = {},
     onExportPdf: () -> Unit = {},
+    onBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPimsHaptics()
@@ -153,53 +131,20 @@ fun MeView(
     val customPhotoPath by avatarManager.customAvatarPath.collectAsState()
     val avatarConfig by avatarManager.avatarConfig.collectAsState()
 
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val profilePhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            try {
-                // Determine sample size to protect against high-res OOM
-                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    BitmapFactory.decodeStream(stream, null, options)
-                }
-                var inSampleSize = 1
-                val maxDim = 1200
-                while (options.outWidth / (inSampleSize * 2) >= maxDim || options.outHeight / (inSampleSize * 2) >= maxDim) {
-                    inSampleSize *= 2
-                }
-
-                val decodeOptions = BitmapFactory.Options().apply {
-                    this.inSampleSize = inSampleSize
-                }
-                val rawBitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
-                    BitmapFactory.decodeStream(stream, null, decodeOptions)
-                }
-
-                if (rawBitmap != null) {
-                    val finalBitmap = try {
-                        val exifInterface = context.contentResolver.openInputStream(uri)?.use { stream ->
-                            android.media.ExifInterface(stream)
-                        }
-                        val orientation = exifInterface?.getAttributeInt(
-                            android.media.ExifInterface.TAG_ORIENTATION,
-                            android.media.ExifInterface.ORIENTATION_NORMAL
-                        ) ?: android.media.ExifInterface.ORIENTATION_NORMAL
-                        val matrix = android.graphics.Matrix()
-                        when (orientation) {
-                            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
-                            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
-                            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-                        }
-                        android.graphics.Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
-                    } catch (_: Throwable) {
-                        rawBitmap
-                    }
-                    avatarManager.saveCustomPhoto(finalBitmap)
+            scope.launch {
+                try {
+                    avatarManager.importAvatarPhoto(uri)
                     haptics.success()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    haptics.warning()
                 }
-            } catch (_: Throwable) {
-                haptics.warning()
             }
         }
     }
@@ -217,6 +162,14 @@ fun MeView(
         horizontalAlignment = Alignment.CenterHorizontally,
         contentPadding = PaddingValues(start = pimsPageGutter(), end = pimsPageGutter(), top = 8.dp, bottom = 28.dp)
     ) {
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                com.pims.vault.presentation.ui.components.PersonaIconAction(
+                    com.pims.vault.presentation.ui.theme.PersonaIcons.ArrowBack, "Back", onBack
+                )
+                Text("Profile", style = MaterialTheme.typography.titleLarge)
+            }
+        }
         item {
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -259,7 +212,7 @@ fun MeView(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = Icons.Outlined.Edit,
+                                imageVector = PersonaIcons.EditOutlined,
                                 contentDescription = "Edit profile",
                                 tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(15.dp)
@@ -302,7 +255,7 @@ fun MeView(
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.LocationOn,
+                            imageVector = PersonaIcons.Location,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(15.dp)
@@ -373,7 +326,7 @@ fun MeView(
 
         item {
             TextButton(onClick = onAddCustomField, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Add, null)
+                Icon(PersonaIcons.Add, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Add information")
             }
@@ -401,7 +354,7 @@ fun MeView(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Person,
+                                imageVector = PersonaIcons.Me,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
@@ -423,7 +376,7 @@ fun MeView(
                             }
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.Edit,
+                                imageVector = PersonaIcons.EditOutlined,
                                 contentDescription = "Edit information",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(14.dp)
@@ -445,7 +398,7 @@ fun MeView(
                     )
 
                     MeInfoDetailRow(
-                        icon = Icons.Default.Phone,
+                        icon = PersonaIcons.PhoneOutlined,
                         label = "Phone",
                         value = primaryPhone?.takeIf { it.isNotBlank() } ?: "Add phone number",
                         isSet = !primaryPhone.isNullOrBlank(),
@@ -459,7 +412,7 @@ fun MeView(
                     )
 
                     MeInfoDetailRow(
-                        icon = Icons.Default.Email,
+                        icon = PersonaIcons.Email,
                         label = "Email",
                         value = primaryEmail?.takeIf { it.isNotBlank() } ?: "Add email address",
                         isSet = !primaryEmail.isNullOrBlank(),
@@ -475,7 +428,7 @@ fun MeView(
                     )
 
                     MeInfoDetailRow(
-                        icon = Icons.Default.Home,
+                        icon = PersonaIcons.Home,
                         label = "Address / Residence",
                         value = displayAddress ?: "Add address / location",
                         isSet = displayAddress != null,
@@ -490,7 +443,7 @@ fun MeView(
                         )
 
                         MeInfoDetailRow(
-                            icon = Icons.Default.Work,
+                            icon = PersonaIcons.Work,
                             label = "Profession",
                             value = occupation,
                             isSet = true,
@@ -521,7 +474,7 @@ fun MeView(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     // Education and career
                     MeFacetRowItem(
-                        icon = Icons.Outlined.School,
+                        icon = PersonaIcons.SchoolOutlined,
                         title = "Education and career",
                         subtitle = if (totalQuals == 0) "No qualifications added" else "$totalQuals qualification${if (totalQuals > 1) "s" else ""}",
                         onClick = {
@@ -537,7 +490,7 @@ fun MeView(
 
                     // Health
                     MeFacetRowItem(
-                        icon = Icons.Outlined.MedicalServices,
+                        icon = PersonaIcons.MedicalServicesOutlined,
                         title = "Health",
                         subtitle = if (totalHealth == 0) "No medical records" else "$totalHealth record${if (totalHealth > 1) "s" else ""}",
                         onClick = {
@@ -553,7 +506,7 @@ fun MeView(
 
                     // Vault
                     MeFacetRowItem(
-                        icon = Icons.Default.Key,
+                        icon = PersonaIcons.Key,
                         title = "Vault",
                         subtitle = if (totalVault == 0) "No credentials stored" else "$totalVault item${if (totalVault > 1) "s" else ""}",
                         isLocked = true,
@@ -570,7 +523,7 @@ fun MeView(
 
                     // Documents
                     MeFacetRowItem(
-                        icon = Icons.Outlined.Description,
+                        icon = PersonaIcons.DocumentsOutlined,
                         title = "Documents",
                         subtitle = if (totalDocs == 0) "No documents" else "$totalDocs document${if (totalDocs > 1) "s" else ""}",
                         onClick = {
@@ -586,7 +539,7 @@ fun MeView(
 
                     // People
                     MeFacetRowItem(
-                        icon = Icons.Outlined.People,
+                        icon = PersonaIcons.PeopleOutlined,
                         title = "People",
                         subtitle = if (totalPeople == 0) "No connections" else if (totalPeople == 1) "1 person" else "$totalPeople people",
                         onClick = {
@@ -665,7 +618,7 @@ fun MeView(
                                     modifier = Modifier.size(48.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Close,
+                                        imageVector = PersonaIcons.Close,
                                         contentDescription = "Delete field",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         modifier = Modifier.size(16.dp)
@@ -726,7 +679,7 @@ private fun MeInfoDetailRow(
             )
         }
         Icon(
-            imageVector = Icons.Default.ChevronRight,
+            imageVector = PersonaIcons.ChevronRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
             modifier = Modifier.size(16.dp)
@@ -778,7 +731,7 @@ private fun MeFacetRowItem(
         }
         if (isLocked) {
             Icon(
-                imageVector = Icons.Outlined.Lock,
+                imageVector = PersonaIcons.LockOutlined,
                 contentDescription = "Locked",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier

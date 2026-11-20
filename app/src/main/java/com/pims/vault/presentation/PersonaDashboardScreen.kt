@@ -1,5 +1,7 @@
 package com.pims.vault.presentation
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.content.Context
@@ -15,6 +17,11 @@ import android.system.OsConstants
 import com.pims.vault.presentation.ui.util.PimsHaptics
 import com.pims.vault.presentation.ui.util.PimsSoundManager
 import com.pims.vault.presentation.profile.ProfileUiState
+import com.pims.vault.presentation.vault.VaultUiState
+import com.pims.vault.presentation.relationship.RelationshipUiState
+import com.pims.vault.presentation.medical.MedicalUiState
+import com.pims.vault.presentation.document.DocumentUiState
+import com.pims.vault.presentation.avatar.PersonaAvatarManager
 import com.pims.vault.presentation.hub.EditableAddress
 import com.pims.vault.presentation.hub.EditableAllergy
 import com.pims.vault.presentation.hub.EditableCondition
@@ -59,7 +66,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -76,31 +82,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Shield
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.People
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
@@ -196,7 +179,10 @@ import com.pims.vault.presentation.hub.DocumentsWalletSheet
 import com.pims.vault.presentation.hub.EducationPortfolioSheet
 import com.pims.vault.presentation.hub.HealthSheet
 import com.pims.vault.presentation.hub.HomeView
+import com.pims.vault.presentation.hub.MeOverviewPinState
 import com.pims.vault.presentation.hub.MeView
+import com.pims.vault.presentation.hub.VaultMePinPicker
+import com.pims.vault.presentation.hub.rememberMeOverviewPins
 import com.pims.vault.presentation.hub.MoreView
 import com.pims.vault.presentation.hub.UniversalSearchSheet
 import com.pims.vault.presentation.hub.StorageManagementSheet
@@ -208,9 +194,6 @@ import com.pims.vault.presentation.hub.ConnectPersonScreen
 import com.pims.vault.presentation.notes.PlainNotesScreen
 import com.pims.vault.presentation.notes.PlainNoteEditorScreen
 import com.pims.vault.presentation.avatar.AvatarEditorSheet
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PersonAdd
 import com.pims.vault.presentation.medical.MedicalDossierView
 import com.pims.vault.presentation.medical.MedicalViewModel
 import com.pims.vault.presentation.profile.ProfileViewModel
@@ -226,8 +209,8 @@ import com.pims.vault.core.activity.RecentActivityManager
 import com.pims.vault.core.security.PinSecurityManager
 import com.pims.vault.presentation.security.SecuritySettingsScreen
 import com.pims.vault.presentation.security.PinChallengeDialog
-import com.pims.vault.presentation.library.InformationLibraryScreen
-import com.pims.vault.presentation.library.LibraryItem
+import com.pims.vault.presentation.library.InformationLibraryRoute
+import com.pims.vault.presentation.library.LibraryDestination
 import com.pims.vault.presentation.ui.components.FormFieldLabel
 import com.pims.vault.presentation.ui.components.FormTextInput
 import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
@@ -253,7 +236,6 @@ import com.pims.vault.presentation.hub.SharePreviewModal
 import com.pims.vault.presentation.sync.SyncViewModel
 import com.pims.vault.presentation.ui.state.AlertLevel
 import com.pims.vault.core.security.SecurityTier
-import com.pims.vault.presentation.security.BiometricReauthPrompt
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -261,9 +243,13 @@ import java.util.Calendar
 // Keep remembered workflow state grouped so this dashboard's generated DEX frame stays bounded.
 private class DashboardNavigationState(initialOpenNoteId: String?) {
     var selectedTab by mutableIntStateOf(0)
+    var meDestination by mutableStateOf<Int?>(null)
     var fullScreenOverlay by mutableStateOf<String?>(null)
     var activeNoteId by mutableStateOf<String?>(initialOpenNoteId)
+    var noteReturnOverlay by mutableStateOf<String?>(null)
+    var personReturnOverlay by mutableStateOf<String?>(null)
     var selectedPersonForDetail by mutableStateOf<KinRelationshipItem?>(null)
+    var relationshipNoteToOpen by mutableStateOf<String?>(null)
     var personToEditForDialog by mutableStateOf<KinRelationshipItem?>(null)
     var showPublicResumeModal by mutableStateOf(false)
     var relationshipToDelete by mutableStateOf<KinRelationshipItem?>(null)
@@ -289,13 +275,98 @@ private class DashboardDocumentState {
 }
 
 private class DashboardAccessState {
-    var pendingSensitiveAction by mutableStateOf<(() -> Unit)?>(null)
-    var pendingSecurityTier by mutableStateOf<SecurityTier?>(null)
-    var isBiometricPromptVisible by mutableStateOf(false)
-    var isPinChallengeVisible by mutableStateOf(false)
-    var biometricFailedAttempts by mutableIntStateOf(0)
-    var isLevel2Unlocked by mutableStateOf(false)
+    class Request(val title: String, val subtitle: String, val onSuccess: () -> Unit)
+
+    private var currentRequest: Request? = null
+    var pinRequest by mutableStateOf<Request?>(null)
+        private set
+    var error by mutableStateOf<String?>(null)
     var zone4CryptoObject by mutableStateOf<androidx.biometric.BiometricPrompt.CryptoObject?>(null)
+
+    fun request(
+        tier: SecurityTier,
+        title: String,
+        subtitle: String,
+        pinSecurityManager: PinSecurityManager,
+        onRequestBiometricAuth: ((String, String, () -> Unit, (String) -> Unit) -> Unit)?,
+        onRequestVaultBiometricAuth: ((String, String, (androidx.biometric.BiometricPrompt.CryptoObject) -> Unit, (String) -> Unit) -> Unit)?,
+        onSuccess: () -> Unit
+    ) {
+        val request = Request(title, subtitle, onSuccess)
+        currentRequest = request
+        pinRequest = null
+        error = null
+        zone4CryptoObject = null
+
+        if (tier == SecurityTier.LEVEL_3_VAULT) {
+            if (onRequestVaultBiometricAuth == null) {
+                reject(request, "Hardware vault authentication is unavailable.")
+                return
+            }
+            onRequestVaultBiometricAuth(title, subtitle, { authorized ->
+                if (currentRequest === request) {
+                    zone4CryptoObject = authorized
+                    verified(request)
+                }
+            }, { message -> reject(request, message) })
+            return
+        }
+
+        val offerAppPin: (String) -> Unit = { message ->
+            if (currentRequest === request) {
+                if (pinSecurityManager.hasPin()) pinRequest = request
+                else reject(request, message)
+            }
+        }
+        if (onRequestBiometricAuth == null) {
+            offerAppPin("Set up an App PIN in Security Settings to access this information.")
+        } else {
+            onRequestBiometricAuth(title, subtitle, { verified(request) }, offerAppPin)
+        }
+    }
+
+    fun verified(request: Request) {
+        if (currentRequest !== request) return
+        cancel()
+        request.onSuccess()
+    }
+
+    fun cancel() {
+        currentRequest = null
+        pinRequest = null
+    }
+
+    private fun reject(request: Request, message: String) {
+        if (currentRequest !== request) return
+        cancel()
+        error = message
+    }
+}
+
+@Composable
+private fun DashboardAuthenticationPrompt(access: DashboardAccessState, pinSecurityManager: PinSecurityManager) {
+    androidx.compose.runtime.DisposableEffect(access) {
+        onDispose { access.cancel() }
+    }
+    access.pinRequest?.let { request ->
+        PinChallengeDialog(
+            pinSecurityManager = pinSecurityManager,
+            title = request.title,
+            subtitle = request.subtitle,
+            onSuccess = { access.verified(request) },
+            onDismiss = access::cancel
+        )
+    }
+    access.error?.let { message ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { access.error = null },
+            title = { Text("Verification required") },
+            text = { Text(message) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { access.error = null }) { Text("Close") }
+            }
+        )
+    }
 }
 
 private class DashboardCustomFieldState {
@@ -387,6 +458,8 @@ private fun rememberDashboardModalSheets(): DashboardModalSheets {
 @Composable
 fun PersonaDashboardScreen(
     securityLevel: KeySecurityLevel,
+    pinSecurityManager: PinSecurityManager,
+    boundAccountUid: String? = null,
     initialOpenNoteId: String? = null,
     initialQuickAction: String? = null,
     onQuickActionHandled: (() -> Unit)? = null,
@@ -453,17 +526,14 @@ fun PersonaDashboardScreen(
     val accountMode by accountModeManager.accountMode.collectAsState()
     val authUser = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser }
     val isLocalOnly = accountMode == AccountMode.LOCAL_ONLY && authUser == null
+    val mePins = rememberMeOverviewPins(
+        accountScope = if (isLocalOnly) "local" else boundAccountUid?.let { "cloud:$it" },
+        ownerId = profileState.person?.id
+    )
     val hasSyncAttentionNeeded = syncState is SyncState.Conflict || 
                                  syncState is SyncState.Failed || 
                                  conflicts.isNotEmpty()
-    val effectiveSyncStatusText = when {
-        syncState is SyncState.Syncing -> "Syncing..."
-        syncState is SyncState.Conflict -> "Needs attention"
-        syncState is SyncState.Failed -> "Sync paused"
-        isLocalOnly -> "Local Vault"
-        syncState is SyncState.Idle -> "Synced"
-        else -> "Ready"
-    }
+    val effectiveSyncStatusText = if (isLocalOnly) "Saved locally" else syncState.label
     val effectiveSyncIsGood = !hasSyncAttentionNeeded
 
     var contextualExplanation by remember { mutableStateOf<ContextualExplanation?>(null) }
@@ -485,7 +555,6 @@ fun PersonaDashboardScreen(
     val motionManager = remember { com.pims.vault.presentation.ui.theme.PersonaMotionManager(context) }
     val isReducedMotion by motionManager.isReducedMotionPreferred.collectAsState()
     val recentActivityManager = remember { RecentActivityManager(context) }
-    val pinSecurityManager = remember { PinSecurityManager(context) }
     val avatarManager = remember { com.pims.vault.presentation.avatar.PersonaAvatarManager.getInstance(context) }
     val customAvatarPath by avatarManager.customAvatarPath.collectAsState()
     val avatarConfig by avatarManager.avatarConfig.collectAsState()
@@ -648,10 +717,6 @@ fun PersonaDashboardScreen(
         }
     }
 
-    var attachmentToPreview by remember { mutableStateOf<Pair<ByteArray, String>?>(null) }
-    var attachmentPreviewBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var isAttachmentPreviewLoading by remember { mutableStateOf(false) }
-
     // Dashboard destinations contain Zone 2+ data, including relationship notes.
     DisposableEffect(Unit) {
         val window = (context as? Activity)?.window
@@ -659,70 +724,6 @@ fun PersonaDashboardScreen(
         window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         onDispose {
             if (!wasSecure) window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-        }
-    }
-
-    LaunchedEffect(relationshipState.isVaultUnlocked) {
-        if (!relationshipState.isVaultUnlocked) attachmentToPreview = null
-    }
-
-    LaunchedEffect(attachmentToPreview) {
-        attachmentPreviewBitmap?.recycle()
-        attachmentPreviewBitmap = null
-        val attachment = attachmentToPreview ?: run { isAttachmentPreviewLoading = false; return@LaunchedEffect }
-        isAttachmentPreviewLoading = true
-        try {
-            attachmentPreviewBitmap = withContext(Dispatchers.IO) {
-            try {
-                if (attachment.second.startsWith("image/")) {
-                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(attachment.first, 0, attachment.first.size, options)
-                    require(options.outWidth > 0 && options.outHeight > 0) { "Invalid attachment image" }
-                    var sample = 1
-                    while (options.outWidth / sample > 1600 || options.outHeight / sample > 1600) sample *= 2
-                    options.inJustDecodeBounds = false
-                    options.inSampleSize = sample
-                    BitmapFactory.decodeByteArray(attachment.first, 0, attachment.first.size, options)
-                } else if (attachment.second == "application/pdf") {
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) error("In-memory PDF preview requires Android 11 or newer")
-                    val memoryFd = Os.memfd_create("pims-note-pdf-preview", 0)
-                    try {
-                        var written = 0
-                        while (written < attachment.first.size) {
-                            written += Os.write(memoryFd, attachment.first, written, attachment.first.size - written)
-                        }
-                        Os.lseek(memoryFd, 0, OsConstants.SEEK_SET)
-                        ParcelFileDescriptor.dup(memoryFd).use { descriptor ->
-                            PdfRenderer(descriptor).use { renderer ->
-                                if (renderer.pageCount == 0) null else renderer.openPage(0).use { page ->
-                                    val scale = minOf(1f, 1400f / page.width, 1800f / page.height)
-                                    val bitmap = Bitmap.createBitmap(
-                                        (page.width * scale).toInt().coerceAtLeast(1),
-                                        (page.height * scale).toInt().coerceAtLeast(1),
-                                        Bitmap.Config.ARGB_8888
-                                    )
-                                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                    bitmap
-                                }
-                            }
-                        }
-                    } finally {
-                        Os.close(memoryFd)
-                    }
-                } else null
-            } catch (_: Exception) { null }
-            }
-        } finally {
-            isAttachmentPreviewLoading = false
-        }
-    }
-
-    DisposableEffect(attachmentToPreview) {
-        val previewBytes = attachmentToPreview?.first
-        onDispose {
-            previewBytes?.fill(0)
-            attachmentPreviewBitmap?.recycle()
-            attachmentPreviewBitmap = null
         }
     }
 
@@ -738,90 +739,7 @@ fun PersonaDashboardScreen(
         subtitle: String,
         onSuccess: () -> Unit
     ) {
-        if (tier == SecurityTier.LEVEL_2_SENSITIVE && accessUi.isLevel2Unlocked) {
-            onSuccess()
-            return
-        }
-        accessUi.pendingSecurityTier = tier
-        accessUi.pendingSensitiveAction = onSuccess
-
-        if (tier == SecurityTier.LEVEL_3_VAULT) {
-            val requestVaultAuth = onRequestVaultBiometricAuth
-            if (requestVaultAuth == null) {
-                accessUi.pendingSensitiveAction = null
-                accessUi.pendingSecurityTier = null
-                scope.launch { snackbarHostState.showSnackbar("Vault hardware authentication is unavailable") }
-                return
-            }
-            requestVaultAuth(
-                title,
-                subtitle,
-                { cryptoObject ->
-                    accessUi.zone4CryptoObject = cryptoObject
-                    val action = accessUi.pendingSensitiveAction
-                    accessUi.pendingSensitiveAction = null
-                    accessUi.pendingSecurityTier = null
-                    action?.invoke()
-                },
-                { error ->
-                    accessUi.zone4CryptoObject = null
-                    accessUi.pendingSensitiveAction = null
-                    accessUi.pendingSecurityTier = null
-                    scope.launch { snackbarHostState.showSnackbar("Vault authentication cancelled: $error") }
-                }
-            )
-            return
-        }
-
-        val biometricAvailable = onRequestBiometricAuth != null && pinSecurityManager.isBiometricEnabled.value
-        if (biometricAvailable) {
-            onRequestBiometricAuth?.invoke(
-                title,
-                subtitle,
-                {
-                    if (tier == SecurityTier.LEVEL_2_SENSITIVE) {
-                        accessUi.isLevel2Unlocked = true
-                    }
-                    val action = accessUi.pendingSensitiveAction
-                    accessUi.pendingSensitiveAction = null
-                    accessUi.pendingSecurityTier = null
-                    action?.invoke()
-                },
-                { error ->
-                    // Biometric cancelled or failed -> fallback to PIN challenge if configured
-                    if (pinSecurityManager.hasPin()) {
-                        accessUi.isPinChallengeVisible = true
-                    } else if (error.contains("BIOMETRICS_UNAVAILABLE", ignoreCase = true) ||
-                        error.contains("No fingerprints", ignoreCase = true) ||
-                        error.contains("No biometric", ignoreCase = true)) {
-                        // Hardware credential unavailable and no app PIN configured: allow graceful access
-                        if (tier == SecurityTier.LEVEL_2_SENSITIVE) {
-                            accessUi.isLevel2Unlocked = true
-                        }
-                        val action = accessUi.pendingSensitiveAction
-                        accessUi.pendingSensitiveAction = null
-                        accessUi.pendingSecurityTier = null
-                        action?.invoke()
-                    } else {
-                        accessUi.pendingSensitiveAction = null
-                        accessUi.pendingSecurityTier = null
-                        scope.launch {
-                            snackbarHostState.showSnackbar("Authentication cancelled: Access locked")
-                        }
-                    }
-                }
-            )
-        } else if (pinSecurityManager.hasPin()) {
-            accessUi.isPinChallengeVisible = true
-        } else {
-            // Initial setup or unconfigured security
-            if (tier == SecurityTier.LEVEL_2_SENSITIVE) {
-                accessUi.isLevel2Unlocked = true
-            }
-            accessUi.pendingSensitiveAction = null
-            accessUi.pendingSecurityTier = null
-            onSuccess()
-        }
+        accessUi.request(tier, title, subtitle, pinSecurityManager, onRequestBiometricAuth, onRequestVaultBiometricAuth, onSuccess)
     }
 
     fun withPrivateNotesUnlocked(action: () -> Unit) {
@@ -838,9 +756,9 @@ fun PersonaDashboardScreen(
         }
     }
 
-    val openVaultFortress: () -> Unit = {
-        if (vaultState.isVaultUnlocked) {
-            navigationUi.fullScreenOverlay = "VAULT"
+    fun authorizeVault(onAuthorized: () -> Unit) {
+        if (vaultViewModel.uiState.value.isVaultUnlocked) {
+            onAuthorized()
         } else {
             requestGatedAccess(
                 SecurityTier.LEVEL_3_VAULT,
@@ -850,7 +768,7 @@ fun PersonaDashboardScreen(
                 vaultViewModel.elevateAndUnlockVault(
                     cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
                     onSuccess = {
-                        navigationUi.fullScreenOverlay = "VAULT"
+                        onAuthorized()
                         recentActivityManager.recordActivity("Unlocked Security Vault", "Zone 4 hardware encryption accessed")
                     },
                     onError = { err ->
@@ -860,6 +778,7 @@ fun PersonaDashboardScreen(
             }
         }
     }
+    val openVaultFortress: () -> Unit = { authorizeVault { navigationUi.fullScreenOverlay = "VAULT" } }
 
     // Document Upload & Delete States
     val documentUi = remember { DashboardDocumentState() }
@@ -1058,7 +977,7 @@ fun PersonaDashboardScreen(
         when {
             doc.document.securityClassification == SecurityClassification.ZONE_4_CRITICAL -> withPrivateNotesUnlocked(action)
             (doc.document.isLocked || (doc.document.securityClassification == SecurityClassification.ZONE_3_SENSITIVE &&
-                pinSecurityManager.requireAuthForSensitive.value)) && !accessUi.isLevel2Unlocked ->
+                pinSecurityManager.requireAuthForSensitive.value)) ->
                 requestGatedAccess(SecurityTier.LEVEL_2_SENSITIVE, "Unlock document", "Confirm your identity", action)
             else -> action()
         }
@@ -1146,403 +1065,63 @@ fun PersonaDashboardScreen(
 
     // Activity & Notification Center Data (Strictly genuine pending requests, sync alerts, and expiring documents)
     val notifications = remember(profileState.relationships, documentState.documents, conflicts, dismissedNotificationIds) {
-        val list = mutableListOf<PersonaNotificationItem>()
-
-        // 1. Pending Connection Requests (ONLY genuine pending requests, not stale contacts with static notes)
-        profileState.relationships.forEach { rel ->
-            val notifId = "rel_${rel.id}"
-            if (!dismissedNotificationIds.contains(notifId)) {
-                val isPendingRequest = rel.relationRole.contains("Request", ignoreCase = true) ||
-                                       rel.relationRole.equals("PENDING", ignoreCase = true) ||
-                                       rel.notes.contains("Request", ignoreCase = true)
-                if (isPendingRequest) {
-                    list.add(
-                        PersonaNotificationItem(
-                            id = notifId,
-                            title = "Connection request",
-                            description = "${rel.fullName} wants to connect with you.",
-                            timestampText = "Request",
-                            category = NotificationCategory.CONNECTION_REQUEST,
-                            senderName = rel.fullName,
-                            targetPersonId = rel.targetPersonId,
-                            isNeedsAttention = true,
-                            isToday = true,
-                            isRead = false,
-                            level = AlertLevel.INFO,
-                            icon = Icons.Default.People
-                        )
-                    )
-                }
-            }
-        }
-
-        // 2. Urgent Sync Conflict (if any cross-device divergence occurs)
-        if (conflicts.isNotEmpty() && !dismissedNotificationIds.contains("conflict_alert")) {
-            list.add(
-                PersonaNotificationItem(
-                    id = "conflict_alert",
-                    title = "Connection sync conflict",
-                    description = "${conflicts.size} shared record versions need conflict resolution.",
-                    timestampText = "Action needed",
-                    category = NotificationCategory.PROFILE_UPDATE,
-                    isNeedsAttention = true,
-                    isToday = true,
-                    isRead = false,
-                    level = AlertLevel.WARNING,
-                    icon = Icons.Default.Warning
-                )
-            )
-        }
-
-        // 3. Expiring Documents (Urgent life event: only documents expiring within 30 days or expired within the last 7 days)
-        val now = System.currentTimeMillis()
-        documentState.documents.forEach { docWithHist ->
-            val doc = docWithHist.document
-            val notifId = "doc_exp_${doc.id}"
-            if (!dismissedNotificationIds.contains(notifId)) {
-                doc.expirationDate?.let { expStr ->
-                    try {
-                        val parts = if (expStr.contains("-")) expStr.split("-") else expStr.split("/")
-                        if (parts.size == 3) {
-                            val expCal = Calendar.getInstance()
-                            val (y, m, d) = if (parts[0].length == 4) Triple(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt())
-                                            else Triple(parts[2].toInt(), parts[0].toInt() - 1, parts[1].toInt())
-                            expCal.set(y, m, d)
-                            val diffDays = ((expCal.timeInMillis - now) / (24 * 60 * 60 * 1000)).toInt()
-                            if (diffDays in -7..30) {
-                                val (titleText, descText, timeText) = when {
-                                    diffDays < 0 -> Triple(
-                                        "${doc.title} expired",
-                                        "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expired ${-diffDays} days ago.",
-                                        "Expired ${-diffDays}d ago"
-                                    )
-                                    diffDays == 0 -> Triple(
-                                        "${doc.title} expires today",
-                                        "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expires today.",
-                                        "Today"
-                                    )
-                                    else -> Triple(
-                                        "${doc.title} expires soon",
-                                        "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expires in $diffDays days.",
-                                        "$diffDays d"
-                                    )
-                                }
-                                list.add(
-                                    PersonaNotificationItem(
-                                        id = notifId,
-                                        title = titleText,
-                                        description = descText,
-                                        timestampText = timeText,
-                                        category = NotificationCategory.SHARING_ACTIVITY,
-                                        isNeedsAttention = diffDays <= 7,
-                                        isToday = diffDays <= 1,
-                                        isRead = false,
-                                        level = if (diffDays <= 7) AlertLevel.WARNING else AlertLevel.INFO,
-                                        icon = Icons.Default.Warning
-                                    )
-                                )
-                            }
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-        }
-
-        list
+        buildDashboardNotifications(
+            profileState.relationships, documentState.documents, conflicts.size, dismissedNotificationIds
+        )
     }
 
     val needsAttentionItems = remember(notifications) {
         notifications.filter { it.isNeedsAttention }
     }
 
-    // If a full-screen overlay is requested (e.g. Full Vault or Backup), render it
-    if (navigationUi.fullScreenOverlay != null) {
-        when (navigationUi.fullScreenOverlay) {
-            "NOTE_EDITOR" -> {
-                PlainNoteEditorScreen(
-                    noteId = navigationUi.activeNoteId,
-                    onBack = {
-                        navigationUi.activeNoteId = null
-                        navigationUi.fullScreenOverlay = null
-                    },
-                    onRequestAuth = { title, subtitle, onSuccess ->
-                        requestGatedAccess(
-                            SecurityTier.LEVEL_2_SENSITIVE,
-                            title,
-                            subtitle,
-                            onSuccess
-                        )
-                    }
-                )
-                return
-            }
-            "CONNECT_PERSON" -> {
-                ConnectPersonScreen(
-                    onBack = { navigationUi.fullScreenOverlay = null },
-                    onSavePerson = { role, relName, gender, phone, email, address, dob, anniversary, notes, photoPath, isNextOfKin, contacts ->
-                        val targetId = java.util.UUID.randomUUID().toString()
-                        if (!photoPath.isNullOrBlank()) {
-                            avatarManager.setPersonPhotoPath(targetId, photoPath)
-                        }
-                        profileViewModel.onEvent(
-                            ProfileEvent.AddRelationship(
-                                role = role,
-                                fullName = relName,
-                                phone = phone,
-                                email = email,
-                                address = address,
-                                dob = dob,
-                                anniversary = anniversary,
-                                notes = notes,
-                                isNextOfKin = isNextOfKin,
-                                customPersonId = targetId,
-                                photoPath = photoPath,
-                                contactMethods = contacts.map { input ->
-                                    com.pims.vault.data.local.entity.ContactMethodEntity(
-                                        id = java.util.UUID.randomUUID().toString(),
-                                        personId = targetId,
-                                        contactType = input.type,
-                                        label = input.label,
-                                        value = input.value.trim(),
-                                        isPrimary = input.isPrimary,
-                                        sortOrder = contacts.filter { it.type == input.type }.indexOfFirst { it.key == input.key }
-                                    )
-                                }
-                            )
-                        )
-                        recentActivityManager.recordActivity("Added $relName", "Relationship: $role")
-                        toastController.showSuccess("Added $relName to People")
-                        soundManager.success()
-                        navigationUi.fullScreenOverlay = null
-                    }
-                )
-                return
-            }
-            "PERSON_DETAIL" -> {
-                val currentPerson = profileState.relationships.find { it.id == navigationUi.selectedPersonForDetail?.id } ?: navigationUi.selectedPersonForDetail
-                if (currentPerson != null) {
-                    BackHandler(enabled = true) {
-                        if (navigationUi.personToEditForDialog != null) {
-                            navigationUi.personToEditForDialog = null
-                        } else {
-                            navigationUi.fullScreenOverlay = null
-                            navigationUi.selectedPersonForDetail = null
-                        }
-                    }
-                    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                        PersonDetailScreen(
-                            person = currentPerson,
-                            relationshipNotes = relationshipState.relationshipNotes,
-                            isVaultUnlocked = relationshipState.isVaultUnlocked,
-                            onUnlockVault = { withPrivateNotesUnlocked {} },
-                            onBack = {
-                                navigationUi.fullScreenOverlay = null
-                                navigationUi.selectedPersonForDetail = null
-                            },
-                            onEditPerson = { p ->
-                                navigationUi.personToEditForDialog = p
-                            },
-                            onDeletePerson = { p ->
-                                profileViewModel.onEvent(ProfileEvent.DeleteRelationship(p.id, p.targetPersonId))
-                                recentActivityManager.recordActivity("Removed person from People", "Disconnected ${p.fullName}")
-                                navigationUi.fullScreenOverlay = null
-                                navigationUi.selectedPersonForDetail = null
-                            },
-                            onOpenAttachment = { noteId, attachmentId ->
-                                scope.launch {
-                                    val previous = attachmentToPreview?.first
-                                    previous?.fill(0)
-                                    attachmentToPreview = try {
-                                        withContext(Dispatchers.IO) { relationshipViewModel.readAttachment(noteId, attachmentId) }
-                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                        throw cancelled
-                                    } catch (_: Exception) { null }
-                                    if (attachmentToPreview == null) snackbarHostState.showSnackbar("Attachment is unavailable or this note is locked")
-                                }
-                            },
-                            onAddNote = { topic, content, format, isPrivate, attachments, removals ->
-                                val saved = relationshipViewModel.saveRelationshipNote(
-                                    relationshipId = currentPerson.id,
-                                    topic = topic,
-                                    content = content,
-                                    format = format,
-                                    isPrivate = isPrivate,
-                                    attachmentsToAdd = attachments,
-                                    attachmentIdsToRemove = removals
-                                )
-                                if (saved) {
-                                    soundManager.success()
-                                    snackbarHostState.showSnackbar("Note saved to memory dossier")
-                                }
-                                saved
-                            },
-                            onUpdateNote = { noteId, topic, content, format, isPrivate, attachments, removals ->
-                                val saved = relationshipViewModel.saveRelationshipNote(
-                                    relationshipId = currentPerson.id,
-                                    topic = topic,
-                                    content = content,
-                                    format = format,
-                                    isPrivate = isPrivate,
-                                    noteId = noteId,
-                                    attachmentsToAdd = attachments,
-                                    attachmentIdsToRemove = removals
-                                )
-                                if (saved) {
-                                    soundManager.success()
-                                    snackbarHostState.showSnackbar("Note updated")
-                                }
-                                saved
-                            },
-                            onDeleteNote = { noteId ->
-                                val delete = { relationshipViewModel.onEvent(RelationshipEvent.DeleteNote(noteId)) }
-                                if (relationshipState.relationshipNotes.any { it.id == noteId && it.isPrivate }) {
-                                    withPrivateNotesUnlocked(delete)
-                                } else delete()
-                            },
-                            onToggleTrusted = { _ ->
-                            },
-                            onToggleNotePrivacy = { noteId, makePrivate ->
-                                withPrivateNotesUnlocked {
-                                    relationshipViewModel.onEvent(RelationshipEvent.ToggleNotePrivacy(noteId, makePrivate))
-                                }
-                            }
-                        )
+    DashboardAuthenticationPrompt(accessUi, pinSecurityManager)
 
-                        if (navigationUi.personToEditForDialog != null) {
-                            EditManagedPersonSheet(
-                                person = navigationUi.personToEditForDialog,
-                                relationshipState = relationshipState,
-                                profileViewModel = profileViewModel,
-                                recentActivityManager = recentActivityManager,
-                                soundManager = soundManager,
-                                haptics = haptics,
-                                toastController = toastController,
-                                onDismissRequest = { navigationUi.personToEditForDialog = null }
-                            )
-                        }
-                    }
-                    return
-                } else {
-                    navigationUi.fullScreenOverlay = null
-                }
-            }
-            "VAULT" -> {
-                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenEnterRise()) {
-                    VaultDashboardView(
-                        viewModel = vaultViewModel,
-                        onRequireBiometricReauth = {
-                            requestGatedAccess(
-                                SecurityTier.LEVEL_3_VAULT,
-                                "Unlock Vault Fortress",
-                                "Authentication required for vault access"
-                            ) {
-                                vaultViewModel.elevateAndUnlockVault(
-                                    cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
-                                    onError = { err ->
-                                        scope.launch { snackbarHostState.showSnackbar("Vault re-authentication failed: $err") }
-                                    }
-                                )
-                            }
-                        },
-                        onBack = { navigationUi.fullScreenOverlay = null },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                return
-            }
-            "BACKUP" -> {
-                BackHandler(enabled = true) {
-                    navigationUi.fullScreenOverlay = null
-                }
-                Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().screenEnterRise()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { navigationUi.fullScreenOverlay = null }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back to Persona")
-                        }
-                        Text("Backup", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                    }
-                    BackupDashboardScreen(
-                        viewModel = backupViewModel,
-                        isVaultUnlocked = relationshipState.isVaultUnlocked,
-                        onUnlockVault = { withPrivateNotesUnlocked {} },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                return
-            }
-            "SECURITY_SETTINGS" -> {
-                Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
-                    SecuritySettingsScreen(
-                        pinSecurityManager = pinSecurityManager,
-                        onBack = { navigationUi.fullScreenOverlay = null },
-                        onRequestBiometricAuth = onRequestBiometricAuth
-                    )
-                }
-                return
-            }
-            "HEALTH" -> {
-                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenEnterRise()) {
-                    MedicalDossierView(
-                        uiState = medicalState,
-                        onEvent = medicalViewModel::onEvent,
-                        onDismiss = { navigationUi.fullScreenOverlay = null },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                return
-            }
-            "INFORMATION_LIBRARY" -> {
-                val libraryItems = remember(profileState, documentState, vaultState, medicalState) {
-                    com.pims.vault.presentation.library.LibraryItemBuilder.build(
-                        profileState,
-                        documentState,
-                        vaultState,
-                        medicalState
-                    )
-                }
-
-                Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
-                    InformationLibraryScreen(
-                        items = libraryItems,
-                        onBack = { navigationUi.fullScreenOverlay = null },
-                        onRequestAuthToReveal = { onSuccess ->
-                            requestGatedAccess(
-                                SecurityTier.LEVEL_2_SENSITIVE,
-                                "Protected Information",
-                                "Verify identity to reveal this record",
-                                onSuccess
-                            )
-                        }
-                    )
-                }
-                return
-            }
-        }
+    val route = navigationUi.fullScreenOverlay
+    if (route != null && route in dashboardFullScreenRoutes &&
+        (route != "PERSON_DETAIL" || navigationUi.selectedPersonForDetail != null)
+    ) {
+        DashboardFullScreenOverlay(
+            route = route,
+            navigationUi = navigationUi,
+            profileState = profileState,
+            documentState = documentState,
+            vaultState = vaultState,
+            mePins = mePins,
+            medicalState = medicalState,
+            relationshipState = relationshipState,
+            profileViewModel = profileViewModel,
+            vaultViewModel = vaultViewModel,
+            medicalViewModel = medicalViewModel,
+            backupViewModel = backupViewModel,
+            relationshipViewModel = relationshipViewModel,
+            avatarManager = avatarManager,
+            recentActivityManager = recentActivityManager,
+            soundManager = soundManager,
+            haptics = haptics,
+            toastController = toastController,
+            snackbarHostState = snackbarHostState,
+            pinSecurityManager = pinSecurityManager,
+            onRequestBiometricAuth = onRequestBiometricAuth,
+            requestGatedAccess = ::requestGatedAccess,
+            withPrivateNotesUnlocked = ::withPrivateNotesUnlocked,
+            accessUi = accessUi
+        )
+        return
     }
 
     val hasOpenDialog = remember(dialogStates.value) { dialogStates.value.any { it.value } }
     val hasOpenSheet = remember(sheetStates.value) { sheetStates.value.any { it.value } }
 
     BackHandler(
-        enabled = accessUi.isPinChallengeVisible ||
-                navigationUi.personToEditForDialog != null ||
+        enabled = navigationUi.personToEditForDialog != null ||
                 navigationUi.showPublicResumeModal ||
                 navigationUi.selectedPersonForDetail != null ||
                 hasOpenDialog ||
                 hasOpenSheet ||
+                navigationUi.meDestination != null ||
                 navigationUi.selectedTab != 0
     ) {
         when {
-            accessUi.isPinChallengeVisible -> {
-                accessUi.isPinChallengeVisible = false
-                accessUi.pendingSensitiveAction = null
-                accessUi.pendingSecurityTier = null
-            }
             navigationUi.personToEditForDialog != null -> {
                 navigationUi.personToEditForDialog = null
             }
@@ -1558,6 +1137,7 @@ fun PersonaDashboardScreen(
             hasOpenSheet -> {
                 sheetStates.value = sheetStates.value.mapValues { false }
             }
+            navigationUi.meDestination != null -> navigationUi.meDestination = null
             navigationUi.selectedTab != 0 -> {
                 navigationUi.selectedTab = 0
             }
@@ -1565,6 +1145,11 @@ fun PersonaDashboardScreen(
     }
 
     val useNavigationRail = LocalConfiguration.current.screenWidthDp >= 600
+    val showPrimaryNavigation = navigationUi.meDestination == null
+    val selectPrimaryDestination: (Int) -> Unit = { tab ->
+        if (tab == 4) navigationUi.fullScreenOverlay = "INFORMATION_LIBRARY"
+        else navigationUi.selectedTab = tab
+    }
 
     // Primary navigation adapts to the available window width.
     Scaffold(
@@ -1586,25 +1171,25 @@ fun PersonaDashboardScreen(
                             .padding(bottom = 16.dp)
                             .tactilePress()
                     ) {
-                        Icon(Icons.Default.PersonAdd, contentDescription = "Add a person", modifier = Modifier.size(24.dp))
+                        Icon(PersonaIcons.PersonAdd, contentDescription = "Add a person", modifier = Modifier.size(24.dp))
                     }
                 }
             }
         },
         bottomBar = {
-            if (!useNavigationRail) {
+            if (!useNavigationRail && showPrimaryNavigation) {
                 PersonaDashboardBottomBar(
                     selectedTab = navigationUi.selectedTab,
-                    onTabSelected = { navigationUi.selectedTab = it }
+                    onTabSelected = selectPrimaryDestination
                 )
             }
         }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
-            if (useNavigationRail) {
+            if (useNavigationRail && showPrimaryNavigation) {
                 PersonaDashboardNavigationRail(
                     selectedTab = navigationUi.selectedTab,
-                    onTabSelected = { navigationUi.selectedTab = it },
+                    onTabSelected = selectPrimaryDestination,
                     modifier = Modifier.align(Alignment.CenterStart)
                 )
             }
@@ -1612,14 +1197,15 @@ fun PersonaDashboardScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
-                        start = if (useNavigationRail) 80.dp else innerPadding.calculateStartPadding(LocalLayoutDirection.current),
+                        start = if (useNavigationRail && showPrimaryNavigation) 80.dp
+                            else innerPadding.calculateStartPadding(LocalLayoutDirection.current),
                         end = innerPadding.calculateEndPadding(LocalLayoutDirection.current),
                         bottom = innerPadding.calculateBottomPadding()
                     )
             ) {
             val reducedMotion = LocalReducedMotion.current
             AnimatedContent(
-                targetState = navigationUi.selectedTab,
+                targetState = navigationUi.meDestination ?: navigationUi.selectedTab,
                 transitionSpec = {
                     if (reducedMotion) {
                         fadeIn(tween(durationMillis = 0)) togetherWith fadeOut(tween(durationMillis = 0))
@@ -1734,8 +1320,34 @@ fun PersonaDashboardScreen(
                         }
                     )
 
-                    // TAB 2: ME CENTERPIECE PROFILE
-                    2 -> MeView(
+                    2 -> com.pims.vault.presentation.hub.MeOverviewRoute(
+                        name = fullName,
+                        pinState = mePins,
+                        profile = profileState,
+                        vaultItems = vaultState.vaultItems,
+                        isVaultUnlocked = vaultState.isVaultUnlocked,
+                        onSettings = { navigationUi.meDestination = -1 },
+                        onProfile = { navigationUi.meDestination = -2 },
+                        onAuthorizeProfile = { onSuccess ->
+                            requestGatedAccess(
+                                SecurityTier.LEVEL_2_SENSITIVE, "Protected information",
+                                "Verify your identity to continue", onSuccess
+                            )
+                        },
+                        onAuthorizeVault = ::authorizeVault,
+                        onOpenNote = { noteId ->
+                            navigationUi.activeNoteId = noteId
+                            navigationUi.fullScreenOverlay = "NOTE_EDITOR"
+                        },
+                        onOpenVault = { item ->
+                            authorizeVault {
+                                vaultViewModel.openItem(item)
+                                navigationUi.fullScreenOverlay = "VAULT"
+                            }
+                        }
+                    )
+
+                    -2 -> MeView(
                         personName = fullName,
                         occupation = occupation,
                         country = country,
@@ -1784,16 +1396,11 @@ fun PersonaDashboardScreen(
                         },
                         onEditProfileClick = { showDialog("editProfile") },
                         onOpenAvatarEditor = { showSheet("avatarEditor") },
+                        onBack = { navigationUi.meDestination = null },
                         onViewPublicDossier = { navigationUi.showPublicResumeModal = true },
                         onExportPdf = { handleExportPdf() },
                         onDeleteCustomField = { id -> profileViewModel.onEvent(ProfileEvent.DeleteCustomField(id)) },
-                        onAddCustomField = {
-                            customFieldUi.customFieldEditingId = null
-                            customFieldUi.customFieldInitialLabel = ""
-                            customFieldUi.customFieldInitialValue = ""
-                            customFieldUi.customFieldCategory = "PERSONAL"
-                            showDialog("addCustomField")
-                        },
+                        onAddCustomField = { showSheet("addAction") },
                         onEditCustomField = { field ->
                             customFieldUi.customFieldEditingId = field.id
                             customFieldUi.customFieldInitialLabel = field.label
@@ -1881,8 +1488,7 @@ fun PersonaDashboardScreen(
                         }
                     )
 
-                    // TAB 4: MORE & SETTINGS
-                    4 -> MoreView(
+                    -1 -> MoreView(
                         userName = fullName,
                         userEmail = primaryEmail ?: "",
                         userPhotoPath = customAvatarPath,
@@ -1913,7 +1519,7 @@ fun PersonaDashboardScreen(
                             soundManager.setSoundEnabled(enabled)
                             haptics.selection()
                         },
-                        onLockClicked = onLockClicked,
+                        onBack = { navigationUi.meDestination = null },
                         onChangePasswordClicked = { showDialog("changePassword") },
                         onSignOutClicked = onSignOutClicked,
                         onSignInClicked = onSignInClicked,
@@ -2163,11 +1769,28 @@ fun PersonaDashboardScreen(
             educationList = profileState.educationRecords,
             certificatesList = profileState.certificates,
             employmentList = profileState.employmentRecords,
+            portfolioFields = profileState.customFields.filter {
+                it.label.equals("Portfolio / Project Link", ignoreCase = true)
+            },
             sheetState = modalSheets.eduSheetState,
             onDismissRequest = { hideSheet("education") },
             onAddEducation = { showDialog("addEdu") },
             onAddCert = { showDialog("addCert") },
-            onAddProject = { showDialog("addWork") }
+            onAddProject = { showDialog("addWork") },
+            onAddPortfolioLink = {
+                customFieldUi.customFieldEditingId = null
+                customFieldUi.customFieldInitialLabel = "Portfolio / Project Link"
+                customFieldUi.customFieldInitialValue = ""
+                customFieldUi.customFieldCategory = InformationCategory.EMPLOYMENT.name
+                showDialog("addCustomField")
+            },
+            onEditPortfolioLink = { field ->
+                customFieldUi.customFieldEditingId = field.id
+                customFieldUi.customFieldInitialLabel = field.label
+                customFieldUi.customFieldInitialValue = field.value
+                customFieldUi.customFieldCategory = field.category.name
+                showDialog("addCustomField")
+            }
         )
     }
 
@@ -2578,69 +2201,6 @@ fun PersonaDashboardScreen(
         onDismiss = { contextualExplanation = null }
     )
 
-    // 12. SECURE PIN CHALLENGE DIALOG
-    if (accessUi.isPinChallengeVisible && accessUi.pendingSecurityTier != null) {
-        PinChallengeDialog(
-            pinSecurityManager = pinSecurityManager,
-            title = when (accessUi.pendingSecurityTier) {
-                SecurityTier.LEVEL_3_VAULT -> "Unlock Vault"
-                SecurityTier.LEVEL_2_SENSITIVE -> "Verify Identity"
-                else -> "Enter Security PIN"
-            },
-            subtitle = "Confirm your PIN to access protected records",
-            onSuccess = {
-                accessUi.isPinChallengeVisible = false
-                if (accessUi.pendingSecurityTier == SecurityTier.LEVEL_2_SENSITIVE) {
-                    accessUi.isLevel2Unlocked = true
-                }
-                val action = accessUi.pendingSensitiveAction
-                accessUi.pendingSensitiveAction = null
-                accessUi.pendingSecurityTier = null
-                action?.invoke()
-            },
-            onDismiss = {
-                accessUi.isPinChallengeVisible = false
-                accessUi.pendingSensitiveAction = null
-                accessUi.pendingSecurityTier = null
-                scope.launch {
-                    snackbarHostState.showSnackbar("Authentication cancelled: Access locked")
-                }
-            }
-        )
-    }
-
-    if (accessUi.isBiometricPromptVisible && accessUi.pendingSecurityTier != null) {
-        BiometricReauthPrompt(
-            tier = accessUi.pendingSecurityTier!!,
-            failedAttempts = accessUi.biometricFailedAttempts,
-            onAuthenticateBiometric = {
-                accessUi.isBiometricPromptVisible = false
-                val tier = accessUi.pendingSecurityTier ?: SecurityTier.LEVEL_2_SENSITIVE
-                val action = accessUi.pendingSensitiveAction ?: {}
-                requestGatedAccess(tier, "Verify Identity", "Authentication required", action)
-            },
-            onUseDevicePin = {
-                accessUi.isBiometricPromptVisible = false
-                if (pinSecurityManager.hasPin()) {
-                    accessUi.isPinChallengeVisible = true
-                } else {
-                    accessUi.pendingSensitiveAction = null
-                    accessUi.pendingSecurityTier = null
-                    scope.launch {
-                        snackbarHostState.showSnackbar("No PIN configured. Setup PIN in Security Settings.")
-                    }
-                }
-            },
-            onDismissRequest = {
-                accessUi.isBiometricPromptVisible = false
-                accessUi.pendingSensitiveAction = null
-                accessUi.pendingSecurityTier = null
-                scope.launch {
-                    snackbarHostState.showSnackbar("Authentication cancelled: Access locked")
-                }
-            }
-        )
-    }
 
     // 13. UNIVERSAL OMNIBAR SEARCH SHEET
     if (sheetStates.value["search"] == true) {
@@ -2917,25 +2477,557 @@ fun PersonaDashboardScreen(
         )
     }
 
-    attachmentToPreview?.let { attachment ->
-        AlertDialog(
-            onDismissRequest = { attachmentToPreview = null },
-            title = { Text(if (attachment.second == "application/pdf") "PDF preview" else "Image attachment") },
-            text = {
-                Box(Modifier.fillMaxWidth().heightIn(max = 560.dp), contentAlignment = Alignment.Center) {
-                    val bitmap = attachmentPreviewBitmap
-                    if (isAttachmentPreviewLoading) CircularProgressIndicator()
-                    else if (bitmap == null) Text("This file could not be previewed. It remains encrypted in your vault.")
-                    else Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Secure attachment preview",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)
+
+}
+
+private fun buildDashboardNotifications(
+    relationships: List<KinRelationshipItem>,
+    documents: List<DocumentWithHistory>,
+    conflictCount: Int,
+    dismissedNotificationIds: Set<String>
+): List<PersonaNotificationItem> {
+    val list = mutableListOf<PersonaNotificationItem>()
+
+    // 1. Pending Connection Requests (ONLY genuine pending requests, not stale contacts with static notes)
+    relationships.forEach { rel ->
+        val notifId = "rel_${rel.id}"
+        if (!dismissedNotificationIds.contains(notifId)) {
+            val isPendingRequest = rel.relationRole.contains("Request", ignoreCase = true) ||
+                                   rel.relationRole.equals("PENDING", ignoreCase = true) ||
+                                   rel.notes.contains("Request", ignoreCase = true)
+            if (isPendingRequest) {
+                list.add(
+                    PersonaNotificationItem(
+                        id = notifId,
+                        title = "Connection request",
+                        description = "${rel.fullName} wants to connect with you.",
+                        timestampText = "Request",
+                        category = NotificationCategory.CONNECTION_REQUEST,
+                        senderName = rel.fullName,
+                        targetPersonId = rel.targetPersonId,
+                        isNeedsAttention = true,
+                        isToday = true,
+                        isRead = false,
+                        level = AlertLevel.INFO,
+                        icon = PersonaIcons.People
+                    )
+                )
+            }
+        }
+    }
+
+    // 2. Urgent Sync Conflict (if any cross-device divergence occurs)
+    if (conflictCount > 0 && !dismissedNotificationIds.contains("conflict_alert")) {
+        list.add(
+            PersonaNotificationItem(
+                id = "conflict_alert",
+                title = "Connection sync conflict",
+                description = "${conflictCount} shared record versions need conflict resolution.",
+                timestampText = "Action needed",
+                category = NotificationCategory.PROFILE_UPDATE,
+                isNeedsAttention = true,
+                isToday = true,
+                isRead = false,
+                level = AlertLevel.WARNING,
+                icon = PersonaIcons.Warning
+            )
+        )
+    }
+
+    // 3. Expiring Documents (Urgent life event: only documents expiring within 30 days or expired within the last 7 days)
+    val now = System.currentTimeMillis()
+    documents.forEach { docWithHist ->
+        val doc = docWithHist.document
+        val notifId = "doc_exp_${doc.id}"
+        if (!dismissedNotificationIds.contains(notifId)) {
+            doc.expirationDate?.let { expStr ->
+                try {
+                    val parts = if (expStr.contains("-")) expStr.split("-") else expStr.split("/")
+                    if (parts.size == 3) {
+                        val expCal = Calendar.getInstance()
+                        val (y, m, d) = if (parts[0].length == 4) Triple(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt())
+                                        else Triple(parts[2].toInt(), parts[0].toInt() - 1, parts[1].toInt())
+                        expCal.set(y, m, d)
+                        val diffDays = ((expCal.timeInMillis - now) / (24 * 60 * 60 * 1000)).toInt()
+                        if (diffDays in -7..30) {
+                            val (titleText, descText, timeText) = when {
+                                diffDays < 0 -> Triple(
+                                    "${doc.title} expired",
+                                    "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expired ${-diffDays} days ago.",
+                                    "Expired ${-diffDays}d ago"
+                                )
+                                diffDays == 0 -> Triple(
+                                    "${doc.title} expires today",
+                                    "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expires today.",
+                                    "Today"
+                                )
+                                else -> Triple(
+                                    "${doc.title} expires soon",
+                                    "Your ${doc.documentType.name.lowercase().replace('_', ' ')} expires in $diffDays days.",
+                                    "$diffDays d"
+                                )
+                            }
+                            list.add(
+                                PersonaNotificationItem(
+                                    id = notifId,
+                                    title = titleText,
+                                    description = descText,
+                                    timestampText = timeText,
+                                    category = NotificationCategory.SHARING_ACTIVITY,
+                                    isNeedsAttention = diffDays <= 7,
+                                    isToday = diffDays <= 1,
+                                    isRead = false,
+                                    level = if (diffDays <= 7) AlertLevel.WARNING else AlertLevel.INFO,
+                                    icon = PersonaIcons.Warning
+                                )
+                            )
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    return list
+}
+
+private val dashboardFullScreenRoutes = setOf(
+    "NOTE_EDITOR", "CONNECT_PERSON", "PERSON_DETAIL", "VAULT", "BACKUP",
+    "SECURITY_SETTINGS", "HEALTH", "INFORMATION_LIBRARY"
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DashboardFullScreenOverlay(
+    route: String,
+    navigationUi: DashboardNavigationState,
+    profileState: ProfileUiState,
+    documentState: DocumentUiState,
+    vaultState: VaultUiState,
+    mePins: MeOverviewPinState,
+    medicalState: MedicalUiState,
+    relationshipState: RelationshipUiState,
+    profileViewModel: ProfileViewModel,
+    vaultViewModel: VaultViewModel,
+    medicalViewModel: MedicalViewModel,
+    backupViewModel: BackupViewModel,
+    relationshipViewModel: RelationshipViewModel,
+    avatarManager: PersonaAvatarManager,
+    recentActivityManager: RecentActivityManager,
+    soundManager: PimsSoundManager,
+    haptics: PimsHaptics,
+    toastController: PersonaToastController,
+    snackbarHostState: SnackbarHostState,
+    pinSecurityManager: PinSecurityManager,
+    onRequestBiometricAuth: ((String, String, () -> Unit, (String) -> Unit) -> Unit)?,
+    requestGatedAccess: (SecurityTier, String, String, () -> Unit) -> Unit,
+    withPrivateNotesUnlocked: (() -> Unit) -> Unit,
+    accessUi: DashboardAccessState
+) {
+    val scope = rememberCoroutineScope()
+    when (route) {
+        "NOTE_EDITOR" -> {
+            PlainNoteEditorScreen(
+                noteId = navigationUi.activeNoteId,
+                onBack = {
+                    navigationUi.activeNoteId = null
+                    navigationUi.fullScreenOverlay = navigationUi.noteReturnOverlay
+                    navigationUi.noteReturnOverlay = null
+                },
+                onSavedLocally = { toastController.showSuccess("Saved locally") },
+                onRequestAuth = { title, subtitle, onSuccess ->
+                    requestGatedAccess(
+                        SecurityTier.LEVEL_2_SENSITIVE,
+                        title,
+                        subtitle,
+                        onSuccess
                     )
                 }
-            },
-            confirmButton = { TextButton(onClick = { attachmentToPreview = null }) { Text("Close") } }
-        )
+            )
+            PersonaToastHost(toastController)
+        }
+        "CONNECT_PERSON" -> {
+            Box(Modifier.fillMaxSize()) {
+                ConnectPersonScreen(
+                    onBack = { navigationUi.fullScreenOverlay = null },
+                    onSavePerson = { role, relName, gender, phone, email, address, dob, anniversary, notes, photoPath, isNextOfKin, contacts ->
+                        val targetId = java.util.UUID.randomUUID().toString()
+                        profileViewModel.onEvent(
+                            ProfileEvent.AddRelationship(
+                                role = role,
+                                fullName = relName,
+                                phone = phone,
+                                email = email,
+                                address = address,
+                                dob = dob,
+                                anniversary = anniversary,
+                                notes = notes,
+                                isNextOfKin = isNextOfKin,
+                                customPersonId = targetId,
+                                photoPath = photoPath,
+                                contactMethods = contacts.map { input ->
+                                    com.pims.vault.data.local.entity.ContactMethodEntity(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        personId = targetId,
+                                        contactType = input.type,
+                                        label = input.label,
+                                        value = input.value.trim(),
+                                        isPrimary = input.isPrimary,
+                                        sortOrder = contacts.filter { it.type == input.type }.indexOfFirst { it.key == input.key }
+                                    )
+                                }
+                            )
+                        ) { result ->
+                            result.onSuccess {
+                                if (!photoPath.isNullOrBlank()) avatarManager.setPersonPhotoPath(targetId, photoPath)
+                                recentActivityManager.recordActivity("Added $relName", "Relationship: $role")
+                                toastController.showSuccess("Saved to People on this device")
+                                soundManager.success()
+                                if (navigationUi.fullScreenOverlay == "CONNECT_PERSON") navigationUi.fullScreenOverlay = null
+                            }.onFailure {
+                                toastController.showError("Couldn’t save this person. Try again.")
+                            }
+                        }
+                    }
+                )
+                PersonaToastHost(toastController)
+            }
+        }
+        "PERSON_DETAIL" -> {
+            val currentPerson = profileState.relationships.find { it.id == navigationUi.selectedPersonForDetail?.id } ?: navigationUi.selectedPersonForDetail
+            if (currentPerson != null) {
+                var attachmentToPreview by remember { mutableStateOf<Pair<ByteArray, String>?>(null) }
+                var attachmentPreviewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+                var isAttachmentPreviewLoading by remember { mutableStateOf(false) }
+
+                LaunchedEffect(relationshipState.isVaultUnlocked) {
+                    if (!relationshipState.isVaultUnlocked) attachmentToPreview = null
+                }
+
+                LaunchedEffect(attachmentToPreview) {
+                    attachmentPreviewBitmap?.recycle()
+                    attachmentPreviewBitmap = null
+                    val attachment = attachmentToPreview ?: run { isAttachmentPreviewLoading = false; return@LaunchedEffect }
+                    isAttachmentPreviewLoading = true
+                    try {
+                        attachmentPreviewBitmap = withContext(Dispatchers.IO) {
+                        try {
+                            if (attachment.second.startsWith("image/")) {
+                                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                BitmapFactory.decodeByteArray(attachment.first, 0, attachment.first.size, options)
+                                require(options.outWidth > 0 && options.outHeight > 0) { "Invalid attachment image" }
+                                var sample = 1
+                                while (options.outWidth / sample > 1600 || options.outHeight / sample > 1600) sample *= 2
+                                options.inJustDecodeBounds = false
+                                options.inSampleSize = sample
+                                BitmapFactory.decodeByteArray(attachment.first, 0, attachment.first.size, options)
+                            } else if (attachment.second == "application/pdf") {
+                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) error("In-memory PDF preview requires Android 11 or newer")
+                                val memoryFd = Os.memfd_create("pims-note-pdf-preview", 0)
+                                try {
+                                    var written = 0
+                                    while (written < attachment.first.size) {
+                                        written += Os.write(memoryFd, attachment.first, written, attachment.first.size - written)
+                                    }
+                                    Os.lseek(memoryFd, 0, OsConstants.SEEK_SET)
+                                    ParcelFileDescriptor.dup(memoryFd).use { descriptor ->
+                                        PdfRenderer(descriptor).use { renderer ->
+                                            if (renderer.pageCount == 0) null else renderer.openPage(0).use { page ->
+                                                val scale = minOf(1f, 1400f / page.width, 1800f / page.height)
+                                                val bitmap = Bitmap.createBitmap(
+                                                    (page.width * scale).toInt().coerceAtLeast(1),
+                                                    (page.height * scale).toInt().coerceAtLeast(1),
+                                                    Bitmap.Config.ARGB_8888
+                                                )
+                                                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                                bitmap
+                                            }
+                                        }
+                                    }
+                                } finally {
+                                    Os.close(memoryFd)
+                                }
+                            } else null
+                        } catch (_: Exception) { null }
+                        }
+                    } finally {
+                        isAttachmentPreviewLoading = false
+                    }
+                }
+
+                DisposableEffect(attachmentToPreview) {
+                    val previewBytes = attachmentToPreview?.first
+                    onDispose {
+                        previewBytes?.fill(0)
+                        attachmentPreviewBitmap?.recycle()
+                        attachmentPreviewBitmap = null
+                    }
+                }
+
+                BackHandler(enabled = true) {
+                    if (navigationUi.personToEditForDialog != null) {
+                        navigationUi.personToEditForDialog = null
+                    } else {
+                        navigationUi.fullScreenOverlay = navigationUi.personReturnOverlay
+                        navigationUi.personReturnOverlay = null
+                        navigationUi.selectedPersonForDetail = null
+                        navigationUi.relationshipNoteToOpen = null
+                    }
+                }
+                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    PersonDetailScreen(
+                        person = currentPerson,
+                        people = profileState.relationships,
+                        ownerId = profileState.person?.id,
+                        requestedNoteId = navigationUi.relationshipNoteToOpen,
+                        onRequestedNoteOpened = { navigationUi.relationshipNoteToOpen = null },
+                        relationshipNotes = relationshipState.relationshipNotes.filter {
+                            it.relationshipId == currentPerson.id
+                        },
+                        isVaultUnlocked = relationshipState.isVaultUnlocked,
+                        onUnlockVault = { withPrivateNotesUnlocked {} },
+                        onBack = {
+                            navigationUi.fullScreenOverlay = navigationUi.personReturnOverlay
+                            navigationUi.personReturnOverlay = null
+                            navigationUi.selectedPersonForDetail = null
+                            navigationUi.relationshipNoteToOpen = null
+                        },
+                        onOpenTaggedNote = { noteId ->
+                            navigationUi.noteReturnOverlay = "PERSON_DETAIL"
+                            navigationUi.activeNoteId = noteId
+                            navigationUi.fullScreenOverlay = "NOTE_EDITOR"
+                        },
+                        onEditPerson = { p ->
+                            navigationUi.personToEditForDialog = p
+                        },
+                        onDeletePerson = { p ->
+                            profileViewModel.onEvent(ProfileEvent.DeleteRelationship(p.id, p.targetPersonId)) { result ->
+                                result.onSuccess {
+                                    recentActivityManager.recordActivity("Removed person from People", "Relationship removed")
+                                    if (navigationUi.fullScreenOverlay == "PERSON_DETAIL" &&
+                                        navigationUi.selectedPersonForDetail?.id == p.id
+                                    ) {
+                                        navigationUi.fullScreenOverlay = navigationUi.personReturnOverlay
+                                        navigationUi.personReturnOverlay = null
+                                        navigationUi.selectedPersonForDetail = null
+                                        navigationUi.relationshipNoteToOpen = null
+                                    }
+                                }.onFailure {
+                                    toastController.showError("Couldn’t remove this person. Try again.")
+                                }
+                            }
+                        },
+                        onOpenAttachment = { noteId, attachmentId ->
+                            scope.launch {
+                                val previous = attachmentToPreview?.first
+                                previous?.fill(0)
+                                attachmentToPreview = try {
+                                    withContext(Dispatchers.IO) { relationshipViewModel.readAttachment(noteId, attachmentId) }
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) { null }
+                                if (attachmentToPreview == null) snackbarHostState.showSnackbar("Attachment is unavailable or this note is locked")
+                            }
+                        },
+                        onAddNote = { topic, content, format, isPrivate, attachments, removals ->
+                            val saved = relationshipViewModel.saveRelationshipNote(
+                                relationshipId = currentPerson.id,
+                                topic = topic,
+                                content = content,
+                                format = format,
+                                isPrivate = isPrivate,
+                                attachmentsToAdd = attachments,
+                                attachmentIdsToRemove = removals
+                            )
+                            if (saved) {
+                                soundManager.success()
+                            }
+                            saved
+                        },
+                        onUpdateNote = { noteId, topic, content, format, isPrivate, attachments, removals ->
+                            val saved = relationshipViewModel.saveRelationshipNote(
+                                relationshipId = currentPerson.id,
+                                topic = topic,
+                                content = content,
+                                format = format,
+                                isPrivate = isPrivate,
+                                noteId = noteId,
+                                attachmentsToAdd = attachments,
+                                attachmentIdsToRemove = removals
+                            )
+                            if (saved) {
+                                soundManager.success()
+                            }
+                            saved
+                        },
+                        onDeleteNote = { noteId ->
+                            val delete = { relationshipViewModel.onEvent(RelationshipEvent.DeleteNote(noteId)) }
+                            if (relationshipState.relationshipNotes.any { it.id == noteId && it.isPrivate }) {
+                                withPrivateNotesUnlocked(delete)
+                            } else delete()
+                        },
+                        onToggleTrusted = { _ ->
+                        },
+                        onToggleNotePrivacy = { noteId, makePrivate ->
+                            withPrivateNotesUnlocked {
+                                relationshipViewModel.onEvent(RelationshipEvent.ToggleNotePrivacy(noteId, makePrivate))
+                            }
+                        }
+                    )
+
+                    if (navigationUi.personToEditForDialog != null) {
+                        EditManagedPersonSheet(
+                            person = navigationUi.personToEditForDialog,
+                            relationshipState = relationshipState,
+                            profileViewModel = profileViewModel,
+                            recentActivityManager = recentActivityManager,
+                            soundManager = soundManager,
+                            haptics = haptics,
+                            toastController = toastController,
+                            onDismissRequest = { navigationUi.personToEditForDialog = null }
+                        )
+                    }
+                    PersonaToastHost(toastController)
+                }
+                attachmentToPreview?.let { attachment ->
+                    AlertDialog(
+                        onDismissRequest = { attachmentToPreview = null },
+                        title = { Text(if (attachment.second == "application/pdf") "PDF preview" else "Image attachment") },
+                        text = {
+                            Box(Modifier.fillMaxWidth().heightIn(max = 560.dp), contentAlignment = Alignment.Center) {
+                                val bitmap = attachmentPreviewBitmap
+                                if (isAttachmentPreviewLoading) CircularProgressIndicator()
+                                else if (bitmap == null) Text("This file could not be previewed. It remains encrypted in your vault.")
+                                else Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "Secure attachment preview",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)
+                                )
+                            }
+                        },
+                        confirmButton = { TextButton(onClick = { attachmentToPreview = null }) { Text("Close") } }
+                    )
+                }            }
+        }
+        "VAULT" -> {
+            var showMePins by remember(mePins) { mutableStateOf(false) }
+            LaunchedEffect(vaultState.isVaultUnlocked) {
+                if (!vaultState.isVaultUnlocked) showMePins = false
+            }
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenEnterRise()) {
+                VaultDashboardView(
+                    viewModel = vaultViewModel,
+                    onRequireBiometricReauth = {
+                        requestGatedAccess(
+                            SecurityTier.LEVEL_3_VAULT,
+                            "Unlock Vault Fortress",
+                            "Authentication required for vault access"
+                        ) {
+                            vaultViewModel.elevateAndUnlockVault(
+                                cryptoObject = requireNotNull(accessUi.zone4CryptoObject).also { accessUi.zone4CryptoObject = null },
+                                onError = { err ->
+                                    scope.launch { snackbarHostState.showSnackbar("Vault re-authentication failed: $err") }
+                                }
+                            )
+                        }
+                    },
+                    onManageMePins = { showMePins = true },
+                    onBack = { navigationUi.fullScreenOverlay = null },
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (showMePins) {
+                    VaultMePinPicker(mePins, vaultState.vaultItems, vaultState.isVaultUnlocked, onDismiss = { showMePins = false })
+                }
+            }
+        }
+        "BACKUP" -> {
+            BackHandler(enabled = true) {
+                navigationUi.fullScreenOverlay = null
+            }
+            Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().screenEnterRise()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { navigationUi.fullScreenOverlay = null }) {
+                        Icon(PersonaIcons.ArrowBack, contentDescription = "Back to Persona")
+                    }
+                    Text("Backup", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                }
+                BackupDashboardScreen(
+                    viewModel = backupViewModel,
+                    isVaultUnlocked = relationshipState.isVaultUnlocked,
+                    onUnlockVault = { withPrivateNotesUnlocked {} },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        "SECURITY_SETTINGS" -> {
+            Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
+                SecuritySettingsScreen(
+                    pinSecurityManager = pinSecurityManager,
+                    onBack = { navigationUi.fullScreenOverlay = null },
+                    onRequestBiometricAuth = onRequestBiometricAuth
+                )
+            }
+        }
+        "HEALTH" -> {
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenEnterRise()) {
+                MedicalDossierView(
+                    uiState = medicalState,
+                    onEvent = medicalViewModel::onEvent,
+                    onDismiss = { navigationUi.fullScreenOverlay = null },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+        "INFORMATION_LIBRARY" -> {
+            Box(modifier = Modifier.fillMaxSize().statusBarsPadding().screenEnterRise()) {
+                InformationLibraryRoute(
+                    profile = profileState,
+                    documents = documentState,
+                    vault = vaultState,
+                    medical = medicalState,
+                    onBack = { navigationUi.fullScreenOverlay = null },
+                    onRequestAuthToReveal = { onSuccess ->
+                        requestGatedAccess(
+                            SecurityTier.LEVEL_2_SENSITIVE,
+                            "Protected Information",
+                            "Verify identity to reveal this record",
+                            onSuccess
+                        )
+                    },
+                    onOpenDestination = { destination ->
+                        when (destination) {
+                            is LibraryDestination.Note -> {
+                                navigationUi.noteReturnOverlay = "INFORMATION_LIBRARY"
+                                navigationUi.activeNoteId = destination.id
+                                navigationUi.fullScreenOverlay = "NOTE_EDITOR"
+                            }
+                            is LibraryDestination.Person -> {
+                                profileState.relationships.firstOrNull { it.id == destination.id }?.let { person ->
+                                    relationshipViewModel.onEvent(RelationshipEvent.LoadNotes(person.id))
+                                    navigationUi.selectedPersonForDetail = person
+                                    navigationUi.relationshipNoteToOpen = destination.noteId
+                                    navigationUi.personReturnOverlay = "INFORMATION_LIBRARY"
+                                    navigationUi.fullScreenOverlay = "PERSON_DETAIL"
+                                }
+                            }
+                            is LibraryDestination.Vault -> {
+                                val item = vaultState.vaultItems.firstOrNull { it.id == destination.id }
+                                if (item != null) withPrivateNotesUnlocked {
+                                    navigationUi.fullScreenOverlay = "VAULT"
+                                    vaultViewModel.openItem(item)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+        }
     }
 }
 

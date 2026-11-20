@@ -18,6 +18,7 @@ import com.pims.vault.domain.rules.VaultRules
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import com.pims.vault.core.storage.FileStorageService
+import com.pims.vault.core.sync.SyncWorkScheduler
 import com.pims.vault.data.local.entity.RelationshipNoteAttachmentEntity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -35,7 +36,8 @@ class RelationshipNotesRepositoryImpl @Inject constructor(
     private val sessionManager: BiometricSessionManager,
     private val auditLogger: HardenedAuditLogger,
     private val fileStorage: FileStorageService,
-    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null,
+    private val syncWorkScheduler: SyncWorkScheduler? = null
 ) : RelationshipNotesRepository {
 
     override fun getNotesForRelationshipFlow(
@@ -154,7 +156,11 @@ class RelationshipNotesRepositoryImpl @Inject constructor(
                 bestEffort { fileStorage.deleteFile(attachment.storagePath) }
                 bestEffort { firestoreSyncService?.deleteRemoteRelationshipNoteAttachment(id, attachment.id) }
             }
-            syncNote(entity)
+            if (isPrivate && existing != null) {
+                syncNote(entity)
+            } else if (!isPrivate) {
+                syncPublicNote(entity)
+            }
             bestEffort {
                 auditLogger.recordEvent(
                     eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
@@ -341,6 +347,15 @@ class RelationshipNotesRepositoryImpl @Inject constructor(
         if (note.isPrivate) {
             bestEffort { firestoreSyncService?.deleteRemoteRelationshipNote(note.id) }
         } else {
+            syncPublicNote(note)
+        }
+    }
+
+    private suspend fun syncPublicNote(note: RelationshipNoteEntity) {
+        if (syncWorkScheduler != null) {
+            syncWorkScheduler.requestSync()
+        } else {
+            // Retain immediate publication for callers that do not own an application scheduler.
             bestEffort { firestoreSyncService?.syncRelationshipNote(null, note) }
             relationshipNoteDao.getAttachments(note.id).forEach { attachment ->
                 bestEffort { firestoreSyncService?.syncRelationshipNoteAttachment(null, note.id, attachment) }

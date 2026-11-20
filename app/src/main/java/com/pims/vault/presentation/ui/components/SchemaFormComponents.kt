@@ -27,12 +27,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -77,6 +71,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PersonaIcon
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PersonaIconSize
 import com.pims.vault.presentation.ui.theme.PimsControlSize
 import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.theme.PimsTheme
@@ -85,12 +82,7 @@ import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 import com.pims.vault.presentation.ui.theme.tactilePress
 
 /**
- * Persona Input Field:
- * - Label placed above the input
- * - Warm cream surface (#FFFDF8)
- * - Minimal border with terracotta focus accent
- * - 14sp text sizing with comfortable, compact height
- * - Clear error and helper text handling
+ * Themed input with a label above the field and inline validation.
  */
 @Composable
 fun PersonaTextInput(
@@ -122,12 +114,9 @@ fun PersonaTextInput(
         if (!label.isNullOrBlank()) {
             Text(
                 text = label.removeSuffix(" · optional").removeSuffix(" (optional)"),
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
-                ),
-                color = PimsTheme.text.secondary,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp, start = 1.dp)
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(bottom = PimsSpacing.xs)
             )
         }
 
@@ -143,13 +132,13 @@ fun PersonaTextInput(
             keyboardOptions = keyboardOptions ?: KeyboardOptions(keyboardType = keyboardType, capitalization = keyboardCapitalization),
             keyboardActions = keyboardActions,
             visualTransformation = visualTransformation,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = PimsTheme.text.primary),
+            textStyle = MaterialTheme.typography.bodyLarge,
             placeholder = placeholder?.let {
                 {
                     Text(
                         text = it,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                        color = PimsTheme.text.placeholder
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             },
@@ -162,16 +151,16 @@ fun PersonaTextInput(
         if (isError && !errorMessage.isNullOrBlank()) {
             Text(
                 text = errorMessage,
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 2.dp)
+                modifier = Modifier.fillMaxWidth().padding(top = PimsSpacing.xs)
             )
         } else if (!helperText.isNullOrBlank()) {
             Text(
                 text = helperText,
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 2.dp)
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(top = PimsSpacing.xs)
             )
         }
     }
@@ -193,7 +182,8 @@ fun PersonaDropdownSelector(
     onOptionSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     label: String? = null,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    suggested: Boolean = false
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -204,12 +194,9 @@ fun PersonaDropdownSelector(
         if (!label.isNullOrBlank()) {
             Text(
                 text = label.removeSuffix(" · optional").removeSuffix(" (optional)"),
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp, start = 2.dp)
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(bottom = PimsSpacing.xs)
             )
         }
 
@@ -221,48 +208,39 @@ fun PersonaDropdownSelector(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(PimsControlSize.selector)
                     .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled)
                     .clip(RoundedCornerShape(PimsRadius.input)),
                 shape = RoundedCornerShape(PimsRadius.input),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f),
-                border = if (expanded) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                shadowElevation = if (expanded) 1.dp else 0.dp
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = if (expanded && enabled) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                shadowElevation = if (expanded && enabled) 1.dp else 0.dp
             ) {
+                val active = expanded && enabled
+                val textColor = when {
+                    !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    suggested || selectedOption.isBlank() -> MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
                 Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(start = 16.dp, end = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .fillMaxWidth()
+                        .heightIn(min = PimsControlSize.selector)
+                        .padding(horizontal = PimsSpacing.sm, vertical = PimsSpacing.s),
+                    horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = selectedOption.ifBlank { "Select" },
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.5.sp,
-                            fontWeight = FontWeight.Normal
-                        ),
-                        color = if (selectedOption.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f) else MaterialTheme.colorScheme.onSurface
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = textColor
                     )
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .background(
-                                if (expanded) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ExpandMore,
-                            contentDescription = "Dropdown",
-                            tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .size(18.dp)
-                                .graphicsLayer { rotationZ = if (expanded) 180f else 0f }
-                        )
-                    }
+                    PersonaIcon(
+                        PersonaIcons.ExpandMore, null,
+                        modifier = Modifier.graphicsLayer { rotationZ = if (active) 180f else 0f },
+                        size = PersonaIconSize.Small,
+                        tint = if (active) MaterialTheme.colorScheme.primary else textColor
+                    )
                 }
             }
 
@@ -284,17 +262,16 @@ fun PersonaDropdownSelector(
                             ) {
                                 Text(
                                     text = option,
-                                    fontSize = 14.5.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
                                 if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
+                                    PersonaIcon(
+                                        imageVector = PersonaIcons.Check,
                                         contentDescription = "Selected",
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
+                                        size = PersonaIconSize.Small
                                     )
                                 }
                             }
@@ -303,10 +280,10 @@ fun PersonaDropdownSelector(
                             onOptionSelected(option)
                             expanded = false
                         },
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+                        contentPadding = PaddingValues(horizontal = PimsSpacing.m, vertical = PimsSpacing.s),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = PimsControlSize.action)
                     )
                 }
             }
@@ -405,7 +382,7 @@ fun PersonaSearchableCombobox(
                 ),
                 trailingIcon = {
                     Icon(
-                        imageVector = Icons.Default.ExpandMore,
+                        imageVector = PersonaIcons.ExpandMore,
                         contentDescription = if (expanded) "Hide relationship options" else "Show relationship options",
                         tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
@@ -442,7 +419,7 @@ fun PersonaSearchableCombobox(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Add,
+                                    imageVector = PersonaIcons.Add,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp)
@@ -499,7 +476,7 @@ fun PersonaSearchableCombobox(
                                     Spacer(modifier = Modifier.weight(1f))
                                     if (isSelected) {
                                         Icon(
-                                            imageVector = Icons.Default.Check,
+                                            imageVector = PersonaIcons.Check,
                                             contentDescription = "Selected",
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(18.dp)
@@ -655,7 +632,7 @@ fun PersonaDialog(
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), CircleShape)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Close,
+                                imageVector = PersonaIcons.Close,
                                 contentDescription = "Close",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp)
@@ -693,62 +670,15 @@ fun PersonaDialog(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Cancel Button
-                        OutlinedButton(
-                            onClick = onDismissRequest,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .tactilePress(),
-                            shape = RoundedCornerShape(PimsRadius.primaryAction),
-                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        ) {
-                            Text(
-                                text = dismissText,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                        }
-
-                        // Confirm / Save Button
-                        Button(
-                            onClick = onConfirm,
-                            enabled = confirmEnabled,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .tactilePress(),
-                            shape = RoundedCornerShape(PimsRadius.primaryAction),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDestructive) StateError else MaterialTheme.colorScheme.primary,
-                                contentColor = Color.White,
-                                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                                disabledContentColor = Color.White.copy(alpha = 0.6f)
-                            ),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                if (confirmEnabled) {
-                                    Icon(
-                                        imageVector = if (isDestructive) Icons.Default.Delete else Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Text(
-                                    text = confirmText,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.5.sp
-                                )
-                            }
-                        }
+                        PersonaAction(
+                            dismissText, onDismissRequest, modifier = Modifier.weight(1f),
+                            style = PersonaActionStyle.Quiet
+                        )
+                        PersonaAction(
+                            confirmText, onConfirm, modifier = Modifier.weight(1f),
+                            style = if (isDestructive) PersonaActionStyle.Destructive else PersonaActionStyle.Primary,
+                            enabled = confirmEnabled
+                        )
                     }
                 }
             }

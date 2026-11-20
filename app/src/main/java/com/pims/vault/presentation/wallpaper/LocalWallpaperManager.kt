@@ -503,49 +503,11 @@ class LocalWallpaperManager @Inject constructor(
     }
 
     private suspend fun prepareWallpaperImport(uri: Uri): WallpaperItem {
-        var pending: File? = null
-        var target: File? = null
-        var prepared = false
-        try {
-            val root = context.filesDir.canonicalFile
-            val directory = wallpaperDir.canonicalFile
-            require(directory != root && directory.toPath().startsWith(root.toPath()))
-            val staged = File.createTempFile(".import-", ".image", directory)
-            pending = staged
-            val source = context.contentResolver.openInputStream(uri) ?: error("This image could not be opened")
-            source.use { input ->
-                FileOutputStream(staged).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var total = 0L
-                    try {
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            total += count
-                            require(total <= 16L * 1024 * 1024) { "Choose an image smaller than 16 MB" }
-                            output.write(buffer, 0, count)
-                        }
-                        require(total > 0)
-                        output.fd.sync()
-                    } finally { buffer.fill(0) }
-                }
-            }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(staged.absolutePath, bounds)
-            require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 100_000_000)
-            currentCoroutineContext().ensureActive()
-            val owned = File(directory, "local_wp_${UUID.randomUUID()}.jpg")
-            target = owned
-            Files.move(staged.toPath(), owned.toPath(), StandardCopyOption.ATOMIC_MOVE)
-            val item = WallpaperItem("custom_${UUID.randomUUID()}", "", type = WallpaperType.LOCAL_IMAGE,
-                localFilePath = owned.absolutePath, isBuiltIn = false)
-            prepared = true
-            return item
-        } finally {
-            pending?.delete()
-            if (!prepared) target?.delete()
-        }
+        val owned = com.pims.vault.core.storage.importOwnedPhoto(context, uri, "wallpapers", "local_wp")
+        return WallpaperItem(
+            "custom_${UUID.randomUUID()}", "", type = WallpaperType.LOCAL_IMAGE,
+            localFilePath = owned.absolutePath, isBuiltIn = false
+        )
     }
 
     // --- REVERSIBLE REMOVAL & DELETION SAFETY ---
@@ -937,7 +899,7 @@ class LocalWallpaperManager @Inject constructor(
                             title = remote.title,
                             subtitle = remote.subtitle,
                             type = WallpaperType.LOCAL_IMAGE,
-                            localFilePath = file.absolutePath,
+                            localFilePath = preferredLocalOriginal(current) ?: file.absolutePath,
                             isBuiltIn = false,
                             alignmentY = remote.alignmentY.takeIf { it.isFinite() }?.coerceIn(-1f, 1f)
                                 ?: current?.alignmentY ?: 0f,
@@ -962,6 +924,12 @@ class LocalWallpaperManager @Inject constructor(
             }
         }
     }
+
+    private fun preferredLocalOriginal(item: WallpaperItem?): String? = runCatching {
+        val file = item?.localFilePath?.let { File(it).canonicalFile } ?: return@runCatching null
+        if (file.parentFile != wallpaperDir.canonicalFile || !file.name.startsWith("local_wp_")) return@runCatching null
+        file.absolutePath.takeIf { com.pims.vault.core.storage.inspectPhoto(file) != null }
+    }.getOrNull()
 
     @Synchronized
     fun backupAllCustomWallpapers() {

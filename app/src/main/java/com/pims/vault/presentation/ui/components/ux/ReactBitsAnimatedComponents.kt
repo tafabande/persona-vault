@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components.ux
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -40,10 +42,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -265,7 +263,7 @@ fun PulseHeartIcon(
     )
 
     Icon(
-        imageVector = Icons.Default.Favorite,
+        imageVector = PersonaIcons.Favorite,
         contentDescription = "Pulse Heart",
         tint = tint,
         modifier = modifier
@@ -527,7 +525,7 @@ fun SpringDeleteButton(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.Delete,
+                imageVector = PersonaIcons.Delete,
                 contentDescription = null,
                 tint = if (isConfirming) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)

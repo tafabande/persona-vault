@@ -35,6 +35,15 @@ interface SyncQueueDao {
     @Query("SELECT * FROM sync_queue WHERE entity_type = :entityType AND entity_id = :entityId AND status = 'PENDING' LIMIT 1")
     suspend fun findPendingByEntity(entityType: String, entityId: String): SyncQueueEntity?
 
+    @Query("SELECT * FROM sync_queue WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): SyncQueueEntity?
+
+    @Query("SELECT * FROM sync_queue WHERE entity_type = :entityType AND entity_id = :entityId ORDER BY created_at DESC, rowid DESC LIMIT 1")
+    suspend fun getLatestByEntity(entityType: String, entityId: String): SyncQueueEntity?
+
+    @Query("DELETE FROM sync_queue WHERE entity_type = :entityType AND entity_id = :entityId")
+    suspend fun deleteByEntity(entityType: String, entityId: String)
+
     @Query("SELECT COUNT(*) FROM sync_queue WHERE status IN ('PENDING', 'IN_PROGRESS')")
     fun getPendingCountFlow(): Flow<Int>
 

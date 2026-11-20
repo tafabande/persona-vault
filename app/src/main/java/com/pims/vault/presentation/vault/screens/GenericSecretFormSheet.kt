@@ -1,5 +1,9 @@
 package com.pims.vault.presentation.vault.screens
 
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,15 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -153,12 +150,9 @@ fun GenericSecretFormSheet(
         }
     }
 
-    ModalBottomSheet(
+    PersonaSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = getVaultCardSurface(),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        dragHandle = null,
         modifier = modifier
     ) {
         Column(
@@ -167,19 +161,7 @@ fun GenericSecretFormSheet(
                 .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
             // Close Button
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .size(32.dp)
-                    .tactilePress { onDismiss() }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Close",
-                    tint = getVaultTextPrimary(),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+            PersonaIconAction(PersonaIcons.Close, "Close", onDismiss)
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -224,32 +206,8 @@ fun GenericSecretFormSheet(
                     visualTransformation = if (isValueVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingAction = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { isValueVisible = !isValueVisible },
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .tactilePress { isValueVisible = !isValueVisible }
-                            ) {
-                                Icon(
-                                    imageVector = if (isValueVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (isValueVisible) "Hide value" else "Show value",
-                                    tint = getVaultTextSecondary(),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            IconButton(
-                                onClick = { secretValue = generateRandomKey() },
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .tactilePress { secretValue = generateRandomKey() }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Generate random key",
-                                    tint = getVaultTextSecondary(),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                            PersonaIconAction(if (isValueVisible) PersonaIcons.VisibilityOff else PersonaIcons.Visibility, if (isValueVisible) "Hide value" else "Show value", { isValueVisible = !isValueVisible })
+                            PersonaIconAction(PersonaIcons.Refresh, "Generate random key", { secretValue = generateRandomKey() })
                         }
                     }
                 )

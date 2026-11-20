@@ -1,140 +1,180 @@
 package com.pims.vault.presentation.library
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Password
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.pims.vault.core.model.InformationCategory
 import com.pims.vault.core.model.InformationSensitivity
+import com.pims.vault.domain.model.normalizedNoteTag
+import com.pims.vault.presentation.document.DocumentUiState
+import com.pims.vault.presentation.medical.MedicalUiState
+import com.pims.vault.presentation.notes.PlainNotesViewModel
+import com.pims.vault.presentation.profile.ProfileUiState
+import com.pims.vault.presentation.relationship.PublicRelationshipNotesViewModel
+import com.pims.vault.presentation.vault.VaultUiState
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.components.PersonaInformationRow
+import com.pims.vault.presentation.ui.components.PersonaMenu
+import com.pims.vault.presentation.ui.components.PersonaMenuItem
+import com.pims.vault.presentation.ui.components.PersonaSectionHeading
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.presentation.ui.components.PersonaSheetHeader
+import com.pims.vault.presentation.ui.components.PersonaTextInput
+import com.pims.vault.presentation.ui.state.PersonaEmptyState
+import com.pims.vault.presentation.ui.theme.PersonaIcon
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PersonaIconSize
+import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
-import com.pims.vault.presentation.ui.util.rememberPimsHaptics
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.UUID
 
-/**
- * Unified Library Item representing any stored information object across the vault.
- */
+sealed interface LibraryDestination {
+    data class Note(val id: String) : LibraryDestination
+    data class Person(val id: String, val noteId: String? = null) : LibraryDestination
+    data class Vault(val id: String) : LibraryDestination
+}
+
+data class LibraryPersonLink(val relationshipId: String, val name: String)
+
+data class LibraryField(val label: String, val value: String)
+
 data class LibraryItem(
-    val id: String = UUID.randomUUID().toString(),
+    val id: String,
     val title: String,
     val subtitle: String,
     val category: InformationCategory,
     val sensitivity: InformationSensitivity,
     val personName: String = "Me",
-    val secretValue: String? = null,
+    val reviewValue: String? = null,
     val isFavorite: Boolean = false,
-    val updatedAt: Long = System.currentTimeMillis()
-)
+    val updatedAt: Long = 0,
+    val metadata: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val relatedPeople: List<LibraryPersonLink> = emptyList(),
+    val destination: LibraryDestination? = null,
+    val displayValue: String = subtitle,
+    val fields: List<LibraryField> = emptyList()
+) {
+    fun matches(query: String): Boolean {
+        val searchable = listOf(title, subtitle, displayValue, category.displayName, personName) +
+            metadata + tags + relatedPeople.map { it.name }
+        return query.trim().split(searchWhitespace).all { token ->
+            if (token.startsWith('#') && token.length > 1) {
+                val prefix = normalizedNoteTag(token)
+                tags.any { normalizedNoteTag(it).startsWith(prefix) }
+            } else {
+                searchable.any { field -> field.contains(token, ignoreCase = true) }
+            }
+        }
+    }
+}
 
-/**
- * Central Information Library Screen.
- * Search, filter by category, explore real counts, view vs edit separation, and safe review.
- */
+private val searchWhitespace = Regex("\\s+")
+
+@Composable
+fun InformationLibraryRoute(
+    profile: ProfileUiState,
+    documents: DocumentUiState,
+    vault: VaultUiState,
+    medical: MedicalUiState,
+    onBack: () -> Unit,
+    onRequestAuthToReveal: (() -> Unit) -> Unit,
+    onOpenDestination: (LibraryDestination) -> Unit,
+    notesViewModel: PlainNotesViewModel = hiltViewModel(),
+    publicNotesViewModel: PublicRelationshipNotesViewModel = hiltViewModel()
+) {
+    val plainNotes by notesViewModel.uiState.collectAsStateWithLifecycle()
+    val ownerId = profile.person?.id
+    val peopleNotesFlow = remember(ownerId, publicNotesViewModel) {
+        publicNotesViewModel.observe(ownerId)
+    }
+    val peopleNotes by peopleNotesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val items = remember(profile, documents, vault.vaultItems, medical, plainNotes.notes, peopleNotes) {
+        LibraryItemBuilder.build(
+            profile, documents, vault, medical, plainNotes.notes.filter { it.ownerPersonId == ownerId }, peopleNotes
+        )
+    }
+    InformationLibraryScreen(items, onBack, onRequestAuthToReveal, onOpenDestination)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InformationLibraryScreen(
     items: List<LibraryItem>,
     onBack: () -> Unit,
     onRequestAuthToReveal: (onSuccess: () -> Unit) -> Unit,
+    onOpenDestination: (LibraryDestination) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val haptics = rememberPimsHaptics()
     var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<InformationCategory?>(null) }
+    var category by remember { mutableStateOf<InformationCategory?>(null) }
     var onlyFavorites by remember { mutableStateOf(false) }
-
-    var selectedItemForDetail by remember { mutableStateOf<LibraryItem?>(null) }
-
-    // Dynamic Category Item Counts
-    val categoryCounts = remember(items) {
-        items.groupBy { it.category }.mapValues { it.value.size }
+    var showFilters by remember { mutableStateOf(false) }
+    var selectedId by remember { mutableStateOf<String?>(null) }
+    val selected = items.firstOrNull { it.id == selectedId }
+    val categories = remember(items) {
+        val present = items.mapTo(mutableSetOf()) { it.category }
+        InformationCategory.entries.filter { it in present }
     }
-
-    // Filter items
-    val filteredItems = remember(items, searchQuery, selectedCategory, onlyFavorites) {
-        items.filter { item ->
-            val matchesCategory = selectedCategory == null || item.category == selectedCategory
-            val matchesFavorite = !onlyFavorites || item.isFavorite
-            val matchesSearch = if (searchQuery.isBlank()) true else {
-                item.title.contains(searchQuery, ignoreCase = true) ||
-                        item.subtitle.contains(searchQuery, ignoreCase = true) ||
-                        item.category.displayName.contains(searchQuery, ignoreCase = true) ||
-                        item.personName.contains(searchQuery, ignoreCase = true)
-            }
-            matchesCategory && matchesFavorite && matchesSearch
+    val filtered = remember(items, searchQuery, category, onlyFavorites) {
+        items.filter {
+            (category == null || it.category == category) &&
+                (!onlyFavorites || it.isFavorite) && it.matches(searchQuery)
         }.sortedByDescending { it.updatedAt }
     }
+    val sections = remember(filtered) { filtered.groupBy { it.category } }
+    val isFiltering = searchQuery.isNotBlank() || category != null || onlyFavorites
 
-    BackHandler(enabled = true) {
+    BackHandler {
         when {
-            selectedItemForDetail != null -> selectedItemForDetail = null
-            selectedCategory != null -> selectedCategory = null
+            selectedId != null -> selectedId = null
+            showFilters -> showFilters = false
+            category != null -> category = null
             searchQuery.isNotBlank() -> searchQuery = ""
             onlyFavorites -> onlyFavorites = false
             else -> onBack()
@@ -143,389 +183,324 @@ fun InformationLibraryScreen(
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .padding(horizontal = pimsPageGutter())
-        ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            val gutter = pimsPageGutter() + PimsSpacing.xs
+            LazyColumn(
+                modifier = Modifier.widthIn(max = 840.dp).fillMaxSize().imePadding(),
+                contentPadding = PaddingValues(start = gutter, end = gutter, top = PimsSpacing.m, bottom = PimsSpacing.xxl)
             ) {
-                IconButton(onClick = {
-                    haptics.light()
-                    onBack()
-                }) {
-                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back")
+                item(key = "library-header") {
+                    Column(verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(PimsSpacing.xs),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PersonaIconAction(PersonaIcons.ArrowBack, "Back", onBack)
+                            Text(
+                                "Information library",
+                                style = MaterialTheme.typography.headlineSmall,
+                                modifier = Modifier.weight(1f).semantics { heading() }
+                            )
+                        }
+                        PersonaTextInput(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = "Search library",
+                            leadingIcon = { PersonaIcon(PersonaIcons.Search, null, size = PersonaIconSize.Small) },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    PersonaIconAction(PersonaIcons.Close, "Clear search", { searchQuery = "" })
+                                }
+                            }
+                        )
+                        LibraryCategoryMenu(
+                            category = category,
+                            onlyFavorites = onlyFavorites,
+                            categories = categories,
+                            hasFavorites = items.any { it.isFavorite },
+                            expanded = showFilters,
+                            onExpand = { showFilters = true },
+                            onDismiss = { showFilters = false },
+                            onSelect = { chosenCategory, favorites ->
+                                category = chosenCategory
+                                onlyFavorites = favorites
+                                showFilters = false
+                            }
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(
-                        text = "Information Library",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                    )
-                    Text(
-                        text = "${items.size} total stored records",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (sections.isEmpty()) {
+                    item(key = "library-empty") {
+                        PersonaEmptyState(
+                            icon = PersonaIcons.Search,
+                            title = if (isFiltering) "No matching information" else "No information here yet",
+                            modifier = Modifier.padding(top = PimsSpacing.xl)
+                        )
+                    }
                 }
-            }
-
-            // Global Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search your personal information...") },
-                leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary) },
-                trailingIcon = {
-                    if (searchQuery.isNotBlank()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, null)
+                for (section in InformationCategory.entries) {
+                    val entries = sections[section] ?: continue
+                    item(key = "section-${section.name}") {
+                        if (category == null) {
+                            LibrarySectionHeading(section)
+                        } else {
+                            Spacer(Modifier.height(PimsSpacing.m))
                         }
                     }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Category Filter Pills (Horizontal Scroll)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = selectedCategory == null && !onlyFavorites,
-                    onClick = {
-                        haptics.selection()
-                        selectedCategory = null
-                        onlyFavorites = false
-                    },
-                    label = { Text("All (${items.size})") }
-                )
-
-                FilterChip(
-                    selected = onlyFavorites,
-                    onClick = {
-                        haptics.selection()
-                        onlyFavorites = !onlyFavorites
-                        if (onlyFavorites) selectedCategory = null
-                    },
-                    label = { Text("⭐ Favorites (${items.count { it.isFavorite }})") }
-                )
-
-                InformationCategory.values().forEach { cat ->
-                    val count = categoryCounts[cat] ?: 0
-                    if (count > 0 || cat == InformationCategory.PASSWORD || cat == InformationCategory.FINANCIAL) {
-                        val isProtected = cat.defaultSensitivity == InformationSensitivity.PROTECTED ||
-                                cat.defaultSensitivity == InformationSensitivity.HIGHLY_PROTECTED
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = {
-                                haptics.selection()
-                                selectedCategory = if (selectedCategory == cat) null else cat
-                                onlyFavorites = false
-                            },
-                            label = {
-                                Text("${cat.displayName}${if (isProtected) " 🔒" else ""} ($count)")
-                            }
+                    itemsIndexed(entries, key = { _, record -> "record-${record.id}" }) { index, entry ->
+                        LibraryRecordRow(
+                            entry = entry,
+                            first = index == 0,
+                            last = index == entries.lastIndex,
+                            onClick = { selectedId = entry.id }
                         )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Items List
-            if (filteredItems.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = if (searchQuery.isNotBlank()) "No matching records found" else "No information in this category yet",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Text(
-                            text = "Add details from your profile, passwords, or cards to populate your library.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(filteredItems) { item ->
-                        LibraryItemCard(
-                            item = item,
-                            onClick = {
-                                haptics.light()
-                                selectedItemForDetail = item
-                            }
-                        )
-                    }
-                    item {
-                        Spacer(modifier = Modifier.height(24.dp))
                     }
                 }
             }
         }
     }
 
-    // Detail / Review Sheet (View separated from Edit)
-    selectedItemForDetail?.let { item ->
-        ItemReviewBottomSheet(
+    selected?.let { item ->
+        LibraryReviewSheet(
             item = item,
-            onRequestAuthToReveal = onRequestAuthToReveal,
-            onDismiss = { selectedItemForDetail = null }
+            onRequestAuth = onRequestAuthToReveal,
+            onOpen = { destination ->
+                selectedId = null
+                onOpenDestination(destination)
+            },
+            onDismiss = { selectedId = null }
         )
     }
 }
 
 @Composable
-fun LibraryItemCard(
-    item: LibraryItem,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+private fun LibraryCategoryMenu(
+    category: InformationCategory?,
+    onlyFavorites: Boolean,
+    categories: List<InformationCategory>,
+    hasFavorites: Boolean,
+    expanded: Boolean,
+    onExpand: () -> Unit,
+    onDismiss: () -> Unit,
+    onSelect: (InformationCategory?, Boolean) -> Unit
 ) {
-    val isProtected = item.sensitivity == InformationSensitivity.PROTECTED ||
-            item.sensitivity == InformationSensitivity.HIGHLY_PROTECTED
-
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(
-                            if (isProtected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            RoundedCornerShape(10.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isProtected) {
-                        Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    } else {
-                        Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                    }
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = item.title,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (item.isFavorite) {
-                            Text("⭐", fontSize = 12.sp)
-                        }
-                    }
-
-                    Text(
-                        text = "${item.category.displayName} • ${item.subtitle}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Text(
-                text = SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(item.updatedAt)),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.padding(start = 8.dp)
+    Box {
+        PersonaAction(
+            label = if (onlyFavorites) "Favorites" else category?.displayName ?: "All information",
+            onClick = onExpand,
+            style = PersonaActionStyle.Quiet,
+            icon = PersonaIcons.ExpandMore
+        )
+        PersonaMenu(expanded = expanded, onDismissRequest = onDismiss) {
+            PersonaMenuItem(
+                label = "All information",
+                icon = if (category == null && !onlyFavorites) PersonaIcons.Check else PersonaIcons.Library,
+                onClick = { onSelect(null, false) }
             )
+            if (hasFavorites || onlyFavorites) {
+                PersonaMenuItem(
+                    label = "Favorites",
+                    icon = if (onlyFavorites) PersonaIcons.Check else PersonaIcons.Bookmark,
+                    onClick = { onSelect(null, true) }
+                )
+            }
+            categories.forEach { itemCategory ->
+                PersonaMenuItem(
+                    label = itemCategory.displayName,
+                    icon = if (category == itemCategory) PersonaIcons.Check else itemCategory.libraryIcon(),
+                    onClick = { onSelect(itemCategory, false) }
+                )
+            }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ItemReviewBottomSheet(
-    item: LibraryItem,
-    onRequestAuthToReveal: (onSuccess: () -> Unit) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val clipboardManager = LocalClipboardManager.current
-    var isRevealed by remember { mutableStateOf(false) }
-
-    val requiresAuth = item.sensitivity == InformationSensitivity.PROTECTED ||
-            item.sensitivity == InformationSensitivity.HIGHLY_PROTECTED
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        containerColor = MaterialTheme.colorScheme.surface
+private fun LibrarySectionHeading(category: InformationCategory) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = PimsSpacing.xs, top = PimsSpacing.l, bottom = PimsSpacing.s),
+        horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = pimsPageGutter())
-                .padding(bottom = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = item.category.displayName.uppercase(),
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
-                    )
-                }
+        PersonaIcon(category.libraryIcon(), null, size = PersonaIconSize.Small, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            category.displayName,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { heading() }
+        )
+    }
+}
 
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ) {
-                    Text(
-                        text = item.sensitivity.name,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+@Composable
+private fun LibraryRecordRow(entry: LibraryItem, first: Boolean, last: Boolean, onClick: () -> Unit) {
+    val topRadius = if (first) PimsRadius.surface else 0.dp
+    val bottomRadius = if (last) PimsRadius.surface else 0.dp
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(topRadius, topRadius, bottomRadius, bottomRadius),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = PimsSpacing.m, vertical = PimsSpacing.m),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(PimsSpacing.m)
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(PimsSpacing.xs)) {
+                    Text(entry.title, style = MaterialTheme.typography.titleMedium, overflow = TextOverflow.Ellipsis, maxLines = 2)
+                    val preview = entry.displayValue.takeIf(String::isNotBlank)
+                    if (preview != null) {
+                        Text(
+                            preview,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (entry.category == InformationCategory.ADDRESS) 3 else 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (entry.sensitivity.maskedByDefault) {
+                    PersonaIcon(PersonaIcons.LockOutlined, "Protected", size = PersonaIconSize.Small, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    PersonaIcon(PersonaIcons.ChevronRight, null, size = PersonaIconSize.Small, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-            // Value Box
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = "Stored Value",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            if (!last) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = PimsSpacing.m),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
                 )
+            }
+        }
+    }
+}
 
+private fun InformationCategory.libraryIcon() = when (this) {
+    InformationCategory.PERSONAL -> PersonaIcons.MeOutlined
+    InformationCategory.CONTACT -> PersonaIcons.Phone
+    InformationCategory.ADDRESS -> PersonaIcons.Location
+    InformationCategory.IDENTIFICATION -> PersonaIcons.Identity
+    InformationCategory.DOCUMENT -> PersonaIcons.DocumentsOutlined
+    InformationCategory.FINANCIAL -> PersonaIcons.CreditCard
+    InformationCategory.PASSWORD, InformationCategory.SECURITY -> PersonaIcons.LockOutlined
+    InformationCategory.MEDICAL, InformationCategory.EMERGENCY -> PersonaIcons.MedicalServicesOutlined
+    InformationCategory.EDUCATION -> PersonaIcons.Education
+    InformationCategory.EMPLOYMENT -> PersonaIcons.Work
+    InformationCategory.RELATIONSHIP -> PersonaIcons.People
+    InformationCategory.SOCIAL -> PersonaIcons.Link
+    InformationCategory.NOTE -> PersonaIcons.NotesOutlined
+    InformationCategory.OTHER -> PersonaIcons.Library
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LibraryReviewSheet(
+    item: LibraryItem,
+    onRequestAuth: (() -> Unit) -> Unit,
+    onOpen: (LibraryDestination) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val context = LocalContext.current
+    var revealed by remember(item.id) { mutableStateOf(false) }
+    var canReveal by remember(item.id) { mutableStateOf(true) }
+    DisposableEffect(lifecycle, item.id) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) revealed = false
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            canReveal = false
+            lifecycle.removeObserver(observer)
+        }
+    }
+    val protected = item.sensitivity.requiresAuthToReveal
+    val visibleFields = if (!protected || revealed) item.fields else emptyList()
+    val displayValue = if (revealed) item.reviewValue?.takeIf { visibleFields.isEmpty() } else item.displayValue
+    val copyValue = (if (revealed) item.reviewValue else item.subtitle).takeIf { !it.isNullOrBlank() }
+
+    PersonaSheet(onDismiss, rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = pimsPageGutter()).padding(bottom = PimsSpacing.xl),
+            verticalArrangement = Arrangement.spacedBy(PimsSpacing.m)
+        ) {
+            PersonaSheetHeader(item.title, onDismiss)
+            if (!displayValue.isNullOrBlank() || visibleFields.isNotEmpty()) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(PimsRadius.surface),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(PimsSpacing.m),
+                        verticalArrangement = Arrangement.spacedBy(PimsSpacing.m)
                     ) {
-                        Text(
-                            text = when {
-                                !requiresAuth -> item.subtitle
-                                isRevealed -> item.secretValue ?: item.subtitle
-                                else -> "••••••••••••"
-                            },
-                            fontFamily = if (requiresAuth && !isRevealed) FontFamily.Monospace else FontFamily.Default,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 16.sp
-                        )
-
-                        if (requiresAuth) {
-                            IconButton(
-                                onClick = {
-                                    if (isRevealed) {
-                                        isRevealed = false
-                                    } else {
-                                        onRequestAuthToReveal {
-                                            isRevealed = true
-                                        }
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = "Toggle reveal secret"
+                        if (!displayValue.isNullOrBlank()) {
+                            Text(displayValue, style = MaterialTheme.typography.bodyLarge)
+                        }
+                        visibleFields.forEach { field ->
+                            Column(verticalArrangement = Arrangement.spacedBy(PimsSpacing.xs)) {
+                                Text(
+                                    field.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                Text(field.value, style = MaterialTheme.typography.bodyLarge)
                             }
                         }
                     }
                 }
             }
-
-            // Copy Action
-            Button(
-                onClick = {
-                    val textToCopy = if (requiresAuth && !isRevealed) {
-                        onRequestAuthToReveal {
-                            clipboardManager.setText(AnnotatedString(item.secretValue ?: item.subtitle))
+            if ((!protected || revealed) && copyValue != null) {
+                PersonaAction("Copy", {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText(item.title, copyValue)
+                    if (protected) {
+                        clip.description.extras = PersistableBundle().apply {
+                            putBoolean("android.content.extra.IS_SENSITIVE", true)
                         }
-                        return@Button
-                    } else {
-                        item.secretValue ?: item.subtitle
                     }
-                    clipboardManager.setText(AnnotatedString(textToCopy))
-                },
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
-                    Text("Copy Value", fontWeight = FontWeight.SemiBold)
+                    clipboard.setPrimaryClip(clip)
+                }, style = PersonaActionStyle.Quiet)
+            }
+            if (item.reviewValue != null && protected) {
+                PersonaAction(if (revealed) "Hide" else "Reveal", {
+                    if (revealed) revealed = false
+                    else onRequestAuth {
+                        if (canReveal && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) revealed = true
+                    }
+                }, style = PersonaActionStyle.Quiet, icon = PersonaIcons.Lock)
+            }
+            item.destination?.let { destination ->
+                val label = when (destination) {
+                    is LibraryDestination.Note -> "Open note"
+                    is LibraryDestination.Person -> if (destination.noteId == null) "Open person" else "Open note"
+                    is LibraryDestination.Vault -> "Open in Vault"
+                }
+                PersonaAction(label, { onOpen(destination) })
+            }
+            val extraPeople = item.relatedPeople.filterNot {
+                it.relationshipId == (item.destination as? LibraryDestination.Person)?.takeIf { person -> person.noteId == null }?.id
+            }
+            if (extraPeople.isNotEmpty()) {
+                PersonaSectionHeading("Related people")
+                extraPeople.forEach { person ->
+                    PersonaInformationRow(
+                        title = person.name,
+                        icon = PersonaIcons.People,
+                        onClick = { onOpen(LibraryDestination.Person(person.relationshipId)) }
+                    )
                 }
             }
         }

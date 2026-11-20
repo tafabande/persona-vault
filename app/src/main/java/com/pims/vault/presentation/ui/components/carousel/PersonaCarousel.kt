@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components.carousel
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -24,9 +26,6 @@ import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -291,7 +290,7 @@ fun <T> PersonaCarousel(
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        imageVector = PersonaIcons.ArrowBack,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )
@@ -327,7 +326,7 @@ fun <T> PersonaCarousel(
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        imageVector = PersonaIcons.ArrowForward,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )

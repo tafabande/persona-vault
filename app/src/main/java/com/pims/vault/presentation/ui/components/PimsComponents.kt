@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import com.pims.vault.core.res.AppResources
 
 import androidx.compose.animation.AnimatedVisibility
@@ -35,15 +37,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -234,7 +227,7 @@ fun PimsClassificationBadge(
         ) {
             if (classification == SecurityClassification.ZONE_4_CRITICAL) {
                 Icon(
-                    imageVector = Icons.Default.Lock,
+                    imageVector = PersonaIcons.Lock,
                     contentDescription = null,
                     tint = badgeColor,
                     modifier = Modifier.size(10.dp)
@@ -464,37 +457,13 @@ fun PimsButton(
     isSecondary: Boolean = false,
     enabled: Boolean = true
 ) {
-    val containerColor = if (isSecondary) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary
-    val contentColor = if (isSecondary) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary
-
-    Button(
+    PersonaAction(
+        label = text,
         onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(PimsRadius.primaryAction),
-        border = null,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = containerColor,
-            contentColor = contentColor,
-            disabledContainerColor = containerColor.copy(alpha = 0.5f),
-            disabledContentColor = contentColor.copy(alpha = 0.5f)
-        ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
-        contentPadding = ButtonDefaults.ContentPadding,
-        modifier = modifier.tactilePress()
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(ButtonDefaults.ContentPadding),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = text,
-                fontWeight = if (isSecondary) FontWeight.Medium else FontWeight.SemiBold,
-                letterSpacing = 0.3.sp
-            )
-        }
-    }
+        modifier = modifier.fillMaxWidth().tactilePress(),
+        style = if (isSecondary) PersonaActionStyle.Quiet else PersonaActionStyle.Primary,
+        enabled = enabled
+    )
 }
 
 @Composable
@@ -581,7 +550,7 @@ fun StatusPill(
         ) {
             if (isSyncing) {
                 Icon(
-                    imageVector = Icons.Default.Refresh,
+                    imageVector = PersonaIcons.Refresh,
                     contentDescription = "Syncing",
                     tint = accentColor,
                     modifier = Modifier
@@ -870,7 +839,7 @@ fun DefaultAvatar(
             ),
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Default.Person, "$name profile", tint = tint, modifier = Modifier.size(size * 0.56f))
+        Icon(PersonaIcons.Me, "$name profile", tint = tint, modifier = Modifier.size(size * 0.56f))
     }
 }
 
@@ -916,7 +885,7 @@ fun CountrySuggestionField(
             placeholder = { Text(placeholder, color = PimsTheme.text.placeholder) },
             leadingIcon = {
                 Icon(
-                    imageVector = Icons.Default.Public,
+                    imageVector = PersonaIcons.Public,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
@@ -926,7 +895,7 @@ fun CountrySuggestionField(
                 if (value.isNotBlank()) {
                     IconButton(onClick = { onValueChange("") }) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = PersonaIcons.Close,
                             contentDescription = "Clear",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp)
@@ -961,7 +930,7 @@ fun CountrySuggestionField(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.LocationOn,
+                                imageVector = PersonaIcons.Location,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)

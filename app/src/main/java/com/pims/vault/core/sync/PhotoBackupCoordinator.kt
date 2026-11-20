@@ -5,6 +5,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.pims.vault.core.crypto.PortableFileKeyManager
 import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.logging.VaultLogger
+import com.pims.vault.core.storage.photoExtension
 import com.pims.vault.presentation.avatar.PersonaAvatarManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -22,7 +23,7 @@ import javax.inject.Singleton
  * Bridges local photo files <-> encrypted cloud backup.
  *
  * Upload: called after a photo is saved locally (avatar / contact / ID).
- * Reads the JPEG bytes, uploads via [ProfilePhotoSyncService] (portable-key
+ * Reads the original encoded bytes, uploads via [ProfilePhotoSyncService] (portable-key
  * envelope), then writes Firestore metadata via [FirestoreSyncService].
  *
  * Download: on a new device or dynamic fetch, downloads each
@@ -234,7 +235,8 @@ class PhotoBackupCoordinator @Inject constructor(
                 photoCiphertextBase64 = meta.photoCiphertextBase64,
                 legacyKeyProvider = {
                     portableFileKeyManager.legacyKeyBytes()
-                }
+                },
+                expectedMimeType = meta.mimeType
             )
             if (!ok || !isCurrentUser(uid) || isPhotoDeleted(meta.photoId, meta.updatedAt)) return null
             if (!applyRestoredPhoto(meta, actualDest.absolutePath)) return null
@@ -255,17 +257,18 @@ class PhotoBackupCoordinator @Inject constructor(
         if (!manager.isCurrentPhotoSelection(kind, ownerKey, localPath, revision)) return
         val uid = agreedUserId() ?: return
         if (isPhotoDeleted(photoId) || !manager.isCurrentPhotoSelection(kind, ownerKey, localPath, revision)) return
-        val bytes = photoSync.readLocalJpegBytes(localPath)
+        val source = photoSync.readLocalImage(localPath)
             ?: throw IOException("A saved photo could not be read. Its cloud backup remains pending")
+        val bytes = source.bytes
         try {
-            val result = photoSync.uploadPhoto(uid, kind, photoId, bytes)
+            val result = photoSync.uploadPhoto(uid, kind, photoId, bytes, source.mimeType)
             if (isPhotoDeleted(photoId) || !manager.isCurrentPhotoSelection(kind, ownerKey, localPath, revision)) return
             checkCurrentUser(uid)
             val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
                 .joinToString("") { "%02x".format(it) }
             var photoCiphertextBase64: String? = null
             var ivHex = result?.ivHex ?: ""
-            if (result == null && bytes.size <= 512 * 1024) {
+            if (result == null && bytes.size <= ProfilePhotoSyncService.MAX_INLINE_BYTES) {
                 val key = portableFileKeyManager.copyKeyBytes()
                 try {
                     val encrypted = cryptoEngine.encrypt(bytes, key)
@@ -295,8 +298,8 @@ class PhotoBackupCoordinator @Inject constructor(
                     b2DownloadUrl = result?.downloadUrl ?: "",
                     b2IvHex = ivHex,
                     sha256Hex = sha,
-                    mimeType = "image/jpeg",
-                    sizeBytes = result?.sizeBytes ?: bytes.size.toLong(),
+                    mimeType = source.mimeType,
+                    sizeBytes = bytes.size.toLong(),
                     updatedAt = revision,
                     photoCiphertextBase64 = photoCiphertextBase64
                 )
@@ -385,7 +388,8 @@ class PhotoBackupCoordinator @Inject constructor(
                         photoCiphertextBase64 = meta.photoCiphertextBase64,
                         legacyKeyProvider = {
                             portableFileKeyManager.legacyKeyBytes()
-                        }
+                        },
+                        expectedMimeType = meta.mimeType
                     )
                     if (!ok) {
                         pending++
@@ -540,6 +544,8 @@ internal fun restoredPhotoFile(root: File, meta: ProfilePhotoSyncService.PhotoMe
         ProfilePhotoSyncService.KIND_CONTACT -> "contact_${meta.ownerKey}_restored"
         else -> "identity_id_photo_restored"
     }
-    val file = File(directory, "${prefix}_${meta.updatedAt}_${meta.sha256Hex.lowercase().take(16)}.jpg").canonicalFile
+    val sourceExtension = photoExtension(meta.mimeType) ?: return@runCatching null
+    val extension = if (meta.kind == ProfilePhotoSyncService.KIND_ID_PHOTO) "jpg" else sourceExtension
+    val file = File(directory, "${prefix}_${meta.updatedAt}_${meta.sha256Hex.lowercase().take(16)}.$extension").canonicalFile
     file.takeIf { it.parentFile == directory }
 }.getOrNull()

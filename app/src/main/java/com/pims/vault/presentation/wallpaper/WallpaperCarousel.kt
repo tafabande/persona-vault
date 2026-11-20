@@ -1,6 +1,9 @@
 package com.pims.vault.presentation.wallpaper
 
-import android.graphics.BitmapFactory
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
+import com.pims.vault.core.storage.decodePhotoPreview
+import java.io.File
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -34,8 +37,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -191,7 +192,7 @@ fun WallpaperCarousel(
                     modifier = Modifier.padding(16.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.AddPhotoAlternate,
+                        imageVector = PersonaIcons.Photo,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(40.dp)
@@ -256,46 +257,9 @@ object WallpaperBitmapCache {
     }
 }
 
-private fun decodeWallpaperBitmap(path: String): android.graphics.Bitmap {
-    return try {
-        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, boundsOptions)
-        val targetWidth = 1080
-        val targetHeight = 1920
-        var sampleSize = 1
-        if (boundsOptions.outHeight > targetHeight || boundsOptions.outWidth > targetWidth) {
-            val halfHeight = boundsOptions.outHeight / 2
-            val halfWidth = boundsOptions.outWidth / 2
-            while ((halfHeight / sampleSize) >= targetHeight && (halfWidth / sampleSize) >= targetWidth) {
-                sampleSize *= 2
-            }
-        }
-        val decodeOptions = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-            inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
-        }
-        val srcBitmap = BitmapFactory.decodeFile(path, decodeOptions)
-            ?: return android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
-        val exif = android.media.ExifInterface(path)
-        val orientation = exif.getAttributeInt(
-            android.media.ExifInterface.TAG_ORIENTATION,
-            android.media.ExifInterface.ORIENTATION_NORMAL
-        )
-        val matrix = android.graphics.Matrix()
-        when (orientation) {
-            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
-            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
-            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
-        }
-        if (!matrix.isIdentity) {
-            android.graphics.Bitmap.createBitmap(srcBitmap, 0, 0, srcBitmap.width, srcBitmap.height, matrix, true)
-        } else {
-            srcBitmap
-        }
-    } catch (_: Exception) {
-        android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
-    }
-}
+private fun decodeWallpaperBitmap(path: String): android.graphics.Bitmap =
+    decodePhotoPreview(File(path), maxDimension = 2560)
+        ?: android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
 
 @Composable
 private fun WallpaperPageArtwork(

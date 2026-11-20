@@ -1,22 +1,23 @@
 package com.pims.vault.data.repository
 
+import androidx.room.withTransaction
 import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.storage.FileStorageService
+import com.pims.vault.core.sync.SyncQueueManager
 import com.pims.vault.data.local.dao.PlainNoteDao
+import com.pims.vault.data.local.database.PimsDatabase
 import com.pims.vault.data.local.entity.PlainNoteAttachmentEntity
 import com.pims.vault.data.local.entity.PlainNoteEntity
+import com.pims.vault.data.local.entity.SyncAction
 import com.pims.vault.domain.model.NoteAttachment
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.PlainNote
 import com.pims.vault.domain.repository.PlainNotesRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import java.security.MessageDigest
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,16 +26,16 @@ import javax.inject.Singleton
 class PlainNotesRepositoryImpl @Inject constructor(
     private val dao: PlainNoteDao,
     private val fileStorage: FileStorageService,
-    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null,
     private val reminderScheduler: com.pims.vault.core.reminder.NoteReminderScheduler? = null,
-    private val syncQueueManager: com.pims.vault.core.sync.SyncQueueManager? = null,
-    private val networkMonitor: com.pims.vault.core.sync.NetworkStateMonitor? = null,
-    private val calendarCoordinator: com.pims.vault.core.calendar.NoteCalendarCoordinator? = null
+    private val syncQueueManager: SyncQueueManager? = null,
+    private val database: PimsDatabase? = null
 ) : PlainNotesRepository {
 
-    private val repositoryScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
-    )
+    private suspend fun <T> localTransaction(block: suspend () -> T): T =
+        if (database == null) block() else database.withTransaction { block() }
+
+    private fun nextRevision(previous: PlainNoteEntity?): Long =
+        maxOf(System.currentTimeMillis(), (previous?.updatedAt ?: 0L) + 1L)
 
     override fun observe(ownerPersonId: String): Flow<List<PlainNote>> {
         return dao.observeForOwner(ownerPersonId).map { entities ->
@@ -62,25 +63,30 @@ class PlainNotesRepositoryImpl @Inject constructor(
         val noteId = id ?: UUID.randomUUID().toString()
         val cleanTitle = title.trim()
         val finalTitle = cleanTitle.ifBlank { "Untitled" }
-        val existing = id?.let { dao.getById(it) }
         val now = System.currentTimeMillis()
-        val entity = PlainNoteEntity(
-            id = noteId,
-            ownerPersonId = ownerPersonId,
-            title = finalTitle,
-            content = content,
-            format = format.name,
-            createdAt = existing?.createdAt ?: now,
-            updatedAt = now,
-            reminderAt = reminderAt ?: existing?.reminderAt,
-            reminderTag = reminderTag ?: existing?.reminderTag,
-            reminderRepeat = reminderRepeat ?: existing?.reminderRepeat,
-            isReminderDone = isReminderDone,
-            isLocked = isLocked,
-            isPinned = existing?.isPinned ?: false
-        )
-        // 1. Primary local database save (Room/SQLCipher) — runs synchronously and immediately
-        dao.upsert(entity)
+        val entity = localTransaction {
+            val existing = id?.let { dao.getById(it) }
+            val updated = PlainNoteEntity(
+                id = noteId,
+                ownerPersonId = existing?.ownerPersonId ?: ownerPersonId,
+                title = finalTitle,
+                content = content,
+                format = format.name,
+                createdAt = existing?.createdAt ?: now,
+                updatedAt = nextRevision(existing),
+                reminderAt = reminderAt ?: existing?.reminderAt,
+                reminderTag = reminderTag ?: existing?.reminderTag,
+                reminderRepeat = reminderRepeat ?: existing?.reminderRepeat,
+                isReminderDone = isReminderDone,
+                isLocked = isLocked,
+                isPinned = existing?.isPinned ?: false
+            )
+            dao.upsert(updated)
+            syncQueueManager?.enqueueNoteMutation(updated, if (existing == null) SyncAction.INSERT else SyncAction.UPDATE,
+                existing?.updatedAt ?: 0L)
+            updated
+        }
+        syncQueueManager?.requestBackgroundSync()
 
         // 2. Local AlarmManager reminder scheduling
         val effectiveReminder = entity.reminderAt
@@ -97,29 +103,16 @@ class PlainNotesRepositoryImpl @Inject constructor(
             reminderScheduler?.cancelReminder(noteId)
         }
 
-        // 3. Remote sync or offline queue — non-blocking to guarantee local-first offline availability
-        dispatchRemoteSyncOrQueue(
-            entity = entity,
-            action = if (existing == null) com.pims.vault.data.local.entity.SyncAction.INSERT else com.pims.vault.data.local.entity.SyncAction.UPDATE
-        )
-
         val attachments = dao.getAttachments(noteId).map { toDomain(it) }
         return toDomain(entity, attachments)
     }
 
     override suspend fun setPinned(noteId: String, isPinned: Boolean) {
-        dao.setPinned(noteId, isPinned, System.currentTimeMillis())
-        dao.getById(noteId)?.let {
-            dispatchRemoteSyncOrQueue(it, com.pims.vault.data.local.entity.SyncAction.UPDATE)
-        }
+        updateNote(noteId) { revision -> dao.setPinned(noteId, isPinned, revision) }
     }
 
     override suspend fun toggleLock(noteId: String, isLocked: Boolean) {
-        dao.setNoteLocked(noteId, isLocked)
-        val note = dao.getById(noteId)
-        note?.let {
-            dispatchRemoteSyncOrQueue(it, com.pims.vault.data.local.entity.SyncAction.UPDATE)
-        }
+        updateNote(noteId) { revision -> dao.setNoteLocked(noteId, isLocked, revision) }
     }
 
     override suspend fun setReminder(
@@ -128,8 +121,7 @@ class PlainNotesRepositoryImpl @Inject constructor(
         reminderTag: String?,
         reminderRepeat: String?
     ) {
-        dao.updateReminder(noteId, reminderAt, reminderTag, reminderRepeat)
-        val note = dao.getById(noteId)
+        val note = updateNote(noteId) { revision -> dao.updateReminder(noteId, reminderAt, reminderTag, reminderRepeat, revision) }
         if (note != null && reminderAt != null && reminderAt > System.currentTimeMillis()) {
             reminderScheduler?.scheduleReminder(
                 noteId = noteId,
@@ -142,65 +134,32 @@ class PlainNotesRepositoryImpl @Inject constructor(
         } else if (reminderAt == null) {
             reminderScheduler?.cancelReminder(noteId)
         }
-        note?.let {
-            dispatchRemoteSyncOrQueue(it, com.pims.vault.data.local.entity.SyncAction.UPDATE)
-        }
     }
 
     override suspend fun markReminderDone(noteId: String, isDone: Boolean) {
-        dao.setReminderDone(noteId, isDone)
+        updateNote(noteId) { revision -> dao.setReminderDone(noteId, isDone, revision) }
         if (isDone) {
             reminderScheduler?.cancelReminder(noteId)
-        }
-        val note = dao.getById(noteId)
-        note?.let {
-            dispatchRemoteSyncOrQueue(it, com.pims.vault.data.local.entity.SyncAction.UPDATE)
         }
     }
 
     override suspend fun clearReminder(noteId: String) {
-        dao.clearReminder(noteId)
+        updateNote(noteId) { revision -> dao.clearReminder(noteId, revision) }
         reminderScheduler?.cancelReminder(noteId)
-        val note = dao.getById(noteId)
-        note?.let {
-            dispatchRemoteSyncOrQueue(it, com.pims.vault.data.local.entity.SyncAction.UPDATE)
-        }
     }
 
     override suspend fun delete(id: String) {
-        reminderScheduler?.cancelReminder(id)
-        val existing = dao.getById(id)
-        // Delete attachment binaries first so restores don't resurrect them.
-        try {
+        val removedAttachments = localTransaction {
+            val existing = dao.getById(id) ?: return@localTransaction emptyList()
             val attachments = dao.getAttachments(id)
-            for (att in attachments) {
-                try { fileStorage.deleteFile(att.storagePath) } catch (_: Exception) {}
-                repositoryScope.launch {
-                    if (networkMonitor?.isCurrentlyConnected() == true) {
-                        try {
-                            kotlinx.coroutines.withTimeoutOrNull(3000L) {
-                                firestoreSyncService?.deleteRemoteNoteAttachment(id, att.id)
-                            }
-                        } catch (_: Exception) {}
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-        dao.deleteById(id)
-
-        existing?.let {
-            dispatchRemoteSyncOrQueue(it, com.pims.vault.data.local.entity.SyncAction.DELETE)
-        } ?: run {
-            repositoryScope.launch {
-                if (networkMonitor?.isCurrentlyConnected() == true) {
-                    try {
-                        kotlinx.coroutines.withTimeoutOrNull(3000L) {
-                            firestoreSyncService?.deleteNote(null, id)
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
+            syncQueueManager?.enqueueNoteMutation(existing.copy(updatedAt = nextRevision(existing)), SyncAction.DELETE,
+                existing.updatedAt)
+            dao.deleteById(id)
+            attachments
         }
+        syncQueueManager?.requestBackgroundSync()
+        reminderScheduler?.cancelReminder(id)
+        removedAttachments.forEach { removeUnreferencedFile(it.storagePath) }
     }
 
     override suspend fun addAttachment(
@@ -231,18 +190,20 @@ class PlainNotesRepositoryImpl @Inject constructor(
             caption = displayName.trim(),
             createdAt = metadata.timestamp
         )
-        dao.upsertAttachment(entity)
-        dao.touch(noteId, System.currentTimeMillis())
-
-        repositoryScope.launch {
-            if (networkMonitor?.isCurrentlyConnected() == true) {
-                try {
-                    kotlinx.coroutines.withTimeoutOrNull(8000L) {
-                        firestoreSyncService?.syncNoteAttachment(null, noteId, entity)
-                    }
-                } catch (_: Exception) {}
+        try {
+            localTransaction {
+                dao.upsertAttachment(entity)
+                touchWithOutbox(noteId)
+                syncQueueManager?.enqueueNoteAttachment(noteId, attachmentId, SyncAction.INSERT)
             }
+        } catch (failure: Exception) {
+            withContext(NonCancellable) {
+                val unpublished = runCatching { dao.getAttachment(attachmentId) == null }.getOrDefault(false)
+                if (unpublished) removeUnreferencedFile(entity.storagePath)
+            }
+            throw failure
         }
+        syncQueueManager?.requestBackgroundSync()
         return toDomain(entity)
     }
 
@@ -263,87 +224,43 @@ class PlainNotesRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteAttachment(attachmentId: String) {
-        val existing = dao.getAttachment(attachmentId)
-        if (existing != null) {
-            try {
-                fileStorage.deleteFile(existing.storagePath)
-            } catch (_: Exception) {}
+        val existing = localTransaction {
+            val attachment = dao.getAttachment(attachmentId) ?: return@localTransaction null
             dao.deleteAttachment(attachmentId)
-            dao.touch(existing.noteId, System.currentTimeMillis())
-
-            repositoryScope.launch {
-                if (networkMonitor?.isCurrentlyConnected() == true) {
-                    try {
-                        kotlinx.coroutines.withTimeoutOrNull(3000L) {
-                            firestoreSyncService?.deleteRemoteNoteAttachment(existing.noteId, attachmentId)
-                        }
-                    } catch (_: Exception) {}
-                }
-            }
-        }
+            touchWithOutbox(attachment.noteId)
+            syncQueueManager?.enqueueNoteAttachment(attachment.noteId, attachmentId, SyncAction.DELETE)
+            attachment
+        } ?: return
+        syncQueueManager?.requestBackgroundSync()
+        removeUnreferencedFile(existing.storagePath)
     }
 
-    private fun dispatchRemoteSyncOrQueue(
-        entity: PlainNoteEntity,
-        action: com.pims.vault.data.local.entity.SyncAction
-    ) {
-        repositoryScope.launch {
-            val isOnline = networkMonitor?.isCurrentlyConnected() ?: false
-            if (isOnline) {
-                try {
-                    val syncSucceeded = kotlinx.coroutines.withTimeoutOrNull(3000L) {
-                        firestoreSyncService?.syncNote(null, entity, isDeleted = (action == com.pims.vault.data.local.entity.SyncAction.DELETE)) ?: false
-                    } ?: false
-                    if (!syncSucceeded) {
-                        VaultLogger.w("PlainNotesRepository", "Immediate sync timed out; queuing offline mutation")
-                        enqueueSync(entity, action)
-                    }
-                } catch (e: Exception) {
-                    VaultLogger.w("PlainNotesRepository", "Immediate sync failed (${e.message}); queuing offline mutation")
-                    enqueueSync(entity, action)
-                }
-            } else {
-                VaultLogger.i("PlainNotesRepository", "Device is offline; queuing note mutation for ${entity.id}")
-                enqueueSync(entity, action)
-            }
+    private suspend fun updateNote(noteId: String, update: suspend (Long) -> Unit): PlainNoteEntity? {
+        val note = localTransaction {
+            val existing = dao.getById(noteId)
+            update(nextRevision(existing))
+            val updated = dao.getById(noteId) ?: return@localTransaction null
+            syncQueueManager?.enqueueNoteMutation(updated, SyncAction.UPDATE, existing?.updatedAt ?: 0L)
+            updated
         }
+        if (note != null) syncQueueManager?.requestBackgroundSync()
+        return note
     }
 
-    private suspend fun enqueueSync(
-        entity: PlainNoteEntity,
-        action: com.pims.vault.data.local.entity.SyncAction
-    ) {
+    private suspend fun touchWithOutbox(noteId: String) {
+        val previous = dao.getById(noteId) ?: return
+        val revision = nextRevision(previous)
+        dao.touch(noteId, revision)
+        syncQueueManager?.enqueueNoteMutation(previous.copy(updatedAt = revision), SyncAction.UPDATE, previous.updatedAt)
+    }
+
+    private suspend fun removeUnreferencedFile(path: String) {
         try {
-            syncQueueManager?.enqueueOperation(
-                entityType = "PLAIN_NOTE",
-                entityId = entity.id,
-                action = action,
-                payloadJson = entityToJson(entity)
-            )
-        } catch (e: Exception) {
-            VaultLogger.w("PlainNotesRepository", "Failed to enqueue note sync mutation: ${e.message}")
-        }
-    }
-
-    private fun entityToJson(entity: PlainNoteEntity): String {
-        return try {
-            val json = org.json.JSONObject()
-            json.put("id", entity.id)
-            json.put("ownerPersonId", entity.ownerPersonId)
-            json.put("title", entity.title)
-            json.put("content", entity.content)
-            json.put("format", entity.format)
-            json.put("createdAt", entity.createdAt)
-            json.put("updatedAt", entity.updatedAt)
-            entity.reminderAt?.let { json.put("reminderAt", it) }
-            entity.reminderTag?.let { json.put("reminderTag", it) }
-            entity.reminderRepeat?.let { json.put("reminderRepeat", it) }
-            json.put("isReminderDone", entity.isReminderDone)
-            json.put("isLocked", entity.isLocked)
-            json.put("isPinned", entity.isPinned)
-            (json.toString() as String?) ?: "{}"
-        } catch (_: Throwable) {
-            "{}"
+            fileStorage.deleteFile(path)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            VaultLogger.w("PlainNotesRepository", "Attachment cleanup could not finish")
         }
     }
 

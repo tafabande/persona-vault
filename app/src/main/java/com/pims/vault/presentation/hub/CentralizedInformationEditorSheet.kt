@@ -3,11 +3,6 @@ package com.pims.vault.presentation.hub
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,47 +17,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MedicalServices
-import androidx.compose.material.icons.filled.Medication
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -75,16 +40,22 @@ import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.pims.vault.core.model.AllergySeverity
 import com.pims.vault.presentation.ui.components.InternationalPhoneInput
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaConfirmationDialog
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.core.domain.SemanticFieldRecognizer.CanonicalField
+import com.pims.vault.core.model.InformationCategory
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.components.PersonaDropdownSelector
 import com.pims.vault.presentation.ui.components.PersonaFormSection
 import com.pims.vault.presentation.ui.components.PersonaTextInput
@@ -169,7 +140,8 @@ data class EditableSocial(
 data class EditableCustomField(
     val id: String = UUID.randomUUID().toString(),
     var label: String = "",
-    var value: String = ""
+    var value: String = "",
+    val category: InformationCategory = InformationCategory.OTHER
 )
 
 private val EMAIL_VALIDATION_PATTERN = Regex("^[A-Za-z0-9+._-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
@@ -178,13 +150,13 @@ private fun isValidEmailAddress(raw: String): Boolean =
     EMAIL_VALIDATION_PATTERN.matches(raw.trim())
 
 enum class SectionFacet(val label: String, val icon: ImageVector) {
-    ALLERGIES("Allergies", Icons.Default.Warning),
-    CONDITIONS("Medical Conditions", Icons.Default.MedicalServices),
-    MEDICATIONS("Medications", Icons.Default.Medication),
-    EDUCATION("Education", Icons.Default.School),
-    WORK("Work Experience", Icons.Default.Work),
-    SOCIAL("Social Handles", Icons.Default.Share),
-    CUSTOM_FIELD("Custom Field", Icons.Default.Bookmark)
+    ALLERGIES("Allergies", PersonaIcons.Warning),
+    CONDITIONS("Medical Conditions", PersonaIcons.MedicalServices),
+    MEDICATIONS("Medications", PersonaIcons.Medication),
+    EDUCATION("Education", PersonaIcons.Education),
+    WORK("Work Experience", PersonaIcons.Work),
+    SOCIAL("Social Handles", PersonaIcons.Share),
+    CUSTOM_FIELD("Custom Field", PersonaIcons.Bookmark)
 }
 
 /**
@@ -192,8 +164,7 @@ enum class SectionFacet(val label: String, val icon: ImageVector) {
  *
  * Unified single-pane multi-section editor.
  * Opens automatically on the Identity module with multi-phone, multi-email, and multi-address
- * inputs. Contains an "+ Add Section" button allowing the user to seamlessly append allergies,
- * medications, education, work, and custom fields on the fly without bouncing between separate dialogs.
+ * inputs. Add information captures one entry and opens the relevant section when it needs more details.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -275,7 +246,7 @@ fun CentralizedInformationEditorSheet(
     val socials = remember { mutableStateListOf<EditableSocial>() }
     val customFields = remember { mutableStateListOf<EditableCustomField>() }
 
-    var showFacetChooser by remember { mutableStateOf(false) }
+    var showAddInformation by remember { mutableStateOf(false) }
     var showDiscardConfirmation by remember { mutableStateOf(false) }
     var attemptedSave by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
@@ -313,13 +284,10 @@ fun CentralizedInformationEditorSheet(
     val hasInvalidEntries = phones.any { it.number.isNotBlank() && !isValidInternationalPhone(it.number) } ||
             emails.any { it.address.isNotBlank() && !isValidEmailAddress(it.address) }
 
-    ModalBottomSheet(
+    PersonaSheet(
         onDismissRequest = requestDismiss,
         sheetState = guardedSheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = PimsRadius.modal, topEnd = PimsRadius.modal),
-        dragHandle = null
+        showDragHandle = false
     ) {
         Column(
             modifier = Modifier
@@ -343,9 +311,7 @@ fun CentralizedInformationEditorSheet(
                     )
                     if (isDirty) Text("Unsaved changes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = requestDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
-                }
+                PersonaIconAction(PersonaIcons.Close, "Close", requestDismiss, enabled = !isSaving)
             }
 
             // Scrollable Content
@@ -364,7 +330,7 @@ fun CentralizedInformationEditorSheet(
                 item {
                     PersonaFormSection(
                         title = "About you",
-                        icon = Icons.Default.Person
+                        icon = PersonaIcons.Me
                     ) {
                         PersonaTextInput(
                             value = fullName,
@@ -393,20 +359,17 @@ fun CentralizedInformationEditorSheet(
                             placeholder = "e.g. 9801015009088"
                         )
 
-                        // ID Photo Attach Button
-                        OutlinedButton(
+                        PersonaAction(
+                            label = when {
+                                selectedPhotoUri != null -> "Change selected ID photo"
+                                !initialIdPhotoPath.isNullOrBlank() -> "Change ID photo"
+                                else -> "Attach ID photo"
+                            },
                             onClick = { photoPickerLauncher.launch("image/*") },
-                            shape = RoundedCornerShape(16.dp),
+                            style = PersonaActionStyle.Quiet,
+                            icon = PersonaIcons.Photo,
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (selectedPhotoUri != null) "✓ ID Photo Attached"
-                                else if (!initialIdPhotoPath.isNullOrBlank()) "Change Attached ID Photo"
-                                else "Attach ID Card / Passport Photo"
-                            )
-                        }
+                        )
                     }
                 }
 
@@ -414,16 +377,7 @@ fun CentralizedInformationEditorSheet(
                 item {
                     PersonaFormSection(
                         title = "Phone Numbers",
-                        icon = Icons.Default.Phone,
-                        headerAction = {
-                            SectionAddIconButton(
-                                contentDescription = "Add another phone number",
-                                onClick = {
-                                    haptics.light()
-                                    phones.add(EditablePhone(label = "Mobile", isPrimary = phones.none { it.isPrimary }))
-                                }
-                            )
-                        }
+                        icon = PersonaIcons.PhoneOutlined
                     ) {
                         phones.forEachIndexed { index, item ->
                             val isInvalid = item.number.isNotBlank() && !isValidInternationalPhone(item.number) &&
@@ -445,15 +399,10 @@ fun CentralizedInformationEditorSheet(
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.primary
                                         )
-                                        IconButton(
-                                            onClick = {
-                                                haptics.light()
-                                                phones.removeAt(index)
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                                        }
+                                        PersonaIconAction(PersonaIcons.DeleteOutline, "Remove phone number", {
+                                            haptics.light()
+                                            phones.removeAt(index)
+                                        })
                                     }
                                 }
 
@@ -507,18 +456,16 @@ fun CentralizedInformationEditorSheet(
                         }
 
                         // Add Another Phone Button
-                        OutlinedButton(
+                        PersonaAction(
+                            label = "Add number",
                             onClick = {
                                 haptics.light()
                                 phones.add(EditablePhone(label = "Mobile", isPrimary = phones.none { it.isPrimary }))
                             },
-                            shape = RoundedCornerShape(16.dp),
+                            style = PersonaActionStyle.Quiet,
+                            icon = PersonaIcons.Add,
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Add Another Phone Number")
-                        }
+                        )
                     }
                 }
 
@@ -526,16 +473,7 @@ fun CentralizedInformationEditorSheet(
                 item {
                     PersonaFormSection(
                         title = "Email Addresses",
-                        icon = Icons.Default.Email,
-                        headerAction = {
-                            SectionAddIconButton(
-                                contentDescription = "Add another email address",
-                                onClick = {
-                                    haptics.light()
-                                    emails.add(EditableEmail(label = "Work", isPrimary = emails.none { it.isPrimary }))
-                                }
-                            )
-                        }
+                        icon = PersonaIcons.Email
                     ) {
                         emails.forEachIndexed { index, item ->
                             val isInvalid = item.address.isNotBlank() && !isValidEmailAddress(item.address) &&
@@ -557,15 +495,10 @@ fun CentralizedInformationEditorSheet(
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.primary
                                         )
-                                        IconButton(
-                                            onClick = {
-                                                haptics.light()
-                                                emails.removeAt(index)
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                                        }
+                                        PersonaIconAction(PersonaIcons.DeleteOutline, "Remove email address", {
+                                            haptics.light()
+                                            emails.removeAt(index)
+                                        })
                                     }
                                 }
 
@@ -621,18 +554,16 @@ fun CentralizedInformationEditorSheet(
                         }
 
                         // Add Another Email Button
-                        OutlinedButton(
+                        PersonaAction(
+                            label = "Add email",
                             onClick = {
                                 haptics.light()
                                 emails.add(EditableEmail(label = "Work", isPrimary = emails.none { it.isPrimary }))
                             },
-                            shape = RoundedCornerShape(16.dp),
+                            style = PersonaActionStyle.Quiet,
+                            icon = PersonaIcons.Add,
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Add Another Email Address")
-                        }
+                        )
                     }
                 }
 
@@ -640,16 +571,7 @@ fun CentralizedInformationEditorSheet(
                 item {
                     PersonaFormSection(
                         title = "Physical Addresses",
-                        icon = Icons.Default.Home,
-                        headerAction = {
-                            SectionAddIconButton(
-                                contentDescription = "Add another address",
-                                onClick = {
-                                    haptics.light()
-                                    addresses.add(EditableAddress(label = "Work"))
-                                }
-                            )
-                        }
+                        icon = PersonaIcons.Home
                     ) {
                         addresses.forEachIndexed { index, item ->
                             Column(
@@ -669,15 +591,10 @@ fun CentralizedInformationEditorSheet(
                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.primary
                                         )
-                                        IconButton(
-                                            onClick = {
-                                                haptics.light()
-                                                addresses.removeAt(index)
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                                        }
+                                        PersonaIconAction(PersonaIcons.DeleteOutline, "Remove address", {
+                                            haptics.light()
+                                            addresses.removeAt(index)
+                                        })
                                     }
                                 }
 
@@ -734,18 +651,16 @@ fun CentralizedInformationEditorSheet(
                         }
 
                         // Add Another Address Button
-                        OutlinedButton(
+                        PersonaAction(
+                            label = "Add address",
                             onClick = {
                                 haptics.light()
                                 addresses.add(EditableAddress(label = "Work"))
                             },
-                            shape = RoundedCornerShape(16.dp),
+                            style = PersonaActionStyle.Quiet,
+                            icon = PersonaIcons.Add,
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Add Another Address")
-                        }
+                        )
                     }
                 }
 
@@ -754,7 +669,7 @@ fun CentralizedInformationEditorSheet(
                     item {
                         PersonaFormSection(
                             title = "Allergies",
-                            icon = Icons.Default.Warning
+                            icon = PersonaIcons.Warning
                         ) {
                             allergies.forEachIndexed { i, allergy ->
                                 Surface(
@@ -770,9 +685,7 @@ fun CentralizedInformationEditorSheet(
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Text("Allergy #${i + 1}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                            IconButton(onClick = { allergies.removeAt(i) }, modifier = Modifier.size(20.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-                                            }
+                                            PersonaIconAction(PersonaIcons.DeleteOutline, "Remove allergy", { allergies.removeAt(i) })
                                         }
                                         PersonaTextInput(
                                             value = allergy.allergen,
@@ -797,15 +710,13 @@ fun CentralizedInformationEditorSheet(
                                     }
                                 }
                             }
-                            OutlinedButton(
+                            PersonaAction(
+                                label = "Add allergy",
                                 onClick = { allergies.add(EditableAllergy()) },
-                                shape = RoundedCornerShape(16.dp),
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.Add,
                                 modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Allergy")
-                            }
+                            )
                         }
                     }
                 }
@@ -815,7 +726,7 @@ fun CentralizedInformationEditorSheet(
                     item {
                         PersonaFormSection(
                             title = "Medical Conditions",
-                            icon = Icons.Default.MedicalServices
+                            icon = PersonaIcons.MedicalServices
                         ) {
                             conditions.forEachIndexed { i, cond ->
                                 Surface(
@@ -831,9 +742,7 @@ fun CentralizedInformationEditorSheet(
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Text("Condition #${i + 1}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                            IconButton(onClick = { conditions.removeAt(i) }, modifier = Modifier.size(20.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-                                            }
+                                            PersonaIconAction(PersonaIcons.DeleteOutline, "Remove condition", { conditions.removeAt(i) })
                                         }
                                         PersonaTextInput(
                                             value = cond.name,
@@ -849,15 +758,13 @@ fun CentralizedInformationEditorSheet(
                                     }
                                 }
                             }
-                            OutlinedButton(
+                            PersonaAction(
+                                label = "Add medical condition",
                                 onClick = { conditions.add(EditableCondition()) },
-                                shape = RoundedCornerShape(16.dp),
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.Add,
                                 modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Medical Condition")
-                            }
+                            )
                         }
                     }
                 }
@@ -867,7 +774,7 @@ fun CentralizedInformationEditorSheet(
                     item {
                         PersonaFormSection(
                             title = "Medications",
-                            icon = Icons.Default.Medication
+                            icon = PersonaIcons.Medication
                         ) {
                             medications.forEachIndexed { i, med ->
                                 Surface(
@@ -883,9 +790,7 @@ fun CentralizedInformationEditorSheet(
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Text("Medication #${i + 1}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                            IconButton(onClick = { medications.removeAt(i) }, modifier = Modifier.size(20.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-                                            }
+                                            PersonaIconAction(PersonaIcons.DeleteOutline, "Remove medication", { medications.removeAt(i) })
                                         }
                                         PersonaTextInput(
                                             value = med.name,
@@ -909,15 +814,13 @@ fun CentralizedInformationEditorSheet(
                                     }
                                 }
                             }
-                            OutlinedButton(
+                            PersonaAction(
+                                label = "Add medication",
                                 onClick = { medications.add(EditableMedication()) },
-                                shape = RoundedCornerShape(16.dp),
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.Add,
                                 modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Medication")
-                            }
+                            )
                         }
                     }
                 }
@@ -927,7 +830,7 @@ fun CentralizedInformationEditorSheet(
                     item {
                         PersonaFormSection(
                             title = "Education & Qualifications",
-                            icon = Icons.Default.School
+                            icon = PersonaIcons.Education
                         ) {
                             educationList.forEachIndexed { i, edu ->
                                 Surface(
@@ -943,9 +846,7 @@ fun CentralizedInformationEditorSheet(
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Text("Qualification #${i + 1}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                            IconButton(onClick = { educationList.removeAt(i) }, modifier = Modifier.size(20.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-                                            }
+                                            PersonaIconAction(PersonaIcons.DeleteOutline, "Remove qualification", { educationList.removeAt(i) })
                                         }
                                         PersonaTextInput(
                                             value = edu.institution,
@@ -969,15 +870,13 @@ fun CentralizedInformationEditorSheet(
                                     }
                                 }
                             }
-                            OutlinedButton(
+                            PersonaAction(
+                                label = "Add qualification",
                                 onClick = { educationList.add(EditableEducation()) },
-                                shape = RoundedCornerShape(16.dp),
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.Add,
                                 modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Degree / School")
-                            }
+                            )
                         }
                     }
                 }
@@ -987,7 +886,7 @@ fun CentralizedInformationEditorSheet(
                     item {
                         PersonaFormSection(
                             title = "Work Experience",
-                            icon = Icons.Default.Work
+                            icon = PersonaIcons.Work
                         ) {
                             workList.forEachIndexed { i, work ->
                                 Surface(
@@ -1003,9 +902,7 @@ fun CentralizedInformationEditorSheet(
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Text("Job #${i + 1}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                            IconButton(onClick = { workList.removeAt(i) }, modifier = Modifier.size(20.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-                                            }
+                                            PersonaIconAction(PersonaIcons.DeleteOutline, "Remove experience", { workList.removeAt(i) })
                                         }
                                         PersonaTextInput(
                                             value = work.company,
@@ -1034,15 +931,13 @@ fun CentralizedInformationEditorSheet(
                                     }
                                 }
                             }
-                            OutlinedButton(
+                            PersonaAction(
+                                label = "Add experience",
                                 onClick = { workList.add(EditableWork()) },
-                                shape = RoundedCornerShape(16.dp),
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.Add,
                                 modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Work Experience")
-                            }
+                            )
                         }
                     }
                 }
@@ -1052,7 +947,7 @@ fun CentralizedInformationEditorSheet(
                     item {
                         PersonaFormSection(
                             title = "Social Profiles & Handles",
-                            icon = Icons.Default.Share
+                            icon = PersonaIcons.Share
                         ) {
                             socials.forEachIndexed { i, s ->
                                 Surface(
@@ -1075,9 +970,7 @@ fun CentralizedInformationEditorSheet(
                                                 modifier = Modifier.weight(1f)
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            IconButton(onClick = { socials.removeAt(i) }, modifier = Modifier.size(24.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-                                            }
+                                            PersonaIconAction(PersonaIcons.DeleteOutline, "Remove social account", { socials.removeAt(i) })
                                         }
                                         PersonaTextInput(
                                             value = s.usernameOrUrl,
@@ -1088,15 +981,13 @@ fun CentralizedInformationEditorSheet(
                                     }
                                 }
                             }
-                            OutlinedButton(
+                            PersonaAction(
+                                label = "Add social account",
                                 onClick = { socials.add(EditableSocial()) },
-                                shape = RoundedCornerShape(16.dp),
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.Add,
                                 modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Social Account")
-                            }
+                            )
                         }
                     }
                 }
@@ -1106,7 +997,7 @@ fun CentralizedInformationEditorSheet(
                     item {
                         PersonaFormSection(
                             title = "Custom Notes & Fields",
-                            icon = Icons.Default.Bookmark
+                            icon = PersonaIcons.Bookmark
                         ) {
                             customFields.forEachIndexed { i, cf ->
                                 Surface(
@@ -1121,32 +1012,21 @@ fun CentralizedInformationEditorSheet(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Text("Custom Field #${i + 1}", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                            IconButton(onClick = { customFields.removeAt(i) }, modifier = Modifier.size(20.dp)) {
-                                                Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp))
-                                            }
+                                            Text(cf.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                                            PersonaIconAction(PersonaIcons.DeleteOutline, "Remove custom field", { customFields.removeAt(i) })
                                         }
                                         PersonaTextInput(
                                             value = cf.label,
                                             onValueChange = { customFields[i] = cf.copy(label = it) },
-                                            label = "Field Label (e.g. Blood Donor ID, Shoe Size)"
+                                            label = "Title"
                                         )
                                         PersonaTextInput(
                                             value = cf.value,
                                             onValueChange = { customFields[i] = cf.copy(value = it) },
-                                            label = "Field Value"
+                                            label = "Value"
                                         )
                                     }
                                 }
-                            }
-                            OutlinedButton(
-                                onClick = { customFields.add(EditableCustomField()) },
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Custom Field")
                             }
                         }
                     }
@@ -1154,38 +1034,14 @@ fun CentralizedInformationEditorSheet(
 
                 // 12. PROMINENT "+ ADD SECTION" BUTTON
                 item {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
-                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                haptics.light()
-                                showFacetChooser = true
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 14.dp, horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "+ Add Section (Allergies, Work, Education, Socials...)",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(18.dp))
+                    PersonaAction(
+                        label = "Add information",
+                        onClick = { showAddInformation = true },
+                        style = PersonaActionStyle.Quiet,
+                        icon = PersonaIcons.Add,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(PimsSpacing.m))
                 }
             }
 
@@ -1198,7 +1054,7 @@ fun CentralizedInformationEditorSheet(
             ) {
                 if (attemptedSave && hasInvalidEntries) {
                     Text(
-                        text = "⚠️ Fix the invalid phone number(s) or email address(es) above before saving.",
+                        text = "Correct the highlighted phone numbers or email addresses before saving.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp)
@@ -1211,32 +1067,23 @@ fun CentralizedInformationEditorSheet(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FilledTonalButton(
+                    PersonaAction(
+                        label = "Cancel",
                         onClick = requestDismiss,
                         enabled = !isSaving,
-                        shape = RoundedCornerShape(PimsRadius.primaryAction),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        border = null,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                    ) {
-                        Text(
-                            text = "Cancel",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
-                        )
-                    }
+                        style = PersonaActionStyle.Quiet,
+                        modifier = Modifier.weight(1f)
+                    )
 
-                    Button(
-                        onClick = {
+                    PersonaAction(
+                        label = if (isSaving) "Saving…" else "Save changes",
+                        icon = if (isSaving) null else PersonaIcons.Check,
+                        onClick = save@{
                             attemptedSave = true
-                            if (!isDirty || isSaving) return@Button
+                            if (!isDirty || isSaving) return@save
                             if (hasInvalidEntries) {
                                 haptics.light()
-                                return@Button
+                                return@save
                             }
                             isSaving = true
                             saveError = null
@@ -1268,26 +1115,10 @@ fun CentralizedInformationEditorSheet(
                             }
                             }
                         },
-                        enabled = isDirty && !isSaving,
-                        shape = RoundedCornerShape(PimsRadius.primaryAction),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
-                        ),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isSaving) "Saving…" else "Save Changes",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                        )
-                    }
+                        enabled = isDirty,
+                        inProgress = isSaving,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
                 saveError?.let { message ->
                     Text(
@@ -1303,132 +1134,74 @@ fun CentralizedInformationEditorSheet(
     }
 
     if (showDiscardConfirmation) {
-        AlertDialog(
+        PersonaConfirmationDialog(
             onDismissRequest = { showDiscardConfirmation = false },
-            title = { Text("Discard changes?") },
-            text = { Text("Your edits have not been saved.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDiscardConfirmation = false
-                    onDismissRequest()
-                }) { Text("Discard") }
+            title = "Discard changes?",
+            confirmText = "Discard",
+            onConfirm = {
+                showDiscardConfirmation = false
+                onDismissRequest()
             },
-            dismissButton = {
-                TextButton(onClick = { showDiscardConfirmation = false }) { Text("Keep editing") }
-            },
-            shape = RoundedCornerShape(PimsRadius.modal)
+            dismissText = "Keep editing",
+            isDestructive = true
         )
     }
 
-    // Modal Chooser for "+ Add Section"
-    if (showFacetChooser) {
-        ModalBottomSheet(
-            onDismissRequest = { showFacetChooser = false },
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = pimsPageGutter())
-                    .padding(bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Add Section",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.2).sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                SectionFacet.values().forEach { facet ->
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                haptics.selection()
-                                if (!activeFacets.contains(facet)) {
-                                    activeFacets.add(facet)
-                                    // Seed default first item
-                                    when (facet) {
-                                        SectionFacet.ALLERGIES -> if (allergies.isEmpty()) allergies.add(EditableAllergy())
-                                        SectionFacet.CONDITIONS -> if (conditions.isEmpty()) conditions.add(EditableCondition())
-                                        SectionFacet.MEDICATIONS -> if (medications.isEmpty()) medications.add(EditableMedication())
-                                        SectionFacet.EDUCATION -> if (educationList.isEmpty()) educationList.add(EditableEducation())
-                                        SectionFacet.WORK -> if (workList.isEmpty()) workList.add(EditableWork())
-                                        SectionFacet.SOCIAL -> if (socials.isEmpty()) socials.add(EditableSocial())
-                                        SectionFacet.CUSTOM_FIELD -> if (customFields.isEmpty()) customFields.add(EditableCustomField())
-                                    }
-                                }
-                                showFacetChooser = false
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = facet.icon,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-
-                            Text(
-                                text = facet.label,
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            if (activeFacets.contains(facet)) {
-                                Text(
-                                    text = "Added",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
+    if (showAddInformation) {
+        AddInformationEntrySheet(onDismiss = { showAddInformation = false }) { title, value, category, field ->
+            val facet = when (field) {
+                CanonicalField.PHONE_NUMBER -> {
+                    val empty = phones.indexOfFirst { it.number.isBlank() }
+                    if (empty >= 0) phones[empty] = phones[empty].copy(number = value)
+                    else phones.add(EditablePhone(number = value))
+                    null
+                }
+                CanonicalField.EMAIL_ADDRESS -> {
+                    val empty = emails.indexOfFirst { it.address.isBlank() }
+                    if (empty >= 0) emails[empty] = emails[empty].copy(address = value)
+                    else emails.add(EditableEmail(address = value))
+                    null
+                }
+                CanonicalField.RESIDENTIAL_ADDRESS -> {
+                    val empty = addresses.indexOfFirst { it.street1.isBlank() && it.city.isBlank() }
+                    if (empty >= 0) addresses[empty] = addresses[empty].copy(street1 = value)
+                    else addresses.add(EditableAddress(street1 = value))
+                    null
+                }
+                CanonicalField.ALLERGY -> {
+                    allergies.add(EditableAllergy(allergen = value))
+                    SectionFacet.ALLERGIES
+                }
+                CanonicalField.MEDICAL_CONDITION -> {
+                    conditions.add(EditableCondition(name = value))
+                    SectionFacet.CONDITIONS
+                }
+                CanonicalField.MEDICATION -> {
+                    medications.add(EditableMedication(name = value))
+                    SectionFacet.MEDICATIONS
+                }
+                CanonicalField.EDUCATION, CanonicalField.QUALIFICATION -> {
+                    educationList.add(
+                        if (field == CanonicalField.EDUCATION) EditableEducation(institution = value)
+                        else EditableEducation(qualification = value)
+                    )
+                    SectionFacet.EDUCATION
+                }
+                CanonicalField.EMPLOYMENT -> {
+                    workList.add(EditableWork(company = value))
+                    SectionFacet.WORK
+                }
+                CanonicalField.SOCIAL_PROFILE -> {
+                    socials.add(EditableSocial(platform = "Other", usernameOrUrl = value))
+                    SectionFacet.SOCIAL
+                }
+                else -> {
+                    customFields.add(EditableCustomField(label = title, value = value, category = category))
+                    SectionFacet.CUSTOM_FIELD
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun SectionAddIconButton(
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = Modifier
-            .size(26.dp)
-            .tactilePress(onClick = onClick)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = contentDescription,
-                modifier = Modifier.size(16.dp)
-            )
+            if (facet != null && facet !in activeFacets) activeFacets.add(facet)
+            showAddInformation = false
         }
     }
 }

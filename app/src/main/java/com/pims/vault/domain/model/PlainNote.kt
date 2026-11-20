@@ -1,5 +1,22 @@
 package com.pims.vault.domain.model
 
+import java.text.Normalizer
+import java.util.Locale
+
+private val authoredHashtag = Regex("""(?:^|[\s(\[{])#([\p{L}\p{M}\p{N}_]+)""")
+private val tagSpaces = Regex("\\s+")
+
+internal fun normalizedNoteTag(text: String): String = Normalizer.normalize(
+    text.trim().removePrefix("#").lowercase(Locale.ROOT),
+    Normalizer.Form.NFC
+).replace(tagSpaces, "_")
+
+internal fun noteHashtags(title: String, content: String): List<String> = authoredHashtag
+    .findAll("$title $content")
+    .map { it.groupValues[1] }
+    .distinctBy(::normalizedNoteTag)
+    .toList()
+
 data class NoteAttachment(
     val id: String,
     val noteId: String,
@@ -32,11 +49,6 @@ data class PlainNote(
             val fromReminder = reminderTag?.split(",")
                 ?.map { it.trim().removePrefix("#") }
                 ?.filter { it.isNotEmpty() } ?: emptyList()
-            val hashtagRegex = Regex("""#([A-Za-z0-9_]+)""")
-            val fromContent = hashtagRegex.findAll("$title $content")
-                .map { it.groupValues[1].trim() }
-                .filter { it.isNotEmpty() }
-                .toList()
-            return (fromReminder + fromContent).distinct()
+            return (fromReminder + noteHashtags(title, content)).distinctBy(::normalizedNoteTag)
         }
 }

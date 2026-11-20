@@ -1,10 +1,13 @@
 package com.pims.vault.presentation
 
+import android.app.KeyguardManager
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalView
@@ -26,7 +29,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,14 +37,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,6 +64,12 @@ import com.pims.vault.core.crypto.KeySecurityLevel
 import com.pims.vault.core.crypto.SessionState
 import com.pims.vault.core.session.AccountMode
 import com.pims.vault.core.session.AccountModeManager
+import com.pims.vault.core.security.PinSecurityManager
+import com.pims.vault.presentation.security.PinChallengeDialog
+import com.pims.vault.presentation.ui.components.PimsButton
+import com.pims.vault.presentation.ui.theme.PersonaIcon
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PersonaIconSize
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.theme.PimsVaultTheme
@@ -107,9 +108,11 @@ class MainViewModel @Inject constructor(
     private val personDao: PersonDao,
     private val contactDao: ContactDao,
     private val authenticationService: AuthenticationService,
-    private val rememberedAccountManager: RememberedAccountManager
+    private val rememberedAccountManager: RememberedAccountManager,
+    private val pinSecurityManager: PinSecurityManager
 ) : ViewModel() {
     val sessionState: StateFlow<SessionState> = sessionManager.sessionState
+    val boundVaultUid: StateFlow<String?> = rememberedAccountManager.boundVaultUid
     val accountMode: StateFlow<AccountMode> = accountModeManager.accountMode
     val themeMode: StateFlow<ThemeMode> = themeManager.themeMode
     val currentMood: StateFlow<PersonaMood> = moodManager.currentMood
@@ -129,9 +132,30 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun onAuthSuccess() {
+    private var initialEntryChecked = false
+
+    fun restoreUnconfiguredSession() {
+        if (initialEntryChecked) return
+        val accountReady = when (accountMode.value) {
+            AccountMode.CLOUD_SYNCED -> authUser.value != null
+            AccountMode.LOCAL_ONLY -> true
+            else -> false
+        }
+        if (!accountReady || !hasCompletedInitialProfile.value) return
+        initialEntryChecked = true
+        onAccountFlowCompleted()
+    }
+
+    fun onAccountFlowCompleted() {
+        if (!pinSecurityManager.hasPin()) onLocalAuthenticationVerified()
+    }
+
+    fun onLocalAuthenticationVerified() {
         viewModelScope.launch {
-            sessionManager.onAuthenticationSuccess()
+            if (sessionState.value is SessionState.Unlocked) return@launch
+            sessionManager.onAuthenticationSuccess(
+                timeoutMs = pinSecurityManager.sessionTimeoutMinutes.value.coerceIn(5, 60) * 60_000L
+            )
         }
     }
 
@@ -150,13 +174,13 @@ class MainViewModel @Inject constructor(
     fun startLocalMode() {
         accountModeManager.setLocalOnlyMode()
         accountModeManager.completeInitialProfile()
-        onAuthSuccess()
+        onAccountFlowCompleted()
     }
 
     fun startCloudMode(email: String = "user@persona.vault") {
         accountModeManager.upgradeToCloudAccount(email)
         accountModeManager.completeInitialProfile()
-        onAuthSuccess()
+        onAccountFlowCompleted()
     }
 
     fun saveInitialProfile(
@@ -205,7 +229,7 @@ class MainViewModel @Inject constructor(
             } else {
                 accountModeManager.setLocalOnlyMode()
             }
-            onAuthSuccess()
+            onAccountFlowCompleted()
         }
     }
 
@@ -248,6 +272,14 @@ class MainViewModel @Inject constructor(
 class MainActivity : FragmentActivity() {
 
     @Inject lateinit var keySecurityManager: KeySecurityManager
+    @Inject lateinit var pinSecurityManager: PinSecurityManager
+
+    private var deviceCredentialCallback: ((Boolean) -> Unit)? = null
+    private val deviceCredentialLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val callback = deviceCredentialCallback
+        deviceCredentialCallback = null
+        callback?.invoke(result.resultCode == RESULT_OK)
+    }
 
     companion object {
         const val EXTRA_QUICK_ACTION = "com.pims.vault.action.QUICK_ACTION"
@@ -255,6 +287,7 @@ class MainActivity : FragmentActivity() {
         const val ACTION_PEOPLE = "PEOPLE"
         const val ACTION_VAULT = "VAULT"
         const val ACTION_NOTES = "NOTES"
+        const val DEVICE_AUTH_UNAVAILABLE = "Set up your device screen lock to verify your identity."
     }
 
     private val viewModel: MainViewModel by viewModels()
@@ -264,6 +297,8 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) setRecentsScreenshotEnabled(false)
         intent?.getStringExtra(com.pims.vault.core.reminder.NoteReminderReceiver.EXTRA_OPEN_NOTE_ID)?.let {
             pendingOpenNoteIdState.value = it
         }
@@ -294,6 +329,7 @@ class MainActivity : FragmentActivity() {
                 }
                 var showSplash by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
                 val authUser by viewModel.authUser.collectAsState()
+                val boundVaultUid by viewModel.boundVaultUid.collectAsState()
                 val accountMode by viewModel.accountMode.collectAsState()
                 val hasCompletedWalkthrough by viewModel.hasCompletedWalkthrough.collectAsState()
                 val hasCompletedInitialProfile by viewModel.hasCompletedInitialProfile.collectAsState()
@@ -303,16 +339,14 @@ class MainActivity : FragmentActivity() {
 
                 LaunchedEffect(Unit) {
                     delay(800L)
-                    val isReadyToUnlock = (accountMode == AccountMode.CLOUD_SYNCED && authUser != null && hasCompletedInitialProfile) ||
-                            (accountMode == AccountMode.LOCAL_ONLY && hasCompletedInitialProfile)
-                    if (isReadyToUnlock) {
-                        viewModel.onAuthSuccess()
-                    }
                     showSplash = false
                 }
 
                 val reducedMotion = LocalReducedMotion.current
                 val isExplicitSignIn by viewModel.isExplicitSignInFlow.collectAsState()
+                LaunchedEffect(showSplash, accountMode, authUser?.uid, hasCompletedInitialProfile, isExplicitSignIn) {
+                    if (!showSplash && !isExplicitSignIn) viewModel.restoreUnconfiguredSession()
+                }
                 Box(modifier = Modifier.fillMaxSize()) {
                     AnimatedContent(
                     targetState = when {
@@ -364,7 +398,7 @@ class MainActivity : FragmentActivity() {
                             LaunchedEffect(Unit) {
                                 accountsViewModel.signInSuccessEvent.collect {
                                     viewModel.closeSignIn()
-                                    viewModel.onAuthSuccess()
+                                    viewModel.onAccountFlowCompleted()
                                 }
                             }
 
@@ -412,11 +446,14 @@ class MainActivity : FragmentActivity() {
 
                             when (val curState = sessionState) {
                                 is SessionState.Locked -> {
-                                    val curContext = androidx.compose.ui.platform.LocalContext.current
-                                    val pinSecurityManager = remember { com.pims.vault.core.security.PinSecurityManager(curContext) }
                                     LockScreen(
-                                        onUnlockClicked = { showBiometricPrompt() },
-                                        onPasswordUnlockSuccess = { viewModel.onAuthSuccess() },
+                                        onUnlockClicked = { onError ->
+                                            requestBiometricAuthentication(
+                                                onSuccess = viewModel::onLocalAuthenticationVerified,
+                                                onError = onError
+                                            )
+                                        },
+                                        onPinVerified = viewModel::onLocalAuthenticationVerified,
                                         pinSecurityManager = pinSecurityManager
                                     )
                                 }
@@ -426,6 +463,8 @@ class MainActivity : FragmentActivity() {
                                 is SessionState.Unlocked -> {
                                     PersonaDashboardScreen(
                                         securityLevel = curState.securityLevel,
+                                        pinSecurityManager = pinSecurityManager,
+                                        boundAccountUid = boundVaultUid?.takeIf { it == authUser?.uid },
                                         initialOpenNoteId = openNoteId,
                                         initialQuickAction = quickAction,
                                         onQuickActionHandled = { pendingQuickActionState.value = null },
@@ -475,16 +514,23 @@ class MainActivity : FragmentActivity() {
 
     fun requestBiometricAuthentication(
         title: String = "Unlock Persona Vault",
-        subtitle: String = "Authenticate with Biometrics or Device PIN",
+        subtitle: String = "Verify your identity with your device screen lock.",
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
         val biometricManager = androidx.biometric.BiometricManager.from(this)
-        val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val credential = androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val strong = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
+        val allowBiometrics = pinSecurityManager.isBiometricEnabled.value
+        val legacy = Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+        val authenticators = if (legacy) strong else credential or (if (allowBiometrics) strong else 0)
         val canAuth = biometricManager.canAuthenticate(authenticators)
+        if (legacy && (!allowBiometrics || canAuth != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS)) {
+            requestLegacyDeviceCredential(title, subtitle, onSuccess, onError)
+            return
+        }
         if (canAuth != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
-            onError("BIOMETRICS_UNAVAILABLE")
+            onError(DEVICE_AUTH_UNAVAILABLE)
             return
         }
 
@@ -500,23 +546,47 @@ class MainActivity : FragmentActivity() {
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    onError(errString.toString())
-                }
-
-                override fun onAuthenticationFailed() {
-                    super.onAuthenticationFailed()
-                    onError("Biometric authentication failed")
+                    if (legacy && errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                        requestLegacyDeviceCredential(title, subtitle, onSuccess, onError)
+                    } else {
+                        onError(errString.toString())
+                    }
                 }
             }
         )
 
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+        val builder = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
             .setAllowedAuthenticators(authenticators)
-            .build()
 
-        prompt.authenticate(promptInfo)
+        if (legacy) builder.setNegativeButtonText("Use device screen lock")
+        prompt.authenticate(builder.build())
+    }
+
+    @Suppress("DEPRECATION")
+    private fun requestLegacyDeviceCredential(
+        title: String,
+        subtitle: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        if (deviceCredentialCallback != null) return
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        val request = keyguard?.createConfirmDeviceCredentialIntent(title, subtitle)
+        if (request == null) {
+            onError(DEVICE_AUTH_UNAVAILABLE)
+            return
+        }
+        deviceCredentialCallback = { authenticated ->
+            if (authenticated) onSuccess() else onError("Authentication cancelled.")
+        }
+        try {
+            deviceCredentialLauncher.launch(request)
+        } catch (_: android.content.ActivityNotFoundException) {
+            deviceCredentialCallback = null
+            onError(DEVICE_AUTH_UNAVAILABLE)
+        }
     }
 
     private fun requestVaultBiometricAuthentication(
@@ -567,25 +637,20 @@ class MainActivity : FragmentActivity() {
         biometricPrompt.authenticate(promptInfo, cryptoObject)
     }
 
-    private fun showBiometricPrompt() {
-        requestBiometricAuthentication(
-            title = "Unlock Persona Vault",
-            subtitle = "Authenticate with Biometrics or Device PIN",
-            onSuccess = { viewModel.onAuthSuccess() },
-            onError = { /* Session remains locked on LockScreen */ }
-        )
-    }
 }
 
 @Composable
 fun LockScreen(
-    onUnlockClicked: () -> Unit,
-    onPasswordUnlockSuccess: () -> Unit = onUnlockClicked,
-    pinSecurityManager: com.pims.vault.core.security.PinSecurityManager? = null
+    onUnlockClicked: (onError: (String) -> Unit) -> Unit,
+    onPinVerified: () -> Unit,
+    pinSecurityManager: PinSecurityManager
 ) {
-    var showPasswordDialog by remember { mutableStateOf(false) }
-    var passwordInput by remember { mutableStateOf("") }
-    var passwordError by remember { mutableStateOf<String?>(null) }
+    val isPinConfigured by pinSecurityManager.isPinConfigured.collectAsState()
+    val isBiometricEnabled by pinSecurityManager.isBiometricEnabled.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var showPinDialog by remember { mutableStateOf(false) }
+    var deviceAuthPending by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -600,168 +665,62 @@ fun LockScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(20.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
+            PersonaIcon(
+                PersonaIcons.Lock,
+                contentDescription = null,
+                size = PersonaIconSize.Hero,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(PimsDimensions.paddingLarge))
             Text(
                 text = "PERSONA",
                 style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp
             )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "Your private life",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+            Spacer(modifier = Modifier.height(PimsDimensions.paddingExtraLarge))
+            PimsButton(
+                text = if (isBiometricEnabled) "Use biometrics or device screen lock" else "Use device screen lock",
+                onClick = {
+                    deviceAuthPending = true
+                    errorMessage = null
+                    onUnlockClicked { message ->
+                        if (scope.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+                            deviceAuthPending = false
+                            errorMessage = message
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !deviceAuthPending
             )
-
-            Spacer(modifier = Modifier.height(36.dp))
-
-            // Multi-Modal Unlock: Fingerprint / Face / Device PIN
-            Button(
-                onClick = onUnlockClicked,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(imageVector = Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(22.dp))
-                    Text("Unlock with Biometrics or PIN", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
+            if (isPinConfigured) {
+                Spacer(modifier = Modifier.height(PimsDimensions.paddingSmall))
+                PimsButton(
+                    text = "Enter App PIN",
+                    onClick = { showPinDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    isSecondary = true,
+                    enabled = !deviceAuthPending
+                )
             }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Fallback: App PIN
-            androidx.compose.material3.OutlinedButton(
-                onClick = { showPasswordDialog = true },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-            ) {
-                Text("🔢 Enter App PIN Instead", fontWeight = FontWeight.Medium)
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Supported Authenticators Badge Row
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("👆 Fingerprint", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("😊 Face", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("🔢 App PIN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            errorMessage?.let {
+                Spacer(modifier = Modifier.height(PimsDimensions.paddingMedium))
+                Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
             }
         }
     }
 
-    if (showPasswordDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = {
-                showPasswordDialog = false
-                passwordInput = ""
-                passwordError = null
+    if (showPinDialog && isPinConfigured) {
+        PinChallengeDialog(
+            pinSecurityManager = pinSecurityManager,
+            title = "Unlock Persona",
+            subtitle = "Enter your App PIN.",
+            onSuccess = {
+                showPinDialog = false
+                onPinVerified()
             },
-            containerColor = MaterialTheme.colorScheme.surface,
-            textContentColor = MaterialTheme.colorScheme.onSurface,
-            title = { Text("Enter App PIN", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        "Enter your secure App PIN to unlock Persona Vault.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    androidx.compose.material3.OutlinedTextField(
-                        value = passwordInput,
-                        onValueChange = {
-                            if (it.length <= 8 && it.all { ch -> ch.isDigit() }) {
-                                passwordInput = it
-                                passwordError = null
-                            }
-                        },
-                        label = { Text("App PIN") },
-                        isError = passwordError != null,
-                        supportingText = passwordError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword
-                        ),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val input = passwordInput.trim()
-                        if (input.isBlank()) {
-                            passwordError = "PIN cannot be empty"
-                        } else if (pinSecurityManager != null && pinSecurityManager.hasPin()) {
-                            if (pinSecurityManager.verifyPin(input)) {
-                                showPasswordDialog = false
-                                passwordInput = ""
-                                passwordError = null
-                                onPasswordUnlockSuccess()
-                            } else {
-                                passwordError = "Incorrect PIN. Try again."
-                            }
-                        } else {
-                            showPasswordDialog = false
-                            passwordInput = ""
-                            passwordError = null
-                            onPasswordUnlockSuccess()
-                        }
-                    }
-                ) {
-                    Text("Unlock")
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        showPasswordDialog = false
-                        passwordInput = ""
-                        passwordError = null
-                    }
-                ) {
-                    Text("Cancel")
-                }
-            }
+            onDismiss = { showPinDialog = false }
         )
     }
 }

@@ -5,10 +5,18 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
-import com.pims.vault.core.logging.VaultLogger
+import com.pims.vault.core.storage.MAX_ORIGINAL_PHOTO_BYTES
+import com.pims.vault.core.storage.decodePhotoPreview
+import com.pims.vault.core.storage.inspectPhoto
+import com.pims.vault.core.storage.photoExtension
+import com.pims.vault.core.storage.readBoundedBytes
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -22,7 +30,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,30 +45,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Redo
-import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.FormatBold
-import androidx.compose.material.icons.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Tag
-import androidx.compose.material.icons.filled.Title
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.AlertDialog
+import com.pims.vault.presentation.ui.components.PersonaConfirmationDialog
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaIconAction
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -71,7 +58,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -99,9 +85,14 @@ import com.pims.vault.domain.model.NoteAttachment
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.PlainNote
 import com.pims.vault.presentation.ui.components.ux.WarmTooltip
+import com.pims.vault.presentation.ui.theme.PersonaIconBadge
+import com.pims.vault.presentation.ui.theme.PersonaIconSize
 import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PimsControlSize
 import com.pims.vault.presentation.ui.theme.PimsDimensions
 import com.pims.vault.presentation.ui.theme.PimsColors
+import com.pims.vault.presentation.ui.theme.PimsSpacing
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
@@ -116,7 +107,8 @@ fun PlainNoteEditorScreen(
     noteId: String?,
     onBack: () -> Unit,
     viewModel: PlainNotesViewModel = hiltViewModel(),
-    onRequestAuth: ((title: String, subtitle: String, onSuccess: () -> Unit) -> Unit)? = null
+    onRequestAuth: (title: String, subtitle: String, onSuccess: () -> Unit) -> Unit,
+    onSavedLocally: () -> Unit = {}
 ) {
     val haptics = rememberPimsHaptics()
     val feedback = rememberPimsFeedback()
@@ -125,6 +117,20 @@ fun PlainNoteEditorScreen(
 
     val existingNote = remember(noteId, state.notes) {
         state.notes.find { it.id == noteId }
+    }
+    if (noteId != null && existingNote == null) {
+        BackHandler(onBack = onBack)
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (state.isLoading) {
+                    CircularProgressIndicator()
+                } else {
+                    Text(state.error ?: "This note is unavailable.")
+                }
+                PersonaAction("Back", onBack, style = PersonaActionStyle.Text)
+            }
+        }
+        return
     }
 
     var currentNoteId by remember(noteId) { mutableStateOf(noteId) }
@@ -161,10 +167,10 @@ fun PlainNoteEditorScreen(
     var reminderTag by remember(existingNote) { mutableStateOf(existingNote?.reminderTag) }
     var reminderRepeat by remember(existingNote) { mutableStateOf(existingNote?.reminderRepeat) }
     var isReminderDone by remember(existingNote) { mutableStateOf(existingNote?.isReminderDone ?: false) }
-    // Multiple pending attachments: list of (ByteArray, DisplayName)
-    val pendingAttachments = remember { mutableStateListOf<Pair<ByteArray, String>>() }
+    // Encoded source bytes, display name, MIME type.
+    val pendingAttachments = remember { mutableStateListOf<Triple<ByteArray, String, String>>() }
     val deletedAttachmentIds = remember { mutableStateListOf<String>() }
-    val isDirty = title != (existingNote?.title ?: "") ||
+    val isDirty = isUnlocked && (title != (existingNote?.title ?: "") ||
         contentValue.text != (existingNote?.content ?: "") ||
         format != (existingNote?.format ?: NoteFormat.PLAIN) ||
         isLocked != (existingNote?.isLocked ?: false) ||
@@ -172,14 +178,14 @@ fun PlainNoteEditorScreen(
         reminderTag != existingNote?.reminderTag ||
         reminderRepeat != existingNote?.reminderRepeat ||
         isReminderDone != (existingNote?.isReminderDone ?: false) ||
-        pendingAttachments.isNotEmpty() || deletedAttachmentIds.isNotEmpty()
+        pendingAttachments.isNotEmpty() || deletedAttachmentIds.isNotEmpty())
     val requestClose = {
         if (isDirty) showDiscardConfirmation = true else onBack()
     }
     BackHandler(enabled = !isBusy, onBack = requestClose)
 
-    LaunchedEffect(existingNote?.id) {
-        if (existingNote?.isLocked == true && !isUnlocked && onRequestAuth != null) {
+    val unlockNote: () -> Unit = {
+        if (existingNote?.isLocked == true && !isUnlocked) {
             onRequestAuth("Unlock Protected Note", "Verify your identity to open this note") {
                 isUnlocked = true
                 title = existingNote.title
@@ -187,6 +193,7 @@ fun PlainNoteEditorScreen(
             }
         }
     }
+    LaunchedEffect(existingNote?.id, existingNote?.isLocked) { unlockNote() }
     var showReminderDialog by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var previewImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -211,34 +218,35 @@ fun PlainNoteEditorScreen(
         }
     }
 
-    val visualMediaPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        uri?.let {
-            processAndAttachImage(context, it) { bytes, name ->
-                pendingAttachments.add(bytes to name)
+    val attachmentScope = rememberCoroutineScope()
+    fun importAttachment(uri: Uri?, imageOnly: Boolean) {
+        if (uri == null) return
+        attachmentScope.launch {
+            var imported: Triple<ByteArray, String, String>? = null
+            try {
+                withContext(Dispatchers.IO) { imported = readOriginalNoteAttachment(context, uri, imageOnly) }
+                pendingAttachments.add(checkNotNull(imported))
+                imported = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Toast.makeText(context, "Could not add this attachment. Choose a supported file up to 16 MB.", Toast.LENGTH_SHORT).show()
+            } finally {
+                imported?.first?.fill(0)
             }
         }
     }
 
-    val contentPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            processAndAttachImage(context, it) { bytes, name ->
-                pendingAttachments.add(bytes to name)
-            }
-        }
+    val visualMediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        importAttachment(uri, imageOnly = true)
     }
 
-    val documentPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            processAndAttachDocument(context, it) { bytes, name ->
-                pendingAttachments.add(bytes to name)
-            }
-        }
+    val contentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        importAttachment(uri, imageOnly = true)
+    }
+
+    val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        importAttachment(uri, imageOnly = false)
     }
 
     Scaffold(
@@ -247,109 +255,66 @@ fun PlainNoteEditorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = com.pims.vault.presentation.ui.theme.pimsPageGutter(), vertical = 6.dp),
+                    .padding(horizontal = pimsPageGutter(), vertical = PimsSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // X Close
-                IconButton(
-                    onClick = { if (!isBusy) requestClose() },
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        imageVector = PersonaIcons.Close,
-                        contentDescription = "Close editor",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                PersonaIconAction(PersonaIcons.Close, "Close editor", requestClose, enabled = !isBusy)
 
-                // Center/Right actions
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // Lock Toggle Button
-                    IconButton(
-                        onClick = {
-                            haptics.light()
-                            if (isLocked) {
-                                if (onRequestAuth != null) {
-                                    onRequestAuth("Unlock Note", "Authentication required to remove note lock") {
+                if (isUnlocked) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(PimsSpacing.xs)
+                    ) {
+                        PersonaIconAction(
+                            icon = if (isLocked) PersonaIcons.LockOutlined else PersonaIcons.LockOpen,
+                            label = if (isLocked) "Unlock note" else "Lock note",
+                            enabled = !isBusy,
+                            onClick = {
+                                haptics.light()
+                                if (isLocked) {
+                                    onRequestAuth("Unlock note", "Verify your identity to remove note protection") {
                                         isLocked = false
-                                        Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
                                     }
                                 } else {
-                                    isLocked = false
-                                    Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
+                                    isLocked = true
                                 }
-                            } else {
-                                isLocked = true
-                                Toast.makeText(context, "Note locked (biometric protected)", Toast.LENGTH_SHORT).show()
                             }
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = if (isLocked) "Unlock note" else "Lock note",
-                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
                         )
-                    }
 
-                    // Copy Note Text Button
-                    IconButton(
-                        onClick = {
-                            haptics.light()
-                            val fullText = buildString {
-                                if (title.isNotBlank()) appendLine(title)
-                                if (contentValue.text.isNotBlank()) append(contentValue.text)
+                        PersonaIconAction(
+                            icon = PersonaIcons.ContentCopy,
+                            label = "Copy note text",
+                            enabled = !isBusy,
+                            onClick = {
+                                haptics.light()
+                                val fullText = buildString {
+                                    if (title.isNotBlank()) appendLine(title)
+                                    if (contentValue.text.isNotBlank()) append(contentValue.text)
+                                }
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Persona Note", fullText))
+                                Toast.makeText(context, "Note copied to clipboard", Toast.LENGTH_SHORT).show()
                             }
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Persona Note", fullText))
-                            Toast.makeText(context, "Note copied to clipboard", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy note text",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
                         )
-                    }
 
-                    // Share Note Button
-                    IconButton(
-                        onClick = {
-                            haptics.light()
-                            val fullText = buildString {
-                                if (title.isNotBlank()) appendLine(title)
-                                if (contentValue.text.isNotBlank()) append(contentValue.text)
+                        PersonaIconAction(
+                            icon = PersonaIcons.Share,
+                            label = "Share note",
+                            enabled = !isBusy,
+                            onClick = {
+                                haptics.light()
+                                val fullText = buildString {
+                                    if (title.isNotBlank()) appendLine(title)
+                                    if (contentValue.text.isNotBlank()) append(contentValue.text)
+                                }
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, title.ifBlank { "Note" })
+                                    putExtra(Intent.EXTRA_TEXT, fullText)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share note"))
                             }
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, title.ifBlank { "Note" })
-                                putExtra(Intent.EXTRA_TEXT, fullText)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Note"))
-                        },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Share note",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    if (isBusy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -416,7 +381,7 @@ fun PlainNoteEditorScreen(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Tag,
+                                        imageVector = PersonaIcons.Tag,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(13.dp)
@@ -471,7 +436,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Undo,
+                                        imageVector = PersonaIcons.Undo,
                                         contentDescription = "Undo",
                                         tint = if (undoStack.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                         modifier = Modifier.size(19.dp)
@@ -498,7 +463,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Redo,
+                                        imageVector = PersonaIcons.Redo,
                                         contentDescription = "Redo",
                                         tint = if (redoStack.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                         modifier = Modifier.size(19.dp)
@@ -522,7 +487,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.CheckBox,
+                                        imageVector = PersonaIcons.CheckBox,
                                         contentDescription = "Checklist item",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -547,7 +512,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.FormatListBulleted,
+                                        imageVector = PersonaIcons.FormatListBulleted,
                                         contentDescription = "Bullet List",
                                         tint = if (format == NoteFormat.BULLETS) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -571,7 +536,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.FormatListNumbered,
+                                        imageVector = PersonaIcons.FormatListNumbered,
                                         contentDescription = "Numbered List",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -595,7 +560,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.FormatBold,
+                                        imageVector = PersonaIcons.FormatBold,
                                         contentDescription = "Bold",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -619,7 +584,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Title,
+                                        imageVector = PersonaIcons.Title,
                                         contentDescription = "Heading",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -649,7 +614,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Schedule,
+                                        imageVector = PersonaIcons.Schedule,
                                         contentDescription = "Insert Date & Time",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -678,7 +643,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.AddPhotoAlternate,
+                                        imageVector = PersonaIcons.Photo,
                                         contentDescription = "Add Photo",
                                         tint = if (pendingAttachments.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -699,13 +664,13 @@ fun PlainNoteEditorScreen(
                                         try {
                                             documentPicker.launch("*/*")
                                         } catch (_: Exception) {
-                                            contentPicker.launch("*/*")
+                                            Toast.makeText(context, "Could not open the document picker.", Toast.LENGTH_SHORT).show()
                                         }
                                     },
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.AttachFile,
+                                        imageVector = PersonaIcons.AttachFile,
                                         contentDescription = "Attach Document",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -728,7 +693,7 @@ fun PlainNoteEditorScreen(
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
-                                        imageVector = if (reminderAt != null) Icons.Default.NotificationsActive else Icons.Default.Alarm,
+                                        imageVector = if (reminderAt != null) PersonaIcons.NotificationsActive else PersonaIcons.Alarm,
                                         contentDescription = "Set Reminder",
                                         tint = if (reminderAt != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(19.dp)
@@ -741,28 +706,30 @@ fun PlainNoteEditorScreen(
                     // Cancel & Save actions
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s)
                     ) {
-                        TextButton(
+                        PersonaAction(
+                            label = "Cancel",
                             onClick = requestClose,
                             enabled = !isBusy,
-                            modifier = Modifier.tactilePress()
-                        ) {
-                            Text(
-                                text = "Cancel",
-                                color = if (isBusy) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            )
-                        }
+                            style = PersonaActionStyle.Text
+                        )
 
-                        Button(
+                        PersonaAction(
+                            label = if (isBusy) "Saving…" else "Save",
+                            icon = PersonaIcons.Check,
+                            inProgress = isBusy,
                             onClick = {
-                                if (isBusy) return@Button
+                                if (isBusy) return@PersonaAction
                                 localIsSaving = true
                                 val targetId = currentNoteId ?: UUID.randomUUID().toString().also { currentNoteId = it }
-                                haptics.success()
-                                feedback.success()
+                                val finishSave = {
+                                    localIsSaving = false
+                                    haptics.success()
+                                    feedback.success()
+                                    onBack()
+                                    onSavedLocally()
+                                }
 
                                 val hashtagRegex = Regex("""#([A-Za-z0-9_]+)""")
                                 val extractedTags = hashtagRegex.findAll("$title ${contentValue.text}").map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toList()
@@ -782,10 +749,9 @@ fun PlainNoteEditorScreen(
                                         isLocked = isLocked,
                                         attachments = pendingAttachments.toList(),
                                         onComplete = {
-                                            localIsSaving = false
                                             pendingAttachments.forEach { (bytes, _) -> bytes.fill(0) }
                                             pendingAttachments.clear()
-                                            onBack()
+                                            finishSave()
                                         }
                                     )
                                 } else {
@@ -798,53 +764,11 @@ fun PlainNoteEditorScreen(
                                         reminderTag = finalTagsToStore,
                                         reminderRepeat = reminderRepeat,
                                         isLocked = isLocked,
-                                        onComplete = {
-                                            localIsSaving = false
-                                            onBack()
-                                        }
-                                    )
-                                }
-                            },
-                            enabled = !isBusy,
-                            shape = RoundedCornerShape(18.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
-                            ),
-                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-                            modifier = Modifier.tactilePress()
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                if (isBusy) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                    Text(
-                                        text = "Saving...",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = "Save",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
+                                        onComplete = finishSave
                                     )
                                 }
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -857,79 +781,23 @@ fun PlainNoteEditorScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(24.dp),
+                    .padding(PimsSpacing.l),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(PimsSpacing.actionGap),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(80.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "Protected note",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(40.dp)
-                            )
-                        }
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Protected Note",
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = "This note is locked. Authenticate to view.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                    }
-
-                    Button(
-                        onClick = {
-                            if (onRequestAuth != null) {
-                                onRequestAuth("Unlock Protected Note", "Authenticate to unlock note") {
-                                    isUnlocked = true
-                                    title = existingNote?.title ?: ""
-                                    contentValue = TextFieldValue(existingNote?.content ?: "")
-                                }
-                            } else {
-                                isUnlocked = true
-                                title = existingNote?.title ?: ""
-                                contentValue = TextFieldValue(existingNote?.content ?: "")
-                            }
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier
-                            .fillMaxWidth(0.75f)
-                            .height(50.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LockOpen,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Unlock Note", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    }
-
-                    TextButton(onClick = requestClose) {
-                        Text("Go Back", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    PersonaIconBadge(
+                        imageVector = PersonaIcons.LockOutlined,
+                        contentDescription = null,
+                        size = PimsControlSize.informationRow,
+                        iconSize = PersonaIconSize.Large
+                    )
+                    Text("Protected note", style = MaterialTheme.typography.titleLarge)
+                    PersonaAction("Unlock note", unlockNote, icon = PersonaIcons.LockOpen)
+                    PersonaAction("Back", requestClose, style = PersonaActionStyle.Text)
                 }
             }
         } else {
@@ -1004,7 +872,7 @@ fun PlainNoteEditorScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Tag,
+                                    imageVector = PersonaIcons.Tag,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(12.dp)
@@ -1037,19 +905,17 @@ fun PlainNoteEditorScreen(
                 ) {
                     // Pending attachments
                     pendingAttachments.forEachIndexed { index, (bytes, name) ->
-                        val bmp = remember(bytes) {
-                            try {
-                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            } catch (_: Exception) { null }
-                        }
+                        val bmp = remember(bytes) { decodePhotoPreview(bytes) }
                         if (bmp != null) {
                             Box(
                                 modifier = Modifier
                                     .size(width = 150.dp, height = 110.dp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .clickable {
-                                        previewImageBitmap = bmp
-                                        previewImageTitle = name
+                                        attachmentScope.launch {
+                                            previewImageBitmap = withContext(Dispatchers.IO) { decodePhotoPreview(bytes, 1920) }
+                                            previewImageTitle = name
+                                        }
                                     }
                             ) {
                                 Image(
@@ -1061,7 +927,7 @@ fun PlainNoteEditorScreen(
                                 IconButton(
                                     onClick = {
                                         haptics.light()
-                                        pendingAttachments.removeAt(index)
+                                        pendingAttachments.removeAt(index).first.fill(0)
                                     },
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
@@ -1071,7 +937,7 @@ fun PlainNoteEditorScreen(
                                         .background(PimsColors.mediaScrim.copy(alpha = 0.65f))
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Close,
+                                        imageVector = PersonaIcons.Close,
                                         contentDescription = "Remove attachment",
                                         tint = PimsColors.onMediaScrim,
                                         modifier = Modifier.size(15.dp)
@@ -1093,7 +959,7 @@ fun PlainNoteEditorScreen(
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Description,
+                                            imageVector = PersonaIcons.Documents,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(32.dp)
@@ -1110,7 +976,7 @@ fun PlainNoteEditorScreen(
                                     IconButton(
                                         onClick = {
                                             haptics.light()
-                                            pendingAttachments.removeAt(index)
+                                            pendingAttachments.removeAt(index).first.fill(0)
                                         },
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
@@ -1119,7 +985,7 @@ fun PlainNoteEditorScreen(
                                             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Close,
+                                            imageVector = PersonaIcons.Close,
                                             contentDescription = "Remove attachment",
                                             tint = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.size(14.dp)
@@ -1140,7 +1006,11 @@ fun PlainNoteEditorScreen(
                             if (!isDocType) {
                                 val bytes = viewModel.readAttachment(att)
                                 if (bytes != null) {
-                                    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                    val decoded = try {
+                                        withContext(Dispatchers.IO) { decodePhotoPreview(bytes) }
+                                    } finally {
+                                        bytes.fill(0)
+                                    }
                                     if (decoded != null) bmp = decoded else isDocType = true
                                 }
                             }
@@ -1151,8 +1021,15 @@ fun PlainNoteEditorScreen(
                                     .size(width = 150.dp, height = 110.dp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .clickable {
-                                        previewImageBitmap = bmp
-                                        previewImageTitle = att.caption
+                                        attachmentScope.launch {
+                                            val bytes = viewModel.readAttachment(att) ?: return@launch
+                                            previewImageBitmap = try {
+                                                withContext(Dispatchers.IO) { decodePhotoPreview(bytes, 1920) }
+                                            } finally {
+                                                bytes.fill(0)
+                                            }
+                                            previewImageTitle = att.caption
+                                        }
                                     }
                             ) {
                                 Image(
@@ -1175,7 +1052,7 @@ fun PlainNoteEditorScreen(
                                         .background(PimsColors.mediaScrim.copy(alpha = 0.65f))
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Close,
+                                        imageVector = PersonaIcons.Close,
                                         contentDescription = "Remove attachment",
                                         tint = PimsColors.onMediaScrim,
                                         modifier = Modifier.size(15.dp)
@@ -1196,7 +1073,7 @@ fun PlainNoteEditorScreen(
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Description,
+                                            imageVector = PersonaIcons.Documents,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(32.dp)
@@ -1223,7 +1100,7 @@ fun PlainNoteEditorScreen(
                                             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Close,
+                                            imageVector = PersonaIcons.Close,
                                             contentDescription = "Remove attachment",
                                             tint = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.size(14.dp)
@@ -1282,20 +1159,18 @@ fun PlainNoteEditorScreen(
     }
 
     if (showDiscardConfirmation) {
-        AlertDialog(
+        PersonaConfirmationDialog(
             onDismissRequest = { showDiscardConfirmation = false },
-            title = { Text("Discard your changes?") },
-            text = { Text("Your note edits and added attachments have not been saved.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingAttachments.forEach { (bytes, _) -> bytes.fill(0) }
-                    pendingAttachments.clear()
-                    showDiscardConfirmation = false
-                    onBack()
-                }) { Text("Discard changes") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDiscardConfirmation = false }) { Text("Keep editing") }
+            title = "Discard your changes?",
+            message = "Your note edits and added attachments have not been saved.",
+            confirmText = "Discard changes",
+            dismissText = "Keep editing",
+            isDestructive = true,
+            onConfirm = {
+                pendingAttachments.forEach { (bytes, _) -> bytes.fill(0) }
+                pendingAttachments.clear()
+                showDiscardConfirmation = false
+                onBack()
             }
         )
     }
@@ -1350,74 +1225,28 @@ fun PlainNoteEditorScreen(
     }
 }
 
-private fun processAndAttachImage(
-    context: Context,
-    uri: Uri,
-    onSuccess: (ByteArray, String) -> Unit
-) {
+private fun readOriginalNoteAttachment(context: Context, uri: Uri, imageOnly: Boolean): Triple<ByteArray, String, String> {
+    val resolver = context.contentResolver
+    val bytes = checkNotNull(resolver.openInputStream(uri)) { "Attachment is unavailable" }
+        .use { it.readBoundedBytes(MAX_ORIGINAL_PHOTO_BYTES.toInt()) }
     try {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-            val rawBytes = stream.readBytes()
-            if (rawBytes.isEmpty()) return
-
-            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, boundsOptions)
-
-            val maxDimension = 1920
-            var sampleSize = 1
-            var w = boundsOptions.outWidth
-            var h = boundsOptions.outHeight
-            while (w > maxDimension || h > maxDimension) {
-                sampleSize *= 2
-                w /= 2
-                h /= 2
-            }
-
-            val decodeOptions = BitmapFactory.Options().apply {
-                inSampleSize = sampleSize
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            val bmp = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOptions)
-            if (bmp != null) {
-                val baos = java.io.ByteArrayOutputStream()
-                bmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
-                val compressedBytes = baos.toByteArray()
-                onSuccess(compressedBytes, "photo_${System.currentTimeMillis()}.jpg")
-            } else {
-                onSuccess(rawBytes, "photo_${System.currentTimeMillis()}.jpg")
-            }
+        require(bytes.size.toLong() in 1..MAX_ORIGINAL_PHOTO_BYTES)
+        val photoMime = inspectPhoto(bytes)
+        if (imageOnly) {
+            checkNotNull(photoMime) { "Unknown photo format" }
+            checkNotNull(decodePhotoPreview(bytes, 256)) { "Invalid photo" }.recycle()
         }
-    } catch (e: Exception) {
-        VaultLogger.e("PlainNoteEditor", "Failed to process photo", e)
-        Toast.makeText(context, "Failed to load selected photo", Toast.LENGTH_SHORT).show()
-    }
-}
-
-private fun processAndAttachDocument(
-    context: Context,
-    uri: Uri,
-    onSuccess: (ByteArray, String) -> Unit
-) {
-    try {
-        var displayName = "document_${System.currentTimeMillis()}.pdf"
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIdx >= 0) {
-                    val name = cursor.getString(nameIdx)
-                    if (!name.isNullOrBlank()) displayName = name
-                }
-            }
-        }
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-            val bytes = stream.readBytes()
-            if (bytes.isNotEmpty()) {
-                onSuccess(bytes, displayName)
-            }
-        }
-    } catch (e: Exception) {
-        VaultLogger.e("PlainNoteEditor", "Failed to process document", e)
-        Toast.makeText(context, "Failed to load selected document", Toast.LENGTH_SHORT).show()
+        val displayName = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+            ?.takeIf(String::isNotBlank)
+            ?: if (photoMime != null) "photo_${System.currentTimeMillis()}.${photoExtension(photoMime)}" else "Attachment"
+        val mimeType = photoMime ?: resolver.getType(uri)
+            ?: java.net.URLConnection.guessContentTypeFromName(displayName)
+            ?: "application/octet-stream"
+        return Triple(bytes, displayName, mimeType)
+    } catch (failure: Exception) {
+        bytes.fill(0)
+        throw failure
     }
 }
 

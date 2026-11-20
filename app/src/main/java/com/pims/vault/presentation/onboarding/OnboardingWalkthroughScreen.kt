@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.onboarding
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,21 +27,10 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -56,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
@@ -134,18 +127,14 @@ fun OnboardingWalkthroughScreen(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
+                PersonaAction(
+                    label = "Skip",
+                    style = PersonaActionStyle.Text,
                     onClick = {
                         haptics.light()
                         onSkip()
                     }
-                ) {
-                    Text(
-                        text = "Skip",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp
-                    )
-                }
+                )
             }
 
             // Pager Content
@@ -210,7 +199,7 @@ fun OnboardingWalkthroughScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             InteractiveWalkthroughCard(
-                                icon = Icons.Default.Badge,
+                                icon = PersonaIcons.Identity,
                                 title = "Digital Identity",
                                 isHighlighted = pageIndex == 0,
                                 modifier = Modifier.weight(1f),
@@ -220,7 +209,7 @@ fun OnboardingWalkthroughScreen(
                                 }
                             )
                             InteractiveWalkthroughCard(
-                                icon = Icons.Default.QrCode,
+                                icon = PersonaIcons.QrCode,
                                 title = "Share Pass",
                                 isHighlighted = pageIndex == 1,
                                 modifier = Modifier.weight(1f),
@@ -235,7 +224,7 @@ fun OnboardingWalkthroughScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             InteractiveWalkthroughCard(
-                                icon = Icons.Default.Description,
+                                icon = PersonaIcons.Documents,
                                 title = "Documents",
                                 isHighlighted = pageIndex == 2,
                                 modifier = Modifier.weight(1f),
@@ -245,7 +234,7 @@ fun OnboardingWalkthroughScreen(
                                 }
                             )
                             InteractiveWalkthroughCard(
-                                icon = Icons.Default.History,
+                                icon = PersonaIcons.History,
                                 title = "Activity",
                                 isHighlighted = pageIndex == 3,
                                 modifier = Modifier.weight(1f),
@@ -296,16 +285,16 @@ fun OnboardingWalkthroughScreen(
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
-                        TextButton(
+                        PersonaAction(
+                            label = "Back",
+                            style = PersonaActionStyle.Text,
                             onClick = {
                                 haptics.light()
                                 scope.launch {
                                     pagerState.animateScrollToPage(pagerState.currentPage - 1)
                                 }
                             }
-                        ) {
-                            Text("Back", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        )
                     }
 
                     if (pagerState.currentPage == 0) {
@@ -313,7 +302,8 @@ fun OnboardingWalkthroughScreen(
                     }
 
                     val isLastPage = pagerState.currentPage == steps.size - 1
-                    Button(
+                    PersonaAction(
+                        label = if (isLastPage) "Get started" else "Next",
                         onClick = {
                             if (isLastPage) {
                                 haptics.success()
@@ -324,20 +314,8 @@ fun OnboardingWalkthroughScreen(
                                     pagerState.animateScrollToPage(pagerState.currentPage + 1)
                                 }
                             }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier.height(46.dp)
-                    ) {
-                        Text(
-                            text = if (isLastPage) "Get started" else "Next",
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        )
-                    }
+                        }
+                    )
                 }
             }
         }

@@ -281,7 +281,13 @@ Cloud key agreement uses an account-bound fingerprint and never automatically im
 
 Document discovery, import, preview and retry actions use the shared Material theme. PDF/image previews decrypt into bounded anonymous memory descriptors, with secure windows. Explicit external-open actions use expiring private temporary leases. Shared status feedback uses theme surfaces, accessible timeouts and a live region, and preserves action callbacks until dismissal.
 
-### 5.3 Encrypted Payload Compatibility
+### 5.3 Offline journal synchronization
+
+Journal notes and encrypted attachment references commit in Room with their SQLCipher outbox entries. The queue carries stable references, revision numbers and deletion intent. WorkManager uses connectivity constraints and retries cloud work only for an authenticated account explicitly bound to the local vault. A Firestore transaction verifies the note's base revision and acknowledges operation IDs. Local and cloud copies remain available for review when revisions diverge. See [ADR-025](docs/planning/adr/ADR-025-journal-outbox-and-account-sync.md) and the [offline sync guide](docs/planning/OFFLINE_SYNC.md).
+
+The Me overview stores ordered references and per-reference display preferences in encrypted device-local storage scoped to the owner and bound account. Ordinary pins read the latest source value. Selected sensitive profile fields require Level 2 confirmation before they can display persistently on Me. A payment card pin reads only the last four digits from the existing masked header. Full card details and other Vault credentials use normal Zone 4 authorization. See [ADR-027](docs/planning/adr/ADR-027-me-overview-references.md).
+
+### 5.4 Encrypted Payload Compatibility
 
 Full-vault backup uses a consistent encrypted SQLCipher export, referenced encrypted files, supported photo/wallpaper preferences, and passphrase-protected recovery keys. Restore validates an isolated database, clears source-device sync operations, and stages encrypted replacement payloads. A startup journal swaps database/files/key preferences before Room/providers initialize and rolls back interrupted replacement. Recovery opens local-only and signs out cloud credentials. Zone 4 elevation and explicit file selection are required; schema and bounded package-size restrictions fail closed. Native and cross-device acceptance remain pending as the final validation stage. See [ADR-019](docs/planning/adr/ADR-019-full-vault-backup-safety-gate.md).
 

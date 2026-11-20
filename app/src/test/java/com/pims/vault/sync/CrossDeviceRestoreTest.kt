@@ -62,7 +62,7 @@ class CrossDeviceRestoreTest {
     }
 
     @Test
-    fun testPhotoJpegValidationRejectsGarbage() = runTest {
+    fun testPhotoValidationRejectsMissingFile() = runTest {
         val context = Mockito.mock(android.content.Context::class.java)
         val filesDir = createTempDir("pims_test")
         whenever(context.filesDir).thenReturn(filesDir)
@@ -70,9 +70,7 @@ class CrossDeviceRestoreTest {
         val pfkManager = Mockito.mock(PortableFileKeyManager::class.java)
         val service = ProfilePhotoSyncService(context, b2, pfkManager)
 
-        // Garbage bytes are not a valid JPEG path — readLocalJpegBytes on a
-        // missing file returns null instead of crashing.
-        val missing = service.readLocalJpegBytes(File(filesDir, "nope.jpg").absolutePath)
+        val missing = service.readLocalImage(File(filesDir, "nope.jpg").absolutePath)
         assertTrue(missing == null)
     }
 

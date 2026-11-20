@@ -1,8 +1,13 @@
 package com.pims.vault.presentation.vault.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import com.pims.vault.domain.model.VaultIdentityType
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaFilterChip
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.presentation.ui.components.PersonaSheetHeader
+import com.pims.vault.presentation.ui.theme.PimsSpacing
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,36 +17,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.pims.vault.presentation.ui.theme.PimsError
-import com.pims.vault.presentation.ui.theme.tactilePress
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,25 +54,14 @@ fun IdCredentialFormSheet(
     initialSecondaryIdentifier: String = "",
     initialNotes: String = "",
     isEditing: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSaving: Boolean = false,
+    errorMessage: String? = null
 ) {
-    val categoryOptions = listOf(
-        "NATIONAL_ID" to "National ID",
-        "SCHOOL_ID" to "School ID",
-        "LIBRARY_ID" to "Library ID",
-        "MEDICAL_AID" to "Medical Aid",
-        "CUSTOM" to "Custom"
-    )
+    val categoryOptions = VaultIdentityType.entries.map { it.name to it.label }
 
     var selectedType by remember {
-        val mapped = when {
-            initialCategory.contains("School", ignoreCase = true) -> "SCHOOL_ID"
-            initialCategory.contains("Library", ignoreCase = true) -> "LIBRARY_ID"
-            initialCategory.contains("Medical", ignoreCase = true) -> "MEDICAL_AID"
-            initialCategory.contains("Custom", ignoreCase = true) -> "CUSTOM"
-            else -> "NATIONAL_ID"
-        }
-        mutableStateOf(mapped)
+        mutableStateOf(VaultIdentityType.fromValue(initialCategory)?.name ?: initialCategory)
     }
 
     var fullName by remember { mutableStateOf(initialFullName) }
@@ -95,7 +71,7 @@ fun IdCredentialFormSheet(
     var expiryDate by remember { mutableStateOf(initialExpiryDate) }
     var secondaryIdentifier by remember { mutableStateOf(initialSecondaryIdentifier) }
     var notes by remember { mutableStateOf(initialNotes) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var validationMessage by remember { mutableStateOf<String?>(null) }
 
     val authorityPlaceholder = when (selectedType) {
         "NATIONAL_ID" -> "Issuing Country / Department (e.g. Home Affairs)"
@@ -109,6 +85,8 @@ fun IdCredentialFormSheet(
         "NATIONAL_ID" -> "ID Number / National Insurance No."
         "SCHOOL_ID" -> "Student ID Number"
         "LIBRARY_ID" -> "Library Card / Barcode No."
+        "PASSPORT" -> "Passport number"
+        "DRIVING_LICENCE" -> "Licence number"
         "MEDICAL_AID" -> "Membership / Policy Number"
         else -> "Identifier / Membership Number"
     }
@@ -121,105 +99,39 @@ fun IdCredentialFormSheet(
         else -> "Secondary Reference (Optional)"
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
+    val dismiss = { if (!isSaving) onDismiss() }
+    PersonaSheet(
+        onDismissRequest = dismiss,
         sheetState = sheetState,
-        containerColor = getVaultCardSurface(),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        dragHandle = null,
-        modifier = modifier
+        modifier = modifier,
+        showDragHandle = !isSaving
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 20.dp)
+                .padding(horizontal = pimsPageGutter(), vertical = PimsSpacing.m)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Header: Close Button & Themed Dynamic Badge
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = getVaultTextPrimary(),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                IdCategoryThemedBadge(
-                    categoryName = selectedType,
-                    size = 40.dp,
-                    iconSize = 22.dp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = if (isEditing) "Edit Credential" else "New ID / Membership",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = getVaultTextPrimary()
+            PersonaSheetHeader(
+                title = if (isEditing) "Edit credential" else "New ID or membership",
+                onDismissRequest = dismiss,
+                dismissEnabled = !isSaving
             )
-
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(Modifier.height(PimsSpacing.s))
 
             // Category Type Selector Pills
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s)
             ) {
                 categoryOptions.forEach { (typeCode, displayName) ->
-                    val isSelected = selectedType == typeCode
-                    val bg = if (isSelected) getVaultTextPrimary() else getVaultBackground()
-                    val textCol = if (isSelected) getVaultBackground() else getVaultTextSecondary()
-
-                    Surface(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(
-                                width = 1.dp,
-                                color = if (isSelected) getVaultTextPrimary() else getVaultBorder(),
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .clickable { selectedType = typeCode }
-                            .tactilePress(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = bg
-                    ) {
-                        Text(
-                            text = displayName,
-                            fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = textCol,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
-                    }
+                    PersonaFilterChip(displayName, selectedType == typeCode, { if (!isSaving) selectedType = typeCode })
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // Error Banner
-            errorMessage?.let { err ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, PimsError, RoundedCornerShape(8.dp))
-                        .background(PimsError.copy(alpha = 0.12f))
-                        .padding(10.dp)
-                ) {
-                    Text(text = err, color = PimsError, fontSize = 12.5.sp)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
+            Spacer(Modifier.height(PimsSpacing.m))
 
             // Input Fields
             VaultUnderlineField(
@@ -227,9 +139,10 @@ fun IdCredentialFormSheet(
                 value = fullName,
                 onValueChange = {
                     fullName = it
-                    errorMessage = null
+                    validationMessage = null
                 },
-                placeholder = "e.g. Johnathan Doe"
+                placeholder = "e.g. Johnathan Doe",
+                enabled = !isSaving
             )
 
             VaultUnderlineField(
@@ -237,9 +150,9 @@ fun IdCredentialFormSheet(
                 value = identifierNumber,
                 onValueChange = {
                     identifierNumber = it
-                    errorMessage = null
+                    validationMessage = null
                 },
-                placeholder = "e.g. 980112-5082-089"
+                enabled = !isSaving
             )
 
             VaultUnderlineField(
@@ -247,7 +160,8 @@ fun IdCredentialFormSheet(
                 value = issuingAuthority,
                 onValueChange = { issuingAuthority = it },
                 optional = true,
-                placeholder = authorityPlaceholder
+                placeholder = authorityPlaceholder,
+                enabled = !isSaving
             )
 
             VaultUnderlineField(
@@ -255,12 +169,12 @@ fun IdCredentialFormSheet(
                 value = secondaryIdentifier,
                 onValueChange = { secondaryIdentifier = it },
                 optional = true,
-                placeholder = "Optional secondary identifier"
+                enabled = !isSaving
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(PimsSpacing.relatedFieldGap)
             ) {
                 Box(modifier = Modifier.weight(1f)) {
                     VaultUnderlineField(
@@ -268,7 +182,8 @@ fun IdCredentialFormSheet(
                         value = issueDate,
                         onValueChange = { issueDate = it },
                         optional = true,
-                        placeholder = "YYYY-MM-DD"
+                        placeholder = "YYYY-MM-DD",
+                        enabled = !isSaving
                     )
                 }
                 Box(modifier = Modifier.weight(1f)) {
@@ -277,7 +192,8 @@ fun IdCredentialFormSheet(
                         value = expiryDate,
                         onValueChange = { expiryDate = it },
                         optional = true,
-                        placeholder = "YYYY-MM-DD"
+                        placeholder = "YYYY-MM-DD",
+                        enabled = !isSaving
                     )
                 }
             }
@@ -287,22 +203,34 @@ fun IdCredentialFormSheet(
                 value = notes,
                 onValueChange = { notes = it },
                 optional = true,
-                placeholder = "Emergency contact, restrictions, etc."
+                enabled = !isSaving
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            (validationMessage ?: errorMessage)?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Spacer(Modifier.height(PimsSpacing.l))
 
             // Save Button
-            VaultPillActionButton(
-                text = if (isEditing) "Save changes" else "Save credential",
+            PersonaAction(
+                label = when {
+                    isSaving -> "Saving…"
+                    isEditing -> "Save changes"
+                    else -> "Save credential"
+                },
+                enabled = !isSaving,
                 onClick = {
                     if (fullName.isBlank()) {
-                        errorMessage = "Full Name cannot be blank"
-                        return@VaultPillActionButton
+                        validationMessage = "Enter the name on the credential."
+                        return@PersonaAction
                     }
                     if (identifierNumber.isBlank()) {
-                        errorMessage = "ID / Identifier Number cannot be blank"
-                        return@VaultPillActionButton
+                        validationMessage = "Enter the identifier."
+                        return@PersonaAction
                     }
                     onSave(
                         selectedType,
@@ -315,10 +243,10 @@ fun IdCredentialFormSheet(
                         notes.trim().ifBlank { null }
                     )
                 },
-                modifier = Modifier.tactilePress { }
+                modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(Modifier.height(PimsSpacing.xl))
         }
     }
 }

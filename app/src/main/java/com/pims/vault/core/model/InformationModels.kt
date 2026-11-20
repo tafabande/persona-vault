@@ -25,6 +25,7 @@ enum class InformationCategory(
     RELATIONSHIP("Family & Relationships", InformationSensitivity.PRIVATE),
     SOCIAL("Social Profiles", InformationSensitivity.NORMAL),
     DOCUMENT("Documents", InformationSensitivity.PROTECTED),
+    NOTE("Notes", InformationSensitivity.PRIVATE),
     OTHER("Other", InformationSensitivity.NORMAL);
 
     companion object {

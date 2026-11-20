@@ -243,11 +243,11 @@ class CreateRelationshipUseCase @Inject constructor(
 }
 
 class EndRelationshipUseCase @Inject constructor(
-    private val relationshipDao: RelationshipDao,
+    private val relationshipRepository: com.pims.vault.domain.repository.RelationshipRepository,
     private val auditLogger: HardenedAuditLogger
 ) {
     suspend operator fun invoke(relationshipId: String, reason: String? = null) {
-        relationshipDao.deleteById(relationshipId)
+        relationshipRepository.deleteRelationship(relationshipId)
         auditLogger.recordEvent(
             eventType = AuditEventType.UPDATE,
             entityType = "Relationship",

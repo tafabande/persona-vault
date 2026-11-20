@@ -222,6 +222,9 @@ interface EducationDao {
     @Query("SELECT * FROM education_records ORDER BY start_date DESC")
     suspend fun getAllEducationRecords(): List<EducationRecordEntity>
 
+    @Query("SELECT * FROM education_records WHERE id = :id LIMIT 1")
+    suspend fun getEducationRecordById(id: String): EducationRecordEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(record: EducationRecordEntity): Long
 
@@ -238,6 +241,9 @@ interface EmploymentDao {
 
     @Query("SELECT * FROM employment_records ORDER BY start_date DESC")
     suspend fun getAllEmploymentRecords(): List<EmploymentRecordEntity>
+
+    @Query("SELECT * FROM employment_records WHERE id = :id LIMIT 1")
+    suspend fun getEmploymentRecordById(id: String): EmploymentRecordEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(record: EmploymentRecordEntity): Long

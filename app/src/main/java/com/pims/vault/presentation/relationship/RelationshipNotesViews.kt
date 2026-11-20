@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,25 +30,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Notes
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Notes
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -89,6 +73,14 @@ import com.pims.vault.domain.model.RelationshipNoteAttachmentDraft
 import com.pims.vault.domain.model.RelationshipNoteAttachment
 import com.pims.vault.core.crypto.ZeroizingByteArrayOutputStream
 import com.pims.vault.presentation.ui.theme.PimsDimensions
+import com.pims.vault.presentation.ui.theme.PimsSpacing
+import com.pims.vault.presentation.ui.components.PersonaSectionHeading
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.components.PersonaMenu
+import com.pims.vault.presentation.ui.components.PersonaMenuItem
+import com.pims.vault.presentation.ui.theme.PersonaIcons
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -111,85 +103,22 @@ fun RelationshipNotesSection(
     onDeleteNote: (RelationshipNote) -> Unit,
     onTogglePrivacy: (noteId: String, makePrivate: Boolean) -> Unit,
     onOpenAttachment: (String, String) -> Unit = { _, _ -> },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    restrictedLegacyNotes: List<String> = emptyList(),
+    linkedNotes: @Composable ColumnScope.() -> Unit = {}
 ) {
     val publicNotes = notes.filter { !it.isPrivate }
     val privateNotes = notes.filter { it.isPrivate }
-    val lockedCount = privateNotes.count { !it.isDecrypted }
+    val lockedCount = if (isVaultUnlocked) privateNotes.count { !it.isDecrypted }
+        else privateNotes.size + restrictedLegacyNotes.size
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(PimsSpacing.s)
     ) {
-        // Section Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Notes,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    text = "Notes",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.sp
-                )
-            }
-
-            OutlinedButton(
-                onClick = onAddNoteClick,
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Add Note",
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Add Note",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-
-        if (notes.isEmpty()) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "No notes recorded yet",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                }
-            }
-        }
+        PersonaSectionHeading("Notes", onAdd = onAddNoteClick, addLabel = "Add note")
 
         // 1. Render Public Notes
         publicNotes.forEach { note ->
@@ -203,13 +132,15 @@ fun RelationshipNotesSection(
         }
 
         // 2. Render Private Notes: Either Locked Overview Card OR Decrypted Cards
-        if (!isVaultUnlocked && lockedCount > 0) {
+        if (lockedCount > 0) {
             LockedNotesBanner(
                 lockedCount = lockedCount,
                 onUnlockClick = onUnlockVaultClick
             )
-        } else {
-            privateNotes.forEach { note ->
+        }
+        if (isVaultUnlocked) {
+            val decrypted = privateNotes.filter { it.isDecrypted }
+            decrypted.forEach { note ->
                 RelationshipNoteCard(
                     note = note,
                     onEdit = { onEditNote(note) },
@@ -218,7 +149,19 @@ fun RelationshipNotesSection(
                     onOpenAttachment = onOpenAttachment
                 )
             }
+            restrictedLegacyNotes.filter { legacy ->
+                decrypted.none { it.content.trim() == legacy }
+            }.forEach { content ->
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = PimsSpacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(PimsSpacing.xs)
+                ) {
+                    Text("Private note", style = MaterialTheme.typography.labelLarge)
+                    Text(content, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
+        linkedNotes()
     }
 }
 
@@ -277,7 +220,7 @@ fun RelationshipNoteCard(
                                 horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Lock,
+                                    imageVector = PersonaIcons.Lock,
                                     contentDescription = "Private Note",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(10.dp)
@@ -295,68 +238,38 @@ fun RelationshipNoteCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (note.isPrivate) {
-                        IconButton(
-                            onClick = { isRevealed = !isRevealed },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (isRevealed) "Hide value" else "Show value",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                        PersonaIconAction(
+                            icon = if (isRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
+                            label = if (isRevealed) "Hide note" else "Show note",
+                            onClick = { isRevealed = !isRevealed }
+                        )
                     }
 
                     Box {
-                        IconButton(
-                            onClick = { menuExpanded = true },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Note options",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-
-                        DropdownMenu(
+                        PersonaIconAction(PersonaIcons.MoreActions, "Note options", { menuExpanded = true })
+                        PersonaMenu(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false }
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("Edit") },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            PersonaMenuItem(
+                                label = "Edit",
+                                icon = PersonaIcons.Edit,
                                 onClick = {
                                     menuExpanded = false
                                     onEdit()
                                 }
                             )
-                            DropdownMenuItem(
-                                text = { Text(if (note.isPrivate) "Make Public" else "Lock & Encrypt") },
-                                leadingIcon = {
-                                    Icon(
-                                        if (note.isPrivate) Icons.Default.LockOpen else Icons.Default.Lock,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
+                            PersonaMenuItem(
+                                label = if (note.isPrivate) "Make public" else "Make private",
+                                icon = if (note.isPrivate) PersonaIcons.LockOpen else PersonaIcons.Lock,
                                 onClick = {
                                     menuExpanded = false
                                     onTogglePrivacy()
                                 }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.DeleteOutline,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
+                            PersonaMenuItem(
+                                label = "Delete",
+                                icon = PersonaIcons.DeleteOutline,
                                 onClick = {
                                     menuExpanded = false
                                     onDelete()
@@ -450,7 +363,7 @@ fun RelationshipNoteCard(
                                 onClick = { onOpenAttachment(note.id, attachment.id) },
                                 modifier = Modifier.heightIn(min = 48.dp)
                             ) {
-                                Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Icon(PersonaIcons.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("Open ${attachment.mimeType.substringAfter('/').uppercase()} · ${attachment.fileSizeBytes / 1024} KB")
                             }
@@ -498,7 +411,7 @@ fun LockedNotesBanner(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Lock,
+                        imageVector = PersonaIcons.Lock,
                         contentDescription = "Locked notes",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
@@ -638,31 +551,41 @@ fun AddOrEditRelationshipNoteDialog(
                     Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = requestDismiss, enabled = !isSaving && !isPicking) {
-                        Icon(Icons.Default.Close, "Close note")
-                    }
+                    PersonaIconAction(PersonaIcons.Close, "Close note", requestDismiss, enabled = !isSaving && !isPicking)
                     Text(
                         if (initialNote == null) "New note" else "Edit note",
                         Modifier.weight(1f), style = MaterialTheme.typography.titleLarge
                     )
                     Box {
-                        IconButton(onClick = { editMenuExpanded = true }, enabled = !isSaving && !privateLocked) {
-                            Icon(Icons.Default.MoreVert, "Editing actions")
-                        }
-                        DropdownMenu(editMenuExpanded, { editMenuExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Undo") }, enabled = undo.isNotEmpty(),
-                                onClick = { redo.add(contentValue); contentValue = undo.removeAt(undo.lastIndex); editMenuExpanded = false }
+                        PersonaIconAction(PersonaIcons.MoreActions, "Editing actions",
+                            { editMenuExpanded = true }, enabled = !isSaving && !privateLocked)
+                        PersonaMenu(editMenuExpanded, { editMenuExpanded = false }) {
+                            PersonaMenuItem(
+                                label = "Undo",
+                                icon = PersonaIcons.Undo,
+                                enabled = undo.isNotEmpty(),
+                                onClick = {
+                                    redo.add(contentValue)
+                                    contentValue = undo.removeAt(undo.lastIndex)
+                                    editMenuExpanded = false
+                                }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Redo") }, enabled = redo.isNotEmpty(),
-                                onClick = { undo.add(contentValue); contentValue = redo.removeAt(redo.lastIndex); editMenuExpanded = false }
+                            PersonaMenuItem(
+                                label = "Redo",
+                                icon = PersonaIcons.Redo,
+                                enabled = redo.isNotEmpty(),
+                                onClick = {
+                                    undo.add(contentValue)
+                                    contentValue = redo.removeAt(redo.lastIndex)
+                                    editMenuExpanded = false
+                                }
                             )
                         }
                     }
-                    Button(
+                    PersonaAction(
+                        label = if (isSaving) "Saving…" else "Save",
                         onClick = {
-                            if (isSaving || isPicking || ((isPrivate || initialNote?.isPrivate == true) && !isVaultUnlocked)) return@Button
+                            if (isSaving || isPicking || privateLocked) return@PersonaAction
                             isSaving = true
                             saveError = null
                             val finalContent = contentValue.text.trim()
@@ -691,7 +614,7 @@ fun AddOrEditRelationshipNoteDialog(
                         },
                         enabled = !isSaving && !isPicking && hasUnsavedChanges && contentValue.text.isNotBlank() &&
                             (!(isPrivate || initialNote?.isPrivate == true) || isVaultUnlocked)
-                    ) { Text(if (isSaving) "Saving…" else "Save") }
+                    )
                 }
                 saveError?.let {
                     Text(it, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error)
@@ -699,7 +622,7 @@ fun AddOrEditRelationshipNoteDialog(
                 if ((isPrivate || initialNote?.isPrivate == true) && !isVaultUnlocked) {
                     Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Unlock the vault to edit this private note.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = onUnlockVault) { Text("Unlock") }
+                        PersonaAction("Unlock", onUnlockVault, style = PersonaActionStyle.Quiet)
                     }
                 }
                 Column(
@@ -733,7 +656,7 @@ fun AddOrEditRelationshipNoteDialog(
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text("${attachment.mimeType.substringAfter('/').uppercase()} · ${attachment.fileSizeBytes / 1024} KB", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                 IconButton(onClick = { removals.add(attachment.id) }, enabled = !isSaving) {
-                                    Icon(Icons.Default.DeleteOutline, "Remove attachment")
+                                    Icon(PersonaIcons.DeleteOutline, "Remove attachment")
                                 }
                             }
                         }
@@ -741,7 +664,7 @@ fun AddOrEditRelationshipNoteDialog(
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text("${attachment.mimeType.substringAfter('/').uppercase()} · ${attachment.bytes.size / 1024} KB", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                 IconButton(onClick = { attachments.removeAt(index).bytes.fill(0) }, enabled = !isSaving) {
-                                    Icon(Icons.Default.DeleteOutline, "Remove attachment")
+                                    Icon(PersonaIcons.DeleteOutline, "Remove attachment")
                                 }
                             }
                         }
@@ -754,14 +677,14 @@ fun AddOrEditRelationshipNoteDialog(
                     IconButton(enabled = !isSaving && !privateLocked, onClick = {
                         changeContent(com.pims.vault.presentation.notes.NoteEditorLogic.toggleBulletAtCurrentLine(contentValue))
                         format = NoteFormat.BULLETS
-                    }) { Icon(Icons.Default.FormatListBulleted, "Bullet list") }
+                    }) { Icon(PersonaIcons.FormatListBulleted, "Bullet list") }
                     IconButton(enabled = !isSaving && !privateLocked, onClick = {
                         changeContent(com.pims.vault.presentation.notes.NoteEditorLogic.toggleNumberedListAtCurrentLine(contentValue))
                         format = NoteFormat.NUMBERED
-                    }) { Icon(Icons.Default.FormatListNumbered, "Numbered list") }
+                    }) { Icon(PersonaIcons.FormatListNumbered, "Numbered list") }
                     IconButton(enabled = !isSaving && !isPicking && !privateLocked, onClick = {
                         picker.launch(arrayOf("image/jpeg", "image/png", "application/pdf"))
-                    }) { Icon(Icons.Default.AttachFile, if (isPicking) "Adding attachment" else "Attach photo or PDF") }
+                    }) { Icon(PersonaIcons.AttachFile, if (isPicking) "Adding attachment" else "Attach photo or PDF") }
                     Spacer(Modifier.weight(1f))
                     Text("Private", style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.width(8.dp))
@@ -777,10 +700,13 @@ fun AddOrEditRelationshipNoteDialog(
             title = { Text("Discard this note?") },
             text = { Text("Your changes have not been saved.") },
             confirmButton = {
-                Button(onClick = { showDiscardConfirmation = false; onDismiss() }) { Text("Discard") }
+                PersonaAction("Discard", {
+                    showDiscardConfirmation = false
+                    onDismiss()
+                }, style = PersonaActionStyle.Destructive)
             },
             dismissButton = {
-                OutlinedButton(onClick = { showDiscardConfirmation = false }) { Text("Keep editing") }
+                PersonaAction("Keep editing", { showDiscardConfirmation = false }, style = PersonaActionStyle.Text)
             }
         )
     }

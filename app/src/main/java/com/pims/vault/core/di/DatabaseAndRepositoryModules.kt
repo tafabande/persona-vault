@@ -134,8 +134,9 @@ object RepositoryModule {
     @Singleton
     fun provideMedicalRepository(
         medicalDao: MedicalDao,
-        auditLogger: HardenedAuditLogger
-    ): MedicalRepository = MedicalRepositoryImpl(medicalDao, auditLogger)
+        auditLogger: HardenedAuditLogger,
+        firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService
+    ): MedicalRepository = MedicalRepositoryImpl(medicalDao, auditLogger, firestoreSyncService)
 
     @Provides
     @Singleton

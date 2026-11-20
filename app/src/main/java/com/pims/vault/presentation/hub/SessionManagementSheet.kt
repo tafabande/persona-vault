@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
@@ -14,13 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -95,7 +90,7 @@ fun SessionManagementSheet(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Security,
+                            imageVector = PersonaIcons.Security,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.tertiary,
                             modifier = Modifier.size(20.dp)
@@ -117,7 +112,7 @@ fun SessionManagementSheet(
                 }
 
                 IconButton(onClick = onDismissRequest) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(PersonaIcons.Close, contentDescription = "Close")
                 }
             }
 
@@ -242,9 +237,9 @@ private fun SessionItemRow(
     onClick: () -> Unit
 ) {
     val icon: ImageVector = when (session.deviceType) {
-        DeviceType.DESKTOP_WINDOWS -> Icons.Default.Computer
-        DeviceType.MOBILE_ANDROID, DeviceType.MOBILE_IOS -> Icons.Default.PhoneAndroid
-        DeviceType.BROWSER_WEB -> Icons.Default.Language
+        DeviceType.DESKTOP_WINDOWS -> PersonaIcons.Computer
+        DeviceType.MOBILE_ANDROID, DeviceType.MOBILE_IOS -> PersonaIcons.PhoneAndroid
+        DeviceType.BROWSER_WEB -> PersonaIcons.Language
     }
 
     Surface(

@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.notes
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -17,13 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,10 +46,10 @@ import androidx.compose.ui.window.DialogProperties
 import com.pims.vault.presentation.ui.theme.PimsColors
 
 enum class NoteFilter(val label: String, val icon: ImageVector) {
-    ALL("All", Icons.Default.Description),
-    REMINDERS("Reminders", Icons.Default.Alarm),
-    PHOTOS("With Photos", Icons.Default.Image),
-    DONE("Completed", Icons.Default.CheckCircle)
+    ALL("All", PersonaIcons.Documents),
+    REMINDERS("Reminders", PersonaIcons.Alarm),
+    PHOTOS("With Photos", PersonaIcons.Image),
+    DONE("Completed", PersonaIcons.Success)
 }
 
 /**
@@ -78,7 +73,7 @@ fun NoteStatsDialog(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Description,
+                    imageVector = PersonaIcons.Documents,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
@@ -191,7 +186,7 @@ fun FullscreenImageViewerDialog(
                         .background(PimsColors.mediaScrim.copy(alpha = 0.6f))
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = PersonaIcons.Close,
                         contentDescription = "Close preview",
                         tint = PimsColors.onMediaScrim,
                         modifier = Modifier.size(24.dp)

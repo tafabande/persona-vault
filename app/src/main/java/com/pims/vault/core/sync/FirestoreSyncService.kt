@@ -1,11 +1,13 @@
 package com.pims.vault.core.sync
 
+import androidx.room.withTransaction
 import android.content.Context
 import android.util.Base64
 import java.io.File
 import java.util.UUID
 import com.pims.vault.presentation.avatar.PersonaAvatarManager
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.pims.vault.core.logging.VaultLogger
@@ -30,6 +32,9 @@ import com.pims.vault.data.local.dao.VaultDao
 import com.pims.vault.data.local.entity.AddressEntity
 import com.pims.vault.data.local.entity.ContactMethodEntity
 import com.pims.vault.data.local.entity.SyncConflictEntity
+import com.pims.vault.data.local.entity.SyncAction
+import com.pims.vault.data.local.entity.SyncOperationStatus
+import com.pims.vault.data.local.entity.SyncQueueEntity
 import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
 import com.pims.vault.core.model.AddressLabel
 import com.pims.vault.core.model.AllergySeverity
@@ -57,6 +62,8 @@ import com.pims.vault.data.local.entity.SocialAccountEntity
 import com.pims.vault.data.local.entity.VaultItemEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayInputStream
@@ -88,7 +95,11 @@ class FirestoreSyncService @Inject constructor(
     private val syncConflictDao: SyncConflictDao,
     private val vaultProofSync: VaultProofSyncService? = null,
     private val vaultDeletions: VaultDeletionStore? = null,
-    private val documentDeletions: DocumentDeletionStore? = null
+    private val documentDeletions: DocumentDeletionStore? = null,
+    private val syncQueueDao: com.pims.vault.data.local.dao.SyncQueueDao? = null,
+    private val database: com.pims.vault.data.local.database.PimsDatabase? = null,
+    private val cloudAccess: CloudSyncAccess? = null,
+    private val syncWorkScheduler: SyncWorkScheduler? = null
 ) {
     data class RemoteWallpaper(
         val id: String,
@@ -103,6 +114,7 @@ class FirestoreSyncService @Inject constructor(
     )
     private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
+    private val structuredSync = Mutex()
 
     private suspend fun recordConflictIfNeeded(
         entityType: String,
@@ -141,12 +153,13 @@ class FirestoreSyncService @Inject constructor(
     private fun getEffectiveUserId(userId: String?): String? {
         val requested = userId?.takeIf { it.isNotBlank() && it !in setOf("local_user", "primary_owner", "primary", CANONICAL_PRIMARY_OWNER_ID) }
         val authenticated = auth.currentUser?.uid?.takeIf(String::isNotBlank)
-        if (authenticated != null) return authenticated.takeIf { requested == null || it == requested }
-        return requested
+        return authenticated?.takeIf { uid ->
+            (requested == null || uid == requested) && (cloudAccess == null || cloudAccess.currentAccount() == uid)
+        }
     }
 
     suspend fun syncAccount(userId: String?, email: String?, displayName: String?) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
             val accountData = hashMapOf(
                 "accountUid" to uid,
@@ -156,8 +169,12 @@ class FirestoreSyncService @Inject constructor(
             )
             firestore.collection("accounts").document(uid).set(accountData, SetOptions.merge()).await()
             VaultLogger.i("FirestoreSync", "Account document synced for $uid")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync account document: ${e.message}", e)
+            false
         }
     }
 
@@ -166,7 +183,7 @@ class FirestoreSyncService @Inject constructor(
         person: PersonEntity,
         clearOptionalFields: Set<String> = emptySet()
     ) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
             // Sparse updates are intentional: an uncollected optional field is
             // not an instruction to overwrite a previously backed-up value.
@@ -201,92 +218,305 @@ class FirestoreSyncService @Inject constructor(
             clearOptionalFields.intersect(CLEARABLE_PERSON_FIELDS).forEach { field ->
                 if (personData[field] == null) personData[field] = com.google.firebase.firestore.FieldValue.delete()
             }
-            firestore.collection("accounts").document(uid)
-                .collection("people").document(person.id)
-                .set(personData, SetOptions.merge()).await()
+            if (!publishStructuredRecord(uid, StructuredRecord.PERSON, person.id, personData)) return@withContext false
             VaultLogger.i("FirestoreSync", "Person ${person.id} synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync person: ${e.message}", e)
+            false
         }
+    }
+
+    private fun contactFields(contact: ContactMethodEntity): Map<String, Any> {
+        val fields = hashMapOf(
+            "id" to contact.id,
+            "personId" to contact.personId,
+            "contactType" to contact.contactType.name,
+            "value" to contact.value,
+            "label" to contact.label,
+            "isPrimary" to contact.isPrimary,
+            "sortOrder" to contact.sortOrder,
+            "securityClassification" to contact.securityClassification.name,
+            "version" to 1L,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return fields
     }
 
     suspend fun syncContact(userId: String?, contact: ContactMethodEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
-            val contactData = hashMapOf(
-                "id" to contact.id,
-                "personId" to contact.personId,
-                "contactType" to contact.contactType.name,
-                "value" to contact.value,
-                "label" to contact.label,
-                "isPrimary" to contact.isPrimary,
-                "sortOrder" to contact.sortOrder,
-                "version" to 1L,
-                "updatedAt" to System.currentTimeMillis()
-            )
-            firestore.collection("accounts").document(uid)
-                .collection("contacts").document(contact.id)
-                .set(contactData, SetOptions.merge()).await()
+            val contactData = contactFields(contact)
+            if (!publishStructuredRecord(uid, StructuredRecord.CONTACT, contact.id, contactData)) return@withContext false
             VaultLogger.i("FirestoreSync", "Contact ${contact.id} synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync contact: ${e.message}", e)
+            false
         }
     }
 
-    suspend fun deleteRemoteContact(contactId: String) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(null) ?: return@withContext
-        try {
-            firestore.collection("accounts").document(uid)
-                .collection("contacts").document(contactId)
-                .delete().await()
-            VaultLogger.i("FirestoreSync", "Contact $contactId deleted from Firestore")
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Failed to delete remote contact: ${e.message}")
-        }
-    }
-
-    /**
-     * Generic remote-delete helper. Every local delete MUST call the matching
-     * helper here, otherwise the next pull resurrects the record (the
-     * "can't delete relationship tabs / notes" bug after restore).
-     */
     suspend fun isPrimaryOwner(personId: String): Boolean {
         if (personId.equals(CANONICAL_PRIMARY_OWNER_ID, ignoreCase = true) ||
             personId.equals("primary", ignoreCase = true) ||
             personId.equals("primary_owner", ignoreCase = true)) {
             return true
         }
-        val local = try { personDao.getPersonById(personId) } catch (_: Exception) { null }
-        return local?.isPrimaryOwner == true
+        return personDao.getPersonById(personId)?.isPrimaryOwner == true
     }
 
-    private suspend fun deleteRemoteDoc(collection: String, docId: String) {
-        if (docId.isBlank()) return
-        if ((collection == "people" || collection == "persons") && isPrimaryOwner(docId)) {
-            VaultLogger.w("FirestoreSync", "Blocked attempt to delete primary owner document in collection $collection: $docId")
-            throw IllegalArgumentException("Cannot delete primary owner document '$docId' in $collection")
+    suspend fun deleteStructuredRecord(record: StructuredRecord, id: String, deleteLocally: suspend () -> Unit) =
+        deleteStructuredRecords(record, listOf(id), deleteLocally)
+
+    suspend fun deleteStructuredRecords(record: StructuredRecord, ids: List<String>, deleteLocally: suspend () -> Unit) {
+        require(ids.all { it.isNotBlank() && '/' !in it })
+        localSyncTransaction {
+            require(record != StructuredRecord.PERSON || ids.none { isPrimaryOwner(it) }) { "The primary owner cannot be removed" }
+            val account = cloudAccess?.boundAccount()
+            val queue = syncQueueDao
+            if (account != null && queue != null) {
+                for (id in ids) {
+                    val key = record.queueKey(id)
+                    val existing = queue.getLatestByEntity(STRUCTURED_DELETION, key)
+                    queue.insert(
+                        SyncQueueEntity(
+                            id = existing?.id ?: UUID.randomUUID().toString(),
+                            operationId = UUID.randomUUID().toString(),
+                            entityType = STRUCTURED_DELETION,
+                            entityId = key,
+                            action = SyncAction.DELETE,
+                            payloadJson = org.json.JSONObject()
+                                .put("accountUid", account)
+                                .put("record", record.name)
+                                .put("id", id)
+                                .toString()
+                        )
+                    )
+                }
+            }
+            deleteLocally()
         }
-        val uid = getEffectiveUserId(null) ?: return
-        try {
-            firestore.collection("accounts").document(uid)
-                .collection(collection).document(docId)
-                .delete().await()
-            VaultLogger.i("FirestoreSync", "$collection/$docId deleted from Firestore")
-        } catch (e: Exception) {
-            VaultLogger.w("FirestoreSync", "Failed to delete remote $collection/$docId: ${e.message}")
+        syncWorkScheduler?.requestSync()
+    }
+
+    internal suspend fun commitStructuredDeletion(uid: String, operation: SyncQueueEntity): GatewayCommitResult {
+        val payload = org.json.JSONObject(operation.payloadJson)
+        if (operation.action != SyncAction.DELETE || getEffectiveUserId(uid) != uid ||
+            payload.optString("accountUid") != uid) return GatewayCommitResult.Unauthorized
+        val record = StructuredRecord.valueOf(payload.getString("record"))
+        val id = payload.getString("id")
+        require(id.isNotBlank() && '/' !in id && operation.entityId == record.queueKey(id))
+        if (record == StructuredRecord.PERSON && isPrimaryOwner(id)) {
+            return GatewayCommitResult.Failure("The primary owner cannot be removed")
+        }
+        val ref = firestore.collection("accounts").document(uid).collection(record.collection).document(id)
+        val committed = firestore.runTransaction { transaction ->
+            check(getEffectiveUserId(uid) == uid) { "Cloud account changed" }
+            val previous = transaction.get(ref)
+            if (record == StructuredRecord.PERSON && previous.getBoolean("isPrimaryOwner") == true) {
+                return@runTransaction false
+            }
+            if (previous.getBoolean("isDeleted") != true) {
+                transaction.set(ref, mapOf("id" to id, "isDeleted" to true, "updatedAt" to operation.updatedAt))
+            }
+            true
+        }.await()
+        return if (committed) GatewayCommitResult.Success(0, System.currentTimeMillis())
+            else GatewayCommitResult.Failure("The primary owner cannot be removed")
+    }
+
+    private suspend fun hasStructuredDeletion(record: StructuredRecord, id: String): Boolean =
+        syncQueueDao?.getLatestByEntity(STRUCTURED_DELETION, record.queueKey(id)) != null
+
+    private fun baselineKey(uid: String, record: StructuredRecord, id: String) = "$uid:${record.queueKey(id)}"
+
+    private suspend fun readStructuredBaseline(uid: String, record: StructuredRecord, id: String): StructuredBaseline? {
+        val row = syncQueueDao?.getLatestByEntity(STRUCTURED_BASELINE, baselineKey(uid, record, id)) ?: return null
+        val fields = org.json.JSONObject(row.payloadJson)
+        val choice = ConflictResolutionChoice.entries.firstOrNull { it.name == fields.optString("choice") }
+        return StructuredBaseline(fields.getLong("local"), fields.getLong("remote"), choice)
+    }
+
+    private suspend fun saveStructuredBaseline(uid: String, record: StructuredRecord, id: String, baseline: StructuredBaseline) {
+        val queue = syncQueueDao ?: return
+        val key = baselineKey(uid, record, id)
+        val existing = queue.getLatestByEntity(STRUCTURED_BASELINE, key)
+        val data = org.json.JSONObject()
+            .put("local", baseline.local)
+            .put("remote", baseline.remote)
+            .put("choice", baseline.choice?.name)
+            .toString()
+        if (existing?.payloadJson == data) return
+        queue.insert(
+            SyncQueueEntity(
+                id = existing?.id ?: UUID.randomUUID().toString(),
+                operationId = existing?.operationId ?: UUID.randomUUID().toString(),
+                entityType = STRUCTURED_BASELINE,
+                entityId = key,
+                action = SyncAction.UPDATE,
+                status = SyncOperationStatus.ACKNOWLEDGED,
+                payloadJson = data
+            )
+        )
+    }
+
+    private suspend fun structuredLocalFields(record: StructuredRecord, id: String): Map<String, Any>? = when (record) {
+        StructuredRecord.CONTACT -> contactDao.getContactById(id)?.let(::contactFields)
+        StructuredRecord.ADDRESS -> addressDao.getAddressById(id)?.let(::addressFields)
+        StructuredRecord.EDUCATION -> educationDao.getEducationRecordById(id)?.let(::educationFields)
+        StructuredRecord.EMPLOYMENT -> employmentDao.getEmploymentRecordById(id)?.let(::employmentFields)
+        StructuredRecord.MEDICAL_RECORD -> medicalDao.getRecordById(id)?.let(::medicalRecordFields)
+        else -> null
+    }
+
+    private suspend fun <T> reconcileStructuredPull(
+        uid: String,
+        record: StructuredRecord,
+        snapshot: DocumentSnapshot,
+        remote: T,
+        fields: (T) -> Map<String, Any>,
+        local: suspend () -> T?,
+        save: suspend (T) -> Unit
+    ): Boolean = structuredSync.withLock {
+        val remoteRevision = structuredFingerprint(snapshot.data.orEmpty())
+        val incoming = structuredFingerprint(fields(remote))
+        val recorded = readStructuredBaseline(uid, record, snapshot.id)
+        // The collection read may predate a direct upload. Confirm its current revision before replacing local data.
+        if (recorded != null && recorded.remote != remoteRevision) {
+            val currentRemote = snapshot.reference.get(com.google.firebase.firestore.Source.SERVER).await()
+            if (structuredFingerprint(currentRemote.data.orEmpty()) != remoteRevision) return@withLock false
+        }
+        localSyncTransaction {
+            val id = snapshot.id
+            if (getEffectiveUserId(uid) != uid || hasStructuredDeletion(record, id)) return@localSyncTransaction false
+            val current = local()?.let { structuredFingerprint(fields(it)) }
+            when (chooseStructuredPull(current, incoming, remoteRevision, recorded)) {
+                StructuredPull.MATCH -> {
+                    saveStructuredBaseline(uid, record, id, StructuredBaseline(incoming, remoteRevision))
+                    resolveStructuredConflicts(record, id, "Reconciled")
+                    false
+                }
+                StructuredPull.USE_REMOTE -> {
+                    save(remote)
+                    saveStructuredBaseline(uid, record, id, StructuredBaseline(incoming, remoteRevision))
+                    resolveStructuredConflicts(record, id, "Reconciled")
+                    true
+                }
+                StructuredPull.KEEP_LOCAL -> false
+                StructuredPull.REVIEW -> {
+                    val field = record.name
+                    val conflict = syncConflictDao.getExistingUnresolvedByField(STRUCTURED_CONFLICT, id, field)
+                    if (conflict == null || conflict.localVersion != current || conflict.serverVersion != remoteRevision) {
+                        syncConflictDao.insert(SyncConflictEntity(
+                            id = conflict?.id ?: UUID.randomUUID().toString(),
+                            entityType = STRUCTURED_CONFLICT,
+                            entityId = id,
+                            fieldName = field,
+                            localValue = "Saved on this device",
+                            remoteValue = "Saved on another device",
+                            localVersion = requireNotNull(current),
+                            serverVersion = remoteRevision
+                        ))
+                    }
+                    false
+                }
+            }
         }
     }
 
-    suspend fun deleteRemoteAddress(addressId: String) = withContext(Dispatchers.IO) {
-        deleteRemoteDoc("addresses", addressId)
+    private suspend fun resolveStructuredConflicts(record: StructuredRecord, id: String, choice: String) {
+        syncConflictDao.resolveAllConflictsForField(STRUCTURED_CONFLICT, id, record.name, choice, System.currentTimeMillis())
     }
 
-    suspend fun deleteRemoteSocialAccount(accountId: String) = withContext(Dispatchers.IO) {
-        deleteRemoteDoc("socialAccounts", accountId)
+    internal suspend fun resolveStructuredConflict(conflict: SyncConflictEntity, choice: ConflictResolutionChoice): Boolean =
+        withContext(Dispatchers.IO) {
+            if (choice == ConflictResolutionChoice.MERGED || conflict.isResolved) return@withContext false
+            val uid = getEffectiveUserId(null) ?: return@withContext false
+            val record = StructuredRecord.entries.firstOrNull { it.name == conflict.fieldName && it.tracksRevisions }
+                ?: return@withContext false
+            val id = conflict.entityId
+            structuredSync.withLock {
+                val remote = firestore.collection("accounts").document(uid).collection(record.collection).document(id)
+                    .get(com.google.firebase.firestore.Source.SERVER).await()
+                val revision = structuredFingerprint(remote.data.orEmpty())
+                if (!remote.exists() || remote.getBoolean("isDeleted") == true || revision != conflict.serverVersion) {
+                    return@withLock false
+                }
+                localSyncTransaction {
+                    val current = structuredLocalFields(record, id)?.let(::structuredFingerprint)
+                    if (getEffectiveUserId(uid) != uid || hasStructuredDeletion(record, id) ||
+                        current != conflict.localVersion || syncConflictDao.getConflictById(conflict.id) != conflict
+                    ) return@localSyncTransaction false
+                    saveStructuredBaseline(uid, record, id, StructuredBaseline(
+                        conflict.localVersion, revision, choice
+                    ))
+                    // For KEEP_LOCAL the remote baseline permits publishing this confirmed choice.
+                    // A second remote edit is still subject to the transaction's revision check.
+                    resolveStructuredConflicts(record, id, choice.name)
+                    true
+                }
+            }
+        }
+
+    private suspend fun publishStructuredRecord(
+        uid: String,
+        record: StructuredRecord,
+        id: String,
+        data: Map<String, Any>
+    ): Boolean = if (record.tracksRevisions && syncQueueDao != null) {
+        structuredSync.withLock {
+            val local = structuredFingerprint(data)
+            if (structuredLocalFields(record, id)?.let(::structuredFingerprint) != local) return@withLock true
+            val baseline = readStructuredBaseline(uid, record, id)
+            if (baseline?.choice == ConflictResolutionChoice.USE_REMOTE) return@withLock false
+            publishStructuredFields(uid, record, id, data, baseline, trackRevision = true)
+        }
+    } else {
+        publishStructuredFields(uid, record, id, data, baseline = null, trackRevision = false)
     }
 
-    suspend fun deleteRemoteRelationship(relationshipId: String) = withContext(Dispatchers.IO) {
-        deleteRemoteDoc("relationships", relationshipId)
+    private suspend fun publishStructuredFields(
+        uid: String,
+        record: StructuredRecord,
+        id: String,
+        data: Map<String, Any>,
+        baseline: StructuredBaseline?,
+        trackRevision: Boolean
+    ): Boolean {
+        if (hasStructuredDeletion(record, id)) return true
+        val ref = firestore.collection("accounts").document(uid).collection(record.collection).document(id)
+        val committed = firestore.runTransaction { transaction ->
+            check(getEffectiveUserId(uid) == uid) { "Cloud account changed" }
+            val previous = transaction.get(ref)
+            // An older device may still have an edited copy. Preserve it locally for review.
+            if (previous.getBoolean("isDeleted") == true) return@runTransaction null
+            val remoteFields = previous.data.orEmpty()
+            val remote = structuredFingerprint(remoteFields)
+            val hasChanges = data.any { (key, value) ->
+                key != "updatedAt" && when {
+                    value is com.google.firebase.firestore.FieldValue -> previous.contains(key)
+                    value is Number -> (previous.get(key) as? Number)?.toLong() != value.toLong()
+                    else -> previous.get(key) != value
+                }
+            }
+            if (!hasChanges) return@runTransaction remote
+            if (trackRevision && previous.exists() && remote != baseline?.remote) return@runTransaction null
+            transaction.set(ref, data, SetOptions.merge())
+            val merged = remoteFields.toMutableMap()
+            data.forEach { (key, value) ->
+                if (value is com.google.firebase.firestore.FieldValue) merged.remove(key) else merged[key] = value
+            }
+            structuredFingerprint(merged)
+        }.await() ?: return false
+        if (trackRevision && getEffectiveUserId(uid) == uid && !hasStructuredDeletion(record, id)) {
+            saveStructuredBaseline(uid, record, id, StructuredBaseline(structuredFingerprint(data), committed))
+            resolveStructuredConflicts(record, id, "Synchronized")
+        }
+        return true
     }
 
     private val relationshipDeletions by lazy { context.getSharedPreferences("relationship_note_deletions", Context.MODE_PRIVATE) }
@@ -340,24 +570,8 @@ class FirestoreSyncService @Inject constructor(
     }
 
     suspend fun deleteRemotePerson(personId: String): Boolean = withContext(Dispatchers.IO) {
-        if (isPrimaryOwner(personId)) {
-            VaultLogger.w("FirestoreSync", "Refusing to delete primary owner profile from remote: $personId")
-            throw IllegalArgumentException("Cannot delete primary owner record '$personId'")
-        }
-        deleteRemoteDoc("people", personId)
+        deleteStructuredRecord(StructuredRecord.PERSON, personId) { }
         true
-    }
-
-    suspend fun deleteRemoteEducation(eduId: String) = withContext(Dispatchers.IO) {
-        deleteRemoteDoc("education", eduId)
-    }
-
-    suspend fun deleteRemoteEmployment(workId: String) = withContext(Dispatchers.IO) {
-        deleteRemoteDoc("employment", workId)
-    }
-
-    suspend fun deleteRemoteMedicalRecord(recordId: String) = withContext(Dispatchers.IO) {
-        deleteRemoteDoc("healthRecords", recordId)
     }
 
     suspend fun deleteRemoteDocument(documentId: String) = withContext(Dispatchers.IO) {
@@ -389,29 +603,35 @@ class FirestoreSyncService @Inject constructor(
             }
         } ?: true
 
-    suspend fun deleteRemoteNoteAttachment(noteId: String, attachmentId: String) =
+    suspend fun deleteRemoteNoteAttachment(noteId: String, attachmentId: String, accountUid: String? = null): Boolean =
         withContext(Dispatchers.IO) {
-            if (!networkMonitor.isCurrentlyConnected()) {
-                VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore delete for note attachment $attachmentId")
-                return@withContext
-            }
-            val uid = getEffectiveUserId(null) ?: return@withContext
+            if (!networkMonitor.isCurrentlyConnected()) return@withContext false
+            val uid = getEffectiveUserId(accountUid) ?: return@withContext false
             try {
                 withTimeoutOrNull(4000L) {
                     val ref = firestore.collection("accounts").document(uid)
                         .collection("notes").document(noteId)
                         .collection("attachments").document(attachmentId)
-                    try {
-                        val snap = ref.get().await()
-                        val remotePath = snap.getString("b2RemotePath")
-                            ?: snap.getString("objectKey") ?: ""
-                        if (remotePath.isNotBlank()) storageUploadService.delete(remotePath)
-                    } catch (_: Exception) {}
-                    ref.delete().await()
-                }
-                VaultLogger.i("FirestoreSync", "Attachment $attachmentId deleted from Firestore (+storage)")
-            } catch (e: Exception) {
-                VaultLogger.w("FirestoreSync", "Failed to delete remote attachment: ${e.message}")
+                    val path = firestore.runTransaction { transaction ->
+                        if (getEffectiveUserId(uid) != uid) error("Cloud account changed")
+                        val snap = transaction.get(ref)
+                        val path = snap.getString("deletedObjectPath") ?: snap.getString("b2RemotePath")
+                            ?: snap.getString("objectKey").orEmpty()
+                        transaction.set(ref, mapOf("id" to attachmentId, "isDeleted" to true, "deletedObjectPath" to path))
+                        path
+                    }.await()
+                    if (path.isNotBlank() && storageUploadService.isConfigured()) {
+                        require(path.startsWith("users/notes/$uid/$noteId/") && !path.contains("..") ||
+                            storageUploadService.isPreferredRemote(path, path))
+                        storageUploadService.delete(path)
+                        ref.update("deletedObjectPath", com.google.firebase.firestore.FieldValue.delete()).await()
+                    }
+                    true
+                } ?: false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
             }
         }
 
@@ -801,43 +1021,50 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
+    private fun addressFields(address: AddressEntity): Map<String, Any> {
+        val fields = hashMapOf(
+            "id" to address.id,
+            "personId" to address.personId,
+            "streetLine1" to address.streetLine1,
+            "streetLine2" to (address.streetLine2 ?: ""),
+            "address2" to (address.streetLine2 ?: ""),
+            "street" to listOfNotNull(address.streetLine1, address.streetLine2).joinToString(" "),
+            "city" to address.city,
+            "state" to (address.stateProvince ?: ""),
+            "stateProvince" to (address.stateProvince ?: ""),
+            "postalCode" to (address.postalCode ?: ""),
+            "zip" to (address.postalCode ?: ""),
+            "country" to address.country,
+            "isCurrent" to address.isCurrent,
+            "validTo" to (address.validTo ?: 0L),
+            "notes" to (address.notes ?: ""),
+            "securityClassification" to address.securityClassification.name,
+            "label" to address.label.name,
+            "createdAt" to address.createdAt,
+            "version" to 1L,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        address.validFrom?.let { fields["validFrom"] = it }
+        return fields
+    }
+
     suspend fun syncAddress(userId: String?, address: AddressEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
-            val addressData = hashMapOf(
-                "id" to address.id,
-                "personId" to address.personId,
-                "streetLine1" to address.streetLine1,
-                "streetLine2" to (address.streetLine2 ?: ""),
-                "address2" to (address.streetLine2 ?: ""),
-                "street" to listOfNotNull(address.streetLine1, address.streetLine2).joinToString(" "),
-                "city" to address.city,
-                "state" to (address.stateProvince ?: ""),
-                "stateProvince" to (address.stateProvince ?: ""),
-                "postalCode" to (address.postalCode ?: ""),
-                "zip" to (address.postalCode ?: ""),
-                "country" to address.country,
-                "isCurrent" to address.isCurrent,
-                "validTo" to (address.validTo ?: 0L),
-                "notes" to (address.notes ?: ""),
-                "securityClassification" to address.securityClassification.name,
-                "label" to address.label.name,
-                "createdAt" to address.createdAt,
-                "version" to 1L,
-                "updatedAt" to System.currentTimeMillis()
-            )
-            address.validFrom?.let { addressData["validFrom"] = it }
-            firestore.collection("accounts").document(uid)
-                .collection("addresses").document(address.id)
-                .set(addressData, SetOptions.merge()).await()
+            val addressData = addressFields(address)
+            if (!publishStructuredRecord(uid, StructuredRecord.ADDRESS, address.id, addressData)) return@withContext false
             VaultLogger.i("FirestoreSync", "Address ${address.id} synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync address: ${e.message}", e)
+            false
         }
     }
 
     suspend fun syncSocialAccount(userId: String?, social: SocialAccountEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
             val socialData = hashMapOf(
                 "id" to social.id,
@@ -851,17 +1078,19 @@ class FirestoreSyncService @Inject constructor(
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
-            firestore.collection("accounts").document(uid)
-                .collection("socialAccounts").document(social.id)
-                .set(socialData, SetOptions.merge()).await()
+            if (!publishStructuredRecord(uid, StructuredRecord.SOCIAL_ACCOUNT, social.id, socialData)) return@withContext false
             VaultLogger.i("FirestoreSync", "Social account ${social.id} synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync social account: ${e.message}", e)
+            false
         }
     }
 
     suspend fun syncRelationship(userId: String?, rel: RelationshipEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
             val relData = hashMapOf(
                 "id" to rel.id,
@@ -874,12 +1103,14 @@ class FirestoreSyncService @Inject constructor(
                 "version" to 1L,
                 "updatedAt" to System.currentTimeMillis()
             )
-            firestore.collection("accounts").document(uid)
-                .collection("relationships").document(rel.id)
-                .set(relData, SetOptions.merge()).await()
+            if (!publishStructuredRecord(uid, StructuredRecord.RELATIONSHIP, rel.id, relData)) return@withContext false
             VaultLogger.i("FirestoreSync", "Relationship ${rel.id} synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync relationship: ${e.message}", e)
+            false
         }
     }
 
@@ -1092,14 +1323,14 @@ class FirestoreSyncService @Inject constructor(
     suspend fun syncVaultItem(userId: String?, item: VaultItemEntity) = withContext(Dispatchers.IO) {
         if (!networkMonitor.isCurrentlyConnected()) {
             VaultLogger.d("FirestoreSync", "Device is offline; skipping Firestore sync for vault item ${item.id}")
-            return@withContext
+            return@withContext false
         }
-        val uid = getEffectiveUserId(userId) ?: return@withContext
-        if (!syncAccountFileKey(uid)) return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
+        if (!syncAccountFileKey(uid)) return@withContext false
         try {
             if (vaultDeletions?.isDeleted(item.id) == true) {
                 syncVaultDeletions(uid)
-                return@withContext
+                return@withContext true
             }
             val payloadBase64 = Base64.encodeToString(item.encryptedPayload, Base64.NO_WRAP)
             val vaultData = hashMapOf(
@@ -1128,14 +1359,18 @@ class FirestoreSyncService @Inject constructor(
             check(auth.currentUser?.uid == uid) { "The account changed during vault sync" }
             if (!uploaded) {
                 vaultDeletions?.markRemote(uid, item.id, item.personId, System.currentTimeMillis())
-                return@withContext
+                return@withContext true
             }
             // A local delete may have committed while the network transaction was running.
             if (vaultDeletions?.isDeleted(item.id) == true) syncVaultDeletions(uid)
             else vaultProofSync?.syncItem(uid, item.id)
             VaultLogger.i("FirestoreSync", "Vault item synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync vault item: ${e.message}", e)
+            false
         }
     }
 
@@ -1294,13 +1529,32 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
-    suspend fun syncNote(userId: String?, note: PlainNoteEntity, isDeleted: Boolean = false) = withContext(Dispatchers.IO) {
-        if (!networkMonitor.isCurrentlyConnected()) {
-            VaultLogger.d("FirestoreSync", "Device is offline; skipping immediate Firestore sync for note ${note.id}")
-            return@withContext false
+    suspend fun syncNote(userId: String?, note: PlainNoteEntity): Boolean = when (
+        val result = commitNote(userId, note, false, null, null, emptyList())
+    ) {
+        is GatewayCommitResult.Success -> true
+        is GatewayCommitResult.VersionConflict -> {
+            recordConflictIfNeeded("PLAIN_NOTE", note.id, result.conflictingField,
+                "Saved on this device", result.serverPayloadJson, note.updatedAt, result.currentServerVersion)
+            true
         }
-        val uid = getEffectiveUserId(userId) ?: return@withContext false
-        if (!syncAccountFileKey(uid)) return@withContext false
+        else -> false
+    }
+
+    internal suspend fun commitNote(
+        userId: String?,
+        note: PlainNoteEntity,
+        isDeleted: Boolean,
+        baseRevision: Long?,
+        operationId: String?,
+        possiblyPublishedPredecessors: List<String>
+    ): GatewayCommitResult = withContext(Dispatchers.IO) {
+        if (!networkMonitor.isCurrentlyConnected()) {
+            return@withContext GatewayCommitResult.NetworkUnavailable
+        }
+        val uid = getEffectiveUserId(userId) ?: return@withContext GatewayCommitResult.Unauthorized
+        if (cloudAccess != null && cloudAccess.currentAccount() != uid) return@withContext GatewayCommitResult.Unauthorized
+        if (!syncAccountFileKey(uid)) return@withContext GatewayCommitResult.Failure("Cloud key verification is pending")
         try {
             val noteData = hashMapOf<String, Any?>(
                 "id" to note.id,
@@ -1363,20 +1617,44 @@ class FirestoreSyncService @Inject constructor(
                 noteData["isReminderDone"] = note.isReminderDone
                 noteData["isPinned"] = note.isPinned
             }
-            val committed = withTimeoutOrNull(4000L) {
-                firestore.collection("accounts").document(uid)
-                    .collection("notes").document(note.id)
-                    .set(noteData, SetOptions.merge()).await()
-                true
-            } ?: false
-            if (!committed) return@withContext false
-            VaultLogger.i("FirestoreSync", "Note ${note.id} synced to Firestore (isDeleted: $isDeleted)")
-            true
+            val noteRef = firestore.collection("accounts").document(uid).collection("notes").document(note.id)
+            val outcome = withTimeoutOrNull(8000L) {
+                firestore.runTransaction<GatewayCommitResult> { transaction ->
+                    if (getEffectiveUserId(uid) != uid) return@runTransaction GatewayCommitResult.Unauthorized
+                    val remote = transaction.get(noteRef)
+                    val remoteRevision = remote.getLong("updatedAt") ?: 0L
+                    val remotelyDeleted = remote.getBoolean("isDeleted") ?: false
+                    val remoteOperation = remote.getString("lastOperationId")
+                    val sameOp = operationId != null && remoteOperation == operationId
+                    if (sameOp || (isDeleted && remotelyDeleted) || (operationId == null && remote.exists() &&
+                            remoteRevision == note.updatedAt && !remotelyDeleted)) {
+                        return@runTransaction GatewayCommitResult.Success(remoteRevision, System.currentTimeMillis())
+                    }
+                    val continuedLocalEdit = remoteOperation in possiblyPublishedPredecessors &&
+                        note.updatedAt > remoteRevision && !remotelyDeleted
+                    if (remote.exists() && baseRevision != remoteRevision && !continuedLocalEdit) {
+                        return@runTransaction GatewayCommitResult.VersionConflict(remoteRevision,
+                            if (remotelyDeleted) "Deleted on another device" else "Saved on another device", "Note revision")
+                    }
+                    noteData["lastOperationId"] = operationId
+                    noteData["syncBaseRevision"] = remoteRevision
+                    transaction.set(noteRef, noteData, SetOptions.merge())
+                    GatewayCommitResult.Success(note.updatedAt, System.currentTimeMillis())
+                }.await()
+            } ?: GatewayCommitResult.Failure("Note synchronization is pending")
+            if (isDeleted && outcome is GatewayCommitResult.Success) {
+                val removed = withTimeoutOrNull(8000L) {
+                    val attachments = noteRef.collection("attachments").get(com.google.firebase.firestore.Source.SERVER).await()
+                    attachments.documents.all { deleteRemoteNoteAttachment(note.id, it.id, uid) }
+                } ?: false
+                if (!removed) return@withContext GatewayCommitResult.Failure("Note attachment cleanup is pending")
+            }
+            outcome
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (_: Exception) {
             VaultLogger.w("FirestoreSync", "Note sync failed; retained for retry")
-            false
+            GatewayCommitResult.Failure("Note synchronization is pending")
         }
     }
 
@@ -1432,8 +1710,18 @@ class FirestoreSyncService @Inject constructor(
                 .collection("attachments").document(attachment.id)
             val existing = attachmentRef.get(com.google.firebase.firestore.Source.SERVER).await()
             requireCurrentAccountFileKey(uid, activeKey)
+            if (existing.getBoolean("isDeleted") == true) return@withContext true
             val hasRemoteCopy = listOf("b2RemotePath", "objectKey", "b2DownloadUrl")
-                .any { !existing.getString(it).isNullOrBlank() }
+                .any { !existing.getString(it).isNullOrBlank() } || !existing.getString("ciphertextBase64").isNullOrBlank()
+            val captionMatches = if (encryptCaption) {
+                existing.getString("caption").isNullOrBlank() &&
+                    (attachment.caption.isNullOrBlank() || !existing.getString("encryptedCaption").isNullOrBlank())
+            } else existing.getString("caption").orEmpty() == attachment.caption.orEmpty() &&
+                existing.getString("encryptedCaption").isNullOrBlank()
+            if (hasRemoteCopy && captionMatches && existing.getString("sha256Hash") == attachment.sha256Hash &&
+                existing.getLong("fileSizeBytes") == attachment.fileSizeBytes && existing.getBoolean("binaryMissing") != true) {
+                return@withContext true
+            }
             val attachmentOut = ZeroizingByteArrayOutputStream(attachment.fileSizeBytes.coerceIn(32L, 64L * 1024).toInt())
             try {
                 fileStorage.readDecryptedFile(
@@ -1506,8 +1794,16 @@ class FirestoreSyncService @Inject constructor(
                 "captionKeyVersion" to 1L, "createdAt" to attachment.createdAt
             )
             val committed = withTimeoutOrNull(6000L) {
-                attachmentRef.set(attachmentData, SetOptions.merge()).await()
-                true
+                val parentRef = attachmentRef.parent.parent ?: return@withTimeoutOrNull false
+                firestore.runTransaction<Boolean> { transaction ->
+                    val remoteParent = transaction.get(parentRef)
+                    val remoteAttachment = transaction.get(attachmentRef)
+                    if (remoteAttachment.getBoolean("isDeleted") == true) return@runTransaction true
+                    if (!remoteParent.exists() || remoteParent.getBoolean("isDeleted") == true ||
+                        (remoteParent.getBoolean("isLocked") == true) != encryptCaption) return@runTransaction false
+                    transaction.set(attachmentRef, attachmentData, SetOptions.merge())
+                    true
+                }.await()
             } ?: false
             if (!committed) return@withContext false
             requireCurrentAccountFileKey(uid, activeKey)
@@ -1764,66 +2060,80 @@ class FirestoreSyncService @Inject constructor(
         }
     }
 
+    private fun educationFields(edu: EducationRecordEntity): Map<String, Any> {
+        val fields = hashMapOf(
+            "id" to edu.id,
+            "personId" to edu.personId,
+            "institution" to edu.institution,
+            "degree" to edu.qualification,
+            "qualification" to edu.qualification,
+            "fieldOfStudy" to (edu.fieldOfStudy ?: ""),
+            "grade" to (edu.grade ?: ""),
+            "country" to (edu.country ?: ""),
+            "description" to (edu.description ?: ""),
+            "startDate" to (edu.startDate ?: ""),
+            "endDate" to (edu.endDate ?: ""),
+            "isCurrent" to (edu.endDate.isNullOrBlank()),
+            "createdAt" to edu.createdAt,
+            "version" to 1L,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return fields
+    }
+
     suspend fun syncEducation(userId: String?, edu: EducationRecordEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
-            val eduData = hashMapOf(
-                "id" to edu.id,
-                "personId" to edu.personId,
-                "institution" to edu.institution,
-                "degree" to edu.qualification,
-                "qualification" to edu.qualification,
-                "fieldOfStudy" to (edu.fieldOfStudy ?: ""),
-                "grade" to (edu.grade ?: ""),
-                "country" to (edu.country ?: ""),
-                "description" to (edu.description ?: ""),
-                "startDate" to (edu.startDate ?: ""),
-                "endDate" to (edu.endDate ?: ""),
-                "isCurrent" to (edu.endDate.isNullOrBlank()),
-                "createdAt" to edu.createdAt,
-                "version" to 1L,
-                "updatedAt" to System.currentTimeMillis()
-            )
-            firestore.collection("accounts").document(uid)
-                .collection("education").document(edu.id)
-                .set(eduData, SetOptions.merge()).await()
+            val eduData = educationFields(edu)
+            if (!publishStructuredRecord(uid, StructuredRecord.EDUCATION, edu.id, eduData)) return@withContext false
             VaultLogger.i("FirestoreSync", "Education ${edu.id} synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync education: ${e.message}", e)
+            false
         }
     }
 
+    private fun employmentFields(work: EmploymentRecordEntity): Map<String, Any> {
+        val fields = hashMapOf(
+            "id" to work.id,
+            "personId" to work.personId,
+            "organization" to work.company,
+            "company" to work.company,
+            "title" to work.position,
+            "position" to work.position,
+            "department" to (work.department ?: ""),
+            "location" to (work.location ?: ""),
+            "responsibilities" to (work.responsibilities ?: ""),
+            "startDate" to (work.startDate ?: ""),
+            "endDate" to (work.endDate ?: ""),
+            "isCurrent" to work.isCurrent,
+            "createdAt" to work.createdAt,
+            "version" to 1L,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return fields
+    }
+
     suspend fun syncEmployment(userId: String?, work: EmploymentRecordEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
-            val workData = hashMapOf(
-                "id" to work.id,
-                "personId" to work.personId,
-                "organization" to work.company,
-                "company" to work.company,
-                "title" to work.position,
-                "position" to work.position,
-                "department" to (work.department ?: ""),
-                "location" to (work.location ?: ""),
-                "responsibilities" to (work.responsibilities ?: ""),
-                "startDate" to (work.startDate ?: ""),
-                "endDate" to (work.endDate ?: ""),
-                "isCurrent" to work.isCurrent,
-                "createdAt" to work.createdAt,
-                "version" to 1L,
-                "updatedAt" to System.currentTimeMillis()
-            )
-            firestore.collection("accounts").document(uid)
-                .collection("employment").document(work.id)
-                .set(workData, SetOptions.merge()).await()
+            val workData = employmentFields(work)
+            if (!publishStructuredRecord(uid, StructuredRecord.EMPLOYMENT, work.id, workData)) return@withContext false
             VaultLogger.i("FirestoreSync", "Employment ${work.id} synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync employment: ${e.message}", e)
+            false
         }
     }
 
     suspend fun syncMedicalProfile(userId: String?, profile: MedicalProfileEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
             val profileData = hashMapOf(
                 "id" to profile.personId,
@@ -1846,57 +2156,68 @@ class FirestoreSyncService @Inject constructor(
                 .collection("healthRecords").document("profile_${profile.personId}")
                 .set(profileData, SetOptions.merge()).await()
             VaultLogger.i("FirestoreSync", "Medical profile synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync medical profile: ${e.message}", e)
+            false
         }
     }
 
+    private fun medicalRecordFields(record: MedicalRecordEntity): Map<String, Any> {
+        val fields = hashMapOf(
+            "id" to record.id,
+            "personId" to record.personId,
+            "title" to record.title,
+            "recordType" to record.recordType.name,
+            "substanceOrDiagnosis" to (record.substanceOrDiagnosis ?: ""),
+            "severity" to (record.severity?.name ?: ""),
+            "status" to (record.status?.name ?: ""),
+            "dosage" to (record.dosage ?: ""),
+            "frequency" to (record.frequency ?: ""),
+            "route" to (record.route ?: ""),
+            "startDate" to (record.startDate ?: ""),
+            "endDate" to (record.endDate ?: ""),
+            "practitionerName" to (record.practitionerName ?: ""),
+            "facilityName" to (record.facilityName ?: ""),
+            "contactPhone" to (record.contactPhone ?: ""),
+            "contactEmail" to (record.contactEmail ?: ""),
+            "address" to (record.address ?: ""),
+            "specialty" to (record.specialty ?: ""),
+            "patientNumber" to (record.patientNumber ?: ""),
+            "policyNumber" to (record.policyNumber ?: ""),
+            "membershipNumber" to (record.membershipNumber ?: ""),
+            "planName" to (record.planName ?: ""),
+            "validUntil" to (record.validUntil ?: ""),
+            "visitDate" to (record.visitDate ?: ""),
+            "treatment" to (record.treatment ?: ""),
+            "followUpDate" to (record.followUpDate ?: ""),
+            "instructions" to (record.instructions ?: ""),
+            "photoUri" to (record.photoUri ?: ""),
+            "isEmergencyCardVisible" to record.isEmergencyCardVisible,
+            "notes" to (record.notes ?: ""),
+            "securityClassification" to record.securityClassification.name,
+            "createdAt" to record.createdAt,
+            "isEncrypted" to true,
+            "version" to 1L,
+            "updatedAt" to System.currentTimeMillis()
+        )
+        return fields
+    }
+
     suspend fun syncMedicalRecord(userId: String?, record: MedicalRecordEntity) = withContext(Dispatchers.IO) {
-        val uid = getEffectiveUserId(userId) ?: return@withContext
+        val uid = getEffectiveUserId(userId) ?: return@withContext false
         try {
-            val recordData = hashMapOf(
-                "id" to record.id,
-                "personId" to record.personId,
-                "title" to record.title,
-                "recordType" to record.recordType.name,
-                "substanceOrDiagnosis" to (record.substanceOrDiagnosis ?: ""),
-                "severity" to (record.severity?.name ?: ""),
-                "status" to (record.status?.name ?: ""),
-                "dosage" to (record.dosage ?: ""),
-                "frequency" to (record.frequency ?: ""),
-                "route" to (record.route ?: ""),
-                "startDate" to (record.startDate ?: ""),
-                "endDate" to (record.endDate ?: ""),
-                "practitionerName" to (record.practitionerName ?: ""),
-                "facilityName" to (record.facilityName ?: ""),
-                "contactPhone" to (record.contactPhone ?: ""),
-                "contactEmail" to (record.contactEmail ?: ""),
-                "address" to (record.address ?: ""),
-                "specialty" to (record.specialty ?: ""),
-                "patientNumber" to (record.patientNumber ?: ""),
-                "policyNumber" to (record.policyNumber ?: ""),
-                "membershipNumber" to (record.membershipNumber ?: ""),
-                "planName" to (record.planName ?: ""),
-                "validUntil" to (record.validUntil ?: ""),
-                "visitDate" to (record.visitDate ?: ""),
-                "treatment" to (record.treatment ?: ""),
-                "followUpDate" to (record.followUpDate ?: ""),
-                "instructions" to (record.instructions ?: ""),
-                "photoUri" to (record.photoUri ?: ""),
-                "isEmergencyCardVisible" to record.isEmergencyCardVisible,
-                "notes" to (record.notes ?: ""),
-                "securityClassification" to record.securityClassification.name,
-                "createdAt" to record.createdAt,
-                "isEncrypted" to true,
-                "version" to 1L,
-                "updatedAt" to System.currentTimeMillis()
-            )
-            firestore.collection("accounts").document(uid)
-                .collection("healthRecords").document(record.id)
-                .set(recordData, SetOptions.merge()).await()
+            val recordData = medicalRecordFields(record)
+            if (!publishStructuredRecord(uid, StructuredRecord.MEDICAL_RECORD, record.id, recordData)) return@withContext false
             VaultLogger.i("FirestoreSync", "Medical record ${record.id} synced to Firestore")
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Failed to sync medical record: ${e.message}", e)
+            false
         }
     }
 
@@ -1921,6 +2242,9 @@ class FirestoreSyncService @Inject constructor(
 
         var count = 0
         var backupFailures = 0
+        fun confirm(confirmed: Boolean) {
+            if (confirmed) count++ else backupFailures++
+        }
         try {
             // 1. Account Identity Document - local name is king, never send email as displayName
             val currentFbUser = auth.currentUser
@@ -1930,56 +2254,49 @@ class FirestoreSyncService @Inject constructor(
             } else {
                 currentFbUser?.displayName?.takeIf { !it.contains("@") && it.isNotBlank() }
             }
-            syncAccount(uid, currentFbUser?.email, localDisplayName)
-            count++
+            confirm(syncAccount(uid, currentFbUser?.email, localDisplayName))
 
             // 2. People / Identities
             val persons = personDao.getAllPersons()
             if (persons.isNotEmpty()) {
                 for (person in persons) {
-                    syncPerson(uid, person)
-                    count++
+                    confirm(syncPerson(uid, person))
                 }
             } else {
                 personDao.getPrimaryOwner()?.let {
-                    syncPerson(uid, it)
-                    count++
+                    confirm(syncPerson(uid, it))
                 }
             }
 
             // 3. Contacts
             val contacts = contactDao.getAllContacts()
             for (contact in contacts) {
-                syncContact(uid, contact)
-                count++
+                confirm(syncContact(uid, contact))
             }
 
             // 4. Addresses
             val addresses = addressDao.getAllAddresses()
             for (addr in addresses) {
-                syncAddress(uid, addr)
-                count++
+                confirm(syncAddress(uid, addr))
             }
 
             // 5. Social Accounts
             val socialAccounts = socialAccountDao.getAllSocialAccounts()
             for (social in socialAccounts) {
-                syncSocialAccount(uid, social)
-                count++
+                confirm(syncSocialAccount(uid, social))
             }
 
             // 6. Relationships & Kinship Notes
             val relationships = relationshipDao.getAllRelationships()
             for (rel in relationships) {
-                syncRelationship(uid, rel)
-                count++
+                confirm(syncRelationship(uid, rel))
             }
             val relationshipNotes = relationshipNoteDao.getAllNotes()
             for (relNote in relationshipNotes) {
-                if (syncRelationshipNote(uid, relNote)) count++ else backupFailures++
+                confirm(syncRelationshipNote(uid, relNote))
                 if (!relNote.isPrivate) {
                     for (attachment in relationshipNoteDao.getAttachments(relNote.id)) {
-                        if (syncRelationshipNoteAttachment(uid, relNote.id, attachment)) count++ else backupFailures++
+                        confirm(syncRelationshipNoteAttachment(uid, relNote.id, attachment))
                     }
                 }
             }
@@ -1988,8 +2305,7 @@ class FirestoreSyncService @Inject constructor(
             syncVaultDeletions(uid)
             val vaultItems = vaultDao.getAllVaultItems()
             for (item in vaultItems) {
-                syncVaultItem(uid, item)
-                count++
+                confirm(syncVaultItem(uid, item))
             }
 
             vaultProofSync?.syncPendingDeletions(uid)
@@ -1997,10 +2313,13 @@ class FirestoreSyncService @Inject constructor(
             // 8. Plain Notes & Photo Attachments (Backed up to Backblaze B2 + Firebase Storage)
             val notes = plainNoteDao.getAllNotes()
             for (note in notes) {
-                if (syncNote(uid, note, isDeleted = false)) count++ else backupFailures++
+                if (hasQueuedNote(note.id)) continue
+                confirm(syncNote(uid, note))
+                if (syncConflictDao.getExistingUnresolved("PLAIN_NOTE", note.id) != null) continue
                 val attachments = plainNoteDao.getAttachments(note.id)
                 for (att in attachments) {
-                    if (syncNoteAttachment(uid, note.id, att)) count++ else backupFailures++
+                    if (hasQueuedAttachment(att.id)) continue
+                    confirm(syncNoteAttachment(uid, note.id, att))
                 }
             }
 
@@ -2008,47 +2327,42 @@ class FirestoreSyncService @Inject constructor(
             if (!syncDocumentDeletions(uid)) backupFailures++
             val documents = documentDao.getAllDocuments()
             for (doc in documents) {
-                if (syncDocument(uid, doc)) count++ else backupFailures++
+                confirm(syncDocument(uid, doc))
             }
 
             // 10. Education Records
             val eduRecords = educationDao.getAllEducationRecords()
             for (edu in eduRecords) {
-                syncEducation(uid, edu)
-                count++
+                confirm(syncEducation(uid, edu))
             }
 
             // 11. Employment Records
             val workRecords = employmentDao.getAllEmploymentRecords()
             for (work in workRecords) {
-                syncEmployment(uid, work)
-                count++
+                confirm(syncEmployment(uid, work))
             }
 
             // 12. Health / Medical Dossier
             val medProfiles = medicalDao.getAllProfiles()
             for (prof in medProfiles) {
-                syncMedicalProfile(uid, prof)
-                count++
+                confirm(syncMedicalProfile(uid, prof))
             }
             val medRecords = medicalDao.getAllRecords()
             for (rec in medRecords) {
-                syncMedicalRecord(uid, rec)
-                count++
+                confirm(syncMedicalRecord(uid, rec))
             }
 
             // 13. Avatar & Profile Photos Backup
             try {
                 val avatarManager = PersonaAvatarManager.getInstance(context)
                 val avatarConfig = avatarManager.avatarConfig.value
-                syncAvatarConfig(avatarManager.getCurrentConfigJsonString())
+                confirm(syncAvatarConfig(avatarManager.getCurrentConfigJsonString(), expectedAccountUid = uid))
                 
                 if (avatarConfig.avatarSource == com.pims.vault.presentation.avatar.AvatarSource.CUSTOM_IMAGE &&
                     !avatarConfig.customAvatarPath.isNullOrBlank() &&
                     File(avatarConfig.customAvatarPath!!).exists()
                 ) {
                     photoBackupCoordinatorProvider.get().backupAvatarAsync(avatarConfig.customAvatarPath)
-                    count++
                 }
 
                 val relationships = relationshipDao.getAllRelationships()
@@ -2056,7 +2370,6 @@ class FirestoreSyncService @Inject constructor(
                     val pPhoto = avatarManager.getPersonPhotoPath(rel.targetPersonId, rel.id)
                     if (!pPhoto.isNullOrBlank() && File(pPhoto).exists()) {
                         photoBackupCoordinatorProvider.get().backupContactPhotoAsync(rel.targetPersonId, pPhoto)
-                        count++
                     }
                 }
                 photoBackupCoordinatorProvider.get().backupAllPhotos()
@@ -2069,8 +2382,10 @@ class FirestoreSyncService @Inject constructor(
             } catch (_: Exception) { backupFailures++ }
 
             VaultLogger.i("FirestoreSync", "Account sync sweep finished with $count confirmed records")
-            if (backupFailures > 0) SyncResult(false, count, "Some files or notes are saved locally and still need cloud backup. Retry sync.")
-            else SyncResult(true, count, "Synced $count records and media files")
+            if (backupFailures > 0) SyncResult(false, count, "Some records are saved locally and still need cloud backup. Retry sync.")
+            else SyncResult(true, count, "Confirmed $count cloud records")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             VaultLogger.e("FirestoreSync", "Sync error: ${e.message}", e)
             SyncResult(false, count, "Firestore & Backblaze sync error: ${e.localizedMessage}")
@@ -2416,8 +2731,9 @@ class FirestoreSyncService @Inject constructor(
 
             // 1. People / Identities (MUST be processed first to satisfy foreign keys)
             try {
-                val peopleSnap = accountDocRef.collection("people").get().await()
+                val peopleSnap = accountDocRef.collection("people").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in peopleSnap.documents) {
+                    if (doc.getBoolean("isDeleted") == true || hasStructuredDeletion(StructuredRecord.PERSON, doc.id)) continue
                     val rawId = doc.id
                     val isPrimaryOwner = doc.getBoolean("isPrimaryOwner") == true ||
                             rawId == "primary_owner" || rawId == "primary"
@@ -2552,53 +2868,17 @@ class FirestoreSyncService @Inject constructor(
                 }
             } catch (_: Exception) {}
 
-            // 2. Contacts (Local is king — preserve local contacts, create n+1 on clash)
+            // 2. Contacts
             try {
-                val contactsSnap = accountDocRef.collection("contacts").get().await()
-                val seenContactKeys = mutableSetOf<String>()
+                val contactsSnap = accountDocRef.collection("contacts").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in contactsSnap.documents) {
+                    if (doc.getBoolean("isDeleted") == true || hasStructuredDeletion(StructuredRecord.CONTACT, doc.id)) continue
                     val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                     val valStr = doc.getString("value")?.trim() ?: ""
                     if (valStr.isNotBlank()) {
                         val contactTypeStr = doc.getString("contactType") ?: "EMAIL"
                         val contactType = try { ContactType.valueOf(contactTypeStr) } catch (_: Exception) { ContactType.EMAIL }
-                        val dedupKey = "$targetPersonId:$contactType:${if (contactType == ContactType.PHONE) valStr.filter { it.isDigit() }.ifBlank { valStr } else valStr.lowercase()}"
-                        if (dedupKey in seenContactKeys) {
-                            try { doc.reference.delete() } catch (_: Exception) {}
-                            continue
-                        }
-                        seenContactKeys.add(dedupKey)
-
-                        val existing = contactDao.getContactById(doc.id)
-                        if (existing != null) {
-                            if (existing.value.trim() != valStr.trim()) {
-                                recordConflictIfNeeded(
-                                    entityType = "Contact",
-                                    entityId = doc.id,
-                                    fieldName = "${existing.contactType} (${existing.label})",
-                                    localValue = existing.value,
-                                    remoteValue = valStr,
-                                    localVersion = 1L,
-                                    serverVersion = 2L
-                                )
-                                // Clash: withhold overwriting local contact, create remote as next entry n+1
-                                val nPlusOneContact = ContactMethodEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    personId = targetPersonId,
-                                    contactType = contactType,
-                                    label = "${doc.getString("label") ?: "Secondary"} (Remote)",
-                                    value = valStr,
-                                    isPrimary = false,
-                                    sortOrder = (doc.getLong("sortOrder") ?: 0L).toInt()
-                                )
-                                contactDao.insertOrUpdate(nPlusOneContact)
-                                count++
-                            }
-                            // Local is king — preserve local contact!
-                            continue
-                        }
-
                         val contact = ContactMethodEntity(
                             id = doc.id,
                             personId = targetPersonId,
@@ -2606,20 +2886,26 @@ class FirestoreSyncService @Inject constructor(
                             label = doc.getString("label") ?: "Primary",
                             value = valStr,
                             isPrimary = doc.getBoolean("isPrimary") ?: false,
+                            securityClassification = doc.getString("securityClassification")?.let { runCatching { SecurityClassification.valueOf(it) }.getOrNull() } ?: SecurityClassification.ZONE_1_PERSONAL,
                             sortOrder = (doc.getLong("sortOrder") ?: 0L).toInt()
                         )
-                        contactDao.insertOrUpdate(contact)
-                        count++
+                        if (reconcileStructuredPull(
+                                uid, StructuredRecord.CONTACT, doc, contact, ::contactFields,
+                                local = { contactDao.getContactById(doc.id) },
+                                save = { contactDao.insertOrUpdate(it) }
+                            )
+                        ) count++
                     }
                 }
             } catch (e: Exception) {
                 VaultLogger.e("FirestoreSync", "Error pulling contacts: ${e.message}", e)
             }
 
-            // 3. Addresses (Local is king — preserve local addresses, create n+1 on clash)
+            // 3. Addresses
             try {
-                val addressesSnap = accountDocRef.collection("addresses").get().await()
+                val addressesSnap = accountDocRef.collection("addresses").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in addressesSnap.documents) {
+                    if (doc.getBoolean("isDeleted") == true || hasStructuredDeletion(StructuredRecord.ADDRESS, doc.id)) continue
                     val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                     val street1 = doc.getString("streetLine1") ?: doc.getString("street") ?: ""
@@ -2636,43 +2922,6 @@ class FirestoreSyncService @Inject constructor(
                         val labelStr = doc.getString("label") ?: "HOME"
                         val label = try { AddressLabel.valueOf(labelStr) } catch (_: Exception) { AddressLabel.HOME }
 
-                        val existing = addressDao.getAddressById(doc.id)
-                        if (existing != null) {
-                            val localAddrStr = listOfNotNull<String>(existing.streetLine1, existing.streetLine2, existing.city, existing.country).filter { it.isNotBlank() }.joinToString(", ")
-                            val remoteAddrStr = listOfNotNull<String>(street1, street2, city, country).filter { it.isNotBlank() }.joinToString(", ")
-                            if (localAddrStr != remoteAddrStr) {
-                                recordConflictIfNeeded(
-                                    entityType = "Address",
-                                    entityId = doc.id,
-                                    fieldName = existing.label.name,
-                                    localValue = localAddrStr,
-                                    remoteValue = remoteAddrStr,
-                                    localVersion = 1L,
-                                    serverVersion = 2L
-                                )
-                                // Clash: withhold overwriting local address, create remote as next entry n+1
-                                val nPlusOneAddress = AddressEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    personId = targetPersonId,
-                                    label = label,
-                                    streetLine1 = street1,
-                                    streetLine2 = street2,
-                                    city = city,
-                                    stateProvince = state,
-                                    postalCode = postal,
-                                    country = country,
-                                    isCurrent = false,
-                                    validFrom = validFrom,
-                                    validTo = validTo,
-                                    notes = notes
-                                )
-                                addressDao.insertOrUpdate(nPlusOneAddress)
-                                count++
-                            }
-                            // Local is king — preserve local address!
-                            continue
-                        }
-
                         val address = AddressEntity(
                             id = doc.id,
                             personId = targetPersonId,
@@ -2686,10 +2935,16 @@ class FirestoreSyncService @Inject constructor(
                             isCurrent = doc.getBoolean("isCurrent") ?: true,
                             validFrom = validFrom,
                             validTo = validTo,
+                            securityClassification = doc.getString("securityClassification")?.let { runCatching { SecurityClassification.valueOf(it) }.getOrNull() } ?: SecurityClassification.ZONE_2_PRIVATE,
+                            createdAt = doc.getLong("createdAt") ?: 0L,
                             notes = notes
                         )
-                        addressDao.insertOrUpdate(address)
-                        count++
+                        if (reconcileStructuredPull(
+                                uid, StructuredRecord.ADDRESS, doc, address, ::addressFields,
+                                local = { addressDao.getAddressById(doc.id) },
+                                save = { addressDao.insertOrUpdate(it) }
+                            )
+                        ) count++
                     }
                 }
             } catch (e: Exception) {
@@ -2698,8 +2953,9 @@ class FirestoreSyncService @Inject constructor(
 
             // 4. Social Accounts (Local is king — preserve local accounts, record conflicts)
             try {
-                val socialSnap = accountDocRef.collection("socialAccounts").get().await()
+                val socialSnap = accountDocRef.collection("socialAccounts").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in socialSnap.documents) {
+                    if (doc.getBoolean("isDeleted") == true || hasStructuredDeletion(StructuredRecord.SOCIAL_ACCOUNT, doc.id)) continue
                     val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                     val url = doc.getString("url") ?: doc.getString("profileUrl") ?: ""
@@ -2742,8 +2998,9 @@ class FirestoreSyncService @Inject constructor(
 
             // 5. Relationships (Local is king — preserve local relationships)
             try {
-                val relSnap = accountDocRef.collection("relationships").get().await()
+                val relSnap = accountDocRef.collection("relationships").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in relSnap.documents) {
+                    if (doc.getBoolean("isDeleted") == true || hasStructuredDeletion(StructuredRecord.RELATIONSHIP, doc.id)) continue
                     val rawSourceId = doc.getString("sourcePersonId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val rawTargetId = doc.getString("targetPersonId") ?: ""
                     val sourceId = personIdMap[rawSourceId] ?: rawSourceId
@@ -2876,9 +3133,10 @@ class FirestoreSyncService @Inject constructor(
 
             // 8. Plain Notes & Attachments (stable note IDs; conflicts are explicit)
             try {
-                val notesSnap = accountDocRef.collection("notes").get().await()
+                val notesSnap = accountDocRef.collection("notes").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in notesSnap.documents) {
                     val noteId = doc.id
+                    if (hasQueuedNote(noteId)) continue
                     val isDeleted = doc.getBoolean("isDeleted") ?: false
                     val rawOwner = doc.getString("ownerPersonId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetOwner = personIdMap[rawOwner] ?: rawOwner
@@ -2906,37 +3164,39 @@ class FirestoreSyncService @Inject constructor(
                     } else doc.getBoolean("isPinned")
                     if (isDeleted) {
                         if (existingNote != null) {
-                            if (existingNote.updatedAt > updatedAt) {
-                                VaultLogger.d("FirestoreSync", "Note $noteId was updated locally after remote deletion. Local is king.")
-                            } else {
-                                plainNoteDao.deleteById(noteId)
-                                count++
-                            }
+                            if (existingNote.updatedAt == doc.getLong("syncBaseRevision")) {
+                                if (applyPullIfUnchanged(noteId, existingNote) { plainNoteDao.deleteById(noteId) }) count++
+                            } else recordConflictIfNeeded("PLAIN_NOTE", noteId, "Note revision", "Saved on this device",
+                                "Deleted on another device", existingNote.updatedAt, updatedAt)
                         }
                         continue
                     }
 
                     var effectiveNoteId = noteId
                     if (existingNote != null) {
-                        val isSameContent = existingNote.title.trim() == title.trim() &&
-                                existingNote.content.trim() == content.trim()
+                        val isSameContent = existingNote.title == title && existingNote.content == content &&
+                            existingNote.format == format && existingNote.isLocked == isLocked &&
+                            existingNote.reminderAt == reminderAt && existingNote.reminderTag == reminderTag &&
+                            existingNote.reminderRepeat == reminderRepeat && existingNote.isReminderDone == isReminderDone &&
+                            (incomingPin == null || existingNote.isPinned == incomingPin)
                         if (!isSameContent) {
-                            recordConflictIfNeeded(
-                                entityType = "Note",
-                                entityId = noteId,
-                                fieldName = if (isLocked) "Protected note content" else "Title / Content",
-                                localValue = if (isLocked) "Protected content differs" else "${existingNote.title}: ${existingNote.content}",
-                                remoteValue = if (isLocked) "Protected content differs" else "$title: $content",
-                                localVersion = existingNote.updatedAt,
-                                serverVersion = updatedAt
-                            )
-                            // Do not invent a second note. Keep the stable local
-                            // record and leave the conflict available for an
-                            // explicit resolution in the sync UI.
-                            continue
+                            if (existingNote.updatedAt != doc.getLong("syncBaseRevision")) {
+                                recordConflictIfNeeded("PLAIN_NOTE", noteId, "Note revision", "Saved on this device",
+                                    "Saved on another device", existingNote.updatedAt, updatedAt)
+                                continue
+                            }
+                            val updated = existingNote.copy(title = title, content = content, format = format,
+                                updatedAt = updatedAt, reminderAt = reminderAt, reminderTag = reminderTag,
+                                reminderRepeat = reminderRepeat, isReminderDone = isReminderDone,
+                                isLocked = isLocked, isPinned = incomingPin ?: existingNote.isPinned)
+                            if (!applyPullIfUnchanged(noteId, existingNote) { plainNoteDao.upsert(updated) }) continue
+                            count++
                         } else {
                             effectiveNoteId = existingNote.id
-                            incomingPin?.let { plainNoteDao.applyRemotePin(existingNote.id, it, updatedAt) }
+                            if (existingNote.updatedAt != updatedAt &&
+                                !applyPullIfUnchanged(noteId, existingNote) { plainNoteDao.upsert(existingNote.copy(updatedAt = updatedAt)) }) {
+                                continue
+                            }
                         }
                     } else {
                         val noteEntity = PlainNoteEntity(
@@ -2954,15 +3214,26 @@ class FirestoreSyncService @Inject constructor(
                             isLocked = isLocked,
                             isPinned = incomingPin ?: false
                         )
-                        plainNoteDao.upsert(noteEntity)
+                        if (!applyPullIfUnchanged(noteId, null) { plainNoteDao.upsert(noteEntity) }) continue
                         count++
                     }
 
                     // Attachments: Download and attach to effectiveNoteId
                     try {
-                        val attSnap = doc.reference.collection("attachments").get().await()
+                        val attSnap = doc.reference.collection("attachments").get(com.google.firebase.firestore.Source.SERVER).await()
                         for (attDoc in attSnap.documents) {
                             val attId = attDoc.id
+                            if (hasQueuedAttachment(attId)) continue
+                            if (attDoc.getBoolean("isDeleted") == true) {
+                                val removed = localSyncTransaction {
+                                    if (hasQueuedAttachment(attId)) return@localSyncTransaction null
+                                    val local = plainNoteDao.getAttachment(attId) ?: return@localSyncTransaction null
+                                    plainNoteDao.deleteAttachment(attId)
+                                    local
+                                }
+                                removed?.let { fileStorage.deleteFile(it.storagePath) }
+                                continue
+                            }
                             var storagePath = attDoc.getString("storagePath") ?: ""
                             val mimeType = attDoc.getString("mimeType") ?: "image/jpeg"
                             var fileSizeBytes = attDoc.getLong("fileSizeBytes") ?: 0L
@@ -3015,8 +3286,14 @@ class FirestoreSyncService @Inject constructor(
                                 caption = caption,
                                 createdAt = attCreatedAt
                             )
-                            plainNoteDao.upsertAttachment(attEntity)
-                            count++
+                            val applied = localSyncTransaction {
+                                if (hasQueuedAttachment(attId) || plainNoteDao.getById(effectiveNoteId) == null) {
+                                    return@localSyncTransaction false
+                                }
+                                plainNoteDao.upsertAttachment(attEntity)
+                                true
+                            }
+                            if (applied) count++
                         }
                     } catch (e: Exception) {
                         VaultLogger.w("FirestoreSync", "Attachment sync error for note $effectiveNoteId: ${e.message}")
@@ -3122,10 +3399,11 @@ class FirestoreSyncService @Inject constructor(
                 VaultLogger.w("FirestoreSync", "Document recovery is pending and will retry")
             }
 
-            // 10. Education (Local is king — preserve local education records, create n+1 on clash)
+            // 10. Education
             try {
-                val eduSnap = accountDocRef.collection("education").get().await()
+                val eduSnap = accountDocRef.collection("education").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in eduSnap.documents) {
+                    if (doc.getBoolean("isDeleted") == true || hasStructuredDeletion(StructuredRecord.EDUCATION, doc.id)) continue
                     val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                     val inst = doc.getString("institution") ?: ""
@@ -3138,38 +3416,6 @@ class FirestoreSyncService @Inject constructor(
                     val description = doc.getString("description")?.takeIf { it.isNotBlank() }
 
                     if (inst.isNotBlank() || qual.isNotBlank()) {
-                        val existing = educationDao.getAllEducationRecords().find { it.id == doc.id }
-                        if (existing != null) {
-                            if (existing.institution.trim() != inst.trim() || existing.qualification.trim() != qual.trim()) {
-                                recordConflictIfNeeded(
-                                    entityType = "Education",
-                                    entityId = doc.id,
-                                    fieldName = "Institution / Degree",
-                                    localValue = "${existing.institution}: ${existing.qualification}",
-                                    remoteValue = "$inst: $qual",
-                                    localVersion = 1L,
-                                    serverVersion = 2L
-                                )
-                                // Clash: Withhold overwriting local, create remote as next entry n+1
-                                val nPlusOneEdu = EducationRecordEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    personId = targetPersonId,
-                                    institution = inst,
-                                    qualification = qual,
-                                    fieldOfStudy = fieldOfStudy,
-                                    startDate = startDate,
-                                    endDate = endDate,
-                                    grade = grade,
-                                    country = country,
-                                    description = description
-                                )
-                                educationDao.insertOrUpdate(nPlusOneEdu)
-                                count++
-                            }
-                            // Local is king — preserve local!
-                            continue
-                        }
-
                         val edu = EducationRecordEntity(
                             id = doc.id,
                             personId = targetPersonId,
@@ -3180,20 +3426,26 @@ class FirestoreSyncService @Inject constructor(
                             endDate = endDate,
                             grade = grade,
                             country = country,
+                            createdAt = doc.getLong("createdAt") ?: 0L,
                             description = description
                         )
-                        educationDao.insertOrUpdate(edu)
-                        count++
+                        if (reconcileStructuredPull(
+                                uid, StructuredRecord.EDUCATION, doc, edu, ::educationFields,
+                                local = { educationDao.getEducationRecordById(doc.id) },
+                                save = { educationDao.insertOrUpdate(it) }
+                            )
+                        ) count++
                     }
                 }
             } catch (e: Exception) {
                 VaultLogger.e("FirestoreSync", "Error pulling education: ${e.message}", e)
             }
 
-            // 11. Employment (Local is king — preserve local employment records, create n+1 on clash)
+            // 11. Employment
             try {
-                val workSnap = accountDocRef.collection("employment").get().await()
+                val workSnap = accountDocRef.collection("employment").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in workSnap.documents) {
+                    if (doc.getBoolean("isDeleted") == true || hasStructuredDeletion(StructuredRecord.EMPLOYMENT, doc.id)) continue
                     val rawPersonId = doc.getString("personId") ?: CANONICAL_PRIMARY_OWNER_ID
                     val targetPersonId = personIdMap[rawPersonId] ?: rawPersonId
                     val comp = doc.getString("company") ?: doc.getString("organization") ?: ""
@@ -3206,38 +3458,6 @@ class FirestoreSyncService @Inject constructor(
                     val isCurrent = doc.getBoolean("isCurrent") ?: false
 
                     if (comp.isNotBlank() || pos.isNotBlank()) {
-                        val existing = employmentDao.getAllEmploymentRecords().find { it.id == doc.id }
-                        if (existing != null) {
-                            if (existing.company.trim() != comp.trim() || existing.position.trim() != pos.trim()) {
-                                recordConflictIfNeeded(
-                                    entityType = "Employment",
-                                    entityId = doc.id,
-                                    fieldName = "Company / Role",
-                                    localValue = "${existing.company}: ${existing.position}",
-                                    remoteValue = "$comp: $pos",
-                                    localVersion = 1L,
-                                    serverVersion = 2L
-                                )
-                                // Clash: Withhold overwriting local, create remote as next entry n+1
-                                val nPlusOneWork = EmploymentRecordEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    personId = targetPersonId,
-                                    company = comp,
-                                    position = pos,
-                                    department = department,
-                                    location = location,
-                                    responsibilities = responsibilities,
-                                    startDate = startDate,
-                                    endDate = endDate,
-                                    isCurrent = isCurrent
-                                )
-                                employmentDao.insertOrUpdate(nPlusOneWork)
-                                count++
-                            }
-                            // Local is king — preserve local!
-                            continue
-                        }
-
                         val work = EmploymentRecordEntity(
                             id = doc.id,
                             personId = targetPersonId,
@@ -3248,20 +3468,26 @@ class FirestoreSyncService @Inject constructor(
                             responsibilities = responsibilities,
                             startDate = startDate,
                             endDate = endDate,
+                            createdAt = doc.getLong("createdAt") ?: 0L,
                             isCurrent = isCurrent
                         )
-                        employmentDao.insertOrUpdate(work)
-                        count++
+                        if (reconcileStructuredPull(
+                                uid, StructuredRecord.EMPLOYMENT, doc, work, ::employmentFields,
+                                local = { employmentDao.getEmploymentRecordById(doc.id) },
+                                save = { employmentDao.insertOrUpdate(it) }
+                            )
+                        ) count++
                     }
                 }
             } catch (e: Exception) {
                 VaultLogger.e("FirestoreSync", "Error pulling employment: ${e.message}", e)
             }
 
-            // 12. Health Records (Local is king — preserve local health records, create n+1 on clash)
+            // 12. Health Records
             try {
-                val medSnap = accountDocRef.collection("healthRecords").get().await()
+                val medSnap = accountDocRef.collection("healthRecords").get(com.google.firebase.firestore.Source.SERVER).await()
                 for (doc in medSnap.documents) {
+                    if (doc.getBoolean("isDeleted") == true || hasStructuredDeletion(StructuredRecord.MEDICAL_RECORD, doc.id)) continue
                     val docId = doc.id
                     if (docId.startsWith("profile_") || doc.contains("bloodType")) {
                         val rawPersonId = doc.getString("personId") ?: docId.removePrefix("profile_")
@@ -3356,58 +3582,6 @@ class FirestoreSyncService @Inject constructor(
                         val isEmergency = doc.getBoolean("isEmergencyCardVisible") ?: false
                         val notes = doc.getString("notes")?.takeIf { it.isNotBlank() }
 
-                        val existing = medicalDao.getRecordById(docId)
-                        if (existing != null) {
-                            if (existing.title.trim() != remoteTitle.trim()) {
-                                recordConflictIfNeeded(
-                                    entityType = "Medical",
-                                    entityId = docId,
-                                    fieldName = "Health Record",
-                                    localValue = existing.title,
-                                    remoteValue = remoteTitle,
-                                    localVersion = 1L,
-                                    serverVersion = 2L
-                                )
-                                // Clash: Withhold overwriting local, create remote as next entry n+1
-                                val nPlusOneRecord = MedicalRecordEntity(
-                                    id = UUID.randomUUID().toString(),
-                                    personId = targetPersonId,
-                                    recordType = recType,
-                                    title = "$remoteTitle (2)",
-                                    substanceOrDiagnosis = substanceOrDiag,
-                                    severity = severity,
-                                    status = status,
-                                    dosage = dosage,
-                                    frequency = frequency,
-                                    route = route,
-                                    startDate = startDate,
-                                    endDate = endDate,
-                                    practitionerName = practitionerName,
-                                    facilityName = facilityName,
-                                    contactPhone = contactPhone,
-                                    contactEmail = contactEmail,
-                                    address = address,
-                                    specialty = specialty,
-                                    patientNumber = patientNumber,
-                                    policyNumber = policyNumber,
-                                    membershipNumber = membershipNumber,
-                                    planName = planName,
-                                    validUntil = validUntil,
-                                    visitDate = visitDate,
-                                    treatment = treatment,
-                                    followUpDate = followUpDate,
-                                    instructions = instructions,
-                                    photoUri = photoUri,
-                                    isEmergencyCardVisible = isEmergency,
-                                    notes = notes
-                                )
-                                medicalDao.insertOrUpdate(nPlusOneRecord)
-                                count++
-                            }
-                            // Local is king — preserve local record!
-                            continue
-                        }
-
                         val record = MedicalRecordEntity(
                             id = docId,
                             personId = targetPersonId,
@@ -3438,10 +3612,16 @@ class FirestoreSyncService @Inject constructor(
                             instructions = instructions,
                             photoUri = photoUri,
                             isEmergencyCardVisible = isEmergency,
+                            securityClassification = doc.getString("securityClassification")?.let { runCatching { SecurityClassification.valueOf(it) }.getOrNull() } ?: SecurityClassification.ZONE_3_SENSITIVE,
+                            createdAt = doc.getLong("createdAt") ?: 0L,
                             notes = notes
                         )
-                        medicalDao.insertOrUpdate(record)
-                        count++
+                        if (reconcileStructuredPull(
+                                uid, StructuredRecord.MEDICAL_RECORD, doc, record, ::medicalRecordFields,
+                                local = { medicalDao.getRecordById(doc.id) },
+                                save = { medicalDao.insertOrUpdate(it) }
+                            )
+                        ) count++
                     }
                 }
             } catch (e: Exception) {
@@ -3499,6 +3679,62 @@ class FirestoreSyncService @Inject constructor(
             else "Synced ${pullResult.processedCount} downloaded and ${pushResult.processedCount} backed-up records"
         VaultLogger.i("FirestoreSync", msg)
         SyncResult(overallSuccess, totalCount, msg)
+    }
+
+    private suspend fun hasQueuedNote(id: String): Boolean = syncQueueDao?.getLatestByEntity("PLAIN_NOTE", id) != null
+
+    private suspend fun hasQueuedAttachment(id: String): Boolean =
+        syncQueueDao?.getLatestByEntity("PLAIN_NOTE_ATTACHMENT", id) != null
+
+    private suspend fun <T> localSyncTransaction(block: suspend () -> T): T =
+        if (database == null) block() else database.withTransaction { block() }
+
+    private suspend fun applyPullIfUnchanged(id: String, expected: PlainNoteEntity?, apply: suspend () -> Unit): Boolean =
+        localSyncTransaction {
+            if (hasQueuedNote(id) || plainNoteDao.getById(id) != expected) return@localSyncTransaction false
+            apply()
+            true
+        }
+
+    internal data class RemoteNoteRevision(val revision: Long, val deleted: Boolean, val note: PlainNoteEntity? = null)
+
+    internal suspend fun readNoteRevisionForResolution(
+        uid: String,
+        noteId: String,
+        revision: Long,
+        localNote: PlainNoteEntity?
+    ): RemoteNoteRevision? = withContext(Dispatchers.IO) {
+        if (getEffectiveUserId(uid) != uid || cloudAccess?.currentAccount() != uid) return@withContext null
+        withTimeoutOrNull(8000L) {
+            val doc = firestore.collection("accounts").document(uid).collection("notes").document(noteId)
+                .get(com.google.firebase.firestore.Source.SERVER).await()
+            if (!doc.exists()) return@withTimeoutOrNull null
+            val currentRevision = doc.getLong("updatedAt") ?: return@withTimeoutOrNull null
+            val deleted = doc.getBoolean("isDeleted") == true
+            if (deleted || currentRevision != revision) return@withTimeoutOrNull RemoteNoteRevision(currentRevision, deleted)
+            val owner = doc.getString("ownerPersonId") ?: return@withTimeoutOrNull null
+            val locked = doc.getBoolean("isLocked") == true
+            val protected = if (locked) readOrProtectLockedNote(uid, doc, owner) ?: return@withTimeoutOrNull null else null
+            fun text(key: String): String? = if (protected == null) doc.getString(key)
+                else protected.optString(key).takeUnless { it.isEmpty() || it == "null" }
+            val reminder = if (protected == null) doc.getLong("reminderAt")
+                else protected.optLong("reminderAt").takeIf { it > 0L }
+            RemoteNoteRevision(revision, false, PlainNoteEntity(
+                id = noteId,
+                ownerPersonId = localNote?.ownerPersonId ?: owner,
+                title = text("title") ?: "Untitled",
+                content = text("content").orEmpty(),
+                format = text("format") ?: "PLAIN",
+                createdAt = doc.getLong("createdAt") ?: localNote?.createdAt ?: revision,
+                updatedAt = revision,
+                reminderAt = reminder,
+                reminderTag = text("reminderTag"),
+                reminderRepeat = text("reminderRepeat"),
+                isReminderDone = protected?.optBoolean("isReminderDone") ?: (doc.getBoolean("isReminderDone") == true),
+                isLocked = locked,
+                isPinned = protected?.optBoolean("isPinned") ?: (doc.getBoolean("isPinned") == true)
+            ))
+        }
     }
 
     /**

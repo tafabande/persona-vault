@@ -623,11 +623,11 @@ class AddVisitUseCase @Inject constructor(
 }
 
 class DeleteMedicalRecordUseCase @Inject constructor(
-    private val medicalDao: MedicalDao,
+    private val medicalRepository: com.pims.vault.domain.repository.MedicalRepository,
     private val auditLogger: HardenedAuditLogger
 ) {
     suspend operator fun invoke(recordId: String) {
-        medicalDao.deleteById(recordId)
+        medicalRepository.deleteRecord(recordId)
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,
             entityType = "MedicalRecord",

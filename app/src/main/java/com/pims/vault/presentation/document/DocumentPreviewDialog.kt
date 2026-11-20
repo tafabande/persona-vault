@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.document
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -10,20 +12,22 @@ import android.system.Os
 import android.system.OsConstants
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
 import com.pims.vault.domain.model.DocumentVersionItem
 import com.pims.vault.domain.rules.DocumentRules
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.theme.PimsSpacing
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -158,30 +162,38 @@ fun DocumentPreviewDialog(
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(
         securePolicy = SecureFlagPolicy.SecureOn, usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val gutter = pimsPageGutter()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = gutter), verticalAlignment = Alignment.CenterVertically) {
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close preview") }
+                    PersonaIconAction(PersonaIcons.Close, "Close preview", onDismiss)
                 }
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     preview?.let { Image(it.bitmap.asImageBitmap(), "Document page ${it.pageIndex + 1}",
-                        Modifier.fillMaxSize().padding(12.dp), contentScale = ContentScale.Fit) }
+                        Modifier.fillMaxSize().padding(horizontal = gutter), contentScale = ContentScale.Fit) }
                     if (loading) CircularProgressIndicator()
-                    error?.let { message -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    error?.let { message -> Column(
+                        Modifier.padding(PimsSpacing.l),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(PimsSpacing.s)
+                    ) {
                         Text(message, style = MaterialTheme.typography.bodyLarge)
-                        TextButton(onClick = { retry++ }) { Text("Retry") }
+                        PersonaAction("Retry", { retry++ }, style = PersonaActionStyle.Quiet)
                     } }
                 }
-                if (pageCount > 1) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                if (pageCount > 1) Row(Modifier.fillMaxWidth().padding(horizontal = gutter),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = { pageIndex-- }, enabled = pageIndex > 0 && !loading) { Text("Previous") }
+                    PersonaAction("Previous", { pageIndex-- }, enabled = pageIndex > 0 && !loading, style = PersonaActionStyle.Text)
                     Text("${pageIndex + 1} / $pageCount", style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = { pageIndex++ }, enabled = pageIndex + 1 < pageCount && !loading) { Text("Next") }
+                    PersonaAction("Next", { pageIndex++ }, enabled = pageIndex + 1 < pageCount && !loading, style = PersonaActionStyle.Text)
                 }
-                TextButton(onClick = onOpenExternal, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    Text("Open with another app")
-                }
+                PersonaAction(
+                    "Open with another app",
+                    onOpenExternal,
+                    modifier = Modifier.fillMaxWidth().padding(start = gutter, end = gutter, bottom = PimsSpacing.s),
+                    style = PersonaActionStyle.Quiet
+                )
             }
         }
     }

@@ -138,3 +138,24 @@ The installed debug APK SHA-256 is `22741BA2D6F61DA2C2F99AE274D5646D33746C59EB1F
 The subsequent wallpaper batch/JJK update passed debug packaging, 551 JVM tests, lint with zero errors, static security gates, and all 14 archived schema upgrade checks on 2026-11-18. Its APK SHA-256 is `07C45EF93D1B79647F7C9706EE72152EBF883982F4E9AA31DADBF7E6765578B7`, signed with the same Android debug certificate. Wireless ADB disconnected before this final APK could be installed. The 18 native tests above apply to the preceding installed APK. Multi-photo import and the updated theme still need device interaction and visual acceptance.
 
 Native evidence is recorded in `.codex-jjk-native-18-verified.log`. The motion fixture initially needed an explicit test-clock frame after its click. A later run was interrupted by recent-app cleanup, and inactive-host failures passed after waking the device. The final complete suite passed all 18 tests in one run. Automated fixtures use synthetic data and isolated files/databases. Second-device recovery of user content remains unverified.
+
+### Design system and local-first overhaul (ADR-024 through ADR-027)
+
+- [ ] Exercise App PIN setup, invalid attempts, cold launch, protected-note entry, and strong-biometric Vault expiration on an isolated Android install.
+- [x] Run the Me pin, original-photo, shared control and historical migration instrumentation tests on Android.
+- [ ] Complete the compact, wide, large-text and TalkBack review against the [screen inventory](../planning/APP_WIDE_DESIGN_REMEDIATION.md).
+- [ ] Verify airplane-mode writes and app restart, then reconcile simultaneous edits and deletions on two authorized staging installations. Confirm the restored supported photo bytes match the imported originals.
+
+The [testing guide](../planning/TESTING_GUIDE.md) maps these checks to the directive.
+
+Local verification on 2026-11-19 passed 566 JVM tests across 81 classes, the static security gate, and all 14 historical schema-upgrade checks. Both debug APKs packaged successfully, and lint reported zero errors, 191 warnings and two informational findings. The debug APK signature verified and its SHA-256 is `C052868015394F2CE1AEA481525B2F529D03B1A418D8817C3D3ABA04A39813E9`. The packaged dashboard entry point uses 227 DEX registers after extraction, down from 301 in the earlier integration APK.
+
+The verified debug APK and instrumentation APK installed in place over wireless ADB on the Infinix X6855 running API 36 on 2026-11-19. The installed app hash matched the verified build, and Package Manager retained its UID and original install timestamp. After reconnecting, all 23 instrumentation tests passed, including Android Runtime dashboard linkage, isolated PIN persistence and lockout, encrypted Me pin storage, and byte-for-byte JPEG and PNG restoration through a synthetic transport. MainActivity cold-launched and became the foreground activity. In-app unlock and two-device cloud acceptance remain open.
+
+### Library, information editor, Me and Notes phone feedback
+
+The revised debug APK passed 568 JVM tests, debug and instrumentation packaging, lint with zero errors, static security and all 14 historical upgrade fixtures. Its signature verified and SHA-256 is `3C5FCB210D63CB47A43CFA5A8F97FE2B4D9A36D8E6CFDF3CC45D94E5885CA0F3`. The APK installed in place over wireless ADB on the Infinix X6855 on 2026-11-19. Its installed hash matched, Package Manager retained its UID and original install date, and MainActivity opened in the foreground. The Library dark-mode instrumentation fixture and the visual checks in the [testing guide](../planning/TESTING_GUIDE.md) remain open for this revision.
+
+### Library layout and Vault pinning follow-up
+
+Both APK builds, 569 JVM tests, lint with zero errors, the static security gate, and all 14 historical upgrade fixtures passed. The signed debug APK SHA-256 is `C07B106B0AC54DE61C4C0CDA33527918785485EA5363E8BA5006A4905E316712`. It installed in place over wireless ADB on the Infinix X6855, and the installed hash matched. All 26 Android tests passed on that device. The new pinning fixture verifies that owned items persist after pinning and that the picker hides after a simulated Vault session ends. The synthetic dark Library render was reviewed. MainActivity cold-launched and remained in the foreground after verification. A live biometric entry through Me and review with user content are still pending.
