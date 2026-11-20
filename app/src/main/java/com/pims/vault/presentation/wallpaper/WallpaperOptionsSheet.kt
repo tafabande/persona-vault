@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.wallpaper
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -40,35 +42,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.Circle
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -97,7 +78,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.presentation.media.MediaReferenceResolver
 import com.pims.vault.presentation.media.rememberMediaSelectionState
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaConfirmationDialog
+import com.pims.vault.presentation.ui.components.PersonaFilterChip
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.components.PersonaSheet
 import com.pims.vault.presentation.ui.theme.LocalReducedMotion
+import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -177,7 +165,7 @@ fun WallpaperOptionsSheet(
         }
     }
 
-    ModalBottomSheet(
+    PersonaSheet(
         onDismissRequest = {
             if (selectionState.isSelectionMode) {
                 selectionState.exitSelectionMode()
@@ -186,16 +174,6 @@ fun WallpaperOptionsSheet(
             }
         },
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = {
-            Surface(
-                modifier = Modifier.padding(vertical = 12.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = CircleShape
-            ) {
-                Box(modifier = Modifier.size(width = 36.dp, height = 4.dp))
-            }
-        },
         modifier = modifier
     ) {
         Column(
@@ -224,19 +202,14 @@ fun WallpaperOptionsSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
+                        PersonaIconAction(
+                            PersonaIcons.Close,
+                            "Exit selection mode",
                             onClick = {
                                 haptics.selection()
                                 selectionState.exitSelectionMode()
-                            },
-                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Exit selection mode",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
+                            }
+                        )
                         Text(
                             text = "${selectionState.selectedCount} selected",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -248,24 +221,22 @@ fun WallpaperOptionsSheet(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(
+                        PersonaAction(
+                            "Select all",
                             onClick = {
                                 haptics.selection()
                                 selectionState.selectAll(wallpapers.map { it.id })
                             },
-                            modifier = Modifier.sizeIn(minHeight = 48.dp)
-                        ) {
-                            Text("Select all", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                        }
-                        TextButton(
+                            style = PersonaActionStyle.Text
+                        )
+                        PersonaAction(
+                            "Clear",
                             onClick = {
                                 haptics.selection()
                                 selectionState.clearSelection()
                             },
-                            modifier = Modifier.sizeIn(minHeight = 48.dp)
-                        ) {
-                            Text("Clear", style = MaterialTheme.typography.labelMedium)
-                        }
+                            style = PersonaActionStyle.Text
+                        )
                     }
                 }
             }
@@ -296,19 +267,14 @@ fun WallpaperOptionsSheet(
                         )
                     }
 
-                    IconButton(
+                    PersonaIconAction(
+                        PersonaIcons.Close,
+                        "Close wallpaper options",
                         onClick = {
                             haptics.selection()
                             onDismiss()
-                        },
-                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close wallpaper options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                        }
+                    )
                 }
             }
 
@@ -337,36 +303,15 @@ fun WallpaperOptionsSheet(
                 ) {
                     WallpaperSurface.values().forEach { surface ->
                         val isSelected = selectedSurface == surface
-                        FilterChip(
+                        PersonaFilterChip(
+                            label = surface.title,
                             selected = isSelected,
                             onClick = {
                                 haptics.selection()
                                 selectedSurface = surface
                             },
-                            label = {
-                                Text(
-                                    text = surface.title,
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    )
-                                )
-                            },
-                            leadingIcon = if (isSelected) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            } else null,
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .sizeIn(minHeight = 48.dp)
+                            icon = if (isSelected) PersonaIcons.Check else null,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -504,7 +449,7 @@ fun WallpaperOptionsSheet(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.Check,
+                                    PersonaIcons.Check,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimary,
                                     modifier = Modifier.size(13.dp)
@@ -546,7 +491,7 @@ fun WallpaperOptionsSheet(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Tune,
+                                    imageVector = PersonaIcons.Tune,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(16.dp)
@@ -612,17 +557,17 @@ fun WallpaperOptionsSheet(
                                     modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 48.dp)
                                 )
 
-                                TextButton(
+                                PersonaAction(
+                                    "Reset position",
                                     onClick = {
                                         haptics.selection()
                                         stagedAlignX = 0f
                                         stagedAlignY = 0f
                                         stagedZoom = 1f
                                     },
-                                    modifier = Modifier.align(Alignment.End).sizeIn(minHeight = 48.dp)
-                                ) {
-                                    Text("Reset Position")
-                                }
+                                    modifier = Modifier.align(Alignment.End),
+                                    style = PersonaActionStyle.Text
+                                )
                             }
                         }
                     }
@@ -635,7 +580,8 @@ fun WallpaperOptionsSheet(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Apply Action (Surface Explicit)
-                Button(
+                PersonaAction(
+                    "Apply",
                     onClick = {
                         haptics.selection()
                         val item = stagedItem
@@ -649,24 +595,13 @@ fun WallpaperOptionsSheet(
                             }
                         }
                     },
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.weight(1.2f).sizeIn(minHeight = 48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Apply",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-                    )
-                }
+                    enabled = stagedItem != null,
+                    modifier = Modifier.weight(1.2f)
+                )
 
                 // Cancel Action (Discards Staged Changes)
-                OutlinedButton(
+                PersonaAction(
+                    "Cancel",
                     onClick = {
                         haptics.selection()
                         stagedItem = initialActiveItem
@@ -674,17 +609,13 @@ fun WallpaperOptionsSheet(
                         stagedAlignY = initialActiveItem?.alignmentY ?: 0f
                         stagedZoom = initialActiveItem?.zoomScale ?: 1f
                     },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
-                ) {
-                    Text(
-                        text = "Cancel",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                }
+                    style = PersonaActionStyle.Quiet,
+                    modifier = Modifier.weight(1f)
+                )
 
                 // Reset Action (Restores Defaults)
-                OutlinedButton(
+                PersonaAction(
+                    "Reset",
                     onClick = {
                         haptics.selection()
                         stagedAlignX = 0f
@@ -693,20 +624,9 @@ fun WallpaperOptionsSheet(
                         onRestorePresets()
                         stagedItem = availablePresets.firstOrNull() ?: wallpapers.firstOrNull()
                     },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Reset",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                }
+                    style = PersonaActionStyle.Quiet,
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             // 6. Bulk Action Bar (When in Selection Mode)
@@ -736,48 +656,28 @@ fun WallpaperOptionsSheet(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             // Safe Default Action: Remove from Persona
-                            Button(
+                            PersonaAction(
+                                "Remove",
                                 onClick = {
                                     haptics.warning()
                                     showRemovalConfirmDialog = true
                                 },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                ),
-                                modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.DeleteSweep,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Remove", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                            }
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.DeleteSweep,
+                                modifier = Modifier.weight(1f)
+                            )
 
                             // Destructive Action: Permanent Delete from Disk
-                            Button(
+                            PersonaAction(
+                                "Delete",
                                 onClick = {
                                     haptics.warning()
                                     showDeletionConfirmDialog = true
                                 },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error,
-                                    contentColor = MaterialTheme.colorScheme.onError
-                                ),
-                                modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Delete", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                            }
+                                style = PersonaActionStyle.Quiet,
+                                icon = PersonaIcons.DeleteOutline,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
@@ -800,8 +700,12 @@ fun WallpaperOptionsSheet(
                     )
 
                     if (!selectionState.isSelectionMode) {
-                        TextButton(onClick = { selectionState.enterSelectionMode() },
-                            enabled = wallpapers.isNotEmpty() && !isImporting) { Text("Select") }
+                        PersonaAction(
+                            "Select",
+                            { selectionState.enterSelectionMode() },
+                            enabled = wallpapers.isNotEmpty() && !isImporting,
+                            style = PersonaActionStyle.Text
+                        )
                     }
                 }
                 if (!selectionState.isSelectionMode) {
@@ -809,31 +713,28 @@ fun WallpaperOptionsSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        TextButton(
+                        PersonaAction(
+                            "Presets",
                             onClick = {
                                 haptics.selection()
                                 onRestorePresets()
                                 stagedItem = availablePresets.firstOrNull() ?: wallpapers.firstOrNull()
                             },
-                            modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Presets")
-                        }
-                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            icon = PersonaIcons.Refresh,
+                            style = PersonaActionStyle.Quiet
+                        )
+                        PersonaAction(
+                            "Add photos",
                             onClick = {
                                 haptics.selection()
                                 onPickFromDevice()
                             },
-                            shape = RoundedCornerShape(12.dp),
                             enabled = !isImporting,
-                            modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add photos")
-                        }
+                            modifier = Modifier.weight(1f),
+                            icon = PersonaIcons.Add,
+                            style = PersonaActionStyle.Quiet
+                        )
                     }
                 }
 
@@ -851,7 +752,7 @@ fun WallpaperOptionsSheet(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Image,
+                                imageVector = PersonaIcons.Image,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                                 modifier = Modifier.size(36.dp)
@@ -867,19 +768,6 @@ fun WallpaperOptionsSheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Button(
-                                onClick = {
-                                    haptics.selection()
-                                    onRestorePresets()
-                                    stagedItem = availablePresets.firstOrNull()
-                                },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Restore Default Themes")
-                            }
                         }
                     }
                 } else {
@@ -1010,166 +898,65 @@ fun WallpaperOptionsSheet(
         }
     }
 
-    // --- DIALOGS FOR SAFE REMOVAL AND DESTRUCTION ---
-
-    // Bulk Removal Confirmation Dialog (Safe Default)
     if (showRemovalConfirmDialog) {
         val count = selectionState.selectedCount
-        AlertDialog(
+        PersonaConfirmationDialog(
             onDismissRequest = { showRemovalConfirmDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.DeleteSweep,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            },
-            title = {
-                Text(
-                    text = "Remove $count wallpaper${if (count > 1) "s" else ""}?",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                )
-            },
-            text = {
-                Text(
-                    text = "They will be removed from your Persona reel. The original image files will remain safely stored on your device. You can undo this action immediately after.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val ids = selectionState.selectedIds.toSet()
-                        showRemovalConfirmDialog = false
-                        selectionState.exitSelectionMode()
-                        if (onRemoveWallpapersBulk != null) {
-                            onRemoveWallpapersBulk(ids)
-                        } else {
-                            wallpapers.filter { it.id in ids }.forEach { onRemoveWallpaper(it) }
-                        }
-                    }
-                ) {
-                    Text("Remove from Persona")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRemovalConfirmDialog = false }) {
-                    Text("Cancel")
+            title = "Remove $count wallpaper${if (count == 1) "" else "s"}?",
+            message = "The wallpapers will be removed from your reel. The image files will stay on this device.",
+            confirmText = "Remove from Persona",
+            onConfirm = {
+                val ids = selectionState.selectedIds.toSet()
+                showRemovalConfirmDialog = false
+                selectionState.exitSelectionMode()
+                if (onRemoveWallpapersBulk != null) {
+                    onRemoveWallpapersBulk(ids)
+                } else {
+                    wallpapers.filter { it.id in ids }.forEach { onRemoveWallpaper(it) }
                 }
             }
         )
     }
 
-    // Bulk Deletion Confirmation Dialog (Destructive)
     if (showDeletionConfirmDialog) {
         val count = selectionState.selectedCount
-        // Check how many have shared references
         val selectedItems = wallpapers.filter { it.id in selectionState.selectedIds }
         val sharedCount = selectedItems.count { wp ->
             wp.localFilePath?.let { mediaReferenceResolver?.isReferenced(it, excludingWallpaperId = wp.id) } == true
         }
 
-        AlertDialog(
+        PersonaConfirmationDialog(
             onDismissRequest = { showDeletionConfirmDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
+            title = "Permanently delete $count item${if (count == 1) "" else "s"}?",
+            message = if (sharedCount > 0) {
+                "Image files used by profiles or contacts will be kept. Other selected image files will be permanently deleted."
+            } else {
+                "The selected image files will be permanently deleted from storage."
             },
-            title = {
-                Text(
-                    text = "Permanently delete $count item${if (count > 1) "s" else ""}?",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "This will permanently remove the underlying image files from storage. This action cannot be undone.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (sharedCount > 0) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                        ) {
-                            Text(
-                                text = "Notice: $sharedCount item(s) are currently referenced as a profile avatar or contact photo and will be safely preserved in storage.",
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val ids = selectionState.selectedIds.toSet()
-                        showDeletionConfirmDialog = false
-                        selectionState.exitSelectionMode()
-                        if (onDeleteWallpapersBulk != null) {
-                            onDeleteWallpapersBulk(ids)
-                        } else {
-                            wallpapers.filter { it.id in ids }.forEach { onRemoveWallpaper(it) }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Delete Permanently")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeletionConfirmDialog = false }) {
-                    Text("Cancel")
+            confirmText = "Delete permanently",
+            isDestructive = true,
+            onConfirm = {
+                val ids = selectionState.selectedIds.toSet()
+                showDeletionConfirmDialog = false
+                selectionState.exitSelectionMode()
+                if (onDeleteWallpapersBulk != null) {
+                    onDeleteWallpapersBulk(ids)
+                } else {
+                    wallpapers.filter { it.id in ids }.forEach { onRemoveWallpaper(it) }
                 }
             }
         )
     }
 
-    // Single item removal confirmation dialog
     singleItemToDelete?.let { targetItem ->
-        AlertDialog(
+        PersonaConfirmationDialog(
             onDismissRequest = { singleItemToDelete = null },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            },
-            title = {
-                Text(
-                    text = "Remove this wallpaper?",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                )
-            },
-            text = {
-                Text(
-                    text = "It will be removed from your wallpaper reel. You can restore artwork presets anytime with Reset.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val item = targetItem
-                        singleItemToDelete = null
-                        onRemoveWallpaper(item)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Remove")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { singleItemToDelete = null }) {
-                    Text("Cancel")
-                }
+            title = "Remove this wallpaper?",
+            message = "The wallpaper will be removed from your reel.",
+            confirmText = "Remove",
+            onConfirm = {
+                singleItemToDelete = null
+                onRemoveWallpaper(targetItem)
             }
         )
     }
@@ -1277,7 +1064,7 @@ private fun WallpaperThumbnailCard(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ErrorOutline,
+                            imageVector = PersonaIcons.Danger,
                             contentDescription = "Image unavailable",
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(24.dp)
@@ -1338,7 +1125,7 @@ private fun WallpaperThumbnailCard(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            Icons.Default.Check,
+                            PersonaIcons.Check,
                             contentDescription = "Active wallpaper",
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(12.dp)
@@ -1374,7 +1161,7 @@ private fun WallpaperThumbnailCard(
                     Box(contentAlignment = Alignment.Center) {
                         if (isSelected) {
                             Icon(
-                                imageVector = Icons.Default.Check,
+                                imageVector = PersonaIcons.Check,
                                 contentDescription = "Selected",
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(13.dp)
@@ -1396,7 +1183,7 @@ private fun WallpaperThumbnailCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
+                        imageVector = PersonaIcons.Delete,
                         contentDescription = "Delete wallpaper",
                         tint = Color.White,
                         modifier = Modifier.size(12.dp)

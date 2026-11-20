@@ -1,5 +1,8 @@
 package com.pims.vault.presentation.vault.screens
 
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -15,20 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockReset
-import androidx.compose.material.icons.filled.Password
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -96,14 +85,7 @@ fun PasswordsKeysListScreen(
                     .padding(vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = getVaultTextPrimary(),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                PersonaIconAction(PersonaIcons.ArrowBack, "Back", onBack)
 
                 Spacer(modifier = Modifier.weight(1f))
 
@@ -117,29 +99,9 @@ fun PasswordsKeysListScreen(
                 Spacer(modifier = Modifier.weight(1f))
 
                 // Search toggle icon
-                IconButton(
-                    onClick = { isSearchActive = !isSearchActive },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = getVaultTextPrimary(),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                PersonaIconAction(if (isSearchActive) PersonaIcons.Close else PersonaIcons.Search, "Search", { isSearchActive = !isSearchActive })
 
-                IconButton(
-                    onClick = onAddSecret,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add",
-                        tint = getVaultTextPrimary(),
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+                PersonaIconAction(PersonaIcons.Add, "Add", onAddSecret)
             }
 
             if (isSearchActive) {
@@ -154,7 +116,7 @@ fun PasswordsKeysListScreen(
                                 onClick = { searchQuery = "" },
                                 modifier = Modifier.size(24.dp)
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = getVaultTextSecondary(), modifier = Modifier.size(16.dp))
+                                Icon(PersonaIcons.Close, contentDescription = "Clear", tint = getVaultTextSecondary(), modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -214,14 +176,14 @@ fun PasswordsKeysListScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     val itemIcon = when (item.category) {
-                                        VaultCategory.PASSWORD -> Icons.Default.Key
-                                        VaultCategory.API_KEY -> Icons.Default.Code
-                                        VaultCategory.SSH_KEY -> Icons.Default.Terminal
-                                        VaultCategory.ACCESS_TOKEN -> Icons.Default.Security
-                                        VaultCategory.RECOVERY_CODE -> Icons.Default.LockReset
-                                        VaultCategory.SECURE_NOTE -> Icons.Default.Description
-                                        VaultCategory.GENERIC_SECRET -> Icons.Default.Lock
-                                        else -> Icons.Default.Key
+                                        VaultCategory.PASSWORD -> PersonaIcons.Key
+                                        VaultCategory.API_KEY -> PersonaIcons.Code
+                                        VaultCategory.SSH_KEY -> PersonaIcons.Terminal
+                                        VaultCategory.ACCESS_TOKEN -> PersonaIcons.Security
+                                        VaultCategory.RECOVERY_CODE -> PersonaIcons.LockReset
+                                        VaultCategory.SECURE_NOTE -> PersonaIcons.Documents
+                                        VaultCategory.GENERIC_SECRET -> PersonaIcons.Lock
+                                        else -> PersonaIcons.Key
                                     }
 
                                     Icon(
@@ -246,7 +208,7 @@ fun PasswordsKeysListScreen(
                                         )
                                     }
                                     Icon(
-                                        imageVector = Icons.Default.ChevronRight,
+                                        imageVector = PersonaIcons.ChevronRight,
                                         contentDescription = null,
                                         tint = getVaultTextSecondary().copy(alpha = 0.5f),
                                         modifier = Modifier.size(16.dp)

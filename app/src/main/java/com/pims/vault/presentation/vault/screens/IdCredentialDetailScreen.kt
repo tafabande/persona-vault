@@ -1,5 +1,10 @@
 package com.pims.vault.presentation.vault.screens
 
+import com.pims.vault.presentation.ui.components.PersonaMenuItem
+import com.pims.vault.presentation.ui.components.PersonaMenu
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,16 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,10 +76,10 @@ fun IdCredentialDetailScreen(
         }
     }
 
-    val decrypted = uiState.activeDecryptedIdentity
+    val decrypted = uiState.activeDecryptedIdentity.takeIf { uiState.activeItemId == item.id }
     val idType = decrypted?.idType ?: item.accountIdentifier?.substringBefore("•")?.trim() ?: "ID"
     val fullName = decrypted?.fullName ?: item.title.substringAfter("—").trim()
-    val idNumber = decrypted?.identifierNumber ?: item.accountIdentifier?.substringAfter("•")?.trim() ?: ""
+    val idNumber = decrypted?.identifierNumber.orEmpty()
     val authority = decrypted?.issuingAuthority
     val issueDate = decrypted?.issueDate
     val expiryDate = decrypted?.expiryDate
@@ -120,45 +115,21 @@ fun IdCredentialDetailScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = getVaultTextPrimary(),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                PersonaIconAction(PersonaIcons.ArrowBack, "Back", onBack)
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit",
-                            tint = getVaultTextSecondary(),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    PersonaIconAction(PersonaIcons.Edit, "Edit", onEdit, enabled = decrypted != null)
 
                     Box {
-                        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "More",
-                                tint = getVaultTextSecondary(),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        PersonaIconAction(PersonaIcons.MoreActions, "More", { showMenu = true })
 
-                        DropdownMenu(
+                        PersonaMenu(
                             expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            modifier = Modifier.background(getVaultCardSurface())
+                            onDismissRequest = { showMenu = false }
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("Delete Credential", color = PimsError) },
-                                leadingIcon = {
-                                    Icon(Icons.Default.Delete, contentDescription = null, tint = PimsError, modifier = Modifier.size(18.dp))
-                                },
+                            PersonaMenuItem(
+                                label = "Delete Credential",
+                                icon = PersonaIcons.Delete,
                                 onClick = {
                                     showMenu = false
                                     onDelete()
@@ -251,10 +222,11 @@ fun IdCredentialDetailScreen(
                         Row {
                             IconButton(
                                 onClick = { isRevealed = !isRevealed },
+                                enabled = decrypted != null,
                                 modifier = Modifier.size(32.dp).tactilePress()
                             ) {
                                 Icon(
-                                    imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    imageVector = if (isRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                     contentDescription = "Reveal",
                                     tint = getVaultTextSecondary(),
                                     modifier = Modifier.size(18.dp)
@@ -262,12 +234,18 @@ fun IdCredentialDetailScreen(
                             }
                             IconButton(
                                 onClick = {
-                                    viewModel.copyToClipboard(context, idNumber, "$fullName ID Number")
+                                    viewModel.copyToClipboard(
+                                        context = context,
+                                        text = idNumber,
+                                        label = "ID number",
+                                        isSecret = true
+                                    )
                                 },
+                                enabled = decrypted != null,
                                 modifier = Modifier.size(32.dp).tactilePress()
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.ContentCopy,
+                                    imageVector = PersonaIcons.ContentCopy,
                                     contentDescription = "Copy",
                                     tint = getVaultTextSecondary(),
                                     modifier = Modifier.size(18.dp)

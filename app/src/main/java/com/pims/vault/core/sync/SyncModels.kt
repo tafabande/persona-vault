@@ -30,6 +30,7 @@ enum class DataSensitivityTier(
  */
 sealed class SyncState {
     object Idle : SyncState()
+    object Synced : SyncState()
     object Syncing : SyncState()
     data class Waiting(val count: Int) : SyncState()
     data class Conflict(val count: Int) : SyncState()
@@ -37,11 +38,12 @@ sealed class SyncState {
 
     val label: String
         get() = when (this) {
-            is Idle -> "✓ Up to date"
-            is Syncing -> "↻ Syncing..."
-            is Waiting -> "↻ $count waiting to sync"
-            is Conflict -> "⚠ Needs attention ($count)"
-            is Failed -> "⌁ Sync paused"
+            is Idle -> "Saved locally"
+            is Synced -> "Synced"
+            is Syncing -> "Synchronizing"
+            is Waiting -> if (count > 0) "Pending synchronization ($count)" else "Pending synchronization"
+            is Conflict -> "Needs attention ($count)"
+            is Failed -> "Synchronization failed"
         }
 }
 

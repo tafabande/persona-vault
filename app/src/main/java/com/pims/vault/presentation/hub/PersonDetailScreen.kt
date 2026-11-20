@@ -4,13 +4,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
+import com.pims.vault.presentation.media.rememberPhotoPreview
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,26 +30,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,17 +55,30 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.RelationshipNote
 import com.pims.vault.presentation.avatar.PersonaAvatarManager
 import com.pims.vault.presentation.profile.KinRelationshipItem
+import com.pims.vault.presentation.notes.PlainNotesViewModel
+import com.pims.vault.presentation.relationship.PersonNoteLinks
+import com.pims.vault.presentation.relationship.PublicRelationshipNotesViewModel
 import com.pims.vault.presentation.relationship.AddOrEditRelationshipNoteDialog
 import com.pims.vault.presentation.relationship.RelationshipNotesSection
 import com.pims.vault.presentation.ui.components.DefaultAvatar
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaDialog
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.components.PersonaInformationRow
+import com.pims.vault.presentation.ui.components.PersonaSectionHeading
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.presentation.ui.components.PersonaSheetHeader
+import com.pims.vault.presentation.ui.components.ux.PersonaToastHost
+import com.pims.vault.presentation.ui.components.ux.rememberPersonaToastController
 import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
-import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -94,6 +95,7 @@ import kotlinx.coroutines.withContext
  * - Complete memory notes with in-place Add, Edit, Delete, and privacy controls
  * - Edit person and Delete connection actions
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PersonDetailScreen(
     person: KinRelationshipItem,
@@ -109,21 +111,36 @@ fun PersonDetailScreen(
     onOpenAttachment: (String, String) -> Unit = { _, _ -> },
     isVaultUnlocked: Boolean = false,
     onUnlockVault: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    people: List<KinRelationshipItem> = emptyList(),
+    onOpenTaggedNote: (String) -> Unit = {},
+    ownerId: String? = null,
+    requestedNoteId: String? = null,
+    onRequestedNoteOpened: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptics = rememberPimsHaptics()
+    val noteFeedback = rememberPersonaToastController()
     val avatarManager = remember { PersonaAvatarManager.getInstance(context) }
     val photosVersion by avatarManager.personPhotosVersion.collectAsState()
 
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
-    var showMenu by remember { mutableStateOf(false) }
     var showAvatarActionChooser by remember { mutableStateOf(false) }
+    var showRemovePhotoConfirmation by remember { mutableStateOf(false) }
 
     // Note dialog state
     var showNoteDialog by remember { mutableStateOf(false) }
     var noteToEdit by remember { mutableStateOf<RelationshipNote?>(null) }
     var noteToDelete by remember { mutableStateOf<RelationshipNote?>(null) }
+
+    val requestedNote = relationshipNotes.firstOrNull { it.id == requestedNoteId && !it.isPrivate }
+    LaunchedEffect(requestedNote) {
+        if (requestedNote != null) {
+            noteToEdit = requestedNote
+            showNoteDialog = true
+            onRequestedNoteOpened()
+        }
+    }
 
     val effectivePersonId = person.targetPersonId.ifBlank { person.id }
     val contactPhotoPath = remember(effectivePersonId, person.id, photosVersion) {
@@ -194,13 +211,7 @@ fun PersonDetailScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+                PersonaIconAction(PersonaIcons.ArrowBack, "Back", onBack)
 
                 Text(
                     text = "People",
@@ -210,47 +221,7 @@ fun PersonDetailScreen(
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                 )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { onEditPerson(person) }) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Person",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "More Options",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Edit Details") },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    onEditPerson(person)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Remove from People", color = StateError) },
-                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = StateError) },
-                                onClick = {
-                                    showMenu = false
-                                    showDeleteConfirmDialog = true
-                                }
-                            )
-                        }
-                    }
-                }
+                PersonaIconAction(PersonaIcons.Edit, "Edit person", { onEditPerson(person) })
             }
 
             HorizontalDivider(
@@ -275,12 +246,7 @@ fun PersonDetailScreen(
                 ) {
                     // AVATAR & HERO
                     Box(contentAlignment = Alignment.BottomEnd) {
-                        val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath).exists()
-                        val photoBitmap = remember(contactPhotoPath, photosVersion) {
-                            if (hasPhoto) {
-                                try { BitmapFactory.decodeFile(contactPhotoPath) } catch (_: Exception) { null }
-                            } else null
-                        }
+                        val photoBitmap = rememberPhotoPreview(contactPhotoPath)
 
                         if (photoBitmap != null) {
                             Image(
@@ -311,7 +277,7 @@ fun PersonDetailScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CameraAlt,
+                                imageVector = PersonaIcons.CameraAlt,
                                 contentDescription = "Change photo",
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(16.dp)
@@ -474,50 +440,25 @@ fun PersonDetailScreen(
                     },
                     onTogglePrivacy = onToggleNotePrivacy,
                     onOpenAttachment = onOpenAttachment,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    restrictedLegacyNotes = person.restrictedLegacyNotes,
+                    linkedNotes = { TaggedPersonNotes(person.id, ownerId, people, onOpenTaggedNote) }
                 )
-
-                // Fallback note snippet from person record if no structured notes yet
-                if (relationshipNotes.isEmpty() && person.notes.isNotBlank()) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color.Transparent,
-                        border = null,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = "Additional Notes",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = person.notes,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Bottom actions: edit is in top app bar, only quiet remove button here
-                TextButton(
+                PersonaAction(
+                    label = "Remove from People",
                     onClick = { showDeleteConfirmDialog = true },
-                    colors = ButtonDefaults.textButtonColors(contentColor = StateError)
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.size(6.dp))
-                    Text("Remove from People")
-                }
+                    style = PersonaActionStyle.Quiet,
+                    icon = PersonaIcons.Delete
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+        PersonaToastHost(noteFeedback)
     }
 
     // ADD / EDIT NOTE DIALOG
@@ -535,7 +476,7 @@ fun PersonDetailScreen(
                 }
                 if (saved) {
                     showNoteDialog = false
-                    haptics.success()
+                    noteFeedback.showSuccess("Note saved locally")
                 }
                 saved
             }
@@ -544,73 +485,54 @@ fun PersonDetailScreen(
 
     // DELETE NOTE CONFIRMATION DIALOG
     noteToDelete?.let { note ->
-        AlertDialog(
+        PersonaDialog(
             onDismissRequest = { noteToDelete = null },
-            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = StateError) },
-            title = { Text("Delete Note") },
-            text = { Text("Are you sure you want to delete this memory note? This cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDeleteNote(note.id)
-                        noteToDelete = null
-                        haptics.warning()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = StateError)
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { noteToDelete = null }) {
-                    Text("Cancel")
-                }
+            title = "Delete note",
+            confirmText = "Delete",
+            isDestructive = true,
+            onConfirm = {
+                onDeleteNote(note.id)
+                noteToDelete = null
+                haptics.warning()
             }
-        )
+        ) {
+            Text("Delete this note and its attachments?", style = MaterialTheme.typography.bodyMedium)
+        }
     }
 
     // DELETE PERSON CONFIRMATION DIALOG
     if (showDeleteConfirmDialog) {
-        AlertDialog(
+        PersonaDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
-            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = StateError) },
-            title = { Text("Remove from People") },
-            text = {
-                Text(
-                    "Are you sure you want to remove ${person.fullName} from People? " +
-                    "This disconnects their relationship link without affecting your vault secrets or other personal records."
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteConfirmDialog = false
-                        haptics.warning()
-                        avatarManager.setPersonPhotoPath(effectivePersonId, null, person.id)
-                        onDeletePerson(person)
-                        onBack()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = StateError)
-                ) {
-                    Text("Remove")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                    Text("Cancel")
-                }
+            title = "Remove from People",
+            confirmText = "Remove",
+            isDestructive = true,
+            onConfirm = {
+                showDeleteConfirmDialog = false
+                haptics.warning()
+                onDeletePerson(person)
             }
-        )
+        ) {
+            Text(
+                "Remove ${person.fullName} and their relationship notes from People?",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
     }
 
-    // PHOTO ACTION CHOOSER DIALOG
     if (showAvatarActionChooser) {
-        AlertDialog(
+        PersonaSheet(
             onDismissRequest = { showAvatarActionChooser = false },
-            title = { Text("Contact Photo") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = pimsPageGutter(), vertical = PimsSpacing.m),
+                verticalArrangement = Arrangement.spacedBy(PimsSpacing.xs)
+            ) {
+                    PersonaSheetHeader("Contact photo", { showAvatarActionChooser = false })
+                    PersonaInformationRow(
+                        title = "Take photo",
+                        icon = PersonaIcons.CameraAlt,
                         onClick = {
                             showAvatarActionChooser = false
                             try {
@@ -634,54 +556,107 @@ fun PersonDetailScreen(
                                 pendingPhotoRelationshipId = person.id
                                 photoPickerLauncher.launch("image/*")
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.CameraAlt, contentDescription = null)
-                            Text("Take Photo")
                         }
-                    }
-
-                    TextButton(
+                    )
+                    PersonaInformationRow(
+                        title = "Choose from gallery",
+                        icon = PersonaIcons.Photo,
                         onClick = {
                             showAvatarActionChooser = false
                             pendingPhotoOwnerId = effectivePersonId
                             pendingPhotoRelationshipId = person.id
                             photoPickerLauncher.launch("image/*")
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                            Text("Choose from Gallery")
                         }
-                    }
-
+                    )
                     if (!contactPhotoPath.isNullOrBlank()) {
-                        TextButton(
+                        PersonaInformationRow(
+                            title = "Remove photo",
+                            icon = PersonaIcons.Delete,
                             onClick = {
                                 showAvatarActionChooser = false
-                                avatarManager.setPersonPhotoPath(effectivePersonId, null, person.id)
-                                haptics.warning()
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.textButtonColors(contentColor = StateError)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.Delete, contentDescription = null)
-                                Text("Remove Photo")
+                                showRemovePhotoConfirmation = true
                             }
-                        }
+                        )
                     }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showAvatarActionChooser = false }) {
-                    Text("Cancel")
-                }
             }
-        )
+        }
+    }
+
+    if (showRemovePhotoConfirmation) {
+        PersonaDialog(
+            onDismissRequest = { showRemovePhotoConfirmation = false },
+            title = "Remove contact photo?",
+            confirmText = "Remove",
+            isDestructive = true,
+            onConfirm = {
+                showRemovePhotoConfirmation = false
+                avatarManager.setPersonPhotoPath(effectivePersonId, null, person.id)
+                haptics.warning()
+            }
+        ) {}
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TaggedPersonNotes(
+    relationshipId: String,
+    ownerId: String?,
+    people: List<KinRelationshipItem>,
+    onOpen: (String) -> Unit
+) {
+    if (people.isEmpty()) return
+    val viewModel: PlainNotesViewModel = hiltViewModel()
+    val state by viewModel.uiState.collectAsState()
+    val links = remember(people) { PersonNoteLinks(people) }
+    val references = remember(links, state.notes, relationshipId) {
+        state.notes.filter { note -> links.peopleFor(note).any { it.id == relationshipId } }
+    }
+    val publicNotesViewModel: PublicRelationshipNotesViewModel = hiltViewModel()
+    val publicNotesFlow = remember(ownerId, publicNotesViewModel) { publicNotesViewModel.observe(ownerId) }
+    val publicNotes by publicNotesFlow.collectAsState(initial = emptyList())
+    val relatedNotes = remember(people, links, publicNotes, relationshipId) {
+        val peopleByRelationship = people.associateBy { it.id }
+        publicNotes.mapNotNull { entry ->
+            if (entry.relationshipId == relationshipId || entry.isPrivate) return@mapNotNull null
+            val author = peopleByRelationship[entry.relationshipId] ?: return@mapNotNull null
+            val note = RelationshipNote(entry.id, entry.relationshipId, entry.topic.orEmpty(),
+                entry.contentPlaintext.orEmpty(), entry.format)
+            (author to note).takeIf { links.peopleFor(note).any { it.id == relationshipId } }
+        }
+    }
+    var selectedNoteId by remember { mutableStateOf<String?>(null) }
+    if (references.isNotEmpty() || relatedNotes.isNotEmpty()) {
+        PersonaSectionHeading("Tagged notes")
+        references.forEach { note ->
+            PersonaInformationRow(
+                title = note.title.ifBlank { "Note" },
+                detail = note.content.takeIf(String::isNotBlank),
+                icon = PersonaIcons.Notes,
+                onClick = { onOpen(note.id) }
+            )
+        }
+        relatedNotes.forEach { (author, note) ->
+            PersonaInformationRow(
+                title = note.topic.ifBlank { "Note" },
+                detail = author.fullName,
+                icon = PersonaIcons.Notes,
+                onClick = { selectedNoteId = note.id }
+            )
+        }
+    }
+    relatedNotes.firstOrNull { it.second.id == selectedNoteId }?.let { (author, note) ->
+        PersonaSheet({ selectedNoteId = null }, rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                    .padding(horizontal = pimsPageGutter(), vertical = PimsSpacing.l),
+                verticalArrangement = Arrangement.spacedBy(PimsSpacing.s)
+            ) {
+                PersonaSheetHeader(note.topic.ifBlank { "Note" }, { selectedNoteId = null })
+                Text(author.fullName, style = MaterialTheme.typography.labelLarge)
+                Text(note.content, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
     }
 }
 

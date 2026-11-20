@@ -1,5 +1,9 @@
 package com.pims.vault.presentation.vault.screens
 
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,12 +20,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,13 +65,12 @@ fun SshKeyFormSheet(
 
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.runtime.DisposableEffect(Unit) {
-        val activity = context as? android.app.Activity
-        activity?.window?.setFlags(
-            android.view.WindowManager.LayoutParams.FLAG_SECURE,
-            android.view.WindowManager.LayoutParams.FLAG_SECURE
-        )
+        val window = (context as? android.app.Activity)?.window
+        val flag = android.view.WindowManager.LayoutParams.FLAG_SECURE
+        val addedFlag = window != null && (window.attributes.flags and flag) == 0
+        if (addedFlag) window?.addFlags(flag)
         onDispose {
-            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            if (addedFlag) window?.clearFlags(flag)
         }
     }
 
@@ -86,12 +85,9 @@ fun SshKeyFormSheet(
         }
     }
 
-    ModalBottomSheet(
+    PersonaSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = getVaultCardSurface(),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        dragHandle = null,
         modifier = modifier
     ) {
         Column(
@@ -100,17 +96,7 @@ fun SshKeyFormSheet(
                 .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
             // Close Button
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Close",
-                    tint = getVaultTextPrimary(),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+            PersonaIconAction(PersonaIcons.Close, "Close", onDismiss)
 
             Spacer(modifier = Modifier.height(16.dp))
 

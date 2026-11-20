@@ -2,7 +2,9 @@ package com.pims.vault.presentation.avatar
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import com.pims.vault.core.storage.decodePhotoPreview
+import com.pims.vault.core.storage.importOwnedPhoto
+import com.pims.vault.core.storage.inspectPhoto
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -343,7 +345,13 @@ class PersonaAvatarManager @Inject constructor(
     @Synchronized
     fun restoreAvatarPhotoPath(path: String, revision: Long): Boolean {
         val owned = ownedPhotoFile(path, "avatars") ?: return false
-        if (photoSelectionRevision("avatar_primary", _customAvatarPath.value) > revision) return false
+        val currentPath = _customAvatarPath.value
+        val currentRevision = photoSelectionRevision("avatar_primary", currentPath)
+        if (currentRevision > revision) return false
+        if (currentRevision == revision) {
+            if (currentPath == owned.absolutePath) return true
+            if (hasReadablePhoto(currentPath, "avatars")) return false
+        }
         val config = _avatarConfig.value.copy(avatarSource = AvatarSource.CUSTOM_IMAGE, customAvatarPath = owned.absolutePath)
         persistAvatarConfig(config, revision)
         return true
@@ -354,7 +362,12 @@ class PersonaAvatarManager @Inject constructor(
         if (!validPersonPhotoId(personId)) return false
         val owned = ownedPhotoFile(path, "contact_photos") ?: return false
         val current = localPersonPhotoPath(personId)
-        if (photoSelectionRevision("contact_$personId", current) > revision) return false
+        val currentRevision = photoSelectionRevision("contact_$personId", current)
+        if (currentRevision > revision) return false
+        if (currentRevision == revision) {
+            if (current == owned.absolutePath) return true
+            if (hasReadablePhoto(current, "contact_photos")) return false
+        }
         val editor = prefs.edit().putString("person_photo_$personId", owned.absolutePath)
             .putLong(REVISION_PREFIX + "contact_$personId", revision).putBoolean(REMOVED_PREFIX + personId, false)
         prefs.all.filter { (key, value) -> key.startsWith(ALIAS_PREFIX) && value == personId }.keys.forEach { key ->
@@ -437,46 +450,34 @@ class PersonaAvatarManager @Inject constructor(
         file.absolutePath
     } catch (_: Exception) { null }
 
-    suspend fun importAvatarPhoto(uri: Uri): String = importPhoto(uri) { bitmap -> saveCustomPhoto(bitmap) }
+    suspend fun importAvatarPhoto(uri: Uri): String = withContext(Dispatchers.IO) {
+        val file = importOwnedPhoto(context, uri, "avatars", "avatar_custom")
+        try {
+            currentCoroutineContext().ensureActive()
+            synchronized(this@PersonaAvatarManager) {
+                saveConfig(_avatarConfig.value.copy(customAvatarPath = file.absolutePath, avatarSource = AvatarSource.CUSTOM_IMAGE))
+            }
+            file.absolutePath
+        } catch (failure: Exception) {
+            file.delete()
+            throw failure
+        }
+    }
 
     suspend fun importPersonPhoto(personId: String, uri: Uri, altId: String? = null): String =
-        importPhoto(uri) { bitmap -> saveRelationshipPhotoFromBitmap(personId, bitmap, altId) }
-
-    private suspend fun importPhoto(uri: Uri, save: (Bitmap) -> String?): String = withContext(Dispatchers.IO) {
-        val directory = File(context.cacheDir, "photo_imports").apply { check(isDirectory || mkdirs()) }
-        val incoming = File.createTempFile("source-", ".image", directory)
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(incoming).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var total = 0L
-                    try {
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            total += count
-                            require(total <= 16L * 1024 * 1024) { "Choose a photo smaller than 16 MB" }
-                            output.write(buffer, 0, count)
-                        }
-                    } finally { buffer.fill(0) }
-                }
-            } ?: error("This photo could not be opened")
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(incoming.absolutePath, bounds)
-            require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 100_000_000L) {
-                "Choose a supported photo"
-            }
-            var sample = 1
-            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1200) sample *= 2
-            val bitmap = checkNotNull(BitmapFactory.decodeFile(incoming.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }))
+        withContext(Dispatchers.IO) {
+            val key = personId.ifBlank { altId.orEmpty() }
+            require(validPersonPhotoId(key)) { "Invalid person identity" }
+            val file = importOwnedPhoto(context, uri, "contact_photos", "contact_$key")
             try {
                 currentCoroutineContext().ensureActive()
-                checkNotNull(save(bitmap)) { "This photo could not be saved" }
+                setPersonPhotoPath(personId, file.absolutePath, altId)
+                file.absolutePath
+            } catch (failure: Exception) {
+                file.delete()
+                throw failure
             }
-            finally { if (!bitmap.isRecycled) bitmap.recycle() }
-        } finally { incoming.delete() }
-    }
+        }
 
     private fun writeOwnedBitmap(bitmap: Bitmap, directory: String, prefix: String): File {
         require(bitmap.width > 0 && bitmap.height > 0)
@@ -522,8 +523,11 @@ class PersonaAvatarManager @Inject constructor(
 
     fun loadCustomPhotoBitmap(): Bitmap? {
         val file = ownedPhotoFile(_customAvatarPath.value, "avatars") ?: return null
-        return try { BitmapFactory.decodeFile(file.absolutePath) } catch (_: Exception) { null }
+        return decodePhotoPreview(file)
     }
+
+    private fun hasReadablePhoto(path: String?, directory: String): Boolean =
+        ownedPhotoFile(path, directory)?.let { runCatching { inspectPhoto(it) != null }.getOrDefault(false) } == true
 
     fun setTemporaryExpression(expression: AvatarExpression) {
         _avatarConfig.value = _avatarConfig.value.copy(expression = expression)

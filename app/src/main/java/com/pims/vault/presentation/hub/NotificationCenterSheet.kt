@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.layout.Arrangement
@@ -16,13 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -68,7 +63,7 @@ data class PersonaNotificationItem(
     val isToday: Boolean = true,
     val isRead: Boolean = false,
     val level: AlertLevel = AlertLevel.INFO,
-    val icon: ImageVector = Icons.Default.Notifications
+    val icon: ImageVector = PersonaIcons.Notifications
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,7 +118,7 @@ fun NotificationCenterSheet(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Notifications,
+                            imageVector = PersonaIcons.Notifications,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
@@ -195,7 +190,7 @@ fun NotificationCenterSheet(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.People,
+                            imageVector = PersonaIcons.People,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             modifier = Modifier.size(38.dp)
@@ -313,9 +308,9 @@ private fun NotificationCardItem(
                     ) {
                         Icon(
                             imageVector = when (item.category) {
-                                NotificationCategory.CONNECTION_REQUEST -> Icons.Default.People
-                                NotificationCategory.SHARING_ACTIVITY -> Icons.Default.Share
-                                NotificationCategory.PROFILE_UPDATE -> Icons.Default.Person
+                                NotificationCategory.CONNECTION_REQUEST -> PersonaIcons.People
+                                NotificationCategory.SHARING_ACTIVITY -> PersonaIcons.Share
+                                NotificationCategory.PROFILE_UPDATE -> PersonaIcons.Me
                             },
                             contentDescription = null,
                             tint = when (item.category) {
@@ -362,7 +357,7 @@ private fun NotificationCardItem(
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = PersonaIcons.Close,
                             contentDescription = "Dismiss notification",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             modifier = Modifier.size(14.dp)
@@ -413,7 +408,7 @@ private fun NotificationCardItem(
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
                         modifier = Modifier.height(36.dp)
                     ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Icon(PersonaIcons.Check, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Approve",

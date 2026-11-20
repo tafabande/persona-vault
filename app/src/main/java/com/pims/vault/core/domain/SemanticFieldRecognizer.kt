@@ -41,15 +41,24 @@ object SemanticFieldRecognizer {
         "id card" to CanonicalField.IDENTITY_CARD,
         "identity card" to CanonicalField.IDENTITY_CARD,
         "national id" to CanonicalField.IDENTITY_CARD,
+        "national id number" to CanonicalField.IDENTITY_CARD,
+        "national identity number" to CanonicalField.IDENTITY_CARD,
+        "school id" to CanonicalField.IDENTITY_CARD,
+        "student id" to CanonicalField.IDENTITY_CARD,
+        "library id" to CanonicalField.IDENTITY_CARD,
+        "library card" to CanonicalField.IDENTITY_CARD,
         "identification" to CanonicalField.IDENTITY_CARD,
         "identity document" to CanonicalField.IDENTITY_CARD,
         "citizenship id" to CanonicalField.IDENTITY_CARD,
         "passport" to CanonicalField.PASSPORT,
+        "passport number" to CanonicalField.PASSPORT,
         "travel document" to CanonicalField.PASSPORT,
         "license" to CanonicalField.DRIVERS_LICENSE,
         "driver license" to CanonicalField.DRIVERS_LICENSE,
         "drivers license" to CanonicalField.DRIVERS_LICENSE,
         "driving license" to CanonicalField.DRIVERS_LICENSE,
+        "driving licence" to CanonicalField.DRIVERS_LICENSE,
+        "driver s license" to CanonicalField.DRIVERS_LICENSE,
 
         // Contact
         "phone" to CanonicalField.PHONE_NUMBER,
@@ -158,6 +167,7 @@ object SemanticFieldRecognizer {
             .lowercase()
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
+            .trim()
         return ALIAS_MAP[normalized]
     }
 }

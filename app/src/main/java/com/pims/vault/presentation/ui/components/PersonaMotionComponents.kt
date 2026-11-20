@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -20,8 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
@@ -55,7 +55,7 @@ import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 fun AnimatedFAB(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    icon: ImageVector = Icons.Default.Add,
+    icon: ImageVector = PersonaIcons.Add,
     contentDescription: String = "Add"
 ) {
     val haptics = rememberPimsHaptics()

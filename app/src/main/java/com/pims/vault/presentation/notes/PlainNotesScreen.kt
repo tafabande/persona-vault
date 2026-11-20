@@ -5,7 +5,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import com.pims.vault.core.storage.decodePhotoPreview
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -26,8 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Schedule
 
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
@@ -37,31 +37,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -76,8 +56,19 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaConfirmationDialog
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.components.PersonaMenu
+import com.pims.vault.presentation.ui.components.PersonaMenuItem
+import com.pims.vault.presentation.ui.theme.PersonaIcon
+import com.pims.vault.presentation.ui.theme.PersonaIconBadge
+import com.pims.vault.presentation.ui.theme.PersonaIconSize
+import com.pims.vault.presentation.ui.theme.PimsControlSize
+import com.pims.vault.presentation.ui.theme.PimsSpacing
+import com.pims.vault.presentation.ui.components.PersonaTextInput
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -177,11 +168,7 @@ fun PlainNotesScreen(
         state.notes.any { it.isPinned } -> "Pinned notes"
         else -> "Recent notes"
     }
-    val handleNoteClick: (PlainNote) -> Unit = { note ->
-        if (note.isLocked) {
-            onRequestAuth?.invoke("Unlock Protected Note", "Authentication required to open protected note") { onOpenEditor(note.id) }
-        } else onOpenEditor(note.id)
-    }
+    val handleNoteClick: (PlainNote) -> Unit = { note -> onOpenEditor(note.id) }
     val dateFormat = remember { SimpleDateFormat("d MMM · h:mm a", Locale.getDefault()) }
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         LazyColumn(
@@ -194,16 +181,23 @@ fun PlainNotesScreen(
                     Column(Modifier.weight(1f)) {
                         Text("Notes", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                     }
-                    IconButton(onClick = { isSearchVisible = !isSearchVisible; if (!isSearchVisible) searchQuery = "" }) {
-                        Icon(if (isSearchVisible) Icons.Default.Close else Icons.Default.Search,
-                            if (isSearchVisible) "Close search" else "Search notes")
-                    }
+                    PersonaIconAction(
+                        if (isSearchVisible) PersonaIcons.Close else PersonaIcons.Search,
+                        if (isSearchVisible) "Close search" else "Search notes",
+                        onClick = {
+                            isSearchVisible = !isSearchVisible
+                            if (!isSearchVisible) searchQuery = ""
+                        }
+                    )
                 }
             }
             if (isSearchVisible) item(key = "search") {
-                OutlinedTextField(searchQuery, { searchQuery = it }, modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search notes or #tags") }, singleLine = true,
-                    shape = RoundedCornerShape(20.dp), leadingIcon = { Icon(Icons.Default.Search, null) })
+                PersonaTextInput(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = "Search notes or #tags",
+                    leadingIcon = { Icon(PersonaIcons.Search, null) }
+                )
             }
             item(key = "calendar") {
                 NotesCalendar(month, selectedDate, today, markers,
@@ -230,7 +224,7 @@ fun PlainNotesScreen(
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(event.title, style = MaterialTheme.typography.titleSmall)
                             Text(if (event.allDay) "All day" else java.time.Instant.ofEpochMilli(event.begin).atZone(zone)
-                                .format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM � HH:mm", Locale.getDefault())),
+                                .format(java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM · HH:mm", Locale.getDefault())),
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -249,7 +243,7 @@ fun PlainNotesScreen(
                 Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(16.dp)) {
                     Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.onErrorContainer)
-                        IconButton(onClick = viewModel::clearError) { Icon(Icons.Default.Close, "Dismiss error") }
+                        PersonaIconAction(PersonaIcons.Close, "Dismiss error", viewModel::clearError)
                     }
                 }
             } }
@@ -258,11 +252,19 @@ fun PlainNotesScreen(
                     Column(Modifier.weight(1f)) {
                         Text(heading, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     }
-                    TextButton(onClick = { if (selectedDate != null || isFiltering) {
-                        selectedValue = null; activeFilter = NoteFilter.ALL; searchQuery = ""
-                    } else showCumulativeOverview = true }) {
-                        Text(if (selectedDate != null || isFiltering) "Overview" else "All notes")
-                    }
+                    PersonaAction(
+                        label = if (selectedDate != null || isFiltering) "Overview" else "All notes",
+                        style = PersonaActionStyle.Text,
+                        onClick = {
+                            if (selectedDate != null || isFiltering) {
+                                selectedValue = null
+                                activeFilter = NoteFilter.ALL
+                                searchQuery = ""
+                            } else {
+                                showCumulativeOverview = true
+                            }
+                        }
+                    )
                 }
             }
             if (displayed.isEmpty()) item(key = "empty") {
@@ -272,7 +274,7 @@ fun PlainNotesScreen(
                             if (isFiltering) "No matching notes" else if (selectedDate != null) "No notes for this day" else "No notes yet",
                             style = MaterialTheme.typography.titleMedium
                         )
-                        TextButton(onClick = { onOpenEditor(null) }) { Text("Write a note") }
+                        PersonaAction("Write a note", { onOpenEditor(null) }, style = PersonaActionStyle.Quiet)
                     }
                 }
             }
@@ -284,13 +286,20 @@ fun PlainNotesScreen(
                     }
             }
         }
-        PersonaFAB(text = "New note", icon = Icons.Default.Edit, onClick = { onOpenEditor(null) },
+        PersonaFAB(text = "New note", icon = PersonaIcons.Edit, onClick = { onOpenEditor(null) },
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 20.dp))
         noteToDelete?.let { note ->
-            AlertDialog(onDismissRequest = { noteToDelete = null }, title = { Text("Delete note?") },
-                text = { Text("This note and its attachments will be deleted.") },
-                confirmButton = { TextButton(onClick = { viewModel.delete(note); noteToDelete = null }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
-                dismissButton = { TextButton(onClick = { noteToDelete = null }) { Text("Cancel") } })
+            PersonaConfirmationDialog(
+                onDismissRequest = { noteToDelete = null },
+                title = "Delete note?",
+                message = "This note and its attachments will be deleted.",
+                confirmText = "Delete",
+                isDestructive = true,
+                onConfirm = {
+                    viewModel.delete(note)
+                    noteToDelete = null
+                }
+            )
         }
         CumulativeNotesOverviewSheet(notes = state.notes, isVisible = showCumulativeOverview,
             onDismiss = { showCumulativeOverview = false },
@@ -337,12 +346,12 @@ private fun TimelineFilterChip(
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             if (icon != null) {
-                Icon(
+                PersonaIcon(
                     imageVector = icon,
                     contentDescription = null,
+                    size = PersonaIconSize.Micro,
                     tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(13.dp)
+                    else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Text(
@@ -426,21 +435,18 @@ private fun CompactTimelineNoteRow(
                         horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Text(
-                            text = note.title.ifBlank { "Untitled" },
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
-                            ),
+                            text = if (note.isLocked) "Protected note" else note.title.ifBlank { "Untitled" },
+                            style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         if (note.isLocked) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "Protected",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(12.dp)
+                            PersonaIcon(
+                                imageVector = PersonaIcons.LockOutlined,
+                                contentDescription = null,
+                                size = PersonaIconSize.Micro,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -482,7 +488,7 @@ private fun CompactTimelineNoteRow(
                     ) {
                         if (note.reminderAt != null) {
                             Icon(
-                                imageVector = Icons.Default.Alarm,
+                                imageVector = PersonaIcons.Alarm,
                                 contentDescription = "Reminder",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(12.dp)
@@ -494,7 +500,7 @@ private fun CompactTimelineNoteRow(
                                 horizontalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.AddPhotoAlternate,
+                                    imageVector = PersonaIcons.Photo,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.secondary,
                                     modifier = Modifier.size(12.dp)
@@ -666,7 +672,7 @@ fun CumulativeNotesOverviewSheet(
                     modifier = Modifier.weight(1.4f)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = PersonaIcons.Add,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -686,7 +692,7 @@ fun CumulativeNotesOverviewSheet(
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(
-                        imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                        imageVector = if (isSearchActive) PersonaIcons.Close else PersonaIcons.Search,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
@@ -734,21 +740,21 @@ fun CumulativeNotesOverviewSheet(
                 TimelineFilterChip(
                     label = "Protected",
                     count = lockedNotesCount,
-                    icon = Icons.Default.Lock,
+                    icon = PersonaIcons.LockOutlined,
                     isSelected = selectedFilter == TimelineFilter.PROTECTED,
                     onClick = { selectedFilter = TimelineFilter.PROTECTED }
                 )
                 TimelineFilterChip(
                     label = "Reminders",
                     count = reminderNotesCount,
-                    icon = Icons.Default.Alarm,
+                    icon = PersonaIcons.Alarm,
                     isSelected = selectedFilter == TimelineFilter.REMINDERS,
                     onClick = { selectedFilter = TimelineFilter.REMINDERS }
                 )
                 TimelineFilterChip(
                     label = "Photos",
                     count = photoNotesCount,
-                    icon = Icons.Default.AddPhotoAlternate,
+                    icon = PersonaIcons.Photo,
                     isSelected = selectedFilter == TimelineFilter.PHOTOS,
                     onClick = { selectedFilter = TimelineFilter.PHOTOS }
                 )
@@ -900,7 +906,7 @@ fun NoteListRow(
         if (firstAttachment != null && viewModel != null && !note.isLocked) {
             val bytes = viewModel.readAttachment(firstAttachment)
             thumbnailBitmap = bytes?.let {
-                try { BitmapFactory.decodeByteArray(it, 0, it.size) } finally { it.fill(0) }
+                try { withContext(Dispatchers.IO) { decodePhotoPreview(it, 256) } } finally { it.fill(0) }
             }
         } else {
             thumbnailBitmap = null
@@ -911,7 +917,7 @@ fun NoteListRow(
         modifier = Modifier
             .fillMaxWidth()
             .tactilePress(targetScale = 0.97f, onClick = onClick)
-            .padding(vertical = 16.dp),
+            .padding(vertical = PimsSpacing.m),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(PimsDimensions.paddingMedium)
     ) {
@@ -928,27 +934,18 @@ fun NoteListRow(
                 )
             }
         } else {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Protected note",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            PersonaIconBadge(
+                imageVector = PersonaIcons.LockOutlined,
+                contentDescription = null,
+                size = PimsControlSize.informationRow
+            )
         }
 
         // Text content
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (note.isPinned) {
-                    Icon(Icons.Default.PushPin, "Pinned", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                    Icon(PersonaIcons.PushPin, "Pinned", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                 }
                 Text(
                     text = if (note.isLocked) "Protected note" else note.title.ifBlank { "Untitled" },
@@ -958,14 +955,6 @@ fun NoteListRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                if (note.isLocked) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Locked Note",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
             }
 
             if (!note.isLocked && note.content.isNotBlank()) {
@@ -1008,16 +997,18 @@ fun NoteListRow(
                             viewModel?.toggleReminderDone(note)
                         }
                 ) {
-                    Icon(
-                        imageVector = if (isDone) Icons.Default.Check else Icons.Default.Alarm,
-                        contentDescription = "Toggle reminder done",
-                        tint = if (isDone) MaterialTheme.colorScheme.outline else if (isPast) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(13.dp)
+                    PersonaIcon(
+                        imageVector = if (isDone) PersonaIcons.Check else PersonaIcons.Alarm,
+                        contentDescription = if (isDone) "Mark reminder incomplete" else "Mark reminder done",
+                        size = PersonaIconSize.Micro,
+                        tint = if (isDone) MaterialTheme.colorScheme.onSurfaceVariant
+                            else if (isPast) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
                     Text(
                         text = "${if (isDone) "Done: " else ""}$remText${if (!note.reminderTag.isNullOrBlank()) " • ${note.reminderTag}" else ""}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (isDone) MaterialTheme.colorScheme.outline else if (isPast) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                        color = if (isDone) MaterialTheme.colorScheme.onSurfaceVariant
+                            else if (isPast) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -1025,66 +1016,39 @@ fun NoteListRow(
 
         }
 
-        // Overflow Actions Menu (Copy, Duplicate, Share, Lock, Delete)
         Box {
-            IconButton(
-                onClick = { showMenu = true },
-                modifier = Modifier.size(48.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Note actions",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(18.dp)
+            PersonaIconAction(
+                icon = PersonaIcons.MoreActions,
+                label = "Note actions",
+                onClick = { showMenu = true }
+            )
+            PersonaMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                PersonaMenuItem(
+                    label = if (note.isPinned) "Unpin note" else "Pin note",
+                    icon = PersonaIcons.PushPin,
+                    onClick = {
+                        showMenu = false
+                        viewModel?.togglePin(note)
+                    }
                 )
-            }
-
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text(if (note.isPinned) "Unpin note" else "Pin note") },
-                    leadingIcon = { Icon(Icons.Default.PushPin, null) },
-                    onClick = { showMenu = false; viewModel?.togglePin(note) }
-                )
-                // Lock / Unlock Note
-                DropdownMenuItem(
-                    text = { Text(if (note.isLocked) "Unlock Note" else "Lock Note") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (note.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
+                PersonaMenuItem(
+                    label = if (note.isLocked) "Unlock note" else "Lock note",
+                    icon = if (note.isLocked) PersonaIcons.LockOpen else PersonaIcons.LockOutlined,
                     onClick = {
                         showMenu = false
                         haptics.light()
                         if (note.isLocked) {
-                            if (onRequestAuth != null) {
-                                onRequestAuth("Unlock Note", "Authentication required to remove note protection") {
-                                    viewModel?.toggleLock(note)
-                                    Toast.makeText(context, "Note unlocked", Toast.LENGTH_SHORT).show()
-                                }
+                            onRequestAuth?.invoke("Unlock note", "Verify your identity to remove note protection") {
+                                viewModel?.toggleLock(note)
                             }
                         } else {
                             viewModel?.toggleLock(note)
-                            Toast.makeText(context, "Note locked", Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
-
-                // Copy Note
-                DropdownMenuItem(
-                    text = { Text("Copy Text") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
+                PersonaMenuItem(
+                    label = "Copy text",
+                    icon = PersonaIcons.ContentCopy,
                     onClick = {
                         showMenu = false
                         haptics.light()
@@ -1099,17 +1063,9 @@ fun NoteListRow(
                         }
                     }
                 )
-
-                // Duplicate Note
-                DropdownMenuItem(
-                    text = { Text("Duplicate") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.ContentPaste,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
+                PersonaMenuItem(
+                    label = "Duplicate",
+                    icon = PersonaIcons.ContentPaste,
                     onClick = {
                         showMenu = false
                         haptics.light()
@@ -1120,17 +1076,9 @@ fun NoteListRow(
                         }
                     }
                 )
-
-                // Share Note
-                DropdownMenuItem(
-                    text = { Text("Share") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
+                PersonaMenuItem(
+                    label = "Share",
+                    icon = PersonaIcons.Share,
                     onClick = {
                         showMenu = false
                         haptics.light()
@@ -1140,29 +1088,14 @@ fun NoteListRow(
                                 putExtra(Intent.EXTRA_SUBJECT, note.title.ifBlank { "Note" })
                                 putExtra(Intent.EXTRA_TEXT, "${note.title}\n\n${note.content}")
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Note"))
+                            context.startActivity(Intent.createChooser(shareIntent, "Share note"))
                         }
                     }
                 )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-
-                // Delete Note
-                DropdownMenuItem(
-                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    onClick = {
-                        showMenu = false
-                        onDelete()
-                    }
-                )
+                PersonaMenuItem(label = "Delete", icon = PersonaIcons.Delete, onClick = {
+                    showMenu = false
+                    onDelete()
+                })
             }
         }
     }
@@ -1182,10 +1115,12 @@ fun NoteGridCard(
     val firstAttachment = remember(note.attachments) { note.attachments.firstOrNull() }
     var thumbnailBitmap by remember(firstAttachment?.id) { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(firstAttachment?.id) {
-        if (firstAttachment != null && viewModel != null) {
+    LaunchedEffect(firstAttachment?.id, note.isLocked) {
+        if (firstAttachment != null && viewModel != null && !note.isLocked) {
             val bytes = viewModel.readAttachment(firstAttachment)
-            thumbnailBitmap = if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size) else null
+            thumbnailBitmap = bytes?.let {
+                try { withContext(Dispatchers.IO) { decodePhotoPreview(it, 512) } } finally { it.fill(0) }
+            }
         } else {
             thumbnailBitmap = null
         }
@@ -1219,7 +1154,7 @@ fun NoteGridCard(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
                         Text(
-                            text = note.title.ifBlank { "Untitled" },
+                            text = if (note.isLocked) "Protected note" else note.title.ifBlank { "Untitled" },
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -1227,11 +1162,11 @@ fun NoteGridCard(
                             modifier = Modifier.weight(1f, fill = false)
                         )
                         if (note.isLocked) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "Locked Note",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(13.dp)
+                            PersonaIcon(
+                                imageVector = PersonaIcons.LockOutlined,
+                                contentDescription = null,
+                                size = PersonaIconSize.Micro,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -1240,7 +1175,7 @@ fun NoteGridCard(
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Delete,
+                            imageVector = PersonaIcons.Delete,
                             contentDescription = "Delete",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             modifier = Modifier.size(16.dp)
@@ -1249,7 +1184,7 @@ fun NoteGridCard(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = if (note.isLocked) "🔒 Protected note content" else note.content,
+                    text = if (note.isLocked) "Protected note" else note.content,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 4,
@@ -1269,7 +1204,7 @@ fun NoteGridCard(
                     if (note.attachments.isNotEmpty()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.AttachFile,
+                                imageVector = PersonaIcons.AttachFile,
                                 contentDescription = null,
                                 modifier = Modifier.size(12.dp),
                                 tint = MaterialTheme.colorScheme.primary

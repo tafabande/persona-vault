@@ -1,7 +1,7 @@
 package com.pims.vault.presentation.ui.components
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch as MaterialSwitch
@@ -27,7 +27,7 @@ fun PersonaSwitch(
         modifier = modifier,
         enabled = enabled,
         thumbContent = if (checked) {
-            { Icon(Icons.Default.Check, null, Modifier.size(14.dp)) }
+            { Icon(PersonaIcons.Check, null, Modifier.size(14.dp)) }
         } else null,
         colors = SwitchDefaults.colors(
             checkedTrackColor = colors.primary,

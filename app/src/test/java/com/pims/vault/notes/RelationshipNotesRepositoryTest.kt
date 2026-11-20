@@ -165,9 +165,10 @@ class RelationshipNotesRepositoryTest {
         val notes = mutableMapOf<String, RelationshipNoteEntity>()
         val attachments = mutableMapOf<String, RelationshipNoteAttachmentEntity>()
         override fun getNotesForRelationshipFlow(relationshipId: String) = flowOf(notes.values.filter { it.relationshipId == relationshipId })
+        override suspend fun getNotesForRelationship(relationshipId: String) = notes.values.filter { it.relationshipId == relationshipId }
         override fun getNotesWithAttachmentsForRelationshipFlow(relationshipId: String) = flowOf(notes.values
             .filter { it.relationshipId == relationshipId }.map { note -> RelationshipNoteWithAttachments(note, attachments.values.filter { it.noteId == note.id }) })
-        override fun getPublicNotesForRelationshipFlow(relationshipId: String) = flowOf(notes.values.filter { it.relationshipId == relationshipId && !it.isPrivate })
+        override fun getPublicNotesForOwnerFlow(ownerId: String) = flowOf(notes.values.filterNot { it.isPrivate })
         override fun getPrivateNoteCountFlow(relationshipId: String) = flowOf(notes.values.count { it.relationshipId == relationshipId && it.isPrivate })
         override suspend fun getNoteById(id: String) = notes[id]
         override suspend fun getAllNotes() = notes.values.toList()

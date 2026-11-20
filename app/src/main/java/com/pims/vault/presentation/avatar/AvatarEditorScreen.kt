@@ -1,17 +1,16 @@
 package com.pims.vault.presentation.avatar
 
-import android.graphics.BitmapFactory
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
+import com.pims.vault.presentation.media.rememberPhotoPreview
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,35 +21,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.ZoomIn
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import com.pims.vault.presentation.ui.theme.PersonaIcon
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,24 +42,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.pims.vault.core.res.AppResources
-import com.pims.vault.presentation.ui.theme.tactilePress
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaConfirmationDialog
+import com.pims.vault.presentation.ui.components.PersonaFilterChip
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.presentation.ui.components.PersonaSheetHeader
+import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 import com.pims.vault.presentation.ui.util.rememberPimsSoundManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import java.io.File
 
 /**
  * AvatarEditorSheet:
@@ -96,12 +80,9 @@ fun AvatarEditorSheet(
     onDismissRequest: () -> Unit,
     onSaveAvatar: (PersonaAvatarConfig) -> Unit
 ) {
-    ModalBottomSheet(
+    PersonaSheet(
         onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        sheetState = sheetState
     ) {
         AvatarEditorContent(
             initialConfig = initialConfig,
@@ -130,17 +111,9 @@ fun AvatarEditorContent(
 
     var config by remember { mutableStateOf(initialConfig) }
     var zoomScale by remember { mutableFloatStateOf(1.0f) }
+    var photoRemoval by remember { mutableStateOf<AvatarPhotoRemoval?>(null) }
 
-    val customBitmap = remember(config.customAvatarPath) {
-        config.customAvatarPath?.let { path ->
-            try {
-                val file = File(path)
-                if (file.exists()) BitmapFactory.decodeFile(path) else null
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
+    val customBitmap = rememberPhotoPreview(config.customAvatarPath, maxDimension = 1024)
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -166,25 +139,11 @@ fun AvatarEditorContent(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = pimsPageGutter())
-            .padding(bottom = 36.dp)
+            .padding(bottom = PimsSpacing.xl)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Profile Avatar",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        PersonaSheetHeader("Profile avatar", onClose)
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -193,8 +152,7 @@ fun AvatarEditorContent(
             modifier = Modifier
                 .size(180.dp)
                 .clip(CircleShape)
-                .background(Color(0xFFB0BEC5))
-                .border(3.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .pointerInput(Unit) {
                     detectTransformGestures { _, _, zoom, _ ->
                         zoomScale = (zoomScale * zoom).coerceIn(0.5f, 3.0f)
@@ -234,7 +192,7 @@ fun AvatarEditorContent(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(Icons.Default.ZoomIn, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            PersonaIcon(PersonaIcons.ZoomIn, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Slider(
                 value = zoomScale,
                 onValueChange = { zoomScale = it },
@@ -252,215 +210,100 @@ fun AvatarEditorContent(
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Text(
-            text = "CHOOSE AVATAR STYLE",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp
-            ),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Avatar Style Selection Cards
+        Spacer(Modifier.height(PimsSpacing.sectionGap))
+        Text("Avatar style", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s)
         ) {
-            // Male Avatar Card
-            val isMaleSelected = config.avatarSource != AvatarSource.CUSTOM_IMAGE && config.gender != AvatarGender.FEMALE
-            Card(
-                modifier = Modifier
-                    .weight(1f)
-                    .tactilePress {
-                        haptics.selection()
-                        config = config.copy(
-                            avatarSource = AvatarSource.GENERATED,
-                            gender = AvatarGender.MALE,
-                            customAvatarPath = null
-                        )
+            val showingDefault = config.avatarSource != AvatarSource.CUSTOM_IMAGE
+            val styles = listOf("Male" to AvatarGender.MALE, "Female" to AvatarGender.FEMALE)
+            styles.forEach { (label, gender) ->
+                PersonaFilterChip(
+                    label,
+                    selected = showingDefault && if (gender == AvatarGender.FEMALE) {
+                        config.gender == AvatarGender.FEMALE
+                    } else {
+                        config.gender != AvatarGender.FEMALE
                     },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isMaleSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                ),
-                border = BorderStroke(
-                    width = if (isMaleSelected) 2.dp else 1.dp,
-                    color = if (isMaleSelected) MaterialTheme.colorScheme.primary else Color.Transparent
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Image(
-                        painter = painterResource(id = AppResources.Drawable.ic_default_avatar_male),
-                        contentDescription = "Male",
-                        modifier = Modifier.size(52.dp).clip(CircleShape)
-                    )
-                    Text(
-                        text = "Male",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            // Female Avatar Card (with longish hair)
-            val isFemaleSelected = config.avatarSource != AvatarSource.CUSTOM_IMAGE && config.gender == AvatarGender.FEMALE
-            Card(
-                modifier = Modifier
-                    .weight(1f)
-                    .tactilePress {
+                    onClick = {
                         haptics.selection()
-                        config = config.copy(
-                            avatarSource = AvatarSource.GENERATED,
-                            gender = AvatarGender.FEMALE,
-                            customAvatarPath = null
-                        )
-                    },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isFemaleSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                ),
-                border = BorderStroke(
-                    width = if (isFemaleSelected) 2.dp else 1.dp,
-                    color = if (isFemaleSelected) MaterialTheme.colorScheme.primary else Color.Transparent
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Image(
-                        painter = painterResource(id = AppResources.Drawable.ic_default_avatar_female),
-                        contentDescription = "Female",
-                        modifier = Modifier.size(52.dp).clip(CircleShape)
-                    )
-                    Text(
-                        text = "Female",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            // Upload Photo Card
-            val isPhotoSelected = config.avatarSource == AvatarSource.CUSTOM_IMAGE
-            Card(
-                modifier = Modifier
-                    .weight(1f)
-                    .tactilePress {
-                        haptics.selection()
-                        photoPickerLauncher.launch("image/*")
-                    },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isPhotoSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                ),
-                border = BorderStroke(
-                    width = if (isPhotoSelected) 2.dp else 1.dp,
-                    color = if (isPhotoSelected) MaterialTheme.colorScheme.primary else Color.Transparent
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.AddPhotoAlternate,
-                            contentDescription = "Upload",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(26.dp)
-                        )
+                        config = config.copy(avatarSource = AvatarSource.GENERATED, gender = gender, customAvatarPath = null)
                     }
-                    Text(
-                        text = "Photo",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+                )
             }
         }
-
-        if (config.avatarSource == AvatarSource.CUSTOM_IMAGE) {
-            Spacer(modifier = Modifier.height(14.dp))
-            OutlinedButton(
-                onClick = {
-                    haptics.light()
-                    avatarManager?.clearCustomPhoto()
-                    config = config.copy(
-                        avatarSource = AvatarSource.GENERATED,
-                        customAvatarPath = null
-                    )
-                },
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth().tactilePress()
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-            }
-        }
-        Spacer(modifier = Modifier.height(14.dp))
-
-        OutlinedButton(
+        PersonaAction(
+            if (config.avatarSource == AvatarSource.CUSTOM_IMAGE) "Change photo" else "Choose photo",
             onClick = {
                 haptics.selection()
-                avatarManager?.clearCustomPhoto()
-                config = PersonaAvatarConfig.default()
-                zoomScale = 1.0f
+                photoPickerLauncher.launch("image/*")
             },
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth().tactilePress()
-        ) {
-            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Reset to Default Avatar")
+            modifier = Modifier.fillMaxWidth(),
+            style = PersonaActionStyle.Quiet,
+            icon = PersonaIcons.Photo,
+            enabled = avatarManager != null
+        )
+
+        if (config.avatarSource == AvatarSource.CUSTOM_IMAGE) {
+            Spacer(Modifier.height(PimsSpacing.sm))
+            PersonaAction(
+                "Remove photo",
+                { photoRemoval = AvatarPhotoRemoval.Remove },
+                modifier = Modifier.fillMaxWidth(),
+                style = PersonaActionStyle.Quiet,
+                icon = PersonaIcons.DeleteOutline
+            )
         }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Save Button
-        Button(
+        Spacer(Modifier.height(PimsSpacing.sm))
+        PersonaAction(
+            "Reset to default avatar",
+            onClick = {
+                haptics.selection()
+                if (config.avatarSource == AvatarSource.CUSTOM_IMAGE) {
+                    photoRemoval = AvatarPhotoRemoval.Reset
+                } else {
+                    config = PersonaAvatarConfig.default()
+                    zoomScale = 1.0f
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            style = PersonaActionStyle.Quiet,
+            icon = PersonaIcons.Refresh
+        )
+        Spacer(Modifier.height(PimsSpacing.sectionGap))
+        PersonaAction(
+            "Apply avatar",
             onClick = {
                 haptics.success()
                 soundManager.success()
                 avatarManager?.saveConfig(config)
                 onSave(config)
             },
-            shape = RoundedCornerShape(18.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-                .tactilePress()
-        ) {
-            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Apply Avatar",
-                style = MaterialTheme.typography.labelLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-            )
-        }
+            modifier = Modifier.fillMaxWidth(),
+            icon = PersonaIcons.Check
+        )
+    }
+
+    photoRemoval?.let { action ->
+        PersonaConfirmationDialog(
+            onDismissRequest = { photoRemoval = null },
+            title = if (action == AvatarPhotoRemoval.Reset) "Reset your avatar?" else "Remove your avatar photo?",
+            message = "This removes the photo saved by Persona Vault.",
+            confirmText = if (action == AvatarPhotoRemoval.Reset) "Reset avatar" else "Remove photo",
+            onConfirm = {
+                photoRemoval = null
+                avatarManager?.clearCustomPhoto()
+                config = if (action == AvatarPhotoRemoval.Reset) {
+                    PersonaAvatarConfig.default()
+                } else {
+                    config.copy(avatarSource = AvatarSource.GENERATED, customAvatarPath = null)
+                }
+                zoomScale = 1.0f
+            },
+            isDestructive = true
+        )
     }
 }
+
+private enum class AvatarPhotoRemoval { Remove, Reset }

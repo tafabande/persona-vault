@@ -1,5 +1,6 @@
 package com.pims.vault.core.sync
 
+import androidx.room.withTransaction
 import com.pims.vault.core.crypto.HardenedAuditLogger
 import com.pims.vault.core.model.AuditEventType
 import com.pims.vault.data.local.dao.AddressDao
@@ -9,11 +10,12 @@ import com.pims.vault.data.local.dao.PlainNoteDao
 import com.pims.vault.data.local.dao.SyncConflictDao
 import com.pims.vault.data.local.dao.SyncQueueDao
 import com.pims.vault.data.local.dao.VaultDao
-import com.pims.vault.data.local.entity.AuditEventEntity
+import com.pims.vault.data.local.database.PimsDatabase
 import com.pims.vault.data.local.entity.SyncAction
 import com.pims.vault.data.local.entity.SyncConflictEntity
 import com.pims.vault.data.local.entity.SyncOperationStatus
 import com.pims.vault.data.local.entity.SyncQueueEntity
+import com.pims.vault.data.local.entity.PlainNoteEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,15 +23,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,7 +49,10 @@ class SyncQueueManager @Inject constructor(
     private val addressDao: AddressDao? = null,
     private val vaultDao: VaultDao? = null,
     private val personDao: PersonDao? = null,
-    private val photoBackupCoordinatorProvider: javax.inject.Provider<PhotoBackupCoordinator>? = null
+    private val photoBackupCoordinatorProvider: javax.inject.Provider<PhotoBackupCoordinator>? = null,
+    private val database: PimsDatabase? = null,
+    private val cloudAccess: CloudSyncAccess? = null,
+    private val workScheduler: SyncWorkScheduler? = null
 ) {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -57,11 +63,12 @@ class SyncQueueManager @Inject constructor(
     private val _isSyncing = MutableStateFlow(false)
     private val queueMutex = Mutex()
     private val lastFailure = MutableStateFlow<String?>(null)
+    private val confirmedAccount = MutableStateFlow<String?>(null)
     private val failure = combine(lastFailure, syncQueueDao.getAllOperationsFlow()) { message, operations ->
         message ?: if (operations.any { it.status == SyncOperationStatus.FAILED }) "Some changes need another sync attempt" else null
     }
 
-    val syncState: StateFlow<SyncState> = combine(
+    private val transportState = combine(
         networkMonitor.networkState,
         _isSyncing,
         pendingCount,
@@ -71,22 +78,70 @@ class SyncQueueManager @Inject constructor(
         when {
             conflicts > 0 -> SyncState.Conflict(conflicts)
             syncing -> SyncState.Syncing
-            network == NetworkState.OFFLINE && pending > 0 -> SyncState.Waiting(pending)
-            network == NetworkState.OFFLINE -> SyncState.Failed("Offline")
+            network != NetworkState.ONLINE && pending > 0 -> SyncState.Waiting(pending)
             failure != null -> SyncState.Failed(failure)
             pending > 0 -> SyncState.Waiting(pending)
             else -> SyncState.Idle
         }
+    }
+
+    val syncState: StateFlow<SyncState> = combine(
+        transportState, cloudAccess?.authorizedAccount ?: flowOf(null), confirmedAccount,
+        workScheduler?.pendingSweep ?: flowOf(false)
+    ) { state, authorized, confirmed, scheduled ->
+        when {
+            cloudAccess != null && authorized == null -> SyncState.Idle
+            state == SyncState.Idle && scheduled -> SyncState.Waiting(0)
+            state == SyncState.Idle && confirmed != null && (cloudAccess == null || confirmed == authorized) -> SyncState.Synced
+            else -> state
+        }
     }.stateIn(coroutineScope, SharingStarted.Eagerly, SyncState.Idle)
 
-    init {
-        coroutineScope.launch {
-            networkMonitor.networkState.collect { state ->
-                if (state == NetworkState.ONLINE) {
-                    processPendingQueue()
-                }
-            }
+    fun requestBackgroundSync() = workScheduler?.requestSync()
+
+    internal suspend fun <T> inTransaction(block: suspend () -> T): T =
+        if (database == null) block() else database.withTransaction { block() }
+
+    // Called within the same Room transaction as the associated note mutation.
+    suspend fun enqueueNoteMutation(note: PlainNoteEntity, action: SyncAction, baseRevision: Long) {
+        val payload = JSONObject().apply {
+            put("ownerPersonId", note.ownerPersonId)
+            put("isLocked", note.isLocked)
+            put("revision", note.updatedAt)
         }
+        enqueueNoteReference(NOTE, note.id, action, baseRevision, payload)
+    }
+
+    // Attachment binaries stay in encrypted app storage. The queue carries a parent reference.
+    suspend fun enqueueNoteAttachment(noteId: String, attachmentId: String, action: SyncAction) {
+        enqueueNoteReference(NOTE_ATTACHMENT, attachmentId, action, 0, JSONObject().put("noteId", noteId))
+    }
+
+    private suspend fun enqueueNoteReference(type: String, id: String, action: SyncAction, baseRevision: Long, payload: JSONObject) {
+        val previous = syncQueueDao.getLatestByEntity(type, id)
+        val reference = previous?.let(::readNoteReference)
+        val account = reference?.optString("accountUid")?.takeIf(String::isNotBlank)
+            ?: cloudAccess?.boundAccount()
+        if (account != null) payload.put("accountUid", account)
+        if (type == NOTE && previous != null) {
+            val possiblyPublished = readPredecessors(reference).toMutableList()
+            if (previous.attempts > 0) possiblyPublished.add(previous.operationId)
+            if (possiblyPublished.isNotEmpty()) payload.put("predecessors", JSONArray(possiblyPublished.takeLast(32)))
+        }
+        val now = System.currentTimeMillis()
+        val op = SyncQueueEntity(
+            id = previous?.id ?: UUID.randomUUID().toString(),
+            operationId = UUID.randomUUID().toString(),
+            entityType = type,
+            entityId = id,
+            action = action,
+            payloadJson = payload.toString(),
+            localVersion = previous?.localVersion ?: baseRevision,
+            status = if (previous?.status == SyncOperationStatus.CONFLICT) SyncOperationStatus.CONFLICT else SyncOperationStatus.PENDING,
+            createdAt = previous?.createdAt ?: now,
+            updatedAt = now
+        )
+        syncQueueDao.insert(op)
     }
 
     /**
@@ -171,21 +226,54 @@ class SyncQueueManager @Inject constructor(
     }
 
     /** Never route SQLCipher note drafts through the generic plaintext document gateway. */
-    private suspend fun commitQueuedNote(op: SyncQueueEntity): GatewayCommitResult {
+    private fun readNoteReference(op: SyncQueueEntity): JSONObject? = try {
+        JSONObject(op.payloadJson)
+    } catch (_: org.json.JSONException) {
+        null
+    }
+
+    private fun readPredecessors(payload: JSONObject?): List<String> {
+        val ids = payload?.optJSONArray("predecessors") ?: return emptyList()
+        return (0 until ids.length()).mapNotNull { ids.optString(it).takeIf(String::isNotBlank) }
+    }
+
+    private suspend fun commitQueuedNote(uid: String, op: SyncQueueEntity): GatewayCommitResult {
         val service = firestoreSyncService ?: return GatewayCommitResult.Failure("Note sync is unavailable")
-        val note = if (op.action == SyncAction.DELETE) {
-            val payload = try { org.json.JSONObject(op.payloadJson) } catch (_: Exception) {
-                return GatewayCommitResult.Failure("Invalid note deletion metadata")
+        val payload = readNoteReference(op) ?: return GatewayCommitResult.Failure("Invalid note sync metadata")
+        val expectedAccount = payload.optString("accountUid").takeIf(String::isNotBlank)
+        if (expectedAccount != null && expectedAccount != uid) return GatewayCommitResult.Unauthorized
+        if (op.entityType == NOTE_ATTACHMENT) {
+            val noteId = payload.optString("noteId").takeIf(String::isNotBlank)
+                ?: return GatewayCommitResult.Failure("Missing attachment parent")
+            val confirmed = if (op.action == SyncAction.DELETE) {
+                service.deleteRemoteNoteAttachment(noteId, op.entityId, uid)
+            } else {
+                val attachment = plainNoteDao?.getAttachment(op.entityId)
+                attachment == null || service.syncNoteAttachment(uid, noteId, attachment)
             }
-            com.pims.vault.data.local.entity.PlainNoteEntity(
-                id = op.entityId, ownerPersonId = payload.optString("ownerPersonId"),
-                title = "", content = "", isLocked = payload.optBoolean("isLocked", false)
+            return if (confirmed) GatewayCommitResult.Success(0, System.currentTimeMillis())
+                else GatewayCommitResult.Failure("Attachment synchronization is pending")
+        }
+
+        val deleting = op.action == SyncAction.DELETE
+        val note = if (deleting) {
+            val owner = payload.optString("ownerPersonId").takeIf(String::isNotBlank)
+                ?: return GatewayCommitResult.Failure("Missing note owner")
+            PlainNoteEntity(
+                id = op.entityId, ownerPersonId = owner, title = "", content = "",
+                isLocked = payload.optBoolean("isLocked", false), updatedAt = payload.optLong("revision", op.updatedAt)
             )
-        } else plainNoteDao?.getById(op.entityId)
-            ?: return GatewayCommitResult.Failure("Queued note is unavailable")
-        return if (service.syncNote(null, note, op.action == SyncAction.DELETE)) {
-            GatewayCommitResult.Success(op.localVersion + 1L, System.currentTimeMillis())
-        } else GatewayCommitResult.NetworkUnavailable
+        } else plainNoteDao?.getById(op.entityId) ?: return if (payload.has("revision")) {
+            GatewayCommitResult.Failure("Queued note is unavailable")
+        } else {
+            // Superseded legacy saves may remain after the old asynchronous delete path.
+            GatewayCommitResult.Success(0, System.currentTimeMillis())
+        }
+        val expectedRevision = op.localVersion.takeIf { payload.has("revision") }
+        if (!deleting && payload.has("revision") && note.updatedAt != payload.optLong("revision")) {
+            return GatewayCommitResult.Failure("A newer local edit is waiting")
+        }
+        return service.commitNote(uid, note, deleting, expectedRevision, op.operationId, readPredecessors(payload))
     }
 
     /**
@@ -193,7 +281,11 @@ class SyncQueueManager @Inject constructor(
      * Uses RemoteSyncGateway with optimistic concurrency verification.
      * Stale updates are diverted to explicit conflict resolution.
      */
-    suspend fun processPendingQueue(userId: String = "local_user"): SyncResult = queueMutex.withLock {
+    suspend fun processPendingQueue(userId: String? = null): SyncResult = queueMutex.withLock {
+        val uid = if (cloudAccess == null) userId ?: "local_user" else {
+            cloudAccess.currentAccount()?.takeIf { userId == null || userId == it }
+                ?: return@withLock SyncResult(false, 0, "Saved locally. Cloud sync is disabled or requires sign-in.", false)
+        }
         if (!networkMonitor.isCurrentlyConnected()) {
             return@withLock SyncResult(success = false, processedCount = 0, message = "Device is offline")
         }
@@ -201,20 +293,65 @@ class SyncQueueManager @Inject constructor(
         _isSyncing.value = true
         var processed = 0
         var incomplete: String? = null
+        var needsRetry = false
         lastFailure.value = null
 
         try {
             val pending = syncQueueDao.getPendingOperations()
             for (op in pending) {
-                val attempted = op.copy(status = SyncOperationStatus.IN_PROGRESS, attempts = op.attempts + 1, errorMessage = null)
-                syncQueueDao.update(attempted)
+                if (cloudAccess != null && cloudAccess.currentAccount() != uid) {
+                    return@withLock SyncResult(false, processed, "Cloud account changed", false)
+                }
+                val attempted = inTransaction {
+                    if (database != null && syncQueueDao.getById(op.id)?.operationId != op.operationId) return@inTransaction null
+                    op.copy(status = SyncOperationStatus.IN_PROGRESS, attempts = op.attempts + 1, errorMessage = null)
+                        .also { syncQueueDao.update(it) }
+                } ?: continue
 
-                val commitResult = if (op.entityType == "PLAIN_NOTE") {
-                    commitQueuedNote(op)
-                } else remoteSyncGateway.commitOperation(userId, op)
-                when (val result = commitResult) {
+                val result = when (op.entityType) {
+                    NOTE, NOTE_ATTACHMENT -> commitQueuedNote(uid, op)
+                    STRUCTURED_DELETION -> try {
+                        firestoreSyncService?.commitStructuredDeletion(uid, op)
+                            ?: GatewayCommitResult.Failure("Record deletion synchronization is unavailable")
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        GatewayCommitResult.Failure("Record deletion synchronization is pending")
+                    }
+                    else -> remoteSyncGateway.commitOperation(uid, op)
+                }
+                val acknowledged = inTransaction {
+                    if (database != null && syncQueueDao.getById(op.id)?.operationId != op.operationId) return@inTransaction false
+                    when (result) {
+                        is GatewayCommitResult.Success -> if (op.entityType == STRUCTURED_DELETION) {
+                            syncQueueDao.update(attempted.copy(status = SyncOperationStatus.ACKNOWLEDGED))
+                        } else {
+                            syncQueueDao.delete(op)
+                        }
+                        is GatewayCommitResult.VersionConflict -> {
+                            syncQueueDao.update(attempted.copy(status = SyncOperationStatus.CONFLICT))
+                            persistConflict(
+                                entityType = op.entityType,
+                                entityId = op.entityId,
+                                fieldName = result.conflictingField,
+                                localValue = if (op.entityType == NOTE) "Saved on this device" else op.payloadJson,
+                                remoteValue = result.serverPayloadJson,
+                                localVersion = op.localVersion,
+                                serverVersion = result.currentServerVersion
+                            )
+                        }
+                        GatewayCommitResult.NetworkUnavailable -> syncQueueDao.update(attempted.copy(status = SyncOperationStatus.PENDING))
+                        GatewayCommitResult.Unauthorized -> syncQueueDao.update(attempted.copy(status = SyncOperationStatus.FAILED, errorMessage = "Unauthorized"))
+                        is GatewayCommitResult.Failure -> syncQueueDao.update(attempted.copy(status = SyncOperationStatus.FAILED, errorMessage = result.message))
+                    }
+                    true
+                }
+                if (!acknowledged) {
+                    needsRetry = true
+                    continue
+                }
+                when (result) {
                     is GatewayCommitResult.Success -> {
-                        syncQueueDao.delete(op)
                         processed++
                         auditLogger.recordEvent(
                             eventType = AuditEventType.SYNC_COMPLETED,
@@ -225,50 +362,51 @@ class SyncQueueManager @Inject constructor(
                     }
                     is GatewayCommitResult.VersionConflict -> {
                         incomplete = "Some changes need conflict resolution"
-                        // Optimistic concurrency failure: Stale update detected!
-                        syncQueueDao.update(attempted.copy(status = SyncOperationStatus.CONFLICT))
-                        recordConflict(
+                        auditLogger.recordEvent(
+                            eventType = AuditEventType.UPDATE,
                             entityType = op.entityType,
                             entityId = op.entityId,
-                            fieldName = result.conflictingField,
-                            localValue = op.payloadJson,
-                            remoteValue = result.serverPayloadJson,
-                            localVersion = op.localVersion,
-                            serverVersion = result.currentServerVersion
+                            description = "Sync conflict detected: local v${op.localVersion} vs remote v${result.currentServerVersion}"
                         )
                     }
                     is GatewayCommitResult.NetworkUnavailable -> {
-                        syncQueueDao.update(attempted.copy(status = SyncOperationStatus.PENDING))
                         incomplete = "Cloud sync is waiting for a connection"
+                        needsRetry = true
                         break
                     }
                     is GatewayCommitResult.Unauthorized -> {
                         incomplete = "Sign in again to resume cloud sync"
-                        syncQueueDao.update(attempted.copy(status = SyncOperationStatus.FAILED, errorMessage = "Unauthorized"))
                     }
                     is GatewayCommitResult.Failure -> {
                         incomplete = result.message
-                        syncQueueDao.update(attempted.copy(status = SyncOperationStatus.FAILED, errorMessage = result.message))
+                        needsRetry = true
                     }
                 }
             }
 
-            // Bidirectional sync: Pull remote changes down into Room, and push local data up to Firestore
-            val firestoreResult = firestoreSyncService?.syncBidirectional(userId)
+            val firestoreResult = firestoreSyncService?.syncBidirectional(uid)
             val totalProcessed = processed + (firestoreResult?.processedCount ?: 0)
-            if (firestoreResult?.success == false) incomplete = firestoreResult.message
+            if (firestoreResult?.success == false) {
+                incomplete = firestoreResult.message
+                needsRetry = true
+            }
 
             // Ensure all cached/offline photos are backed up
             try {
                 photoBackupCoordinatorProvider?.get()?.backupAllPhotos()
             } catch (cancelled: CancellationException) { throw cancelled
-            } catch (_: Exception) { incomplete = "Some media is saved locally and waiting for cloud backup" }
+            } catch (_: Exception) {
+                incomplete = "Some media is saved locally and waiting for cloud backup"
+                needsRetry = true
+            }
 
             lastFailure.value = incomplete
+            if (incomplete == null && !needsRetry) confirmedAccount.value = uid
             return@withLock SyncResult(
-                success = incomplete == null,
+                success = incomplete == null && !needsRetry,
                 processedCount = totalProcessed,
-                message = incomplete ?: "Synced $totalProcessed records with Cloud Firestore"
+                message = incomplete ?: if (needsRetry) "Newer local changes are waiting" else "Synced $totalProcessed records with Cloud Firestore",
+                shouldRetry = needsRetry
             )
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (e: Exception) {
@@ -291,9 +429,28 @@ class SyncQueueManager @Inject constructor(
         localVersion: Long,
         serverVersion: Long
     ) {
-        if (localValue.trim() == remoteValue.trim()) return
+        val stored = persistConflict(entityType, entityId, fieldName, localValue, remoteValue, localVersion, serverVersion)
+        if (!stored) return
+        auditLogger.recordEvent(
+            eventType = AuditEventType.UPDATE,
+            entityType = entityType,
+            entityId = entityId,
+            description = "Sync conflict detected on $fieldName: local v$localVersion vs remote v$serverVersion"
+        )
+    }
+
+    private suspend fun persistConflict(
+        entityType: String,
+        entityId: String,
+        fieldName: String,
+        localValue: String,
+        remoteValue: String,
+        localVersion: Long,
+        serverVersion: Long
+    ): Boolean {
+        if (localValue.trim() == remoteValue.trim()) return false
         val existing = syncConflictDao.getExistingUnresolvedByField(entityType, entityId, fieldName)
-        if (existing != null) return
+        if (existing != null) return false
 
         val conflict = SyncConflictEntity(
             id = UUID.randomUUID().toString(),
@@ -307,13 +464,7 @@ class SyncQueueManager @Inject constructor(
             isResolved = false
         )
         syncConflictDao.insert(conflict)
-
-        auditLogger.recordEvent(
-            eventType = AuditEventType.UPDATE,
-            entityType = entityType,
-            entityId = entityId,
-            description = "Sync conflict detected on $fieldName: local v$localVersion vs remote v$serverVersion"
-        )
+        return true
     }
 
     /**
@@ -325,6 +476,21 @@ class SyncQueueManager @Inject constructor(
         resolvedValue: String
     ) {
         val conflict = syncConflictDao.getConflictById(conflictId) ?: return
+        if (conflict.entityType == NOTE || conflict.entityType == "Note") {
+            resolveNoteConflict(conflict, choice)
+            return
+        }
+        if (conflict.entityType == STRUCTURED_CONFLICT) {
+            try {
+                firestoreSyncService?.resolveStructuredConflict(conflict, choice)
+                requestBackgroundSync()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                lastFailure.value = "Could not update the cloud conflict. Try again when you're connected."
+            }
+            return
+        }
         syncConflictDao.resolveAllConflictsForField(
             entityType = conflict.entityType,
             entityId = conflict.entityId,
@@ -337,12 +503,6 @@ class SyncQueueManager @Inject constructor(
         if (choice == ConflictResolutionChoice.USE_REMOTE || choice == ConflictResolutionChoice.MERGED) {
             try {
                 when (conflict.entityType) {
-                    "Note" -> {
-                        val note = plainNoteDao?.getById(conflict.entityId)
-                        if (note != null) {
-                            plainNoteDao?.upsert(note.copy(content = resolvedValue, updatedAt = System.currentTimeMillis()))
-                        }
-                    }
                     "Contact" -> {
                         val contact = contactDao?.getContactById(conflict.entityId)
                         if (contact != null) {
@@ -398,9 +558,80 @@ class SyncQueueManager @Inject constructor(
         )
     }
 
+    private suspend fun resolveNoteConflict(conflict: SyncConflictEntity, choice: ConflictResolutionChoice) {
+        if (choice == ConflictResolutionChoice.MERGED || conflict.isResolved) return
+        val uid = cloudAccess?.currentAccount() ?: return
+        val service = firestoreSyncService ?: return
+        val noteDao = plainNoteDao ?: return
+        val id = conflict.entityId
+        val observed = noteDao.getById(id)
+        val pending = syncQueueDao.getLatestByEntity(NOTE, id)
+        val remote = if (choice == ConflictResolutionChoice.USE_REMOTE) {
+            try {
+                service.readNoteRevisionForResolution(uid, id, conflict.serverVersion, observed)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            } ?: return
+        } else null
+
+        if (remote != null && remote.revision != conflict.serverVersion) {
+            inTransaction {
+                val current = syncConflictDao.getConflictById(conflict.id)
+                if (current == conflict) syncConflictDao.insert(conflict.copy(
+                    serverVersion = remote.revision,
+                    remoteValue = if (remote.deleted) "Deleted on another device" else "Saved on another device"
+                ))
+            }
+            return
+        }
+
+        val saved = inTransaction {
+            if (cloudAccess.currentAccount() != uid || noteDao.getById(id) != observed ||
+                syncQueueDao.getLatestByEntity(NOTE, id)?.operationId != pending?.operationId) return@inTransaction false
+            if (remote != null) {
+                if (remote.deleted) noteDao.deleteById(id) else noteDao.upsert(requireNotNull(remote.note))
+                syncQueueDao.deleteByEntity(NOTE, id)
+            } else {
+                val revision = maxOf(System.currentTimeMillis(), (observed?.updatedAt ?: 0L) + 1L, conflict.serverVersion + 1L)
+                val priorReference = pending?.let(::readNoteReference)
+                val replacement = observed?.copy(updatedAt = revision) ?: priorReference?.let { reference ->
+                    PlainNoteEntity(id, reference.optString("ownerPersonId"), "", "",
+                        updatedAt = revision, isLocked = reference.optBoolean("isLocked"))
+                } ?: return@inTransaction false
+                if (observed != null) noteDao.upsert(replacement)
+                syncQueueDao.deleteByEntity(NOTE, id)
+                enqueueNoteMutation(replacement, if (observed == null) SyncAction.DELETE else SyncAction.UPDATE,
+                    conflict.serverVersion)
+                if (observed != null && conflict.remoteValue == "Deleted on another device") {
+                    for (attachment in noteDao.getAttachments(id)) {
+                        // Retain the local encrypted bytes with a fresh cloud attachment identity.
+                        val restored = attachment.copy(id = UUID.randomUUID().toString())
+                        syncQueueDao.deleteByEntity(NOTE_ATTACHMENT, attachment.id)
+                        noteDao.deleteAttachment(attachment.id)
+                        noteDao.upsertAttachment(restored)
+                        enqueueNoteAttachment(id, restored.id, SyncAction.INSERT)
+                    }
+                }
+            }
+            val resolvedAt = System.currentTimeMillis()
+            syncConflictDao.resolveAllConflictsForField(NOTE, id, "Note revision", choice.name, resolvedAt)
+            syncConflictDao.resolveConflict(conflict.id, choice.name, resolvedAt)
+            true
+        }
+        if (saved) requestBackgroundSync()
+    }
+
     data class SyncResult(
         val success: Boolean,
         val processedCount: Int,
-        val message: String
+        val message: String,
+        val shouldRetry: Boolean = !success
     )
+
+    private companion object {
+        const val NOTE = "PLAIN_NOTE"
+        const val NOTE_ATTACHMENT = "PLAIN_NOTE_ATTACHMENT"
+    }
 }

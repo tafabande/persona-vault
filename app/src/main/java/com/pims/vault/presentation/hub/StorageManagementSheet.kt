@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,16 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CleaningServices
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -115,7 +107,7 @@ fun StorageManagementSheet(
 
                 IconButton(onClick = onDismissRequest) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = PersonaIcons.Close,
                         contentDescription = "Close",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -215,7 +207,7 @@ fun StorageManagementSheet(
 
                 item {
                     StorageBreakdownRow(
-                        icon = Icons.Default.Description,
+                        icon = PersonaIcons.Documents,
                         title = "Downloaded Documents",
                         description = "$totalDocumentsCount files",
                         sizeText = docsFormatted
@@ -224,7 +216,7 @@ fun StorageManagementSheet(
 
                 item {
                     StorageBreakdownRow(
-                        icon = Icons.Default.FolderZip,
+                        icon = PersonaIcons.FolderZip,
                         title = "Cached Thumbnails & Temp Files",
                         description = "Temporary visual cache",
                         sizeText = if (cacheClearedMessage != null) "0.0 MB" else cacheFormatted,
@@ -237,7 +229,7 @@ fun StorageManagementSheet(
 
                 item {
                     StorageBreakdownRow(
-                        icon = Icons.Default.Delete,
+                        icon = PersonaIcons.Delete,
                         title = "Deleted Items",
                         description = "Items in retention window",
                         sizeText = "0.1 MB",
@@ -288,7 +280,7 @@ fun StorageManagementSheet(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Storage,
+                                    imageVector = PersonaIcons.Storage,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.tertiary,
                                     modifier = Modifier.size(20.dp)
@@ -338,7 +330,7 @@ fun StorageManagementSheet(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(PersonaIcons.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Text("Vacuum & Defragment Database")
                                 }
                             }

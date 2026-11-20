@@ -3,16 +3,12 @@ package com.pims.vault.presentation.ui.components.ux
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalDensity
@@ -22,9 +18,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaIconAction
 import com.pims.vault.presentation.ui.theme.LocalPimsTonalSurfaces
 import com.pims.vault.presentation.ui.theme.LocalReducedMotion
+import com.pims.vault.presentation.ui.theme.PersonaIconBadge
+import com.pims.vault.presentation.ui.theme.PersonaIconSize
 import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PimsSpacing
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsFeedback
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
@@ -129,7 +132,7 @@ fun PersonaToastHost(controller: PersonaToastController, modifier: Modifier = Mo
             if (controller.currentToast?.id == toast.id) controller.dismiss()
         }
     }
-    Box(modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
+    Box(modifier.fillMaxSize().statusBarsPadding().padding(horizontal = pimsPageGutter(), vertical = PimsSpacing.sm),
         contentAlignment = Alignment.TopCenter) {
         AnimatedVisibility(visible = toast != null,
             enter = if (reduced) EnterTransition.None else fadeIn(tween(160)) + slideInVertically(tween(180)) { -it / 3 },
@@ -143,7 +146,7 @@ fun PersonaToastHost(controller: PersonaToastController, modifier: Modifier = Mo
 private fun PersonaToastCard(toast: PersonaToastMessage, onDismiss: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val icon = when (toast.type) {
-        ToastType.SUCCESS -> PersonaIcons.Success
+        ToastType.SUCCESS -> PersonaIcons.Check
         ToastType.ERROR -> PersonaIcons.Danger
         ToastType.WARNING -> PersonaIcons.Warning
         ToastType.INFO -> PersonaIcons.Info
@@ -173,17 +176,33 @@ private fun PersonaToastCard(toast: PersonaToastMessage, onDismiss: () -> Unit) 
                 }, onDragCancel = { scope.launch { offset.animateTo(0f, tween(160)) } },
                     onHorizontalDrag = { change, amount -> change.consume(); scope.launch { offset.snapTo(offset.value + amount) } })
             }) {
-        Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 2.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.size(32.dp).clip(MaterialTheme.shapes.small).background(iconBackground),
-                contentAlignment = Alignment.Center) { Icon(icon, null, tint = iconContent, modifier = Modifier.size(20.dp)) }
+        Row(
+            Modifier.padding(start = PimsSpacing.sm, top = PimsSpacing.xs, bottom = PimsSpacing.xs, end = PimsSpacing.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s)
+        ) {
+            PersonaIconBadge(
+                imageVector = icon,
+                contentDescription = null,
+                containerColor = iconBackground,
+                contentColor = iconContent,
+                size = PimsSpacing.xl,
+                iconSize = PersonaIconSize.Small
+            )
             Text(toast.message.trimStart().removePrefix("✓").removePrefix("⚠️").trim(),
                 style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(vertical = 8.dp))
+                modifier = Modifier.weight(1f).padding(vertical = PimsSpacing.s))
             if (toast.actionLabel != null && toast.onAction != null) {
-                TextButton(onClick = { toast.onAction.invoke(); onDismiss() }) { Text(toast.actionLabel) }
+                PersonaAction(
+                    label = toast.actionLabel,
+                    style = PersonaActionStyle.Text,
+                    onClick = {
+                        toast.onAction.invoke()
+                        onDismiss()
+                    }
+                )
             }
-            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Dismiss message", Modifier.size(18.dp)) }
+            PersonaIconAction(PersonaIcons.Close, "Dismiss message", onDismiss)
         }
     }
 }

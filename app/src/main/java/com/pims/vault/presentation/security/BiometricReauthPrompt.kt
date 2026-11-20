@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.security
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,10 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Pin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -83,7 +81,7 @@ fun BiometricReauthPrompt(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = if (tier == SecurityTier.LEVEL_3_VAULT) Icons.Default.Lock else Icons.Default.Fingerprint,
+                        imageVector = if (tier == SecurityTier.LEVEL_3_VAULT) PersonaIcons.Lock else PersonaIcons.Biometric,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(20.dp)
@@ -131,7 +129,7 @@ fun BiometricReauthPrompt(
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Fingerprint,
+                            imageVector = PersonaIcons.Biometric,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp).padding(end = 4.dp)
                         )
@@ -144,7 +142,7 @@ fun BiometricReauthPrompt(
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Pin,
+                        imageVector = PersonaIcons.Pin,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp).padding(end = 4.dp)
                     )

@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -24,12 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,7 +39,6 @@ import com.pims.vault.presentation.ui.components.PersonaSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.style.TextAlign
@@ -82,7 +77,7 @@ fun MoreView(
     userEmail: String = "",
     userPhotoPath: String? = null,
     isLocalOnly: Boolean = false,
-    syncStatusText: String = "✓ Everything is synced",
+    syncStatusText: String = "Saved locally",
     currentThemeMode: ThemeMode = ThemeMode.LIGHT,
     isSoundEnabled: Boolean = true,
     currentMood: com.pims.vault.presentation.ui.theme.PersonaMood = com.pims.vault.presentation.ui.theme.PersonaMood.WARM,
@@ -95,7 +90,7 @@ fun MoreView(
     onOpenAvatarEditor: () -> Unit = {},
     onThemeModeSelected: (ThemeMode) -> Unit = {},
     onToggleSound: (Boolean) -> Unit = {},
-    onLockClicked: () -> Unit = {},
+    onBack: () -> Unit = {},
     onChangePasswordClicked: () -> Unit = {},
     onSignOutClicked: () -> Unit = {},
     onSecurityClicked: () -> Unit = {},
@@ -157,13 +152,13 @@ fun MoreView(
     ) {
         item(key = "header") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                com.pims.vault.presentation.ui.components.PersonaIconAction(
+                    com.pims.vault.presentation.ui.theme.PersonaIcons.ArrowBack, "Back", onBack
+                )
                 Text(
                     "Settings", modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold
                 )
-                IconButton(onClick = { onSelect(onLockClicked) }) {
-                    Icon(Icons.Default.Lock, "Lock vault")
-                }
             }
         }
         item(key = "account") {
@@ -193,7 +188,7 @@ fun MoreView(
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(PersonaIcons.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -584,7 +579,7 @@ private fun SettingsRow(title: String, value: String? = null, onClick: () -> Uni
             Text(value, Modifier.widthIn(max = 112.dp), style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(PersonaIcons.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -674,7 +669,7 @@ fun ManageAccountSheet(
                             }
                         }
                         IconButton(onClick = onDismissRequest) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(PersonaIcons.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
@@ -717,7 +712,7 @@ fun ManageAccountSheet(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Cloud,
+                                    imageVector = PersonaIcons.Cloud,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
@@ -826,7 +821,7 @@ fun ManageAccountSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = { currentView = "MENU" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Back")
+                            Icon(PersonaIcons.Close, contentDescription = "Back")
                         }
                         Text(
                             text = "Reset Password via OTP",
@@ -898,7 +893,7 @@ fun ManageAccountSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = { currentView = "MENU" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Back")
+                            Icon(PersonaIcons.Close, contentDescription = "Back")
                         }
                         Text(
                             text = "Authorize Account Deletion",

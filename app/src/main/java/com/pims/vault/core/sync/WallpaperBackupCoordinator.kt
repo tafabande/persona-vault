@@ -6,6 +6,7 @@ import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.crypto.HardenedCryptoEngine
 import com.pims.vault.core.crypto.PortableFileKeyManager
 import com.pims.vault.core.logging.VaultLogger
+import com.pims.vault.core.storage.photoExtension
 import com.pims.vault.presentation.wallpaper.WallpaperItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -39,15 +40,16 @@ class WallpaperBackupCoordinator @Inject constructor(
         scope.launchSafely {
             val uid = agreedUserId(queuedUid) ?: return@launchSafely
             if (isDeletionPending(uid, item.id)) return@launchSafely
-            val bytes = photoSync.readLocalJpegBytes(item.localFilePath) ?: return@launchSafely
+            val source = photoSync.readLocalImage(item.localFilePath) ?: return@launchSafely
+            val bytes = source.bytes
             try {
-                val upload = photoSync.uploadPhoto(uid, "wallpaper", "wallpaper_${item.id}", bytes)
+                val upload = photoSync.uploadPhoto(uid, "wallpaper", "wallpaper_${item.id}", bytes, source.mimeType)
                 if (!isCurrentUser(uid)) return@launchSafely
                 val sha = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
                 var photoCiphertextBase64: String? = null
                 var ivHex = upload?.ivHex ?: ""
-                if (upload == null && bytes.size <= 512 * 1024) {
+                if (upload == null && bytes.size <= ProfilePhotoSyncService.MAX_INLINE_BYTES) {
                     val key = portableFileKeyManager.copyKeyBytes()
                     try {
                         val encrypted = cryptoEngine.encrypt(bytes, key)
@@ -87,8 +89,8 @@ class WallpaperBackupCoordinator @Inject constructor(
                         b2DownloadUrl = upload?.downloadUrl ?: "",
                         b2IvHex = ivHex,
                         sha256Hex = sha,
-                        mimeType = "image/jpeg",
-                        sizeBytes = upload?.sizeBytes ?: bytes.size.toLong(),
+                        mimeType = source.mimeType,
+                        sizeBytes = bytes.size.toLong(),
                         updatedAt = revision,
                         photoCiphertextBase64 = photoCiphertextBase64
                     )
@@ -112,7 +114,8 @@ class WallpaperBackupCoordinator @Inject constructor(
                 remote.photo.photoId != "wallpaper_${remote.id}" ||
                 !remote.photo.sha256Hex.matches(Regex("[0-9a-fA-F]{64}")) ||
                 remote.photo.updatedAt < 0L || isDeletionPending(uid, remote.id)) return@mapNotNull null
-            val target = File(directory, "restored_${remote.id}_${remote.photo.sha256Hex.lowercase()}.jpg").canonicalFile
+            val extension = photoExtension(remote.photo.mimeType) ?: return@mapNotNull null
+            val target = File(directory, "restored_${remote.id}_${remote.photo.sha256Hex.lowercase()}.$extension").canonicalFile
             if (!target.toPath().startsWith(directory.toPath())) return@mapNotNull null
             val validLocal = try {
                 target.isFile && target.length() in 1..ProfilePhotoSyncService.MAX_PHOTO_BYTES &&
@@ -126,7 +129,8 @@ class WallpaperBackupCoordinator @Inject constructor(
                 photoCiphertextBase64 = remote.photo.photoCiphertextBase64,
                 legacyKeyProvider = {
                     portableFileKeyManager.legacyKeyBytes()
-                }
+                },
+                expectedMimeType = remote.photo.mimeType
             )
             if (ok && isCurrentUser(uid) && !isDeletionPending(uid, remote.id)) remote to target else null
         }

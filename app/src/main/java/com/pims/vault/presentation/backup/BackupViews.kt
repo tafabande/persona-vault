@@ -1,15 +1,13 @@
 package com.pims.vault.presentation.backup
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -91,7 +89,7 @@ fun BackupDashboardScreen(
             modifier = Modifier.padding(bottom = 20.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.Security,
+                imageVector = PersonaIcons.Security,
                 contentDescription = "Disaster Recovery",
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp)

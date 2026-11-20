@@ -4,10 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pims.vault.core.logging.VaultLogger
 import com.pims.vault.core.model.CANONICAL_PRIMARY_OWNER_ID
-import com.pims.vault.core.model.VaultCategory
 import com.pims.vault.data.local.dao.PersonDao
 import com.pims.vault.data.local.dao.RelationshipDao
-import com.pims.vault.data.local.dao.VaultDao
 import com.pims.vault.domain.model.NoteAttachment
 import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.domain.model.PlainNote
@@ -16,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -27,6 +26,7 @@ data class PlainNotesUiState(
     val availableTags: List<String> = emptyList(),
     val selectedTag: String? = null,
     val isSaving: Boolean = false,
+    val isLoading: Boolean = true,
     val error: String? = null
 )
 
@@ -35,7 +35,6 @@ class PlainNotesViewModel @Inject constructor(
     private val repository: PlainNotesRepository,
     private val personDao: PersonDao,
     private val relationshipDao: RelationshipDao,
-    private val vaultDao: VaultDao,
     private val calendarCoordinator: com.pims.vault.core.calendar.NoteCalendarCoordinator
 ) : ViewModel() {
 
@@ -55,21 +54,15 @@ class PlainNotesViewModel @Inject constructor(
             combine(
                 repository.observe(CANONICAL_PRIMARY_OWNER_ID),
                 relationshipDao.getOutgoingRelationshipsFlow(CANONICAL_PRIMARY_OWNER_ID),
-                personDao.getAllPersonsFlow(),
-                vaultDao.getVaultItemsFlow(CANONICAL_PRIMARY_OWNER_ID)
-            ) { noteList, relationships, persons, vaultItems ->
+                personDao.getAllPersonsFlow()
+            ) { noteList, relationships, persons ->
                 val tagsSet = linkedSetOf<String>()
 
                 // 1. Built-in essential tags
                 tagsSet.addAll(listOf("Movie", "Todo", "Work", "Personal", "Health", "Shopping", "Finance", "Urgent", "Dinner", "Mother", "Spouse", "CoupleGoals", "Affairs", "2026", "January2026"))
 
-                // 2. Bank and Financial providers from Vault
+                // 2. Generic finance tag
                 tagsSet.add("Bank")
-                vaultItems.forEach { item ->
-                    if (item.category == VaultCategory.BANK_ACCOUNT || item.category == VaultCategory.PAYMENT_REFERENCE) {
-                        if (item.title.isNotBlank()) tagsSet.add(item.title.trim())
-                    }
-                }
 
                 // 3. Relationships and People
                 relationships.forEach { rel ->
@@ -88,14 +81,16 @@ class PlainNotesViewModel @Inject constructor(
                 }
 
                 // 4. Custom tags previously created on notes
-                noteList.forEach { note ->
+                noteList.filterNot { it.isLocked }.forEach { note ->
                     note.tags.forEach { tag ->
                         if (tag.isNotBlank()) tagsSet.add(tag)
                     }
                 }
 
                 val allTags = tagsSet.toList()
-                _uiState.update { it.copy(notes = noteList, availableTags = allTags) }
+                _uiState.update { it.copy(notes = noteList, availableTags = allTags, isLoading = false) }
+            }.catch {
+                _uiState.update { it.copy(isLoading = false, error = "Could not load notes.") }
             }.collect { }
         }
     }

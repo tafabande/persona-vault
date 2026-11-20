@@ -2,6 +2,11 @@
 
 package com.pims.vault.presentation.vault
 
+import com.pims.vault.presentation.ui.components.ux.PersonaToastHost
+import com.pims.vault.presentation.ui.components.ux.rememberPersonaToastController
+
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import android.content.Context
 import android.net.Uri
@@ -46,52 +51,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import com.pims.vault.core.model.CardStatus
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AcUnit
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.AssignmentTurnedIn
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.PauseCircle
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Note
-import androidx.compose.material.icons.filled.PersonSearch
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -119,10 +78,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -191,41 +147,6 @@ private val PimsTextPrimary: Color
 private val PimsTextSecondary: Color
     @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
-private val BankIcon: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "Bank",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        path(
-            fill = null,
-            stroke = SolidColor(Color(0xFF9E9E9E)),
-            strokeLineWidth = 1.5f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            moveTo(3f, 21f)
-            lineTo(21f, 21f)
-            moveTo(3f, 10f)
-            lineTo(21f, 10f)
-            moveTo(5f, 10f)
-            lineTo(5f, 21f)
-            moveTo(19f, 10f)
-            lineTo(19f, 21f)
-            moveTo(9f, 10f)
-            lineTo(9f, 21f)
-            moveTo(15f, 10f)
-            lineTo(15f, 21f)
-            moveTo(12f, 3f)
-            lineTo(21f, 10f)
-            lineTo(3f, 10f)
-            close()
-        }
-    }.build()
-}
-
 private sealed class VaultScreenRoute {
     object Home : VaultScreenRoute()
     object PasswordsKeys : VaultScreenRoute()
@@ -234,7 +155,7 @@ private sealed class VaultScreenRoute {
     data class KeyDetail(val item: VaultItemHeader) : VaultScreenRoute()
     data class RecoveryCodes(val item: VaultItemHeader) : VaultScreenRoute()
     object ImportRestore : VaultScreenRoute()
-    data class IdMembershipList(val categoryName: String = "All") : VaultScreenRoute()
+    object IdMembershipList : VaultScreenRoute()
     data class IdCredentialDetail(val item: VaultItemHeader) : VaultScreenRoute()
 }
 
@@ -244,9 +165,11 @@ fun VaultDashboardView(
     viewModel: VaultViewModel,
     onRequireBiometricReauth: (() -> Unit)? = null,
     onBack: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onManageMePins: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val saveFeedback = rememberPersonaToastController()
     val context = LocalContext.current
     val isDark = LocalPimsDarkTheme.current
     val vaultBg = MaterialTheme.colorScheme.background
@@ -261,22 +184,31 @@ fun VaultDashboardView(
     var showTypePicker by remember { mutableStateOf(false) }
     var showIdCredentialSheet by remember { mutableStateOf(false) }
     var idCredentialSheetCategory by remember { mutableStateOf("National ID") }
+    var idCategory by remember { mutableStateOf("All") }
     var editingIdItem by remember { mutableStateOf<VaultItemHeader?>(null) }
     val typePickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val formSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val idSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val idSheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { value ->
+            value != androidx.compose.material3.SheetValue.Hidden || !viewModel.uiState.value.isSaving
+        }
+    )
 
     BackHandler(enabled = true) {
         if (showIdCredentialSheet) {
-            showIdCredentialSheet = false
-            editingIdItem = null
+            if (!uiState.isSaving) {
+                showIdCredentialSheet = false
+                editingIdItem = null
+            }
         } else if (activeSheetType != null) {
             activeSheetType = null
         } else if (showTypePicker) {
             showTypePicker = false
         } else if (currentRoute !is VaultScreenRoute.Home) {
             if (currentRoute is VaultScreenRoute.IdCredentialDetail) {
-                currentRoute = VaultScreenRoute.IdMembershipList()
+                viewModel.closeActiveItem()
+                currentRoute = VaultScreenRoute.IdMembershipList
             } else if (currentRoute is VaultScreenRoute.KeyDetail) {
                 viewModel.closeActiveItem()
                 currentRoute = if (previousRoute is VaultScreenRoute.Home) VaultScreenRoute.Home else VaultScreenRoute.PasswordsKeys
@@ -313,14 +245,14 @@ fun VaultDashboardView(
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.ArrowBack,
+                                imageVector = PersonaIcons.ArrowBack,
                                 contentDescription = "Back",
                                 tint = vaultTextPrimary
                             )
                         }
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(
-                            imageVector = Icons.Default.Lock,
+                            imageVector = PersonaIcons.Lock,
                             contentDescription = null,
                             tint = PimsWarning,
                             modifier = Modifier.size(22.dp)
@@ -365,14 +297,20 @@ fun VaultDashboardView(
                                     else -> currentRoute = VaultScreenRoute.KeyDetail(item)
                                 }
                             },
-                            onOpenIdCategory = { cat -> currentRoute = VaultScreenRoute.IdMembershipList(cat) },
+                            onOpenIdCategory = { cat ->
+                                idCategory = cat
+                                currentRoute = VaultScreenRoute.IdMembershipList
+                            },
                             onOpenImportRestore = { currentRoute = VaultScreenRoute.ImportRestore },
                             onAddSecret = { showTypePicker = true },
                             onAddCard = { viewModel.openEditor(VaultCategory.PAYMENT_REFERENCE) },
                             onAddBankAccount = { viewModel.openEditor(VaultCategory.BANK_ACCOUNT) },
                             onBack = onBack,
                             isMigratingLegacyItems = uiState.isMigratingLegacyItems,
-                            legacyMigrationPendingCount = uiState.legacyMigrationPendingCount
+                            legacyMigrationPendingCount = uiState.legacyMigrationPendingCount,
+                            onManageMePins = onManageMePins?.let { openPinPicker ->
+                                { if (viewModel.uiState.value.isVaultUnlocked) openPinPicker() }
+                            }
                         )
                     }
                     is VaultScreenRoute.PasswordsKeys -> {
@@ -482,7 +420,7 @@ fun VaultDashboardView(
                     }
                     is VaultScreenRoute.IdMembershipList -> {
                         IdMembershipListScreen(
-                            initialCategory = route.categoryName,
+                            initialCategory = idCategory,
                             items = uiState.vaultItems,
                             onOpenItem = { item ->
                                 currentRoute = VaultScreenRoute.IdCredentialDetail(item)
@@ -493,8 +431,8 @@ fun VaultDashboardView(
                                 showIdCredentialSheet = true
                             },
                             onBack = { currentRoute = VaultScreenRoute.Home },
-                            onCopyNumber = { label, number ->
-                                viewModel.copyToClipboard(context, number, label, isSecret = false)
+                            onSelectCategory = { category ->
+                                idCategory = category
                             }
                         )
                     }
@@ -505,7 +443,7 @@ fun VaultDashboardView(
                             viewModel = viewModel,
                             onBack = {
                                 viewModel.closeActiveItem()
-                                currentRoute = VaultScreenRoute.IdMembershipList()
+                                currentRoute = VaultScreenRoute.IdMembershipList
                             },
                             onEdit = {
                                 editingIdItem = route.item
@@ -513,7 +451,7 @@ fun VaultDashboardView(
                             },
                             onDelete = {
                                 viewModel.deleteItem(route.item.id)
-                                currentRoute = VaultScreenRoute.IdMembershipList()
+                                currentRoute = VaultScreenRoute.IdMembershipList
                             }
                         )
                     }
@@ -659,14 +597,24 @@ fun VaultDashboardView(
     }
 
     // ID Credential Form Sheet
-    if (showIdCredentialSheet) {
-        val editingSecret = if (editingIdItem != null) uiState.activeDecryptedIdentity else null
+    LaunchedEffect(uiState.isVaultUnlocked) {
+        if (!uiState.isVaultUnlocked) {
+            showIdCredentialSheet = false
+            editingIdItem = null
+        }
+    }
+    if (showIdCredentialSheet && uiState.isVaultUnlocked) {
+        val editingSecret = uiState.activeDecryptedIdentity.takeIf {
+            editingIdItem != null && editingIdItem?.id == uiState.activeItemId
+        }
         IdCredentialFormSheet(
             sheetState = idSheetState,
             initialCategory = editingSecret?.idType ?: idCredentialSheetCategory,
             onDismiss = {
-                showIdCredentialSheet = false
-                editingIdItem = null
+                if (!uiState.isSaving) {
+                    showIdCredentialSheet = false
+                    editingIdItem = null
+                }
             },
             onSave = { idType, fullName, identifierNumber, issuingAuthority, issueDate, expiryDate, secondaryIdentifier, notes ->
                 viewModel.saveIdentityCredential(
@@ -678,10 +626,13 @@ fun VaultDashboardView(
                     expiryDate = expiryDate,
                     secondaryIdentifier = secondaryIdentifier,
                     notes = notes,
-                    existingId = editingIdItem?.id
+                    existingId = editingIdItem?.id,
+                    onSaved = {
+                        showIdCredentialSheet = false
+                        editingIdItem = null
+                        saveFeedback.showSuccess("Saved locally")
+                    }
                 )
-                showIdCredentialSheet = false
-                editingIdItem = null
             },
             initialFullName = editingSecret?.fullName ?: "",
             initialIdentifierNumber = editingSecret?.identifierNumber ?: "",
@@ -690,9 +641,12 @@ fun VaultDashboardView(
             initialExpiryDate = editingSecret?.expiryDate ?: "",
             initialSecondaryIdentifier = editingSecret?.secondaryIdentifier ?: "",
             initialNotes = editingSecret?.notes ?: "",
-            isEditing = editingIdItem != null
+            isEditing = editingIdItem != null,
+            isSaving = uiState.isSaving,
+            errorMessage = uiState.errorMessage
         )
     }
+    PersonaToastHost(saveFeedback)
 
     // Directly route to the full detail screen when an item is selected from local database, avoiding empty popup dialog
     LaunchedEffect(uiState.activeItemId, uiState.isEditing) {
@@ -1034,14 +988,14 @@ private fun VaultModularDashboard(
                                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Icon(PersonaIcons.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text("Passwords", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PimsTextPrimary)
                             }
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        Icon(PersonaIcons.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     }
 
                     if (passwords.isNotEmpty()) {
@@ -1115,14 +1069,14 @@ private fun VaultModularDashboard(
                                     .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Note, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(20.dp))
+                                Icon(PersonaIcons.Note, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text("Secure Notes", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PimsTextPrimary)
                             }
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
+                        Icon(PersonaIcons.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
                     }
 
                     if (notes.isNotEmpty()) {
@@ -1177,14 +1131,14 @@ private fun VaultModularDashboard(
                                     .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.CreditCard, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                                Icon(PersonaIcons.CreditCard, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text("Payment Cards & Wallet", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PimsTextPrimary)
                             }
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                        Icon(PersonaIcons.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
                     }
 
                     if (cards.isNotEmpty()) {
@@ -1248,14 +1202,14 @@ private fun VaultModularDashboard(
                                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(BankIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Icon(PersonaIcons.Bank, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text("Banking & Accounts", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PimsTextPrimary)
                             }
                         }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        Icon(PersonaIcons.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     }
 
                     if (bankAccounts.isNotEmpty()) {
@@ -1283,7 +1237,7 @@ private fun VaultModularDashboard(
                                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(BankIcon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                                            Icon(PersonaIcons.Bank, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                                         }
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Column {
@@ -1291,7 +1245,7 @@ private fun VaultModularDashboard(
                                             Text(account.accountIdentifier ?: "Bank account", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
-                                    Icon(Icons.Default.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                                    Icon(PersonaIcons.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                                 }
                             }
                         }
@@ -1352,7 +1306,7 @@ private fun GooglePasswordsSection(
         ) {
             IconButton(onClick = onBackToDashboard) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = PersonaIcons.ArrowBack,
                     contentDescription = "Back",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -1382,7 +1336,7 @@ private fun GooglePasswordsSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.Search,
+                    imageVector = PersonaIcons.Search,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 14.dp, end = 10.dp)
@@ -1412,7 +1366,7 @@ private fun GooglePasswordsSection(
                 )
                 IconButton(onClick = onAddNew) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = PersonaIcons.Add,
                         contentDescription = "Add password",
                         tint = MaterialTheme.colorScheme.onSurface
                     )
@@ -1447,7 +1401,7 @@ private fun GooglePasswordsSection(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Security,
+                            imageVector = PersonaIcons.Security,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(22.dp)
@@ -1471,7 +1425,7 @@ private fun GooglePasswordsSection(
 
         if (passwordItems.isEmpty()) {
             PersonaEmptyState(
-                icon = Icons.Default.Lock,
+                icon = PersonaIcons.Lock,
                 title = "No passwords found",
                 description = if (searchQuery.isNotBlank()) "No saved credentials match \"$searchQuery\"." else "No passwords stored in your vault yet.",
                 actionLabel = "Add Password",
@@ -1565,7 +1519,7 @@ private fun GooglePasswordCredentialRow(
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.ContentCopy,
+                    imageVector = PersonaIcons.ContentCopy,
                     contentDescription = "Copy username",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(16.dp)
@@ -1601,7 +1555,7 @@ private fun PasswordCheckupModal(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.AssignmentTurnedIn,
+                        imageVector = PersonaIcons.AssignmentTurnedIn,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(28.dp)
@@ -1709,7 +1663,7 @@ private fun PasskeyInfoModal(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.PersonSearch,
+                        imageVector = PersonaIcons.PersonSearch,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(28.dp)
@@ -1740,7 +1694,7 @@ private fun PasskeyInfoModal(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Check,
+                        imageVector = PersonaIcons.Check,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
@@ -1802,7 +1756,7 @@ private fun GoogleNotesSection(
             ) {
                 IconButton(onClick = onBackToDashboard) {
                     Icon(
-                        imageVector = Icons.Default.ArrowBack,
+                        imageVector = PersonaIcons.ArrowBack,
                         contentDescription = "Back",
                         tint = MaterialTheme.colorScheme.onSurface
                     )
@@ -1822,7 +1776,7 @@ private fun GoogleNotesSection(
 
             if (noteItems.isEmpty()) {
                 PersonaEmptyState(
-                    icon = Icons.Default.Note,
+                    icon = PersonaIcons.Note,
                     title = "No notes yet",
                     description = if (searchQuery.isNotBlank()) "No notes match \"$searchQuery\"." else "Capture ideas, checklists, and secure memos.",
                     actionLabel = "Take a note",
@@ -1995,7 +1949,7 @@ internal fun GoogleWalletMainScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBackToDashboard) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = PersonaIcons.ArrowBack,
                             contentDescription = "Back",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -2014,7 +1968,7 @@ internal fun GoogleWalletMainScreen(
 
             if (walletCards.isEmpty()) {
                 PersonaEmptyState(
-                    icon = Icons.Default.CreditCard,
+                    icon = PersonaIcons.CreditCard,
                     title = "No cards or passes",
                     description = "Add your payment cards, transit passes, or loyalty cards to your secure wallet.",
                     actionLabel = "Add to Wallet",
@@ -2087,7 +2041,7 @@ internal fun GoogleWalletMainScreen(
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.SemiBold
                                         )
-                                        Text("💳", fontSize = 18.sp)
+                                        Icon(PersonaIcons.CreditCard, contentDescription = null)
                                     }
 
                                     Row(
@@ -2129,7 +2083,7 @@ internal fun GoogleWalletMainScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Wifi,
+                                imageVector = PersonaIcons.Wifi,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = 90f }
@@ -2188,7 +2142,7 @@ internal fun GoogleWalletMainScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Add,
+                    imageVector = PersonaIcons.Add,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(18.dp)
@@ -2449,14 +2403,14 @@ private fun GoogleWalletCardDetailScreen(
         ) {
             IconButton(onClick = onBack) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = PersonaIcons.ArrowBack,
                     contentDescription = "Back",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
             IconButton(onClick = { showDeleteConfirmation = true }) {
                 Icon(
-                    imageVector = Icons.Default.Delete,
+                    imageVector = PersonaIcons.Delete,
                     contentDescription = "Remove Card",
                     tint = MaterialTheme.colorScheme.error
                 )
@@ -2498,10 +2452,10 @@ private fun GoogleWalletCardDetailScreen(
             }
             val statusBg = statusColor.copy(alpha = 0.15f)
             val statusIcon = when (currentStatus) {
-                CardStatus.IN_USE -> Icons.Default.CheckCircle
-                CardStatus.PAUSED -> Icons.Default.PauseCircle
-                CardStatus.FROZEN -> Icons.Default.AcUnit
-                CardStatus.DISCARDED -> Icons.Default.Block
+                CardStatus.IN_USE -> PersonaIcons.Success
+                CardStatus.PAUSED -> PersonaIcons.PauseCircle
+                CardStatus.FROZEN -> PersonaIcons.AcUnit
+                CardStatus.DISCARDED -> PersonaIcons.Block
             }
             val statusLabel = currentStatus.label
 
@@ -2562,7 +2516,7 @@ private fun GoogleWalletCardDetailScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Icon(
-                            imageVector = Icons.Default.Shield,
+                            imageVector = PersonaIcons.TrustedContact,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
@@ -2585,7 +2539,7 @@ private fun GoogleWalletCardDetailScreen(
                     card.accountIdentifier?.let { accId ->
                         IconButton(onClick = { viewModel.copyToClipboard(context, label = "Card Number", text = accId) }) {
                             Icon(
-                                imageVector = Icons.Default.ContentCopy,
+                                imageVector = PersonaIcons.ContentCopy,
                                 contentDescription = "Copy Card Number",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(18.dp)
@@ -2640,10 +2594,10 @@ private fun GoogleWalletCardDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     listOf(
-                        CardStatus.IN_USE to ("In Use" to Icons.Default.CheckCircle),
-                        CardStatus.PAUSED to ("Pause" to Icons.Default.PauseCircle),
-                        CardStatus.FROZEN to ("Freeze" to Icons.Default.AcUnit),
-                        CardStatus.DISCARDED to ("Discard" to Icons.Default.Block)
+                        CardStatus.IN_USE to ("In Use" to PersonaIcons.Success),
+                        CardStatus.PAUSED to ("Pause" to PersonaIcons.PauseCircle),
+                        CardStatus.FROZEN to ("Freeze" to PersonaIcons.AcUnit),
+                        CardStatus.DISCARDED to ("Discard" to PersonaIcons.Block)
                     ).forEach { (statusOption, meta) ->
                         val isSelected = currentStatus == statusOption
                         val activeColor = when (statusOption) {
@@ -2713,7 +2667,7 @@ private fun GoogleWalletCardDetailScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                        Icon(PersonaIcons.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                         Text(
                             text = "Upload Receipt",
                             fontSize = 12.sp,
@@ -2739,7 +2693,7 @@ private fun GoogleWalletCardDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ReceiptLong,
+                            imageVector = PersonaIcons.ReceiptLong,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(28.dp)
@@ -2780,7 +2734,7 @@ private fun GoogleWalletCardDetailScreen(
                                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                        Icon(PersonaIcons.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
@@ -2801,7 +2755,7 @@ private fun GoogleWalletCardDetailScreen(
                                         },
                                         modifier = Modifier.size(24.dp)
                                     ) {
-                                        Icon(Icons.Default.Close, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                                        Icon(PersonaIcons.Close, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                                     }
                                 }
                             }
@@ -2901,7 +2855,7 @@ private fun BankingSection(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBackToDashboard) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = PersonaIcons.ArrowBack,
                             contentDescription = "Back",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -2918,7 +2872,7 @@ private fun BankingSection(
                 }
                 IconButton(onClick = onAddNew) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = PersonaIcons.Add,
                         contentDescription = "Add Bank Account",
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -2939,7 +2893,7 @@ private fun BankingSection(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Search,
+                        imageVector = PersonaIcons.Search,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 14.dp, end = 10.dp)
@@ -2963,7 +2917,7 @@ private fun BankingSection(
                     )
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                            Icon(PersonaIcons.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -2989,7 +2943,7 @@ private fun BankingSection(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = BankIcon,
+                            imageVector = PersonaIcons.Bank,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
@@ -3012,7 +2966,7 @@ private fun BankingSection(
 
             if (bankItems.isEmpty()) {
                 PersonaEmptyState(
-                    icon = BankIcon,
+                    icon = PersonaIcons.Bank,
                     title = if (searchQuery.isNotBlank()) "No accounts found" else "No bank accounts",
                     description = if (searchQuery.isNotBlank()) "No saved bank accounts match \"$searchQuery\"." else "Add your checking, savings, IBAN, and international wire details to your secure vault.",
                     actionLabel = "Add Bank Account",
@@ -3046,7 +3000,7 @@ private fun BankingSection(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
-                                            BankIcon,
+                                            PersonaIcons.Bank,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                             modifier = Modifier.size(22.dp)
@@ -3081,7 +3035,7 @@ private fun BankingSection(
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Add,
+                                            imageVector = PersonaIcons.Add,
                                             contentDescription = "Add Account",
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(14.dp)
@@ -3133,7 +3087,7 @@ private fun BankingSection(
                                                         modifier = Modifier.size(32.dp)
                                                     ) {
                                                         Icon(
-                                                            Icons.Default.ContentCopy,
+                                                            PersonaIcons.ContentCopy,
                                                             contentDescription = "Copy account number",
                                                             tint = MaterialTheme.colorScheme.primary,
                                                             modifier = Modifier.size(16.dp)
@@ -3172,7 +3126,7 @@ private fun BankingSection(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            Icons.Default.Add,
+                            PersonaIcons.Add,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
@@ -3276,7 +3230,7 @@ private fun BankAccountDetailScreen(
         ) {
             IconButton(onClick = onBack) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = PersonaIcons.ArrowBack,
                     contentDescription = "Back",
                     tint = MaterialTheme.colorScheme.onSurface
                 )
@@ -3286,14 +3240,14 @@ private fun BankAccountDetailScreen(
                     viewModel.openEditor(VaultCategory.BANK_ACCOUNT, account.id)
                 }) {
                     Icon(
-                        imageVector = Icons.Default.Edit,
+                        imageVector = PersonaIcons.Edit,
                         contentDescription = "Edit Account",
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
                 IconButton(onClick = { showDeleteConfirmation = true }) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
+                        imageVector = PersonaIcons.Delete,
                         contentDescription = "Remove Account",
                         tint = MaterialTheme.colorScheme.error
                     )
@@ -3378,7 +3332,7 @@ private fun BankAccountDetailScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = BankIcon,
+                            imageVector = PersonaIcons.Bank,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(28.dp)
@@ -3460,14 +3414,14 @@ private fun BankAccountDetailScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { isNumberVisible = !isNumberVisible }) {
                             Icon(
-                                imageVector = if (isNumberVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                imageVector = if (isNumberVisible) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                 contentDescription = if (isNumberVisible) "Hide" else "Show",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         IconButton(onClick = { viewModel.copyToClipboard(context, label = "Account Number", text = rawAccNum) }) {
                             Icon(
-                                imageVector = Icons.Default.ContentCopy,
+                                imageVector = PersonaIcons.ContentCopy,
                                 contentDescription = "Copy",
                                 tint = MaterialTheme.colorScheme.primary
                             )
@@ -3614,7 +3568,7 @@ private fun BankAccountDetailScreen(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
-                                                imageVector = BankIcon,
+                                                imageVector = PersonaIcons.Bank,
                                                 contentDescription = null,
                                                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                                 modifier = Modifier.size(18.dp)
@@ -3637,7 +3591,7 @@ private fun BankAccountDetailScreen(
                                         }
                                     }
                                     Icon(
-                                        imageVector = Icons.Default.ArrowForward,
+                                        imageVector = PersonaIcons.ArrowForward,
                                         contentDescription = "Open account",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp)
@@ -3662,7 +3616,7 @@ private fun BankAccountDetailScreen(
             )
             TextButton(onClick = {
                 viewModel.openCardEditorForBankAccount(account.id, activeBanking?.bankName?.ifBlank { account.title } ?: account.title)
-            }) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Add card") }
+            }) { Icon(PersonaIcons.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Add card") }
 
 
 
@@ -3689,7 +3643,7 @@ private fun BankAccountDetailScreen(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             ) {
-                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(PersonaIcons.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Copy All Wire / Transfer Details", fontWeight = FontWeight.Bold)
             }
@@ -3726,7 +3680,7 @@ private fun BankDetailRowItem(
         }
         IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
             Icon(
-                imageVector = Icons.Default.ContentCopy,
+                imageVector = PersonaIcons.ContentCopy,
                 contentDescription = "Copy $label",
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(16.dp)
@@ -3782,17 +3736,17 @@ private fun VaultItemCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val icon = when (item.category) {
-                    VaultCategory.PASSWORD -> Icons.Default.Key
-                    VaultCategory.TOTP_2FA -> Icons.Default.Timer
-                    VaultCategory.RECOVERY_CODE -> Icons.Default.Shield
-                    VaultCategory.SECURE_NOTE -> Icons.Default.Note
-                    VaultCategory.PAYMENT_REFERENCE -> Icons.Default.CreditCard
-                    VaultCategory.BANK_ACCOUNT -> BankIcon
-                    VaultCategory.IDENTITY_CREDENTIAL -> Icons.Default.Key
-                    VaultCategory.API_KEY -> Icons.Default.Key
-                    VaultCategory.SSH_KEY -> Icons.Default.Key
-                    VaultCategory.ACCESS_TOKEN -> Icons.Default.Key
-                    VaultCategory.GENERIC_SECRET -> Icons.Default.Lock
+                    VaultCategory.PASSWORD -> PersonaIcons.Key
+                    VaultCategory.TOTP_2FA -> PersonaIcons.Timer
+                    VaultCategory.RECOVERY_CODE -> PersonaIcons.TrustedContact
+                    VaultCategory.SECURE_NOTE -> PersonaIcons.Note
+                    VaultCategory.PAYMENT_REFERENCE -> PersonaIcons.CreditCard
+                    VaultCategory.BANK_ACCOUNT -> PersonaIcons.Bank
+                    VaultCategory.IDENTITY_CREDENTIAL -> PersonaIcons.Key
+                    VaultCategory.API_KEY -> PersonaIcons.Key
+                    VaultCategory.SSH_KEY -> PersonaIcons.Key
+                    VaultCategory.ACCESS_TOKEN -> PersonaIcons.Key
+                    VaultCategory.GENERIC_SECRET -> PersonaIcons.Lock
                 }
 
                 Box(
@@ -3857,7 +3811,7 @@ private fun VaultItemCard(
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ContentCopy,
+                            imageVector = PersonaIcons.ContentCopy,
                             contentDescription = "Copy TOTP",
                             tint = PimsTextSecondary,
                             modifier = Modifier.size(16.dp)
@@ -3893,7 +3847,7 @@ private fun VaultLockedStateView(
                 .padding(24.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.Lock,
+                imageVector = PersonaIcons.Lock,
                 contentDescription = null,
                 tint = PimsWarning,
                 modifier = Modifier.size(48.dp)
@@ -3959,7 +3913,7 @@ private fun VaultItemDetailDialog(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = { viewModel.deleteItem(item.id) }) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = PimsError, modifier = Modifier.size(18.dp))
+                        Icon(imageVector = PersonaIcons.Delete, contentDescription = "Delete", tint = PimsError, modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -4040,7 +3994,7 @@ private fun VaultItemDetailDialog(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            imageVector = if (isRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                             contentDescription = "Reveal",
                                             tint = PimsTextSecondary,
                                             modifier = Modifier.size(16.dp)
@@ -4051,7 +4005,7 @@ private fun VaultItemDetailDialog(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.ContentCopy,
+                                            imageVector = PersonaIcons.ContentCopy,
                                             contentDescription = "Copy Password",
                                             tint = PimsTextSecondary,
                                             modifier = Modifier.size(16.dp)
@@ -4102,7 +4056,7 @@ private fun VaultItemDetailDialog(
                                         )
                                     }
                                     IconButton(onClick = { viewModel.copyToClipboard(context, liveToken.token, "TOTP Code", true) }) {
-                                        Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", tint = PimsTextSecondary)
+                                        Icon(imageVector = PersonaIcons.ContentCopy, contentDescription = "Copy", tint = PimsTextSecondary)
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -4156,7 +4110,7 @@ private fun VaultItemDetailDialog(
                                                 onClick = { viewModel.copyToClipboard(context, codeItem.code, "Recovery Code", true) },
                                                 modifier = Modifier.size(24.dp)
                                             ) {
-                                                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", tint = PimsTextSecondary, modifier = Modifier.size(14.dp))
+                                                Icon(imageVector = PersonaIcons.ContentCopy, contentDescription = "Copy", tint = PimsTextSecondary, modifier = Modifier.size(14.dp))
                                             }
                                         }
                                     }
@@ -4314,7 +4268,7 @@ private fun VaultItemDetailDialog(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            imageVector = if (isRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                             contentDescription = "Reveal",
                                             tint = PimsTextSecondary,
                                             modifier = Modifier.size(16.dp)
@@ -4325,7 +4279,7 @@ private fun VaultItemDetailDialog(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.ContentCopy,
+                                            imageVector = PersonaIcons.ContentCopy,
                                             contentDescription = "Copy API Key",
                                             tint = PimsTextSecondary,
                                             modifier = Modifier.size(16.dp)
@@ -4386,7 +4340,7 @@ private fun VaultItemDetailDialog(
                                             modifier = Modifier.size(28.dp)
                                         ) {
                                             Icon(
-                                                imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                imageVector = if (isRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                                 contentDescription = "Reveal",
                                                 tint = PimsTextSecondary,
                                                 modifier = Modifier.size(16.dp)
@@ -4397,7 +4351,7 @@ private fun VaultItemDetailDialog(
                                             modifier = Modifier.size(28.dp)
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.ContentCopy,
+                                                imageVector = PersonaIcons.ContentCopy,
                                                 contentDescription = "Copy SSH Key",
                                                 tint = PimsTextSecondary,
                                                 modifier = Modifier.size(16.dp)
@@ -4444,7 +4398,7 @@ private fun VaultItemDetailDialog(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            imageVector = if (isRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                             contentDescription = "Reveal",
                                             tint = PimsTextSecondary,
                                             modifier = Modifier.size(16.dp)
@@ -4455,7 +4409,7 @@ private fun VaultItemDetailDialog(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.ContentCopy,
+                                            imageVector = PersonaIcons.ContentCopy,
                                             contentDescription = "Copy Token",
                                             tint = PimsTextSecondary,
                                             modifier = Modifier.size(16.dp)
@@ -4509,7 +4463,7 @@ private fun VaultItemDetailDialog(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = if (isRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            imageVector = if (isRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                             contentDescription = "Reveal",
                                             tint = PimsTextSecondary,
                                             modifier = Modifier.size(16.dp)
@@ -4520,7 +4474,7 @@ private fun VaultItemDetailDialog(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.ContentCopy,
+                                            imageVector = PersonaIcons.ContentCopy,
                                             contentDescription = "Copy Secret",
                                             tint = PimsTextSecondary,
                                             modifier = Modifier.size(16.dp)
@@ -4589,7 +4543,7 @@ private fun DetailRow(
         }
         if (onCopy != null) {
             IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
-                Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", tint = PimsTextSecondary, modifier = Modifier.size(16.dp))
+                Icon(imageVector = PersonaIcons.ContentCopy, contentDescription = "Copy", tint = PimsTextSecondary, modifier = Modifier.size(16.dp))
             }
         }
     }
@@ -4812,22 +4766,22 @@ private fun VaultCreateSecretSheet(
             VaultSecretCategoryOption(
                 category = VaultCategory.PASSWORD,
                 title = "Password",
-                icon = Icons.Default.Key
+                icon = PersonaIcons.Key
             ),
             VaultSecretCategoryOption(
                 category = VaultCategory.SECURE_NOTE,
                 title = "Secure Note",
-                icon = Icons.Default.Note
+                icon = PersonaIcons.Note
             ),
             VaultSecretCategoryOption(
                 category = VaultCategory.PAYMENT_REFERENCE,
                 title = "Payment Card",
-                icon = Icons.Default.CreditCard
+                icon = PersonaIcons.CreditCard
             ),
             VaultSecretCategoryOption(
                 category = VaultCategory.BANK_ACCOUNT,
                 title = "Bank Account",
-                icon = BankIcon
+                icon = PersonaIcons.Bank
             )
         )
     }
@@ -4878,7 +4832,7 @@ private fun VaultCreateSecretSheet(
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = PersonaIcons.Close,
                         contentDescription = "Close",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
@@ -5037,7 +4991,7 @@ internal fun SecureNoteEditorModal(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Note,
+                                imageVector = PersonaIcons.Note,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp)
@@ -5067,7 +5021,7 @@ internal fun SecureNoteEditorModal(
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
+                            imageVector = PersonaIcons.Close,
                             contentDescription = "Close",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
@@ -5170,7 +5124,7 @@ internal fun SecureNoteEditorModal(
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                     Icon(
-                                        imageVector = Icons.Default.Close,
+                                        imageVector = PersonaIcons.Close,
                                         contentDescription = "Remove tag",
                                         tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                                         modifier = Modifier
@@ -5270,7 +5224,7 @@ internal fun SecureNoteEditorModal(
                             .height(50.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Check,
+                            imageVector = PersonaIcons.Check,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )

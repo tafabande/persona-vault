@@ -1,5 +1,8 @@
 package com.pims.vault.presentation.vault.screens
 
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -16,12 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -31,11 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.LockReset
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.ui.graphics.vector.ImageVector
 
 @Composable
@@ -64,14 +58,7 @@ fun ImportRestoreScreen(
                     .padding(vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = getVaultTextPrimary(),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                PersonaIconAction(PersonaIcons.ArrowBack, "Back", onBack)
 
                 Spacer(modifier = Modifier.width(8.dp))
 
@@ -95,7 +82,7 @@ fun ImportRestoreScreen(
                     ImportOptionRow(
                         title = "Restore backup",
                         subtitle = "Restore data from cloud or local backup archive",
-                        icon = Icons.Default.CloudDownload,
+                        icon = PersonaIcons.CloudDownload,
                         onClick = onRestoreEncryptedBackup
                     )
 
@@ -104,7 +91,7 @@ fun ImportRestoreScreen(
                     ImportOptionRow(
                         title = "Import exported vault",
                         subtitle = "Load items from a compatible exported vault file",
-                        icon = Icons.Default.FileUpload,
+                        icon = PersonaIcons.FileUpload,
                         onClick = onImportExportedVault
                     )
 
@@ -113,7 +100,7 @@ fun ImportRestoreScreen(
                     ImportOptionRow(
                         title = "Migrate from another vault",
                         subtitle = "Transfer passwords and credentials from other services",
-                        icon = Icons.Default.Sync,
+                        icon = PersonaIcons.Sync,
                         onClick = onMigrateFromAnotherVault
                     )
 
@@ -122,7 +109,7 @@ fun ImportRestoreScreen(
                     ImportOptionRow(
                         title = "Use a recovery code",
                         subtitle = "Enter your master recovery key to regain vault access",
-                        icon = Icons.Default.LockReset,
+                        icon = PersonaIcons.LockReset,
                         onClick = onUseRecoveryCode
                     )
                 }
@@ -138,7 +125,7 @@ fun ImportRestoreScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.Shield,
+                                imageVector = PersonaIcons.TrustedContact,
                                 contentDescription = null,
                                 tint = getVaultTextPrimary(),
                                 modifier = Modifier.size(18.dp)
@@ -205,7 +192,7 @@ private fun ImportOptionRow(
             )
         }
         Icon(
-            imageVector = Icons.Default.ChevronRight,
+            imageVector = PersonaIcons.ChevronRight,
             contentDescription = null,
             tint = getVaultTextSecondary().copy(alpha = 0.5f),
             modifier = Modifier.size(18.dp)

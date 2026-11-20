@@ -7,13 +7,16 @@ import com.pims.vault.core.sync.NetworkStateMonitor
 import com.pims.vault.core.sync.SyncQueueManager
 import com.pims.vault.data.local.dao.SyncConflictDao
 import com.pims.vault.data.local.dao.SyncQueueDao
+import com.pims.vault.data.local.entity.PlainNoteEntity
 import com.pims.vault.data.local.entity.SyncAction
 import com.pims.vault.data.local.entity.SyncConflictEntity
 import com.pims.vault.data.local.entity.SyncOperationStatus
 import com.pims.vault.data.local.entity.SyncQueueEntity
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -22,6 +25,7 @@ import org.mockito.Mockito
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import java.util.UUID
 
 class SyncQueueManagerTest {
@@ -137,6 +141,30 @@ class SyncQueueManagerTest {
 
         // Verifies the operation was dropped before reaching the server
         verify(syncQueueDao).delete(existingInsert)
+    }
+
+    @Test
+    fun `newest note operation keeps the older base and stores only references`() = runTest {
+        val note = PlainNoteEntity("note", "person", "Protected title", "Protected body", updatedAt = 41L, isLocked = true)
+        val inFlight = SyncQueueEntity("row", "publishing-op", "PLAIN_NOTE", note.id, SyncAction.UPDATE,
+            """{"ownerPersonId":"person","accountUid":"account-value","revision":40}""", localVersion = 37L,
+            attempts = 1, status = SyncOperationStatus.IN_PROGRESS)
+        whenever(syncQueueDao.getLatestByEntity("PLAIN_NOTE", note.id)).thenReturn(inFlight)
+
+        syncQueueManager.enqueueNoteMutation(note, SyncAction.UPDATE, 40L)
+
+        val written = argumentCaptor<SyncQueueEntity>()
+        verify(syncQueueDao).insert(written.capture())
+        val operation = written.firstValue
+        val ref = JSONObject(operation.payloadJson)
+        assertEquals(inFlight.id, operation.id)
+        assertEquals(37L, operation.localVersion)
+        assertEquals("account-value", ref.getString("accountUid"))
+        assertEquals(41L, ref.getLong("revision"))
+        assertEquals("publishing-op", ref.getJSONArray("predecessors").getString(0))
+        assertFalse(ref.has("title"))
+        assertFalse(ref.has("content"))
+        assertFalse(operation.operationId == inFlight.operationId)
     }
 
     @Test

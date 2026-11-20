@@ -22,6 +22,7 @@ import com.pims.vault.domain.model.RecoveryCodeSetSecret
 import com.pims.vault.domain.model.SecureNoteSecret
 import com.pims.vault.domain.model.TotpSecret
 import com.pims.vault.domain.model.VaultItemHeader
+import com.pims.vault.domain.model.VaultIdentityType
 import com.pims.vault.domain.rules.VaultRules
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -39,7 +40,11 @@ class GetVaultItemsUseCase @Inject constructor(
                     personId = entity.personId,
                     category = entity.category,
                     title = entity.title,
-                    accountIdentifier = entity.accountIdentifier,
+                    accountIdentifier = if (entity.category == VaultCategory.IDENTITY_CREDENTIAL) {
+                        entity.accountIdentifier?.substringBefore('•')?.let { VaultIdentityType.fromValue(it)?.name }
+                    } else {
+                        entity.accountIdentifier
+                    },
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt,
                     version = 1
@@ -1336,41 +1341,45 @@ class SaveIdentityCredentialUseCase @Inject constructor(
         existingId: String? = null
     ): String {
         VaultRules.validateIdentityCredential(fullName, identifierNumber)
+        val existing = existingId?.let {
+            requireNotNull(vaultDao.getVaultItemById(it)) { "Identity credential no longer exists" }.also { item ->
+                require(item.category == VaultCategory.IDENTITY_CREDENTIAL && item.personId == personId) {
+                    "Identity credential does not belong to this person"
+                }
+            }
+        }
         val id = existingId ?: UUID.randomUUID().toString()
         val itemKey = VaultRules.deriveItemKey(vaultRootKey, VaultCategory.IDENTITY_CREDENTIAL, id)
         val aad = VaultRules.constructItemAad(id, VaultCategory.IDENTITY_CREDENTIAL, 1L)
 
         val payload = "$idType\u0000$fullName\u0000$identifierNumber\u0000${issuingAuthority ?: ""}\u0000${issueDate ?: ""}\u0000${expiryDate ?: ""}\u0000${secondaryIdentifier ?: ""}\u0000${notes ?: ""}".toByteArray(Charsets.UTF_8)
-        val encrypted = cryptoEngine.encrypt(payload, itemKey, aad)
-        payload.fill(0)
-        itemKey.fill(0)
-
-        val displayPrefix = when (idType.uppercase()) {
-            "NATIONAL_ID" -> "National ID"
-            "SCHOOL_ID" -> "School ID"
-            "LIBRARY_ID" -> "Library ID"
-            "MEDICAL_AID" -> "Medical Aid"
-            else -> "ID / Membership"
+        val encrypted = try {
+            cryptoEngine.encrypt(payload, itemKey, aad)
+        } finally {
+            payload.fill(0)
+            itemKey.fill(0)
         }
+
+        val identityType = VaultIdentityType.fromValue(idType) ?: VaultIdentityType.CUSTOM
 
         val entity = VaultItemEntity(
             id = id,
             personId = personId,
             category = VaultCategory.IDENTITY_CREDENTIAL,
-            title = "$displayPrefix — $fullName",
-            accountIdentifier = "$idType • $identifierNumber",
+            title = "${identityType.label} — $fullName",
+            accountIdentifier = identityType.name,
             encryptedPayload = encrypted.combinedCiphertextWithTag,
             encryptionIv = encrypted.iv.joinToString("") { "%02x".format(it) },
-            notes = notes,
+            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )
-        vaultDao.insertOrUpdate(entity)
+        vaultDao.persistWalletItems(listOfNotNull(existing), listOf(entity))
 
         auditLogger.recordEvent(
             eventType = if (existingId == null) AuditEventType.CREATE else AuditEventType.UPDATE,
             entityType = "VaultItem",
             entityId = id,
-            description = "Saved $idType identity credential"
+            description = "Saved ${identityType.name} identity credential"
         )
         return id
     }

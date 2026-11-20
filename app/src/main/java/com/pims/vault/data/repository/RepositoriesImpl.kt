@@ -1,5 +1,7 @@
 package com.pims.vault.data.repository
 
+import com.pims.vault.core.sync.StructuredRecord
+
 import com.pims.vault.core.crypto.BiometricSessionManager
 import com.pims.vault.core.crypto.CryptoEngine
 import com.pims.vault.core.crypto.EncryptedPayload
@@ -83,7 +85,9 @@ class PersonRepositoryImpl(
             VaultLogger.w("RepositoriesImpl", "Refusing to delete primary owner person record")
             throw IllegalArgumentException("Cannot delete primary owner person record '$personId'")
         }
-        personDao.deleteById(personId)
+        val sync = firestoreSyncService
+        if (sync == null) personDao.deleteById(personId)
+        else sync.deleteStructuredRecord(StructuredRecord.PERSON, personId) { personDao.deleteById(personId) }
         auditLogger.recordEvent(
             eventType = AuditEventType.DELETE,
             entityType = "Person",
@@ -99,10 +103,9 @@ class PersonRepositoryImpl(
         } catch (_: Exception) {}
     }
     override suspend fun deleteContactMethod(contactId: String) {
-        contactDao.deleteById(contactId)
-        try {
-            firestoreSyncService?.deleteRemoteContact(contactId)
-        } catch (_: Exception) {}
+        val sync = firestoreSyncService
+        if (sync == null) contactDao.deleteById(contactId)
+        else sync.deleteStructuredRecord(StructuredRecord.CONTACT, contactId) { contactDao.deleteById(contactId) }
     }
     override suspend fun addAddress(address: AddressEntity) {
         addressDao.insertOrUpdate(address)
@@ -111,10 +114,9 @@ class PersonRepositoryImpl(
         } catch (_: Exception) {}
     }
     override suspend fun deleteAddress(addressId: String) {
-        addressDao.deleteById(addressId)
-        try {
-            firestoreSyncService?.deleteRemoteAddress(addressId)
-        } catch (_: Exception) {}
+        val sync = firestoreSyncService
+        if (sync == null) addressDao.deleteById(addressId)
+        else sync.deleteStructuredRecord(StructuredRecord.ADDRESS, addressId) { addressDao.deleteById(addressId) }
     }
 }
 
@@ -177,16 +179,24 @@ class RelationshipRepositoryImpl(
     }
 
     override suspend fun deleteRelationship(relationshipId: String) {
-        relationshipDao.deleteById(relationshipId)
-        try {
-            firestoreSyncService?.deleteRemoteRelationship(relationshipId)
-        } catch (_: Exception) {}
+        val sync = firestoreSyncService
+        if (sync == null) relationshipDao.deleteById(relationshipId)
+        else sync.deleteStructuredRecord(StructuredRecord.RELATIONSHIP, relationshipId) {
+            relationshipDao.deleteById(relationshipId)
+        }
     }
     override suspend fun removeConnection(p1: String, p2: String) {
-        relationshipDao.deleteBetweenPersons(p1, p2)
-        // Best-effort remote purge is handled on next full push; the
-        // directional rows are re-created by id on pull, so a local-only
-        // delete here cannot resurrect them.
+        val sync = firestoreSyncService
+        if (sync == null) {
+            relationshipDao.deleteBetweenPersons(p1, p2)
+            return
+        }
+        val ids = relationshipDao.getAllRelationships().filter {
+            (it.sourcePersonId == p1 && it.targetPersonId == p2) || (it.sourcePersonId == p2 && it.targetPersonId == p1)
+        }.map { it.id }
+        sync.deleteStructuredRecords(StructuredRecord.RELATIONSHIP, ids) {
+            ids.forEach { relationshipDao.deleteById(it) }
+        }
     }
 }
 
@@ -265,7 +275,8 @@ class DocumentRepositoryImpl(
 
 class MedicalRepositoryImpl(
     private val medicalDao: MedicalDao,
-    private val auditLogger: HardenedAuditLogger
+    private val auditLogger: HardenedAuditLogger,
+    private val firestoreSyncService: com.pims.vault.core.sync.FirestoreSyncService? = null
 ) : MedicalRepository {
     override fun getMedicalProfileFlow(personId: String): Flow<MedicalProfileEntity?> =
         medicalDao.getMedicalProfileFlow(personId)
@@ -302,7 +313,11 @@ class MedicalRepositoryImpl(
         )
     }
 
-    override suspend fun deleteRecord(recordId: String) = medicalDao.deleteById(recordId)
+    override suspend fun deleteRecord(recordId: String) {
+        val sync = firestoreSyncService
+        if (sync == null) medicalDao.deleteById(recordId)
+        else sync.deleteStructuredRecord(StructuredRecord.MEDICAL_RECORD, recordId) { medicalDao.deleteById(recordId) }
+    }
 }
 
 class VaultRepositoryImpl(

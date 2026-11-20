@@ -138,7 +138,7 @@ internal fun PersonaDashboardBottomBar(
             Triple("Notes", PersonaIcons.Notes, PersonaIcons.NotesOutlined),
             Triple("Me", PersonaIcons.Me, PersonaIcons.MeOutlined),
             Triple("People", PersonaIcons.People, PersonaIcons.PeopleOutlined),
-            Triple("Settings", PersonaIcons.Settings, PersonaIcons.SettingsOutlined)
+            Triple("Library", PersonaIcons.Library, PersonaIcons.Library)
         )
     }
 
@@ -265,7 +265,7 @@ internal fun PersonaDashboardNavigationRail(
             Triple("Notes", PersonaIcons.Notes, PersonaIcons.NotesOutlined),
             Triple("Me", PersonaIcons.Me, PersonaIcons.MeOutlined),
             Triple("People", PersonaIcons.People, PersonaIcons.PeopleOutlined),
-            Triple("Settings", PersonaIcons.Settings, PersonaIcons.SettingsOutlined)
+            Triple("Library", PersonaIcons.Library, PersonaIcons.Library)
         )
     }
     val haptics = rememberPimsHaptics()

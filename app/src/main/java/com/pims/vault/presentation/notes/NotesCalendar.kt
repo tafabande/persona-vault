@@ -1,14 +1,16 @@
 package com.pims.vault.presentation.notes
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -51,13 +53,9 @@ internal fun NotesCalendar(
                 Text(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", locale)),
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f))
-                TextButton(onClick = onToday) { Text("Today") }
-                IconButton(onClick = { onMonthChange(month.minusMonths(1)) }) {
-                    Icon(Icons.Default.ChevronLeft, "Previous month")
-                }
-                IconButton(onClick = { onMonthChange(month.plusMonths(1)) }) {
-                    Icon(Icons.Default.ChevronRight, "Next month")
-                }
+                PersonaAction("Today", onToday, style = PersonaActionStyle.Text)
+                PersonaIconAction(PersonaIcons.ChevronLeft, "Previous month", { onMonthChange(month.minusMonths(1)) })
+                PersonaIconAction(PersonaIcons.ChevronRight, "Next month", { onMonthChange(month.plusMonths(1)) })
             }
             Row(Modifier.fillMaxWidth()) {
                 repeat(7) { offset ->

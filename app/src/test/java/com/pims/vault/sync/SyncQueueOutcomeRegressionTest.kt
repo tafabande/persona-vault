@@ -49,7 +49,7 @@ class SyncQueueOutcomeRegressionTest {
 
         assertTrue(result.success)
         assertTrue(fixture.queue.rows.value.isEmpty())
-        withTimeout(5_000) { fixture.manager.syncState.first { it is SyncState.Idle } }
+        withTimeout(5_000) { fixture.manager.syncState.first { it is SyncState.Synced } }
         verify(fixture.gateway).commitOperation(eq("account-a"), argThat { operationId == operation.operationId })
     }
 
@@ -68,7 +68,7 @@ class SyncQueueOutcomeRegressionTest {
         val retry = fixture.manager.processPendingQueue("account-a")
         assertTrue(retry.success)
         assertTrue(fixture.queue.rows.value.isEmpty())
-        withTimeout(5_000) { fixture.manager.syncState.first { it is SyncState.Idle } }
+        withTimeout(5_000) { fixture.manager.syncState.first { it is SyncState.Synced } }
         verify(fixture.gateway, times(2)).commitOperation(eq("account-a"), argThat { operationId == operation.operationId })
     }
 
@@ -135,6 +135,13 @@ class SyncQueueOutcomeRegressionTest {
         override suspend fun getPendingOperations() = rows.value.filter(::retryable)
         override suspend fun findPendingByEntity(entityType: String, entityId: String) = rows.value.firstOrNull {
             it.entityType == entityType && it.entityId == entityId && it.status == SyncOperationStatus.PENDING
+        }
+        override suspend fun getById(id: String) = rows.value.firstOrNull { it.id == id }
+        override suspend fun getLatestByEntity(entityType: String, entityId: String) = rows.value.lastOrNull {
+            it.entityType == entityType && it.entityId == entityId
+        }
+        override suspend fun deleteByEntity(entityType: String, entityId: String) {
+            rows.value = rows.value.filterNot { it.entityType == entityType && it.entityId == entityId }
         }
         override fun getPendingCountFlow(): Flow<Int> = rows.map { entries -> entries.count { it.status in setOf(SyncOperationStatus.PENDING, SyncOperationStatus.IN_PROGRESS) } }
         override fun getConflictCountFlow(): Flow<Int> = rows.map { entries -> entries.count { it.status == SyncOperationStatus.CONFLICT } }

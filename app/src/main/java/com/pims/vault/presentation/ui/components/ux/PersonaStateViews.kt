@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components.ux
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -20,10 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -48,7 +46,7 @@ import com.pims.vault.presentation.ui.theme.pimsShake
  */
 @Composable
 fun PersonaEmptyState(
-    icon: ImageVector = Icons.Default.Inbox,
+    icon: ImageVector = PersonaIcons.Inbox,
     title: String,
     description: String,
     actionLabel: String? = null,
@@ -149,7 +147,7 @@ fun PersonaErrorState(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.WarningAmber,
+                imageVector = PersonaIcons.WarningAmber,
                 contentDescription = null,
                 tint = errorColor,
                 modifier = Modifier.size(32.dp)

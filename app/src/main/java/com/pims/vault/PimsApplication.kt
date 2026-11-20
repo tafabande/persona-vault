@@ -71,5 +71,13 @@ class PimsApplication : Application() {
         } catch (e: Exception) {
             VaultLogger.e("PimsApplication", "Failed to reschedule note reminders on startup", e)
         }
+
+        try {
+            dagger.hilt.android.EntryPointAccessors.fromApplication(
+                this, com.pims.vault.core.sync.SyncWorkerEntryPoint::class.java
+            ).syncWorkScheduler().start()
+        } catch (_: IllegalStateException) {
+            VaultLogger.w("PimsApplication", "Cloud scheduling is unavailable at startup")
+        }
     }
 }

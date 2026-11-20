@@ -1,7 +1,7 @@
 package com.pims.vault.presentation.hub
 
 import android.content.Intent
-import android.graphics.BitmapFactory
+import com.pims.vault.presentation.media.rememberPhotoPreview
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -13,8 +13,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import java.io.File
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.CameraAlt
 import com.pims.vault.presentation.ui.theme.PersonaIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,25 +40,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.automirrored.filled.Comment
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Cake
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.HourglassEmpty
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -216,7 +195,7 @@ fun PeopleView(
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Icon(
-                                imageVector = Icons.Default.Search,
+                                imageVector = PersonaIcons.Search,
                                 contentDescription = "Search",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
@@ -237,7 +216,7 @@ fun PeopleView(
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Icon(
-                                imageVector = Icons.Default.Add,
+                                imageVector = PersonaIcons.Add,
                                 contentDescription = "Add someone",
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(22.dp)
@@ -259,7 +238,7 @@ fun PeopleView(
                     shape = RoundedCornerShape(16.dp),
                     trailingIcon = {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                            Icon(PersonaIcons.Close, contentDescription = "Clear")
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -271,7 +250,7 @@ fun PeopleView(
         if (filteredList.isEmpty()) {
             item {
                 PersonaEmptyState(
-                    icon = Icons.Default.Person,
+                    icon = PersonaIcons.Me,
                     title = if (relationships.isEmpty()) "No people yet" else "No matching connections",
                     description = if (relationships.isEmpty()) "People you add will appear here." else "Try adjusting your search or category filter.",
                     actionLabel = if (relationships.isEmpty()) "Add person" else null,
@@ -297,7 +276,7 @@ fun PeopleView(
     if (showLinkAccountDialog) {
         AlertDialog(
             onDismissRequest = { showLinkAccountDialog = false },
-            icon = { Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            icon = { Icon(PersonaIcons.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text("Link Existing Person Account") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -356,7 +335,7 @@ fun PeopleView(
     linkSuccessMessage?.let { msg ->
         AlertDialog(
             onDismissRequest = { linkSuccessMessage = null },
-            icon = { Icon(Icons.Default.HourglassEmpty, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            icon = { Icon(PersonaIcons.HourglassEmpty, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text("Link Request Pending") },
             text = {
                 Text(
@@ -385,14 +364,7 @@ private fun PersonListItem(
     val contactPhoto = remember(effectiveId, person.id, photosVersion) {
         avatarManager.getPersonPhotoPath(effectiveId, person.id)
     }
-    val contactBitmap = remember(contactPhoto, photosVersion) {
-        contactPhoto?.let { path ->
-            try {
-                val f = File(path)
-                if (f.exists()) BitmapFactory.decodeFile(path) else null
-            } catch (_: Exception) { null }
-        }
-    }
+    val contactBitmap = rememberPhotoPreview(contactPhoto)
 
     Column(
         modifier = Modifier
@@ -560,7 +532,7 @@ fun PersonDetailSheet(
             ) {
                 IconButton(onClick = onDismissRequest) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = PersonaIcons.Close,
                         contentDescription = "Close",
                         tint = MaterialTheme.colorScheme.onSurface
                     )
@@ -568,7 +540,7 @@ fun PersonDetailSheet(
 
                 IconButton(onClick = { onEditPerson(person) }) {
                     Icon(
-                        imageVector = Icons.Default.Edit,
+                        imageVector = PersonaIcons.Edit,
                         contentDescription = "Options",
                         tint = MaterialTheme.colorScheme.onSurface
                     )
@@ -584,11 +556,7 @@ fun PersonDetailSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 val hasPhoto = !contactPhotoPath.isNullOrBlank() && File(contactPhotoPath!!).exists()
-                val photoBitmap = remember(contactPhotoPath, photosVersion) {
-                    if (hasPhoto) {
-                        try { BitmapFactory.decodeFile(contactPhotoPath) } catch (_: Exception) { null }
-                    } else null
-                }
+                val photoBitmap = rememberPhotoPreview(contactPhotoPath)
 
                 if (photoBitmap != null) {
                     Image(
@@ -614,7 +582,7 @@ fun PersonDetailSheet(
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Edit,
+                        imageVector = PersonaIcons.Edit,
                         contentDescription = "Change ${person.fullName}'s photo",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
@@ -886,7 +854,7 @@ fun PersonDetailSheet(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(PersonaIcons.Photo, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Choose Photo from Gallery")
                     }
@@ -899,7 +867,7 @@ fun PersonDetailSheet(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                            Icon(PersonaIcons.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Remove Custom Photo (Use Default Icon)", color = MaterialTheme.colorScheme.error)
                         }

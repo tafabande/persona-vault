@@ -1468,7 +1468,8 @@ class VaultViewModel @Inject constructor(
         expiryDate: String?,
         secondaryIdentifier: String?,
         notes: String?,
-        existingId: String? = null
+        existingId: String? = null,
+        onSaved: () -> Unit = {}
     ) {
         if (_uiState.value.isSaving) return
         _uiState.update { it.copy(isSaving = true, errorMessage = null) }
@@ -1491,6 +1492,7 @@ class VaultViewModel @Inject constructor(
                 )
                 syncItemToRemote(id)
                 closeEditor()
+                onSaved()
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (e: Exception) {

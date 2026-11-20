@@ -38,7 +38,7 @@ class AvatarPhotoImportDeviceTest {
         val captureDirectory = File(app.cacheDir, "photo_capture").apply { mkdirs() }
         val source = File(captureDirectory, "test-$suffix.png")
         try {
-            val image = Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888)
+            val image = Bitmap.createBitmap(1800, 1200, Bitmap.Config.ARGB_8888)
             try {
                 image.eraseColor(android.graphics.Color.BLUE)
                 source.outputStream().use { assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, it)) }
@@ -48,7 +48,9 @@ class AvatarPhotoImportDeviceTest {
             val saved = manager.importPersonPhoto("stable_person_id", uri, "relationship_id")
             val owned = File(saved)
             assertTrue(owned.canonicalFile.toPath().startsWith(File(files, "contact_photos").canonicalFile.toPath()))
+            assertEquals("png", owned.extension)
             val bytes = owned.readBytes()
+            assertArrayEquals(source.readBytes(), bytes)
             assertTrue(source.delete())
             assertFalse(source.exists())
 
@@ -57,6 +59,8 @@ class AvatarPhotoImportDeviceTest {
             assertArrayEquals(bytes, owned.readBytes())
             val decoded = BitmapFactory.decodeFile(saved)
             assertNotNull(decoded)
+            assertEquals(1800, decoded?.width)
+            assertEquals(1200, decoded?.height)
             decoded?.recycle()
             assertEquals(1, reopened.localPersonPhotoSelections().size)
         } finally {

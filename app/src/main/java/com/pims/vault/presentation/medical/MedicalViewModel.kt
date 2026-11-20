@@ -149,7 +149,6 @@ sealed interface MedicalEvent {
     data class DiscontinueMedication(val medicationId: String) : MedicalEvent
     data class UpdateEmergencyFields(val selectedFields: Set<EmergencyCardField>) : MedicalEvent
     data object RefreshEmergencyCard : MedicalEvent
-    data object UnlockMedicalGate : MedicalEvent
 
     // Dialog navigation
     data object OpenEditProfileDialog : MedicalEvent
@@ -236,7 +235,7 @@ class MedicalViewModel @Inject constructor(
                     is MedicalEvent.SaveProfile -> {
                         saveMedicalProfileUseCase(event.profile)
                         _uiState.update {
-                            it.copy(isEditingProfile = false, feedbackMessage = "Medical profile saved")
+                            it.copy(isEditingProfile = false, feedbackMessage = "Medical profile saved locally")
                         }
                     }
 
@@ -252,7 +251,7 @@ class MedicalViewModel @Inject constructor(
                             notes = event.notes
                         )
                         _uiState.update {
-                            it.copy(isAddingCondition = false, feedbackMessage = "Condition saved")
+                            it.copy(isAddingCondition = false, feedbackMessage = "Condition saved locally")
                         }
                     }
 
@@ -266,7 +265,7 @@ class MedicalViewModel @Inject constructor(
                             notes = event.notes
                         )
                         _uiState.update {
-                            it.copy(isAddingAllergy = false, feedbackMessage = "Allergy recorded")
+                            it.copy(isAddingAllergy = false, feedbackMessage = "Allergy saved locally")
                         }
                     }
 
@@ -285,7 +284,7 @@ class MedicalViewModel @Inject constructor(
                             notes = event.notes
                         )
                         _uiState.update {
-                            it.copy(isAddingMedication = false, feedbackMessage = "Medication added")
+                            it.copy(isAddingMedication = false, feedbackMessage = "Medication saved locally")
                         }
                     }
 
@@ -300,7 +299,7 @@ class MedicalViewModel @Inject constructor(
                             notes = event.notes
                         )
                         _uiState.update {
-                            it.copy(isAddingPrescription = false, feedbackMessage = "Prescription recorded")
+                            it.copy(isAddingPrescription = false, feedbackMessage = "Prescription saved locally")
                         }
                     }
 
@@ -317,7 +316,7 @@ class MedicalViewModel @Inject constructor(
                             notes = event.notes
                         )
                         _uiState.update {
-                            it.copy(isAddingDoctor = false, feedbackMessage = "Doctor profile saved")
+                            it.copy(isAddingDoctor = false, feedbackMessage = "Doctor profile saved locally")
                         }
                     }
 
@@ -331,7 +330,7 @@ class MedicalViewModel @Inject constructor(
                             notes = event.notes
                         )
                         _uiState.update {
-                            it.copy(isAddingFacility = false, feedbackMessage = "Healthcare facility saved")
+                            it.copy(isAddingFacility = false, feedbackMessage = "Healthcare facility saved locally")
                         }
                     }
 
@@ -349,7 +348,7 @@ class MedicalViewModel @Inject constructor(
                             cardPhotoUri = event.cardPhotoUri
                         )
                         _uiState.update {
-                            it.copy(isAddingCoverage = false, feedbackMessage = "Coverage plan saved")
+                            it.copy(isAddingCoverage = false, feedbackMessage = "Coverage plan saved locally")
                         }
                     }
 
@@ -367,7 +366,7 @@ class MedicalViewModel @Inject constructor(
                             notes = event.notes
                         )
                         _uiState.update {
-                            it.copy(isAddingVisit = false, feedbackMessage = "Medical visit recorded")
+                            it.copy(isAddingVisit = false, feedbackMessage = "Medical visit saved locally")
                         }
                     }
 
@@ -379,15 +378,6 @@ class MedicalViewModel @Inject constructor(
                     is MedicalEvent.DiscontinueMedication -> {
                         discontinueMedicationUseCase(event.medicationId)
                         _uiState.update { it.copy(feedbackMessage = "Medication marked as completed") }
-                    }
-
-                    MedicalEvent.UnlockMedicalGate -> {
-                        try {
-                            sessionManager.onAuthenticationSuccess()
-                            _uiState.update { it.copy(isMedicalGateUnlocked = true) }
-                        } catch (e: Exception) {
-                            _uiState.update { it.copy(errorMessage = e.message ?: "Authentication required") }
-                        }
                     }
 
                     is MedicalEvent.UpdateEmergencyFields -> {

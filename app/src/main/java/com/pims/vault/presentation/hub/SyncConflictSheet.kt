@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -14,11 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MergeType
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.sync.ConflictResolutionChoice
+import com.pims.vault.core.sync.STRUCTURED_CONFLICT
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
 import com.pims.vault.data.local.entity.SyncConflictEntity
 import com.pims.vault.presentation.ui.theme.PimsColors.error as StateError
 import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
@@ -88,7 +88,7 @@ fun SyncConflictSheet(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Warning,
+                            imageVector = PersonaIcons.Warning,
                             contentDescription = null,
                             tint = StateWarning,
                             modifier = Modifier.size(20.dp)
@@ -110,7 +110,7 @@ fun SyncConflictSheet(
                 }
 
                 IconButton(onClick = onDismissRequest) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(PersonaIcons.Close, contentDescription = "Close")
                 }
             }
 
@@ -129,14 +129,14 @@ fun SyncConflictSheet(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Check,
+                            imageVector = PersonaIcons.Check,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.tertiary,
                             modifier = Modifier.size(32.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "All items in sync",
+                            text = "No conflicts",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -176,6 +176,9 @@ private fun ConflictCard(
     onUseRemote: () -> Unit,
     onMerge: () -> Unit
 ) {
+    val isNote = conflict.entityType == "PLAIN_NOTE" || conflict.entityType == "Note"
+    val isStructuredRecord = conflict.entityType == STRUCTURED_CONFLICT
+    val isRevisionConflict = isNote || isStructuredRecord
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -196,7 +199,16 @@ private fun ConflictCard(
             // Target Field & Notice
             Column {
                 Text(
-                    text = "${conflict.entityType.lowercase().replaceFirstChar { it.uppercase() }} ${conflict.fieldName} changed elsewhere",
+                    text = if (isNote) "Note changed elsewhere"
+                        else if (isStructuredRecord) when (conflict.fieldName) {
+                            "CONTACT" -> "Contact changed elsewhere"
+                            "ADDRESS" -> "Address changed elsewhere"
+                            "EDUCATION" -> "Education record changed elsewhere"
+                            "EMPLOYMENT" -> "Work record changed elsewhere"
+                            "MEDICAL_RECORD" -> "Medical record changed elsewhere"
+                            else -> "Record changed elsewhere"
+                        }
+                        else "${conflict.entityType.lowercase().replaceFirstChar { it.uppercase() }} ${conflict.fieldName} changed elsewhere",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -220,7 +232,7 @@ private fun ConflictCard(
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
                         Text(
-                            text = "THIS DEVICE (v${conflict.localVersion})",
+                            text = if (isRevisionConflict) "This device" else "This device (v${conflict.localVersion})",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
@@ -229,7 +241,7 @@ private fun ConflictCard(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = conflict.localValue.ifBlank { "(empty)" },
+                            text = if (isNote) "Saved on this device" else conflict.localValue.ifBlank { "(empty)" },
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -244,7 +256,7 @@ private fun ConflictCard(
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
                         Text(
-                            text = "OTHER DEVICE (v${conflict.serverVersion})",
+                            text = if (isRevisionConflict) "Other device" else "Other device (v${conflict.serverVersion})",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
@@ -253,7 +265,8 @@ private fun ConflictCard(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = conflict.remoteValue.ifBlank { "(empty)" },
+                            text = if (isNote && conflict.remoteValue != "Deleted on another device") "Saved on another device"
+                                else conflict.remoteValue.ifBlank { "(empty)" },
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -266,30 +279,25 @@ private fun ConflictCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
+                PersonaAction(
+                    label = "Keep this",
                     onClick = onKeepLocal,
-                    shape = RoundedCornerShape(8.dp),
+                    style = PersonaActionStyle.Quiet,
                     modifier = Modifier.weight(1f)
-                ) {
-                    Text("Keep this", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
+                )
 
-                Button(
+                PersonaAction(
+                    label = "Use other",
                     onClick = onUseRemote,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     modifier = Modifier.weight(1f)
-                ) {
-                    Text("Use other", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
+                )
 
-                TextButton(
+                if (!isRevisionConflict) PersonaAction(
+                    label = "Merge",
                     onClick = onMerge,
-                    shape = RoundedCornerShape(8.dp),
+                    style = PersonaActionStyle.Text,
                     modifier = Modifier.weight(0.9f)
-                ) {
-                    Text("Merge", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
+                )
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.pims.vault.presentation.hub
 
-import android.graphics.BitmapFactory
+import com.pims.vault.presentation.media.rememberPhotoPreview
+import com.pims.vault.presentation.media.rememberSelectedPhotoPreview
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,11 +32,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Save
 import com.pims.vault.presentation.ui.theme.PersonaIcons
 import com.pims.vault.presentation.ui.theme.PimsColors
 import androidx.compose.ui.graphics.graphicsLayer
@@ -64,7 +60,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.pims.vault.presentation.ui.components.StatusPill
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -75,15 +70,19 @@ import com.pims.vault.presentation.ui.components.DefaultAvatar
 import com.pims.vault.presentation.ui.components.InternationalPhoneInput
 import com.pims.vault.domain.model.DocumentWithHistory
 import com.pims.vault.presentation.ui.components.PersonaTextInput
+import com.pims.vault.presentation.ui.components.PersonaAction
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.text.style.TextOverflow
 import com.pims.vault.presentation.ui.theme.PersonaAccent
+import com.pims.vault.presentation.ui.theme.PersonaIcon
+import com.pims.vault.presentation.ui.theme.PersonaIconSize
+import com.pims.vault.presentation.ui.theme.PimsRadius
+import com.pims.vault.presentation.ui.theme.PimsSpacing
 import com.pims.vault.presentation.ui.theme.pimsApplePress
 import com.pims.vault.presentation.ui.theme.pimsTactile
 import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
-import java.io.File
 
 /**
  * HomeView - Redesigned Clean Identity Dashboard
@@ -238,7 +237,6 @@ fun HomeView(
                 primaryPhone = effectivePhone,
                 idNumber = effectiveIdNumber,
                 idPhotoPath = idPhotoPath,
-                onOpenProfile = onOpenProfile,
                 onEdit = {
                     haptics.light()
                     onOpenCentralizedEditor()
@@ -315,16 +313,7 @@ private fun HomeHeaderRow(
 ) {
     val haptics = rememberPimsHaptics()
 
-    val hasPhoto = !profilePhotoPath.isNullOrBlank() && File(profilePhotoPath).exists()
-    val photoBitmap = remember(profilePhotoPath) {
-        if (hasPhoto) {
-            try {
-                BitmapFactory.decodeFile(profilePhotoPath)
-            } catch (_: Exception) {
-                null
-            }
-        } else null
-    }
+    val photoBitmap = rememberPhotoPreview(profilePhotoPath)
 
     val buttonBg = MaterialTheme.colorScheme.surfaceVariant
     val iconTint = MaterialTheme.colorScheme.onSurface
@@ -386,10 +375,7 @@ private fun HomeHeaderRow(
 }
 
 /**
- * Clean Identity Details Card showing:
- * - Full Name with chevron (opens profile)
- * - Email and Phone
- * - Add ID photo link / thumbnail
+ * Home identity summary with direct edit and ID photo actions.
  */
 @Composable
 private fun IdentityDetailsCard(
@@ -398,20 +384,10 @@ private fun IdentityDetailsCard(
     primaryPhone: String?,
     idNumber: String?,
     idPhotoPath: String?,
-    onOpenProfile: () -> Unit,
     onEdit: () -> Unit,
     onAddIdPhoto: () -> Unit
 ) {
-    val idBitmap = remember(idPhotoPath) {
-        idPhotoPath?.let { path ->
-            try {
-                val f = File(path)
-                if (f.exists()) BitmapFactory.decodeFile(path) else null
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
+    val idBitmap = rememberPhotoPreview(idPhotoPath, maxDimension = 1024)
 
     val haptics = rememberPimsHaptics()
     val textPrimary = MaterialTheme.colorScheme.onSurface
@@ -423,7 +399,7 @@ private fun IdentityDetailsCard(
         modifier = Modifier
             .fillMaxWidth()
             .pimsTactile { onEdit() },
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(PimsRadius.surface),
         color = cardBg,
         shadowElevation = 0.dp,
         border = BorderStroke(0.5.dp, cardBorder.copy(alpha = 0.35f))
@@ -431,10 +407,9 @@ private fun IdentityDetailsCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = PimsSpacing.m, vertical = PimsSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(PimsSpacing.s)
         ) {
-            // Row 1: Full Name (Left) + Pencil Edit Icon (Right)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -442,43 +417,41 @@ private fun IdentityDetailsCard(
                         haptics.selection()
                         onEdit()
                     },
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = displayName,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    ),
+                    style = MaterialTheme.typography.titleLarge,
                     color = textPrimary,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                Icon(
-                    imageVector = PersonaIcons.Edit,
-                    contentDescription = "Edit details",
-                    tint = textSecondary,
-                    modifier = Modifier.size(18.dp)
+                PersonaAction(
+                    label = "Edit",
+                    onClick = onEdit,
+                    icon = PersonaIcons.Edit
                 )
             }
 
             // Row 2: Email Icon + Email text
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(PimsSpacing.relatedFieldGap)
             ) {
-                Icon(
+                PersonaIcon(
                     imageVector = PersonaIcons.EmailOutlined,
                     contentDescription = null,
                     tint = textSecondary,
-                    modifier = Modifier.size(16.dp)
+                    size = PersonaIconSize.Micro
                 )
                 Text(
                     text = primaryEmail?.takeIf { it.isNotBlank() } ?: "Add email",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = textSecondary,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -490,34 +463,35 @@ private fun IdentityDetailsCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(PimsSpacing.relatedFieldGap),
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    Icon(
+                    PersonaIcon(
                         imageVector = PersonaIcons.PhoneOutlined,
                         contentDescription = null,
                         tint = textSecondary,
-                        modifier = Modifier.size(16.dp)
+                        size = PersonaIconSize.Micro
                     )
                     Text(
                         text = primaryPhone?.takeIf { it.isNotBlank() } ?: "Add phone",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = textSecondary,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
                 // Add ID photo action / thumbnail
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(PimsSpacing.xs),
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(PimsRadius.selection))
                         .clickable {
                             haptics.selection()
                             onAddIdPhoto()
                         }
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .padding(horizontal = PimsSpacing.xs, vertical = PimsSpacing.xxs)
                 ) {
                     if (idBitmap != null) {
                         Image(
@@ -525,31 +499,25 @@ private fun IdentityDetailsCard(
                             contentDescription = "ID photo",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .size(20.dp)
-                                .clip(RoundedCornerShape(4.dp))
+                                .size(PersonaIconSize.Small.dp)
+                                .clip(RoundedCornerShape(PimsRadius.selection))
                         )
                         Text(
                             text = if (!idNumber.isNullOrBlank()) idNumber else "ID photo",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp
-                            ),
+                            style = MaterialTheme.typography.bodyMedium,
                             color = textPrimary,
                             maxLines = 1
                         )
                     } else {
-                        Icon(
+                        PersonaIcon(
                             imageVector = PersonaIcons.PhotoOutlined,
                             contentDescription = "Add ID photo",
                             tint = textPrimary,
-                            modifier = Modifier.size(16.dp)
+                            size = PersonaIconSize.Micro
                         )
                         Text(
                             text = if (!idNumber.isNullOrBlank()) idNumber else "Add ID photo",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp
-                            ),
+                            style = MaterialTheme.typography.bodyMedium,
                             color = textPrimary,
                             maxLines = 1
                         )
@@ -575,7 +543,6 @@ private fun IdentityDetailsEditorSheet(
     onSave: (name: String, email: String, phone: String, idNumber: String, photoUri: Uri?) -> Unit
 ) {
     val haptics = rememberPimsHaptics()
-    val context = LocalContext.current
     var name by remember { mutableStateOf(currentName) }
     var email by remember { mutableStateOf(currentEmail) }
     var phone by remember { mutableStateOf(currentPhone) }
@@ -590,24 +557,9 @@ private fun IdentityDetailsEditorSheet(
         }
     }
 
-    val previewBitmap = remember(selectedPhotoUri, currentIdPhotoPath) {
-        selectedPhotoUri?.let { uri ->
-            try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
-            } catch (_: Exception) {
-                null
-            }
-        } ?: currentIdPhotoPath?.let { path ->
-            try {
-                val f = File(path)
-                if (f.exists()) BitmapFactory.decodeFile(path) else null
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
+    val savedPreview = rememberPhotoPreview(currentIdPhotoPath, maxDimension = 1024)
+    val selectedPreview = rememberSelectedPhotoPreview(selectedPhotoUri, maxDimension = 1024)
+    val previewBitmap = selectedPreview ?: savedPreview
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,

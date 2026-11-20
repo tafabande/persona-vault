@@ -1,6 +1,5 @@
 package com.pims.vault.presentation.hub
 
-import androidx.compose.material.icons.filled.MoreVert
 
 import androidx.compose.foundation.layout.navigationBarsPadding
 
@@ -9,6 +8,23 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxHeight
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.pims.vault.presentation.profile.CustomField
+import com.pims.vault.presentation.ui.components.PersonaAddInformationSheet
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaConfirmationDialog
+import com.pims.vault.presentation.ui.components.PersonaFilterChip
+import com.pims.vault.presentation.ui.components.PersonaIconAction
+import com.pims.vault.presentation.ui.components.PersonaInformationRow
+import com.pims.vault.presentation.ui.components.PersonaMenu
+import com.pims.vault.presentation.ui.components.PersonaMenuItem
+import com.pims.vault.presentation.ui.components.PersonaSectionHeading
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.presentation.ui.components.PersonaSheetHeader
+import com.pims.vault.presentation.ui.components.PersonaSheetOption
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+import com.pims.vault.presentation.ui.theme.PimsSpacing
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -31,26 +47,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MedicalServices
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -100,101 +96,85 @@ fun EducationPortfolioSheet(
     educationList: List<EducationRecordEntity>,
     certificatesList: List<EducationRecordEntity>,
     employmentList: List<EmploymentRecordEntity>,
+    portfolioFields: List<CustomField>,
     sheetState: SheetState,
     onDismissRequest: () -> Unit,
     onAddEducation: () -> Unit,
     onAddCert: () -> Unit,
-    onAddProject: () -> Unit
+    onAddProject: () -> Unit,
+    onAddPortfolioLink: () -> Unit,
+    onEditPortfolioLink: (CustomField) -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
+    var showOptions by remember { mutableStateOf(false) }
+    val optionsState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    PersonaSheet(onDismissRequest, sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = pimsPageGutter())
-                .padding(bottom = 36.dp)
-                .verticalScroll(rememberScrollState())
+                .padding(bottom = PimsSpacing.xl)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
         ) {
-            SheetHeader("Education & Portfolio", "Qualifications, certifications & career achievements", onDismissRequest)
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Qualifications
-            SectionHeaderWithAction("Education & Degrees", "+ Add", onAddEducation)
-            if (educationList.isEmpty()) {
-                PersonaEmptyState(
-                    icon = Icons.Default.School,
-                    title = "Your education belongs here.",
-                    description = "Add schools, qualifications and certificates to organize your academic journey.",
-                    actionLabel = "Add education",
-                    onActionClick = onAddEducation
-                )
-            } else {
+            PersonaSheetHeader("Education & portfolio", onDismissRequest)
+            PersonaAction("Add information", { showOptions = true }, style = PersonaActionStyle.Quiet, icon = PersonaIcons.Add)
+            if (educationList.isEmpty() && certificatesList.isEmpty() &&
+                employmentList.isEmpty() && portfolioFields.isEmpty()
+            ) {
+                Text("No records yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (educationList.isNotEmpty()) {
+                PersonaSectionHeading("Qualifications")
                 educationList.forEach { edu ->
-                    FacetCardItem(
-                        icon = Icons.Default.School,
-                        title = edu.qualification,
-                        subtitle = "${edu.institution} • ${edu.fieldOfStudy ?: ""}",
-                        meta = edu.endDate?.let { "Completed $it" } ?: (edu.startDate ?: "")
+                    PersonaInformationRow(
+                        edu.qualification, PersonaIcons.Education,
+                        detail = listOfNotNull(edu.institution, edu.fieldOfStudy, edu.endDate ?: edu.startDate)
+                            .filter(String::isNotBlank).joinToString(" · ")
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(20.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Certifications
-            SectionHeaderWithAction("Certifications", "+ Add", onAddCert)
-            if (certificatesList.isEmpty()) {
-                PersonaEmptyState(
-                    icon = Icons.Default.Star,
-                    title = "Keep your professional credentials.",
-                    description = "Add Cisco, CompTIA, AWS or other certifications with renewal dates.",
-                    actionLabel = "Add certificate",
-                    onActionClick = onAddCert
-                )
-            } else {
+            if (certificatesList.isNotEmpty()) {
+                PersonaSectionHeading("Certifications")
                 certificatesList.forEach { cert ->
-                    FacetCardItem(
-                        icon = Icons.Default.Star,
-                        title = cert.qualification,
-                        subtitle = cert.institution,
-                        meta = cert.endDate?.let { "Expires $it" } ?: "Credential active"
+                    PersonaInformationRow(
+                        cert.qualification, PersonaIcons.Documents,
+                        detail = listOfNotNull(cert.institution, cert.endDate).filter(String::isNotBlank).joinToString(" · ")
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(20.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Work & Projects
-            SectionHeaderWithAction("Experience & Projects", "+ Add", onAddProject)
-            if (employmentList.isEmpty()) {
-                PersonaEmptyState(
-                    icon = Icons.Default.Work,
-                    title = "Showcase what you've built.",
-                    description = "Add engineering projects, work roles and achievements.",
-                    actionLabel = "Add role or project",
-                    onActionClick = onAddProject
-                )
-            } else {
+            if (employmentList.isNotEmpty()) {
+                PersonaSectionHeading("Experience & projects")
                 employmentList.forEach { emp ->
-                    FacetCardItem(
-                        icon = Icons.Default.Work,
-                        title = emp.position,
-                        subtitle = emp.company,
-                        meta = if (emp.isCurrent) "Current role" else (emp.endDate ?: "")
+                    PersonaInformationRow(
+                        emp.position, PersonaIcons.Work,
+                        detail = listOfNotNull(emp.company, if (emp.isCurrent) "Current role" else emp.endDate)
+                            .filter(String::isNotBlank).joinToString(" · ")
                     )
+                }
+            }
+            if (portfolioFields.isNotEmpty()) {
+                PersonaSectionHeading("Portfolio links")
+                portfolioFields.forEach { field ->
+                    PersonaInformationRow(field.label, PersonaIcons.Link, detail = field.value, onClick = { onEditPortfolioLink(field) })
                 }
             }
         }
+    }
+    if (showOptions) {
+        fun choose(action: () -> Unit) {
+            showOptions = false
+            action()
+        }
+        PersonaAddInformationSheet(
+            options = listOf(
+                PersonaSheetOption("Qualification", PersonaIcons.Education) { choose(onAddEducation) },
+                PersonaSheetOption("Certification", PersonaIcons.Documents) { choose(onAddCert) },
+                PersonaSheetOption("Experience or project", PersonaIcons.Work) { choose(onAddProject) },
+                PersonaSheetOption("Portfolio link", PersonaIcons.Link) { choose(onAddPortfolioLink) }
+            ),
+            sheetState = optionsState,
+            onDismissRequest = { showOptions = false }
+        )
     }
 }
 
@@ -275,7 +255,7 @@ fun HealthSheet(
 
             if (medicalRecords.isEmpty()) {
                 PersonaEmptyState(
-                    icon = Icons.Default.MedicalServices,
+                    icon = PersonaIcons.MedicalServices,
                     title = "Your health information is confidential.",
                     description = "Record allergies, chronic conditions, and active medications for emergency medical personnel.",
                     actionLabel = "Add health record",
@@ -284,10 +264,10 @@ fun HealthSheet(
             } else {
                 medicalRecords.forEach { record ->
                     val (typeLabel, icon) = when (record.recordType) {
-                        MedicalRecordType.ALLERGY -> "Allergy" to Icons.Default.Warning
-                        MedicalRecordType.MEDICATION -> "Medication" to Icons.Default.MedicalServices
-                        MedicalRecordType.CONDITION -> "Condition" to Icons.Default.MedicalServices
-                        else -> "Medical" to Icons.Default.MedicalServices
+                        MedicalRecordType.ALLERGY -> "Allergy" to PersonaIcons.Warning
+                        MedicalRecordType.MEDICATION -> "Medication" to PersonaIcons.MedicalServices
+                        MedicalRecordType.CONDITION -> "Condition" to PersonaIcons.MedicalServices
+                        else -> "Medical" to PersonaIcons.MedicalServices
                     }
                     FacetCardItem(
                         icon = icon,
@@ -340,31 +320,29 @@ fun DocumentsWalletSheet(
                     item.document.issuingCountry.orEmpty()).any { it.contains(term, ignoreCase = true) })
         }.sortedByDescending { it.document.updatedAt }
     }
-    ModalBottomSheet(onDismissRequest = onDismissRequest, sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f).navigationBarsPadding().imePadding().padding(horizontal = 24.dp)) {
+    PersonaSheet(onDismissRequest = onDismissRequest, sheetState = sheetState) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f).imePadding().padding(horizontal = pimsPageGutter())) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Documents", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-                androidx.compose.material3.FilledTonalButton(onClick = onUploadClick, enabled = !isWorking) { Text("Add file") }
-                IconButton(onClick = onDismissRequest) { Icon(Icons.Default.Close, "Close documents") }
+                Text("Documents", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                PersonaAction("Add file", onUploadClick, style = PersonaActionStyle.Quiet, enabled = !isWorking)
+                PersonaIconAction(PersonaIcons.Close, "Close documents", onDismissRequest)
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(PimsSpacing.m))
             com.pims.vault.presentation.ui.components.PersonaTextInput(query, { query = it }, placeholder = "Search documents",
-                leadingIcon = { Icon(Icons.Default.Search, null) }, trailingIcon = {
-                    if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Clear search") }
+                leadingIcon = { Icon(PersonaIcons.Search, null) }, trailingIcon = {
+                    if (query.isNotBlank()) PersonaIconAction(PersonaIcons.Close, "Clear search", { query = "" })
                 })
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                androidx.compose.material3.FilterChip(selected = category == null, onClick = { category = null }, label = { Text("All") })
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = PimsSpacing.s),
+                horizontalArrangement = Arrangement.spacedBy(PimsSpacing.s)) {
+                PersonaFilterChip("All", selected = category == null, onClick = { category = null })
                 documents.map { it.document.category }.distinct().forEach { item ->
-                    androidx.compose.material3.FilterChip(selected = category == item, onClick = { category = item },
-                        label = { Text(item.displayLabel.substringBefore(" &")) })
+                    PersonaFilterChip(item.displayLabel.substringBefore(" &"), selected = category == item, onClick = { category = item })
                 }
             }
             if (isWorking || isLoading) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
             loadError?.let { message ->
                 Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                androidx.compose.material3.TextButton(onClick = onRetryLoad) { Text("Retry") }
+                PersonaAction("Retry", onRetryLoad, style = PersonaActionStyle.Text)
             }
             androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
@@ -375,8 +353,9 @@ fun DocumentsWalletSheet(
                                 style = MaterialTheme.typography.titleLarge)
                             if (documents.isEmpty()) {
                                 Text("Add a file to get started.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Button(onClick = onUploadClick) { Text("Add document") }
-                            } else androidx.compose.material3.TextButton(onClick = { query = ""; category = null }) { Text("Clear filters") }
+                            } else {
+                                PersonaAction("Clear filters", { query = ""; category = null }, style = PersonaActionStyle.Text)
+                            }
                         }
                     }
                 }
@@ -392,7 +371,7 @@ fun DocumentsWalletSheet(
                                 onViewClick(document)
                             }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary,
+                                Icon(PersonaIcons.Documents, null, tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(28.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(document.document.title, style = MaterialTheme.typography.titleMedium,
@@ -405,31 +384,29 @@ fun DocumentsWalletSheet(
                                 }
                             }
                             Box {
-                                IconButton(onClick = { menuId = document.document.id }) {
-                                    Icon(Icons.Default.MoreVert, "Actions for ${document.document.title}")
-                                }
-                                androidx.compose.material3.DropdownMenu(expanded = menuId == document.document.id,
+                                PersonaIconAction(PersonaIcons.MoreActions, "Actions for ${document.document.title}", { menuId = document.document.id })
+                                PersonaMenu(expanded = menuId == document.document.id,
                                     onDismissRequest = { menuId = null }) {
-                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Preview") }, enabled = !missing,
+                                    PersonaMenuItem("Preview", PersonaIcons.Visibility, enabled = !missing,
                                         onClick = { menuId = null; onViewClick(document) })
-                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Open with another app") }, enabled = !missing,
+                                    PersonaMenuItem("Open with another app", PersonaIcons.OpenInNew, enabled = !missing,
                                         onClick = { menuId = null; onOpenExternal(document) })
-                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Save a copy") }, enabled = !missing,
+                                    PersonaMenuItem("Save a copy", PersonaIcons.FileDownload, enabled = !missing,
                                         onClick = { menuId = null; onExportClick(document) })
-                                    if (onRetryDownload != null) androidx.compose.material3.DropdownMenuItem(text = { Text("Retry download") }, enabled = !isWorking,
+                                    if (onRetryDownload != null) PersonaMenuItem("Retry download", PersonaIcons.Refresh, enabled = !isWorking,
                                         onClick = { menuId = null; onRetryDownload(document) })
-                                    if (onAddVersion != null) androidx.compose.material3.DropdownMenuItem(text = { Text("Add version") }, enabled = !isWorking,
+                                    if (onAddVersion != null) PersonaMenuItem("Add version", PersonaIcons.Add, enabled = !isWorking,
                                         onClick = { menuId = null; onAddVersion(document) })
-                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Version history (${document.totalVersions})") },
+                                    PersonaMenuItem("Version history (${document.totalVersions})", PersonaIcons.History,
                                         onClick = { menuId = null; expandedId = if (expandedId == document.document.id) null else document.document.id })
-                                    androidx.compose.material3.DropdownMenuItem(text = { Text("Delete", color = MaterialTheme.colorScheme.error) }, enabled = !isWorking,
+                                    PersonaMenuItem("Delete", PersonaIcons.DeleteOutline, enabled = !isWorking,
                                         onClick = { menuId = null; onDeleteClick(document) })
                                 }
                             }
                         }
                         if (missing && onRetryDownload != null) {
-                            androidx.compose.material3.TextButton(onClick = { onRetryDownload(document) }, enabled = !isWorking,
-                                modifier = Modifier.padding(start = 42.dp)) { Text("Retry download") }
+                            PersonaAction("Retry download", { onRetryDownload(document) }, enabled = !isWorking,
+                                modifier = Modifier.padding(start = 42.dp), style = PersonaActionStyle.Text)
                         }
                         if (expandedId == document.document.id) {
                             document.versions.sortedByDescending { it.versionNumber }.forEach { version ->
@@ -450,19 +427,18 @@ fun DocumentsWalletSheet(
                                                     MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                                         }
                                     }
-                                    IconButton(onClick = { onViewClick(document.copy(versions = listOf(version))) }, enabled = version.storagePath.isNotBlank()) {
-                                        Icon(Icons.Default.Visibility, "Open version ${version.versionNumber}")
-                                    }
+                                    PersonaIconAction(PersonaIcons.Visibility, "Open version ${version.versionNumber}",
+                                        { onViewClick(document.copy(versions = listOf(version))) }, enabled = version.storagePath.isNotBlank())
                                     var versionMenu by remember(version.id) { mutableStateOf(false) }
                                     Box {
-                                        IconButton(onClick = { versionMenu = true }) { Icon(Icons.Default.MoreVert, "Version ${version.versionNumber} actions") }
-                                        androidx.compose.material3.DropdownMenu(expanded = versionMenu, onDismissRequest = { versionMenu = false }) {
-                                            androidx.compose.material3.DropdownMenuItem(text = { Text("Save a copy") }, onClick = {
+                                        PersonaIconAction(PersonaIcons.MoreActions, "Version ${version.versionNumber} actions", { versionMenu = true })
+                                        PersonaMenu(expanded = versionMenu, onDismissRequest = { versionMenu = false }) {
+                                            PersonaMenuItem("Save a copy", PersonaIcons.FileDownload, onClick = {
                                                 versionMenu = false; onExportClick(document.copy(versions = listOf(version))) })
-                                            if (onVerifyVersion != null) androidx.compose.material3.DropdownMenuItem(text = { Text("Check integrity") }, onClick = {
+                                            if (onVerifyVersion != null) PersonaMenuItem("Check integrity", PersonaIcons.Security, onClick = {
                                                 versionMenu = false; onVerifyVersion(version) })
-                                            if (onRestoreVersion != null && version.id != current?.id) androidx.compose.material3.DropdownMenuItem(
-                                                text = { Text("Use this version") }, enabled = !isWorking, onClick = {
+                                            if (onRestoreVersion != null && version.id != current?.id) PersonaMenuItem(
+                                                "Use this version", PersonaIcons.History, enabled = !isWorking, onClick = {
                                                     versionMenu = false; restore = document.document.id to version
                                                 })
                                         }
@@ -476,10 +452,16 @@ fun DocumentsWalletSheet(
         }
     }
     restore?.let { (documentId, version) ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { restore = null }, title = { Text("Use version ${version.versionNumber}?") },
-            text = { Text("This adds a new current version and keeps your version history.") },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { restore = null; onRestoreVersion?.invoke(documentId, version) }) { Text("Use version") } },
-            dismissButton = { androidx.compose.material3.TextButton(onClick = { restore = null }) { Text("Cancel") } })
+        PersonaConfirmationDialog(
+            onDismissRequest = { restore = null },
+            title = "Use version ${version.versionNumber}?",
+            message = "This adds a new current version and keeps your version history.",
+            confirmText = "Use version",
+            onConfirm = {
+                restore = null
+                onRestoreVersion?.invoke(documentId, version)
+            }
+        )
     }
 }
 
@@ -521,7 +503,7 @@ fun VaultSheet(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Key,
+                    imageVector = PersonaIcons.Key,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.size(34.dp)
@@ -564,7 +546,7 @@ fun VaultSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Fingerprint, contentDescription = null)
+                    Icon(imageVector = PersonaIcons.Biometric, contentDescription = null)
                     Text("Unlock & Manage Passwords", fontWeight = FontWeight.SemiBold)
                 }
             }
@@ -599,7 +581,7 @@ private fun SheetHeader(
             )
         }
         IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(PersonaIcons.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

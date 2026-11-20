@@ -21,7 +21,7 @@ object DateHelper {
         if (dob.isBlank()) return ""
         return try {
             val parts = if (dob.contains("-")) dob.split("-") else dob.split("/")
-            if (parts.size != 3) return "🎂 DOB: $dob"
+            if (parts.size != 3) return dob
             val (year, month, day) = if (parts[0].length == 4) {
                 Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
             } else {
@@ -51,7 +51,7 @@ object DateHelper {
             val diffDays = (diffMillis / (1000 * 60 * 60 * 24)).toInt()
 
             val countdown = when {
-                diffDays == 0 -> "Today! 🎉"
+                diffDays == 0 -> "Today"
                 diffDays == 1 -> "Tomorrow"
                 diffDays < 30 -> "in $diffDays days"
                 else -> "in ${diffDays / 30} months"
@@ -59,9 +59,9 @@ object DateHelper {
 
             val dayStr = day.toString().padStart(2, '0')
             val monthStr = month.toString().padStart(2, '0')
-            "🎂 $dayStr/$monthStr/$year ($monthName $day) • $age yrs old ($countdown)"
+            "$dayStr/$monthStr/$year ($monthName $day) · $age yrs old ($countdown)"
         } catch (e: Exception) {
-            "🎂 DOB: $dob"
+            dob
         }
     }
 
@@ -116,7 +116,7 @@ object DateHelper {
             val diffDays = (diffMillis / (1000 * 60 * 60 * 24)).toInt()
 
             val countdown = when {
-                diffDays == 0 -> "Today! 🎉"
+                diffDays == 0 -> "Today"
                 diffDays == 1 -> "Tomorrow"
                 diffDays < 30 -> "in $diffDays days"
                 else -> "in ${diffDays / 30} months"
@@ -131,7 +131,7 @@ object DateHelper {
         if (anniversary.isBlank()) return ""
         return try {
             val parts = if (anniversary.contains("-")) anniversary.split("-") else anniversary.split("/")
-            if (parts.size != 3) return "💍 Anniversary: $anniversary"
+            if (parts.size != 3) return anniversary
             val (year, month, day) = if (parts[0].length == 4) {
                 Triple(parts[0].toInt(), parts[1].toInt(), parts[2].toInt())
             } else {
@@ -144,12 +144,12 @@ object DateHelper {
             val dayStr = day.toString().padStart(2, '0')
             val monthStr = month.toString().padStart(2, '0')
             if (years > 0) {
-                "💍 $dayStr/$monthStr/$year ($years yrs married)"
+                "$dayStr/$monthStr/$year ($years yrs married)"
             } else {
-                "💍 $dayStr/$monthStr/$year"
+                "$dayStr/$monthStr/$year"
             }
         } catch (e: Exception) {
-            "💍 Anniversary: $anniversary"
+            anniversary
         }
     }
 }

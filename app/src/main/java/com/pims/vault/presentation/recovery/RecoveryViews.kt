@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.recovery
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,9 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -63,9 +62,9 @@ fun CloudRecoveryCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 val (icon, tint) = when (status) {
-                    is RecoveryViewModel.Status.Ready -> Icons.Default.CheckCircle to MaterialTheme.colorScheme.primary
-                    is RecoveryViewModel.Status.NotConfigured -> Icons.Default.Warning to com.pims.vault.presentation.ui.theme.PimsColors.warning
-                    else -> Icons.Default.Warning to MaterialTheme.colorScheme.onSurfaceVariant
+                    is RecoveryViewModel.Status.Ready -> PersonaIcons.Success to MaterialTheme.colorScheme.primary
+                    is RecoveryViewModel.Status.NotConfigured -> PersonaIcons.Warning to com.pims.vault.presentation.ui.theme.PimsColors.warning
+                    else -> PersonaIcons.Warning to MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Icon(icon, contentDescription = null, tint = tint)
                 Column(modifier = Modifier.weight(1f)) {

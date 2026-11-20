@@ -1,8 +1,9 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
@@ -18,16 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Notes
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,14 +44,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.pims.vault.core.activity.RecentActivityManager
 import com.pims.vault.core.model.ContactType
 import com.pims.vault.core.model.AddressLabel
 import com.pims.vault.data.local.entity.AddressEntity
 import com.pims.vault.data.local.entity.ContactMethodEntity
-import com.pims.vault.data.local.entity.RelationshipNoteEntity
-import com.pims.vault.domain.model.NoteFormat
 import com.pims.vault.presentation.isRomanticOrMaritalRelationship
 import com.pims.vault.presentation.profile.KinRelationshipItem
 import com.pims.vault.presentation.profile.ProfileEvent
@@ -101,12 +89,6 @@ private data class EditableManagedAddress(
     val isCurrent: Boolean
 )
 
-private data class EditableManagedNote(
-    val key: String = java.util.UUID.randomUUID().toString(),
-    val id: String?,
-    val topic: String,
-    val text: String
-)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -159,18 +141,14 @@ fun EditManagedPersonSheet(
     }
     var editDob by remember(editingPerson.id) { mutableStateOf(editingPerson.dateOfBirth) }
     var editAnniversary by remember(editingPerson.id) { mutableStateOf(editingPerson.anniversary) }
-    var editNotesList by remember(editingPerson.id) {
-        val entries = editingPerson.editableRelationshipNotes.map { EditableManagedNote(id = it.id, topic = it.topic ?: "Personal note", text = it.contentPlaintext.orEmpty()) }
-        mutableStateOf(entries.ifEmpty { listOf(EditableManagedNote(id = null, topic = "Personal note", text = "")) })
-    }
     var showDiscardConfirmation by remember(editingPerson.id) { mutableStateOf(false) }
     var attemptedSave by remember(editingPerson.id) { mutableStateOf(false) }
     var isSaving by remember(editingPerson.id) { mutableStateOf(false) }
     var saveError by remember(editingPerson.id) { mutableStateOf<String?>(null) }
     val originalSnapshot = remember(editingPerson.id) {
-        listOf(editFirstName, editLastName, editRole, editContacts, editAddress, editAddresses, editDob, editAnniversary, editNotesList)
+        listOf(editFirstName, editLastName, editRole, editContacts, editAddress, editAddresses, editDob, editAnniversary)
     }
-    val isDirty = listOf(editFirstName, editLastName, editRole, editContacts, editAddress, editAddresses, editDob, editAnniversary, editNotesList) != originalSnapshot
+    val isDirty = listOf(editFirstName, editLastName, editRole, editContacts, editAddress, editAddresses, editDob, editAnniversary) != originalSnapshot
     val contactDuplicates = editContacts.filter { it.value.isNotBlank() }.groupBy {
         "${it.type}:${if (it.type == ContactType.PHONE) it.value.filter(Char::isDigit) else it.value.trim().lowercase()}"
     }.values.any { it.size > 1 }
@@ -221,13 +199,13 @@ fun EditManagedPersonSheet(
                     )
                 }
                 TextButton(onClick = requestDismiss, enabled = !isSaving) {
-                    Icon(Icons.Default.Close, contentDescription = null)
+                    Icon(PersonaIcons.Close, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Close")
                 }
             }
 
-            PersonaFormSection(title = "About them", icon = Icons.Default.Person) {
+            PersonaFormSection(title = "About them", icon = PersonaIcons.Me) {
                 FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = fieldColumns) {
                 PersonaTextInput(
                     value = editFirstName,
@@ -260,7 +238,7 @@ fun EditManagedPersonSheet(
             }
             }
 
-            PersonaFormSection(title = "Contact information", icon = Icons.Default.Phone) {
+            PersonaFormSection(title = "Contact information", icon = PersonaIcons.PhoneOutlined) {
                 ContactMethodEditor(
                     title = "Phone numbers",
                     type = ContactType.PHONE,
@@ -279,7 +257,7 @@ fun EditManagedPersonSheet(
                 )
             }
 
-            PersonaFormSection(title = "Location", icon = Icons.Default.Home) {
+            PersonaFormSection(title = "Location", icon = PersonaIcons.Home) {
                 PersonaTextInput(
                     value = editAddress,
                     onValueChange = { editAddress = it.take(300) },
@@ -322,7 +300,7 @@ fun EditManagedPersonSheet(
                         id = null, label = AddressLabel.HOME, street1 = "", street2 = "", city = "", region = "", postalCode = "", country = "", isCurrent = editAddresses.isEmpty()
                     )
                 }, modifier = Modifier.heightIn(min = 48.dp), enabled = !isSaving) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(PersonaIcons.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("Add address")
                 }
             }
@@ -342,47 +320,6 @@ fun EditManagedPersonSheet(
                     label = "Relationship anniversary · optional",
                     maxDate = LocalDate.now()
                 )
-            }
-            }
-
-            // Relationship-scoped notes; encrypted private vault notes stay in their own flow.
-            PersonaFormSection(title = "Notes", icon = Icons.Default.Notes) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Notes on this relationship", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium), modifier = Modifier.weight(1f))
-                    TextButton(onClick = { editNotesList = editNotesList + EditableManagedNote(id = null, topic = "Personal note", text = "") }, enabled = !isSaving) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Add Note", fontSize = 12.sp)
-                    }
-                }
-                editNotesList.forEachIndexed { idx, noteItem ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            PersonaTextInput(
-                                value = noteItem.text,
-                                onValueChange = { newVal ->
-                                    editNotesList = editNotesList.map { if (it.key == noteItem.key) it.copy(text = newVal.take(5000)) else it }
-                                },
-                                label = if (idx == 0) "Personal note · optional" else "Personal note ${idx + 1} · optional",
-                                singleLine = false, enabled = !isSaving
-                            )
-                        }
-                        if (editNotesList.size > 1) {
-                            TextButton(onClick = { editNotesList = editNotesList.filterNot { it.key == noteItem.key } }, modifier = Modifier.heightIn(min = 48.dp), enabled = !isSaving) {
-                                Text("Remove note", color = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-                }
             }
             }
 
@@ -410,20 +347,6 @@ fun EditManagedPersonSheet(
                     }
                     val savedPhone = normalizedContacts.filter { it.contactType == ContactType.PHONE }.firstOrNull { it.isPrimary }?.value.orEmpty()
                     val savedEmail = normalizedContacts.filter { it.contactType == ContactType.EMAIL }.firstOrNull { it.isPrimary }?.value.orEmpty()
-                    val enteredNotes = editNotesList.filter { it.text.isNotBlank() }
-                    val savedNotes = enteredNotes.joinToString("\n\n") { it.text.trim() }
-                    val relationshipNotes = enteredNotes.map { note ->
-                        val old = editingPerson.editableRelationshipNotes.firstOrNull { it.id == note.id }
-                        old?.copy(topic = note.topic, contentPlaintext = note.text.trim(), updatedAt = System.currentTimeMillis())
-                            ?: RelationshipNoteEntity(
-                                id = note.id ?: note.key,
-                                relationshipId = editingPerson.id,
-                                topic = note.topic,
-                                contentPlaintext = note.text.trim(),
-                                format = NoteFormat.PLAIN,
-                                isPrivate = false
-                            )
-                    }
                     val addressRecords = editAddresses.mapNotNull { address ->
                         if (listOf(address.street1, address.street2, address.city, address.region, address.postalCode, address.country).all(String::isBlank)) null else AddressEntity(
                             id = address.id ?: address.key,
@@ -454,10 +377,8 @@ fun EditManagedPersonSheet(
                             address = editAddress,
                             dob = editDob,
                             anniversary = editAnniversary,
-                            notes = savedNotes,
                             contactMethods = normalizedContacts,
-                            addressRecords = addressRecords,
-                            relationshipNotes = relationshipNotes
+                            addressRecords = addressRecords
                         )
                     ) { result ->
                         isSaving = false
@@ -522,7 +443,7 @@ private fun ContactMethodEditor(
                 },
                 modifier = Modifier.heightIn(min = 48.dp), enabled = enabled
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(PersonaIcons.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(if (type == ContactType.PHONE) "Add phone" else "Add email")
             }
@@ -590,7 +511,7 @@ private fun ContactMethodEditor(
                                 onContactsChange(reordered)
                             },
                             modifier = Modifier.size(48.dp), enabled = enabled
-                        ) { Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move ${type.name.lowercase()} up") }
+                        ) { Icon(PersonaIcons.MoveUp, contentDescription = "Move ${type.name.lowercase()} up") }
                     }
                     if (index < entries.lastIndex) {
                         IconButton(
@@ -604,7 +525,7 @@ private fun ContactMethodEditor(
                                 onContactsChange(reordered)
                             },
                             modifier = Modifier.size(48.dp), enabled = enabled
-                        ) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move ${type.name.lowercase()} down") }
+                        ) { Icon(PersonaIcons.MoveDown, contentDescription = "Move ${type.name.lowercase()} down") }
                     }
                     TextButton(onClick = {
                         val remaining = contacts.filterNot { it.key == entry.key }.toMutableList()

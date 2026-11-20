@@ -18,12 +18,20 @@ interface RelationshipNoteDao {
     @Query("SELECT * FROM relationship_notes WHERE relationship_id = :relationshipId ORDER BY created_at ASC")
     fun getNotesForRelationshipFlow(relationshipId: String): Flow<List<RelationshipNoteEntity>>
 
+    @Query("SELECT * FROM relationship_notes WHERE relationship_id = :relationshipId ORDER BY created_at ASC, id ASC")
+    suspend fun getNotesForRelationship(relationshipId: String): List<RelationshipNoteEntity>
+
     @Transaction
     @Query("SELECT * FROM relationship_notes WHERE relationship_id = :relationshipId ORDER BY created_at ASC")
     fun getNotesWithAttachmentsForRelationshipFlow(relationshipId: String): Flow<List<RelationshipNoteWithAttachments>>
 
-    @Query("SELECT * FROM relationship_notes WHERE relationship_id = :relationshipId AND is_private = 0 ORDER BY created_at ASC")
-    fun getPublicNotesForRelationshipFlow(relationshipId: String): Flow<List<RelationshipNoteEntity>>
+    @Query("""
+        SELECT notes.* FROM relationship_notes AS notes
+        INNER JOIN relationships AS relation ON relation.id = notes.relationship_id
+        WHERE relation.source_person_id = :ownerId AND notes.is_private = 0
+        ORDER BY notes.updated_at DESC, notes.id ASC
+    """)
+    fun getPublicNotesForOwnerFlow(ownerId: String): Flow<List<RelationshipNoteEntity>>
 
     @Query("SELECT COUNT(*) FROM relationship_notes WHERE relationship_id = :relationshipId AND is_private = 1")
     fun getPrivateNoteCountFlow(relationshipId: String): Flow<Int>

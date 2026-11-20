@@ -1,7 +1,7 @@
 package com.pims.vault.presentation.hub
 
-import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,34 +15,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import com.pims.vault.presentation.ui.theme.tactilePress
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.Work
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
@@ -50,14 +28,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.domain.model.PublicResumeData
+import com.pims.vault.presentation.ui.components.PersonaAction
+import com.pims.vault.presentation.ui.components.PersonaActionStyle
+import com.pims.vault.presentation.ui.components.PersonaSheet
+import com.pims.vault.presentation.ui.components.PersonaSheetHeader
+import com.pims.vault.presentation.ui.theme.PimsSpacing
+import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,14 +52,13 @@ fun PublicResumeModal(
     onEditProfile: () -> Unit = {}
 ) {
     val haptics = rememberPimsHaptics()
-    val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val gutter = pimsPageGutter()
 
-    ModalBottomSheet(
+    PersonaSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = null,
+        showDragHandle = false,
         modifier = Modifier.fillMaxSize()
     ) {
         Column(
@@ -91,31 +72,14 @@ fun PublicResumeModal(
                     .fillMaxWidth()
                     .statusBarsPadding()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 20.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Sleek Apple-style circular close button
-                    IconButton(
-                        onClick = {
-                            haptics.light()
-                            onDismissRequest()
-                        },
-                        modifier = Modifier
-                            .size(34.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
+                PersonaSheetHeader(
+                    "Public résumé",
+                    onDismissRequest = {
+                        haptics.light()
+                        onDismissRequest()
+                    },
+                    modifier = Modifier.padding(horizontal = gutter, vertical = PimsSpacing.xs)
+                )
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -126,14 +90,13 @@ fun PublicResumeModal(
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = gutter, vertical = PimsSpacing.m),
+                verticalArrangement = Arrangement.spacedBy(PimsSpacing.m)
             ) {
-                // Resume Content (no card wrapper, fills screen width)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(PimsSpacing.m)
                 ) {
                         // 1. RESUME HEADER
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -166,7 +129,7 @@ fun PublicResumeModal(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Email,
+                                            imageVector = PersonaIcons.Email,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(15.dp)
@@ -184,7 +147,7 @@ fun PublicResumeModal(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Phone,
+                                            imageVector = PersonaIcons.PhoneOutlined,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(15.dp)
@@ -202,7 +165,7 @@ fun PublicResumeModal(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Home,
+                                            imageVector = PersonaIcons.Home,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(15.dp)
@@ -230,7 +193,7 @@ fun PublicResumeModal(
 
                         // 3. EXPERIENCE
                         if (data.hasCareerHistory) {
-                            ResumeSection(title = "Experience", icon = Icons.Default.Work) {
+                            ResumeSection(title = "Experience", icon = PersonaIcons.Work) {
                                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                     data.employments.forEach { emp ->
                                         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -294,7 +257,7 @@ fun PublicResumeModal(
 
                         // 4. EDUCATION & QUALIFICATIONS
                         if (data.educations.isNotEmpty()) {
-                            ResumeSection(title = "Education", icon = Icons.Default.School) {
+                            ResumeSection(title = "Education", icon = PersonaIcons.Education) {
                                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     data.educations.forEach { edu ->
                                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -328,7 +291,7 @@ fun PublicResumeModal(
 
                         // 5. CERTIFICATIONS
                         if (data.certificates.isNotEmpty()) {
-                            ResumeSection(title = "Certifications", icon = Icons.Default.Verified) {
+                            ResumeSection(title = "Certifications", icon = PersonaIcons.Verified) {
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     data.certificates.forEach { cert ->
                                         Row(
@@ -370,7 +333,7 @@ fun PublicResumeModal(
 
                         // 7. ONLINE PRESENCE & LINKS
                         if (data.hasSocialLinks) {
-                            ResumeSection(title = "Online & Social Presence", icon = Icons.Default.Link) {
+                            ResumeSection(title = "Online & Social Presence", icon = PersonaIcons.Link) {
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     data.socialAccounts.forEach { acc ->
                                         Row(
@@ -379,7 +342,7 @@ fun PublicResumeModal(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.Link,
+                                                imageVector = PersonaIcons.Link,
                                                 contentDescription = null,
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(14.dp)
@@ -411,45 +374,29 @@ fun PublicResumeModal(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(horizontal = gutter, vertical = PimsSpacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(PimsSpacing.sm)
                 ) {
-                    OutlinedButton(
+                    PersonaAction(
+                        label = "Edit information",
                         onClick = {
                             haptics.light()
                             onEditProfile()
                         },
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .tactilePress(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
-                    ) {
-                        Icon(Icons.Default.Edit, null, modifier = Modifier.size(17.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Edit Information", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    }
+                        modifier = Modifier.weight(1f),
+                        style = PersonaActionStyle.Quiet,
+                        icon = PersonaIcons.Edit
+                    )
 
-                    Button(
+                    PersonaAction(
+                        label = "Export to PDF",
                         onClick = {
                             haptics.light()
                             onExportPdf()
                         },
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .tactilePress()
-                    ) {
-                        Icon(Icons.Default.FileDownload, null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Export to PDF", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
+                        modifier = Modifier.weight(1f),
+                        icon = PersonaIcons.FileDownload
+                    )
                 }
             }
         }

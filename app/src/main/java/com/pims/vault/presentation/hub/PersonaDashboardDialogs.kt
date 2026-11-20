@@ -1,9 +1,12 @@
 package com.pims.vault.presentation.hub
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,21 +17,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,6 +60,39 @@ import com.pims.vault.presentation.ui.components.StandardDateInput
 import com.pims.vault.presentation.ui.util.PimsHaptics
 import com.pims.vault.presentation.ui.util.PimsSoundManager
 import java.time.LocalDate
+
+@Composable
+private fun ProfileSaveDialog(
+    title: String,
+    onClose: () -> Unit,
+    canSave: Boolean,
+    save: ((Boolean) -> Unit) -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    var saving by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    PersonaDialog(
+        onDismissRequest = { if (!saving) onClose() },
+        title = title,
+        confirmText = if (saving) "Saving…" else "Save",
+        confirmEnabled = canSave && !saving,
+        onConfirm = {
+            if (!saving) {
+                saving = true
+                failed = false
+                save { success ->
+                    saving = false
+                    if (success) onClose() else failed = true
+                }
+            }
+        }
+    ) {
+        content()
+        if (failed) {
+            Text("Could not save. Try again.", color = MaterialTheme.colorScheme.error)
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -217,16 +242,17 @@ fun PersonaDashboardDialogs(
         var isCurrent by remember { mutableStateOf(false) }
         var responsibilities by remember { mutableStateOf("") }
 
-        PersonaDialog(
-            onDismissRequest = { onHideDialog("addWork") },
-            title = "Add Experience / Project",
-            confirmText = "Save",
-            confirmEnabled = company.isNotBlank() && position.isNotBlank(),
-            onConfirm = {
-                if (company.isNotBlank() && position.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddWorkHistory(company.trim(), position.trim(), null, null, startYear.trim(), endYear.trim(), isCurrent, responsibilities.trim()))
-                }
-                onHideDialog("addWork")
+        ProfileSaveDialog(
+            title = "Add experience or project",
+            onClose = { onHideDialog("addWork") },
+            canSave = company.isNotBlank() && position.isNotBlank(),
+            save = { onSaved ->
+                profileViewModel.onEvent(
+                    ProfileEvent.AddWorkHistory(
+                        company.trim(), position.trim(), null, null, startYear.trim(),
+                        endYear.trim(), isCurrent, responsibilities.trim()
+                    )
+                ) { onSaved(it.isSuccess) }
             }
         ) {
             PersonaTextInput(value = company, onValueChange = { company = it }, label = "Company or organisation", placeholder = "e.g. Acme Corp")
@@ -251,16 +277,16 @@ fun PersonaDashboardDialogs(
         var field by remember { mutableStateOf("") }
         var year by remember { mutableStateOf("") }
 
-        PersonaDialog(
-            onDismissRequest = { onHideDialog("addEdu") },
-            title = "Add Qualification",
-            confirmText = "Save",
-            confirmEnabled = institution.isNotBlank() && qualification.isNotBlank(),
-            onConfirm = {
-                if (institution.isNotBlank() && qualification.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddQualification(institution.trim(), qualification.trim(), field.trim(), null, year.trim(), null, null))
-                }
-                onHideDialog("addEdu")
+        ProfileSaveDialog(
+            title = "Add qualification",
+            onClose = { onHideDialog("addEdu") },
+            canSave = institution.isNotBlank() && qualification.isNotBlank(),
+            save = { onSaved ->
+                profileViewModel.onEvent(
+                    ProfileEvent.AddQualification(
+                        institution.trim(), qualification.trim(), field.trim(), null, year.trim(), null, null
+                    )
+                ) { onSaved(it.isSuccess) }
             }
         ) {
             PersonaTextInput(value = institution, onValueChange = { institution = it }, label = "Institution / University", placeholder = "e.g. Oxford University")
@@ -277,16 +303,14 @@ fun PersonaDashboardDialogs(
         var dateVal by remember { mutableStateOf("") }
         var credId by remember { mutableStateOf("") }
 
-        PersonaDialog(
-            onDismissRequest = { onHideDialog("addCert") },
-            title = "Add Certificate",
-            confirmText = "Save",
-            confirmEnabled = certTitle.isNotBlank() && issuer.isNotBlank(),
-            onConfirm = {
-                if (certTitle.isNotBlank() && issuer.isNotBlank()) {
-                    profileViewModel.onEvent(ProfileEvent.AddCertificate(certTitle.trim(), issuer.trim(), dateVal.trim(), null, credId.trim(), null))
-                }
-                onHideDialog("addCert")
+        ProfileSaveDialog(
+            title = "Add certificate",
+            onClose = { onHideDialog("addCert") },
+            canSave = certTitle.isNotBlank() && issuer.isNotBlank(),
+            save = { onSaved ->
+                profileViewModel.onEvent(
+                    ProfileEvent.AddCertificate(certTitle.trim(), issuer.trim(), dateVal.trim(), null, credId.trim(), null)
+                ) { onSaved(it.isSuccess) }
             }
         ) {
             PersonaTextInput(value = certTitle, onValueChange = { certTitle = it }, label = "Certificate name", placeholder = "e.g. CCNA")
@@ -393,7 +417,7 @@ fun PersonaDashboardDialogs(
             // Section 1: Relationship & Identity
             PersonaFormSection(
                 title = "Relationship & Identity",
-                icon = Icons.Default.Person
+                icon = PersonaIcons.Me
             ) {
                 PersonaSearchableCombobox(
                     label = "How are you connected?",
@@ -424,7 +448,7 @@ fun PersonaDashboardDialogs(
             // Section 2: Contact Details
             PersonaFormSection(
                 title = "Contact Information",
-                icon = Icons.Default.Phone
+                icon = PersonaIcons.PhoneOutlined
             ) {
                 // Phone Numbers
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -435,7 +459,7 @@ fun PersonaDashboardDialogs(
                     ) {
                         Text("Phone Numbers", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
                         TextButton(onClick = { relPhones = relPhones + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(PersonaIcons.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Add Phone", fontSize = 12.sp)
                         }
@@ -462,7 +486,7 @@ fun PersonaDashboardDialogs(
                                     },
                                     modifier = Modifier.size(36.dp)
                                 ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                    Icon(PersonaIcons.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -478,7 +502,7 @@ fun PersonaDashboardDialogs(
                     ) {
                         Text("Email Addresses", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
                         TextButton(onClick = { relEmails = relEmails + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(PersonaIcons.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Add Email", fontSize = 12.sp)
                         }
@@ -507,7 +531,7 @@ fun PersonaDashboardDialogs(
                                     },
                                     modifier = Modifier.size(36.dp)
                                 ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                    Icon(PersonaIcons.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -525,7 +549,7 @@ fun PersonaDashboardDialogs(
             // Section 3: Important Dates & Notes
             PersonaFormSection(
                 title = "Dates & Notes",
-                icon = Icons.Default.CalendarToday
+                icon = PersonaIcons.CalendarToday
             ) {
                 StandardDateInput(
                     isoDate = relDob,
@@ -550,7 +574,7 @@ fun PersonaDashboardDialogs(
                     ) {
                         Text("Private Notes", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
                         TextButton(onClick = { relNotesList = relNotesList + "" }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(PersonaIcons.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Add Note", fontSize = 12.sp)
                         }
@@ -579,7 +603,7 @@ fun PersonaDashboardDialogs(
                                     },
                                     modifier = Modifier.size(36.dp)
                                 ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                                    Icon(PersonaIcons.Close, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -631,7 +655,7 @@ fun PersonaDashboardDialogs(
         var selectedCategory by remember {
             mutableStateOf(InformationCategory.fromName(customFieldCategory))
         }
-        var categoryDropdownExpanded by remember { mutableStateOf(false) }
+        val categories = InformationCategory.entries.associateBy { it.displayName }
 
         val recognizedField = remember(customLabel) {
             com.pims.vault.core.domain.SemanticFieldRecognizer.resolve(customLabel)
@@ -642,69 +666,34 @@ fun PersonaDashboardDialogs(
             }
         }
 
-        PersonaDialog(
-            onDismissRequest = { onHideDialog("addCustomField") },
-            title = "Add Custom Information",
-            confirmText = "Save Field",
-            confirmEnabled = customLabel.isNotBlank() && customVal.isNotBlank(),
-            onConfirm = {
-                if (customLabel.isNotBlank() && customVal.isNotBlank()) {
-                    profileViewModel.onEvent(
-                        ProfileEvent.AddCustomField(
-                            label = customLabel.trim(),
-                            value = customVal.trim(),
-                            category = selectedCategory
-                        )
+        ProfileSaveDialog(
+            title = "Add custom information",
+            onClose = { onHideDialog("addCustomField") },
+            canSave = customLabel.isNotBlank() && customVal.isNotBlank(),
+            save = { onSaved ->
+                profileViewModel.onEvent(
+                    ProfileEvent.AddCustomField(
+                        label = customLabel.trim(),
+                        value = customVal.trim(),
+                        category = selectedCategory,
+                        onComplete = { success ->
+                            onSaved(success)
+                            if (success) {
+                                soundManager.success()
+                                haptics.success()
+                            }
+                        }
                     )
-                    recentActivityManager.recordActivity("Added custom information item", "${selectedCategory.displayName}: ${customLabel.trim()}")
-                    soundManager.success()
-                    haptics.success()
-                }
-                onHideDialog("addCustomField")
+                )
             }
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Category Picker
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "Category / Type",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                    ExposedDropdownMenuBox(
-                        expanded = categoryDropdownExpanded,
-                        onExpandedChange = { categoryDropdownExpanded = !categoryDropdownExpanded }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedCategory.displayName,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryDropdownExpanded) },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .menuAnchor()
-                                .fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = categoryDropdownExpanded,
-                            onDismissRequest = { categoryDropdownExpanded = false },
-                            modifier = Modifier
-                                .exposedDropdownSize(matchTextFieldWidth = true)
-                                .heightIn(max = 240.dp)
-                        ) {
-                            InformationCategory.values().forEach { cat ->
-                                DropdownMenuItem(
-                                    text = { Text(cat.displayName) },
-                                    onClick = {
-                                        selectedCategory = cat
-                                        categoryDropdownExpanded = false
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                PersonaDropdownSelector(
+                    selectedOption = selectedCategory.displayName,
+                    options = categories.keys.toList(),
+                    onOptionSelected = { categories[it]?.let { category -> selectedCategory = category } },
+                    label = "Category"
+                )
 
                 PersonaTextInput(
                     value = customLabel,
@@ -725,13 +714,13 @@ fun PersonaDashboardDialogs(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Info,
+                                imageVector = PersonaIcons.Info,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(14.dp)
                             )
                             Text(
-                                text = "💡 Recognized: ${recognizedField.canonicalName} (${recognizedField.category.displayName})",
+                                text = "${recognizedField.canonicalName} · ${recognizedField.category.displayName}",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                                 color = MaterialTheme.colorScheme.primary
                             )

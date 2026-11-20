@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -24,6 +25,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -39,6 +42,10 @@ import com.pims.vault.presentation.ui.components.PersonaTextInput
 import com.pims.vault.presentation.ui.components.PersonaToggleRow
 import com.pims.vault.presentation.notes.NoteListRow
 import com.pims.vault.domain.model.PlainNote
+import com.pims.vault.core.model.InformationCategory
+import com.pims.vault.core.model.InformationSensitivity
+import com.pims.vault.presentation.library.InformationLibraryScreen
+import com.pims.vault.presentation.library.LibraryItem
 import com.pims.vault.presentation.ui.theme.PersonaMood
 import com.pims.vault.presentation.ui.theme.PimsVaultTheme
 import com.pims.vault.presentation.ui.theme.ThemeMode
@@ -52,6 +59,32 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SharedControlsDeviceTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun darkLibraryInheritsReadableInkAndUsesOneCategoryFilter() {
+        compose.setContent {
+            PimsVaultTheme(themeMode = ThemeMode.DARK, isReducedMotion = true) {
+                assertEquals(MaterialTheme.colorScheme.onSurface, LocalContentColor.current)
+                InformationLibraryScreen(
+                    items = listOf(LibraryItem(
+                        id = "synthetic-name",
+                        title = "Legal name",
+                        subtitle = "Example Person",
+                        category = InformationCategory.PERSONAL,
+                        sensitivity = InformationSensitivity.NORMAL
+                    )),
+                    onBack = {},
+                    onRequestAuthToReveal = { error("A legal name should be readable without another prompt") },
+                    onOpenDestination = {},
+                    modifier = Modifier.testTag("fixture")
+                )
+            }
+        }
+        compose.onNodeWithText("Example Person").assertIsDisplayed()
+        compose.onNodeWithText("All information").performClick()
+        compose.onNode(hasText("Personal") and hasClickAction()).performClick()
+        compose.onNodeWithText("Example Person").assertIsDisplayed()
+        saveSyntheticPreview("information-library-dark.png")
+    }
 
     @Test fun darkSwitchTogglesOnceAndDisabledStateIsDistinct() {
         var checked by mutableStateOf(false)

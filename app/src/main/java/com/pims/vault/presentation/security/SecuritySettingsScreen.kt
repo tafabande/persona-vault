@@ -22,16 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Password
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,11 +56,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.security.PinSecurityManager
+import com.pims.vault.core.security.PinVerification
+import com.pims.vault.presentation.MainActivity
 import com.pims.vault.presentation.ui.components.pimsGlassMicroBorder
 import com.pims.vault.presentation.ui.components.pimsGlassSurfaceBrush
 import com.pims.vault.presentation.ui.theme.LocalPimsDarkTheme
+import com.pims.vault.presentation.ui.theme.PersonaIcons
 import com.pims.vault.presentation.ui.theme.pimsPageGutter
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,9 +78,9 @@ fun SecuritySettingsScreen(
     val scrollState = rememberScrollState()
 
     val isPinConfigured by pinSecurityManager.isPinConfigured.collectAsState()
+    val acceptsLegacyPinInput by pinSecurityManager.acceptsLegacyPinInput.collectAsState()
     val isBiometricEnabled by pinSecurityManager.isBiometricEnabled.collectAsState()
     val sessionTimeout by pinSecurityManager.sessionTimeoutMinutes.collectAsState()
-    val requireAuthPasswords by pinSecurityManager.requireAuthForPasswords.collectAsState()
     val requireAuthSensitive by pinSecurityManager.requireAuthForSensitive.collectAsState()
 
     var showPinSetupDialog by remember { mutableStateOf(false) }
@@ -95,26 +90,23 @@ fun SecuritySettingsScreen(
 
     var pendingGatedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var showPinChallengeDialog by remember { mutableStateOf(false) }
+    var authError by remember { mutableStateOf<String?>(null) }
 
-    fun executeGatedAction(title: String, subtitle: String, action: () -> Unit) {
-        if (onRequestBiometricAuth != null && isBiometricEnabled) {
-            onRequestBiometricAuth(
-                title,
-                subtitle,
-                action,
-                {
-                    if (isPinConfigured) {
-                        pendingGatedAction = action
-                        showPinChallengeDialog = true
-                    }
+    fun executeGatedAction(title: String, subtitle: String, allowFirstPin: Boolean = false, action: () -> Unit) {
+        val fallback: (String) -> Unit = { message ->
+            when {
+                pinSecurityManager.hasPin() -> {
+                    pendingGatedAction = action
+                    showPinChallengeDialog = true
                 }
-            )
-        } else if (isPinConfigured) {
-            pendingGatedAction = action
-            showPinChallengeDialog = true
+                allowFirstPin && message == MainActivity.DEVICE_AUTH_UNAVAILABLE -> action()
+                else -> authError = message
+            }
+        }
+        if (onRequestBiometricAuth != null) {
+            onRequestBiometricAuth(title, subtitle, action, fallback)
         } else {
-            // First time PIN setup
-            action()
+            fallback(MainActivity.DEVICE_AUTH_UNAVAILABLE)
         }
     }
 
@@ -153,7 +145,7 @@ fun SecuritySettingsScreen(
                     haptics.light()
                     onBack()
                 }) {
-                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back")
+                    Icon(imageVector = PersonaIcons.ArrowBack, contentDescription = "Back")
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -198,12 +190,12 @@ fun SecuritySettingsScreen(
                                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.Password, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    Icon(PersonaIcons.Key, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                 }
                                 Column {
                                     Text("App PIN", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
                                     Text(
-                                        if (isPinConfigured) "PIN configured (••••)" else "Not set up",
+                                        if (isPinConfigured) "PIN configured" else "Not set up",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -212,25 +204,17 @@ fun SecuritySettingsScreen(
 
                             if (isPinConfigured) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    TextButton(onClick = {
-                                        executeGatedAction("Verify Identity", "Authenticate to change App PIN") {
-                                            showChangePinDialog = true
-                                        }
-                                    }) {
+                                    TextButton(onClick = { showChangePinDialog = true }) {
                                         Text("Change", fontWeight = FontWeight.Bold)
                                     }
-                                    TextButton(onClick = {
-                                        executeGatedAction("Verify Identity", "Authenticate to disable App PIN") {
-                                            showDisablePinDialog = true
-                                        }
-                                    }) {
-                                        Text("Disable", color = MaterialTheme.colorScheme.error)
+                                    TextButton(onClick = { showDisablePinDialog = true }) {
+                                        Text("Disable")
                                     }
                                 }
                             } else {
                                 Button(
                                     onClick = {
-                                        executeGatedAction("Verify Identity", "Authenticate to set up App PIN") {
+                                        executeGatedAction("Verify identity", "Authenticate to set up App PIN", allowFirstPin = true) {
                                             showPinSetupDialog = true
                                         }
                                     },
@@ -260,7 +244,7 @@ fun SecuritySettingsScreen(
                                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.Fingerprint, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    Icon(PersonaIcons.Biometric, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                 }
                                 Column {
                                     Text("Biometric Authentication", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
@@ -275,8 +259,11 @@ fun SecuritySettingsScreen(
                             Switch(
                                 checked = isBiometricEnabled,
                                 onCheckedChange = {
-                                    haptics.selection()
-                                    pinSecurityManager.setBiometricEnabled(it)
+                                    val enabled = it
+                                    executeGatedAction("Verify identity", "Authenticate to change biometric settings.") {
+                                        haptics.selection()
+                                        pinSecurityManager.setBiometricEnabled(enabled)
+                                    }
                                 }
                             )
                         }
@@ -304,7 +291,7 @@ fun SecuritySettingsScreen(
                                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.Timer, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                    Icon(PersonaIcons.Timer, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                 }
                                 Column {
                                     Text("Session Timeout & Auto-Lock", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
@@ -333,23 +320,10 @@ fun SecuritySettingsScreen(
                         .background(brush = pimsGlassSurfaceBrush(isDark = isDark), shape = RoundedCornerShape(16.dp))
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        // Passwords protection
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Password Protection", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-                                Text("Require biometric or PIN before revealing passwords", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = requireAuthPasswords,
-                                onCheckedChange = {
-                                    haptics.selection()
-                                    pinSecurityManager.setRequireAuthForPasswords(it)
-                                }
-                            )
+                        Column {
+                            Text("Security Vault", style = MaterialTheme.typography.titleMedium)
+                            Text("A strong biometric is required to unlock critical records.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
@@ -361,14 +335,17 @@ fun SecuritySettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Bank Cards & Sensitive IDs", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-                                Text("Require auth before revealing card numbers, CVVs, or document photos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Sensitive documents", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                                Text("Require verification before opening sensitive documents.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Switch(
                                 checked = requireAuthSensitive,
                                 onCheckedChange = {
-                                    haptics.selection()
-                                    pinSecurityManager.setRequireAuthForSensitive(it)
+                                    val required = it
+                                    executeGatedAction("Verify identity", "Authenticate to change document protection.") {
+                                        haptics.selection()
+                                        pinSecurityManager.setRequireAuthForSensitive(required)
+                                    }
                                 }
                             )
                         }
@@ -390,6 +367,7 @@ fun SecuritySettingsScreen(
                     haptics.success()
                     showPinSetupDialog = false
                 }
+                ok
             },
             onDismiss = { showPinSetupDialog = false }
         )
@@ -398,16 +376,16 @@ fun SecuritySettingsScreen(
     // Dialog 2: Change PIN
     if (showChangePinDialog) {
         PinChangeDialog(
+            acceptsLegacyPinInput = acceptsLegacyPinInput,
             onChangePin = { oldPin, newPin ->
-                val ok = pinSecurityManager.changePin(oldPin, newPin)
-                if (ok) {
+                val result = pinSecurityManager.changePin(oldPin, newPin)
+                if (result == PinVerification.Verified) {
                     haptics.success()
                     showChangePinDialog = false
-                    true
                 } else {
                     haptics.warning()
-                    false
                 }
+                result
             },
             onDismiss = { showChangePinDialog = false }
         )
@@ -417,23 +395,29 @@ fun SecuritySettingsScreen(
     if (showDisablePinDialog) {
         var disablePinInput by remember { mutableStateOf("") }
         var disableError by remember { mutableStateOf<String?>(null) }
+        var submitting by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
 
         AlertDialog(
             onDismissRequest = { showDisablePinDialog = false },
-            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            icon = { Icon(PersonaIcons.Warning, null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("Disable App PIN?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Enter your current PIN to confirm disabling. Biometrics will become the only local auth method.")
+                    Text("Enter your current App PIN. Protected information will require verification through your device screen lock.")
                     OutlinedTextField(
                         value = disablePinInput,
                         onValueChange = {
-                            disablePinInput = it
-                            disableError = null
+                            if (!submitting && it.length <= 8 && (acceptsLegacyPinInput || it.all { digit -> digit in '0'..'9' })) {
+                                disablePinInput = it
+                                disableError = null
+                            }
                         },
                         placeholder = { Text("Current PIN") },
                         visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = if (acceptsLegacyPinInput) KeyboardType.Password else KeyboardType.NumberPassword
+                        ),
                         isError = disableError != null,
                         supportingText = disableError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                         singleLine = true,
@@ -444,15 +428,22 @@ fun SecuritySettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val ok = pinSecurityManager.disablePin(disablePinInput)
-                        if (ok) {
-                            haptics.success()
-                            showDisablePinDialog = false
-                        } else {
-                            haptics.warning()
-                            disableError = "Incorrect current PIN"
+                        val currentPin = disablePinInput
+                        disablePinInput = ""
+                        submitting = true
+                        scope.launch {
+                            val result = pinSecurityManager.disablePin(currentPin)
+                            submitting = false
+                            if (result == PinVerification.Verified) {
+                                haptics.success()
+                                showDisablePinDialog = false
+                            } else {
+                                haptics.warning()
+                                disableError = result.failureMessage()
+                            }
                         }
                     },
+                    enabled = !submitting && disablePinInput.length >= 4,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
                     Text("Disable PIN")
@@ -489,7 +480,7 @@ fun SecuritySettingsScreen(
                         ) {
                             Text("$mins minutes", style = MaterialTheme.typography.bodyLarge)
                             if (isSelected) {
-                                Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
+                                Icon(PersonaIcons.Check, null, tint = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -520,6 +511,14 @@ fun SecuritySettingsScreen(
             }
         )
     }
+    authError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { authError = null },
+            title = { Text("Verification required") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { authError = null }) { Text("Close") } }
+        )
+    }
 }
 
 @Composable
@@ -540,12 +539,14 @@ private fun PinEntryDialog(
     title: String,
     subtitle: String,
     isConfirmMode: Boolean,
-    onConfirm: (String) -> Unit,
+    onConfirm: suspend (String) -> Boolean,
     onDismiss: () -> Unit
 ) {
     var pin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var submitting by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -557,7 +558,7 @@ private fun PinEntryDialog(
                 OutlinedTextField(
                     value = pin,
                     onValueChange = {
-                        if (it.length <= 8) {
+                        if (!submitting && it.length <= 8 && it.all { digit -> digit in '0'..'9' }) {
                             pin = it
                             error = null
                         }
@@ -573,7 +574,7 @@ private fun PinEntryDialog(
                     OutlinedTextField(
                         value = confirmPin,
                         onValueChange = {
-                            if (it.length <= 8) {
+                            if (!submitting && it.length <= 8 && it.all { digit -> digit in '0'..'9' }) {
                                 confirmPin = it
                                 error = null
                             }
@@ -592,14 +593,22 @@ private fun PinEntryDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (pin.length < 4) {
-                        error = "PIN must be at least 4 digits"
+                    if (!PinSecurityManager.isNewPinValid(pin)) {
+                        error = "Use a PIN with 4 to 8 digits"
                     } else if (isConfirmMode && pin != confirmPin) {
                         error = "PINs do not match"
                     } else {
-                        onConfirm(pin)
+                        val submitted = pin
+                        pin = ""
+                        confirmPin = ""
+                        submitting = true
+                        scope.launch {
+                            if (!onConfirm(submitted)) error = "Unable to save the App PIN."
+                            submitting = false
+                        }
                     }
-                }
+                },
+                enabled = !submitting
             ) {
                 Text("Set PIN")
             }
@@ -614,13 +623,16 @@ private fun PinEntryDialog(
 
 @Composable
 private fun PinChangeDialog(
-    onChangePin: (oldPin: String, newPin: String) -> Boolean,
+    acceptsLegacyPinInput: Boolean,
+    onChangePin: suspend (oldPin: String, newPin: String) -> PinVerification,
     onDismiss: () -> Unit
 ) {
     var oldPin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var confirmNewPin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var submitting by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -630,12 +642,16 @@ private fun PinChangeDialog(
                 OutlinedTextField(
                     value = oldPin,
                     onValueChange = {
-                        oldPin = it
-                        error = null
+                        if (!submitting && it.length <= 8 && (acceptsLegacyPinInput || it.all { digit -> digit in '0'..'9' })) {
+                            oldPin = it
+                            error = null
+                        }
                     },
                     placeholder = { Text("Current PIN") },
                     visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = if (acceptsLegacyPinInput) KeyboardType.Password else KeyboardType.NumberPassword
+                    ),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -643,8 +659,10 @@ private fun PinChangeDialog(
                 OutlinedTextField(
                     value = newPin,
                     onValueChange = {
-                        newPin = it
-                        error = null
+                        if (!submitting && it.length <= 8 && it.all { digit -> digit in '0'..'9' }) {
+                            newPin = it
+                            error = null
+                        }
                     },
                     placeholder = { Text("New PIN (4–8 digits)") },
                     visualTransformation = PasswordVisualTransformation(),
@@ -656,8 +674,10 @@ private fun PinChangeDialog(
                 OutlinedTextField(
                     value = confirmNewPin,
                     onValueChange = {
-                        confirmNewPin = it
-                        error = null
+                        if (!submitting && it.length <= 8 && it.all { digit -> digit in '0'..'9' }) {
+                            confirmNewPin = it
+                            error = null
+                        }
                     },
                     placeholder = { Text("Confirm New PIN") },
                     visualTransformation = PasswordVisualTransformation(),
@@ -674,17 +694,25 @@ private fun PinChangeDialog(
                 onClick = {
                     if (oldPin.isBlank()) {
                         error = "Please enter your current PIN"
-                    } else if (newPin.length < 4) {
-                        error = "New PIN must be at least 4 digits"
+                    } else if (!PinSecurityManager.isNewPinValid(newPin)) {
+                        error = "Use a new PIN with 4 to 8 digits"
                     } else if (newPin != confirmNewPin) {
                         error = "New PINs do not match"
                     } else {
-                        val success = onChangePin(oldPin, newPin)
-                        if (!success) {
-                            error = "Current PIN is incorrect"
+                        val current = oldPin
+                        val replacement = newPin
+                        oldPin = ""
+                        newPin = ""
+                        confirmNewPin = ""
+                        submitting = true
+                        scope.launch {
+                            val result = onChangePin(current, replacement)
+                            submitting = false
+                            if (result != PinVerification.Verified) error = result.failureMessage()
                         }
                     }
-                }
+                },
+                enabled = !submitting
             ) {
                 Text("Update PIN")
             }

@@ -1,13 +1,11 @@
 package com.pims.vault.presentation.avatar
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,9 +18,9 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pims.vault.core.res.AppResources
+import com.pims.vault.presentation.media.rememberPhotoPreview
 import com.pims.vault.presentation.ui.theme.tactilePress
 import com.pims.vault.presentation.ui.util.rememberPimsHaptics
-import java.io.File
 
 /**
  * WhatsApp-Style Persona Profile Avatar:
@@ -46,16 +44,7 @@ fun PersonaAvatar(
 ) {
     val haptics = rememberPimsHaptics()
 
-    val customBitmap = remember(config?.customAvatarPath) {
-        config?.customAvatarPath?.let { path ->
-            try {
-                val file = File(path)
-                if (file.exists()) BitmapFactory.decodeFile(path) else null
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
+    val customBitmap = rememberPhotoPreview(config?.customAvatarPath)
 
     val isFemale = config?.gender == AvatarGender.FEMALE
 

@@ -124,9 +124,5 @@ data class RelationshipNote(
 ) {
     /** Tags are derived from authored text so private note metadata stays encrypted with its content. */
     val tags: List<String>
-        get() = Regex("#([A-Za-z0-9_]+)")
-            .findAll("$topic $content")
-            .map { it.groupValues[1] }
-            .distinctBy { it.lowercase() }
-            .toList()
+        get() = noteHashtags(topic, content)
 }

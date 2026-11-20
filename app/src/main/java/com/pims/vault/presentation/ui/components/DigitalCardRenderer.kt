@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.components
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -20,13 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -212,7 +207,7 @@ fun DigitalCardRepresentation(
                                 )
 
                                 Icon(
-                                    imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    imageVector = if (isSecretRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                     contentDescription = "Toggle reveal",
                                     tint = Color.White.copy(alpha = 0.7f),
                                     modifier = Modifier
@@ -270,7 +265,7 @@ fun DigitalCardRepresentation(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Lock,
+                            imageVector = PersonaIcons.Lock,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
@@ -419,7 +414,7 @@ fun FinancialCardRepresentation(
                                 modifier = Modifier.size(24.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (isSecretRevealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    imageVector = if (isSecretRevealed) PersonaIcons.VisibilityOff else PersonaIcons.Visibility,
                                     contentDescription = "Reveal card number",
                                     tint = Color.White.copy(alpha = 0.8f),
                                     modifier = Modifier.size(18.dp)
@@ -495,7 +490,7 @@ fun FinancialCardRepresentation(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Lock,
+                                imageVector = PersonaIcons.Lock,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
@@ -526,7 +521,7 @@ fun FinancialCardRepresentation(
                     }
 
                     Text(
-                        text = "🔒 Sensitive image safeguard: Never store unmasked CVV codes or visible payment credentials.",
+                        text = "Cover CVV codes and visible payment credentials before attaching an image.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     )

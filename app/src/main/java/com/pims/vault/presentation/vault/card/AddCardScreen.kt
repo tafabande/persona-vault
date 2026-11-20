@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.vault.card
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,9 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -74,7 +73,6 @@ import com.pims.vault.presentation.vault.card.CardSkinCatalogue
 import com.pims.vault.presentation.vault.card.CardSkin
 
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.LaunchedEffect
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -177,7 +175,7 @@ fun AddCardScreen(
                 navigationIcon = {
                     IconButton(onClick = close, enabled = !isSaving) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            imageVector = PersonaIcons.ArrowBack,
                             contentDescription = "Back",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
@@ -187,7 +185,7 @@ fun AddCardScreen(
                     Box {
                         IconButton(onClick = { showOptionsMenu = true }) {
                             Icon(
-                                imageVector = Icons.Default.MoreVert,
+                                imageVector = PersonaIcons.MoreActions,
                                 contentDescription = "Card options",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )

@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.vault.components
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -7,11 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -213,7 +210,7 @@ fun VaultProofSection(itemId: String, personId: String, modifier: Modifier = Mod
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Proof images", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             TextButton(onClick = { picker.launch(arrayOf("image/jpeg", "image/png")) }, enabled = !state.busy) {
-                Icon(Icons.Default.AddPhotoAlternate, null, Modifier.size(20.dp))
+                Icon(PersonaIcons.Photo, null, Modifier.size(20.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Add image")
             }
@@ -222,12 +219,12 @@ fun VaultProofSection(itemId: String, personId: String, modifier: Modifier = Mod
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).clickable(enabled = !state.busy) { viewModel.open(proof) }
                     .padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Image, null, tint = MaterialTheme.colorScheme.primary)
+                    Icon(PersonaIcons.Image, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(12.dp))
                     Text("Image ${index + 1}", style = MaterialTheme.typography.bodyLarge)
                 }
                 IconButton(onClick = { pendingRemoval = proof }, enabled = !state.busy) {
-                    Icon(Icons.Default.DeleteOutline, "Remove image ${index + 1}")
+                    Icon(PersonaIcons.DeleteOutline, "Remove image ${index + 1}")
                 }
             }
         }
@@ -253,7 +250,7 @@ fun VaultProofSection(itemId: String, personId: String, modifier: Modifier = Mod
                 Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                     Image(bitmap.asImageBitmap(), "Proof image", Modifier.fillMaxSize().padding(16.dp), contentScale = ContentScale.Fit)
                     IconButton(onClick = viewModel::closePreview, modifier = Modifier.align(Alignment.TopEnd)) {
-                        Icon(Icons.Default.Close, "Close image")
+                        Icon(PersonaIcons.Close, "Close image")
                     }
                 }
             }

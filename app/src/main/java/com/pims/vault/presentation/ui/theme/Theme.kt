@@ -14,6 +14,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -78,6 +79,8 @@ object PimsSpacing {
 }
 
 object PimsControlSize {
+    val action: Dp = 48.dp
+    val informationRow: Dp = 56.dp
     val compactInput: Dp = 48.dp
     val standardInput: Dp = 56.dp
     val selector: Dp = 52.dp
@@ -602,7 +605,9 @@ fun PimsVaultTheme(
             typography = PimsTypography,
             shapes = PimsShapes
         ) {
-            PersonaThemeContent(mood = mood, isReducedMotion = isReducedMotion, content = content)
+            CompositionLocalProvider(LocalContentColor provides colorScheme.onSurface) {
+                PersonaThemeContent(mood = mood, isReducedMotion = isReducedMotion, content = content)
+            }
         }
     }
 }

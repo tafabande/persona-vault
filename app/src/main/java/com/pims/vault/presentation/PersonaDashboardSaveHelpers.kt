@@ -222,12 +222,19 @@ internal suspend fun handleCentralizedInfoSave(
 
     customList.forEach { cf ->
         if (cf.label.isNotBlank() && cf.value.isNotBlank()) {
-            awaitProfileEvent(profileViewModel,
-                ProfileEvent.AddCustomField(
+            awaitProfileSave { completion ->
+                profileViewModel.onEvent(ProfileEvent.AddCustomField(
+                    id = cf.id,
                     label = cf.label.trim(),
-                    value = cf.value.trim()
-                )
-            )
+                    value = cf.value.trim(),
+                    category = cf.category,
+                    onComplete = { saved ->
+                        completion(if (saved) Result.success(Unit) else Result.failure(
+                            IllegalStateException("Could not save additional information")
+                        ))
+                    }
+                )) { result -> if (result.isFailure) completion(result) }
+            }
         }
     }
 

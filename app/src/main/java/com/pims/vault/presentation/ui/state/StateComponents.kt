@@ -1,5 +1,7 @@
 package com.pims.vault.presentation.ui.state
 
+import com.pims.vault.presentation.ui.theme.PersonaIcons
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -25,15 +27,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,10 +58,10 @@ import com.pims.vault.presentation.ui.theme.PimsColors.warning as StateWarning
  * Never use fluorescent colors; calm and restrained.
  */
 enum class AlertLevel(val defaultIcon: ImageVector) {
-    SUCCESS(Icons.Default.CheckCircle),
-    WARNING(Icons.Default.Warning),
-    DANGER(Icons.Default.ErrorOutline),
-    INFO(Icons.Default.Info);
+    SUCCESS(PersonaIcons.Success),
+    WARNING(PersonaIcons.Warning),
+    DANGER(PersonaIcons.Danger),
+    INFO(PersonaIcons.Info);
 
     val color: Color
         @Composable get() = when (this) {
@@ -284,7 +277,7 @@ fun PersonaSavingButton(
                 Text(text = savingText, fontWeight = FontWeight.SemiBold)
             } else if (isSaved) {
                 Icon(
-                    imageVector = Icons.Default.Check,
+                    imageVector = PersonaIcons.Check,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp)
                 )
@@ -452,7 +445,7 @@ fun SemanticAlertBanner(
                     modifier = Modifier.size(20.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = PersonaIcons.Close,
                         contentDescription = "Dismiss",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
@@ -487,7 +480,7 @@ fun SectionErrorCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.Warning,
+                imageVector = PersonaIcons.Warning,
                 contentDescription = null,
                 tint = StateWarning,
                 modifier = Modifier.size(24.dp)
@@ -508,7 +501,7 @@ fun SectionErrorCard(
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.height(36.dp)
             ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                Icon(PersonaIcons.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Try again", fontSize = 12.sp)
             }
